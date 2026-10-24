@@ -101,11 +101,11 @@ def changed_lines(facts: list[dict[str, Any]], secrets: bool = False) -> list[st
             + (_secret_mark(c["fact"]) if kept(c["fact"]) else "") for c in changes(facts, secrets)]
 
 
-def address_lines(facts: list[dict[str, Any]], secrets: bool = False) -> list[str]:
+def address_lines(facts: list[dict[str, Any]], secrets: bool = False, excluded: frozenset[str] = frozenset()) -> list[str]:
     """One line per pair (`inspector.pairs`, newest first): the relationship, then each direction's role, feeling and
-    form of address. With `secrets` off, nothing kept from someone."""
+    form of address. With `secrets` off, nothing kept from someone; none with an end left out of the cast (PHASE-47)."""
     out = []
-    for p in pairs([f for f in facts if secrets or not kept(f)])[:PAIRS_MAX]:
+    for p in pairs([f for f in facts if secrets or not kept(f)], excluded)[:PAIRS_MAX]:
         bits = []
         for f in p["relationship"]:
             both = symmetric(f.get("value")) and len(p["relationship"]) == 1
@@ -330,7 +330,7 @@ def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn:
             info.append({"kind": kind, "made": c["made"], "cached": c["cached"], "held": c["held"],
                          "reason": c["reason"], "turns": c["turns"], "chars": len(body), "stale": c["stale"]})
         else:
-            lines = changed_lines(facts, ask.secrets) if kind == "changed" else address_lines(facts, ask.secrets)
+            lines = changed_lines(facts, ask.secrets) if kind == "changed" else address_lines(facts, ask.secrets, frozenset(view.get("excluded") or ()))
             body = f"{CHANGED_HEAD if kind == 'changed' else ADDRESS_HEAD}\n" + "\n".join(lines) if lines else ""
             info.append({"kind": kind, "made": "facts", "cached": False, "held": 0, "reason": "" if lines else "none",
                          "turns": str(last_turn or 0), "lines": len(lines), "chars": len(body)})

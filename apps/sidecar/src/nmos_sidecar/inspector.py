@@ -399,6 +399,9 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "rk.secret_found_out": ("비밀을 알게 됨", "secret found out"), "rk.secret_keep": ("비밀 유지", "secret still kept"),
     "rk.fact_restore": ("사실 복원", "restore a fact"), "rk.fact_retract": ("사실 철회", "retract a fact"), "rk.fact_correct": ("사실 정정", "correct a fact"),
     "rk.name_split": ("이름 분리", "split two names"),
+    "rk.entity_exclude": ("캐릭터 아님", "not a character"),
+    "ex.cast": ("인물 목록에서만", "out of the cast"), "ex.memory": ("기억에서도", "out of memory too"),
+    "ex.hidden": ("가린 사실 {n}개", "{n} facts hidden"), "ex.now": ("캐릭터 아님으로 표시됨", "marked not a character"),
     "rk.state_dismiss": ("상태창 확인 표시 넘김", "status flag dismissed"),
     "rs.applied": ("적용됨", "applied"), "rs.unmatched": ("지금 맞는 항목 없음", "matches nothing now"),
     "rs.removed": ("되돌림", "taken back"),
@@ -943,10 +946,10 @@ def _cause(f: dict[str, Any], lang: str) -> str:
     return out + "</span>"
 
 
-def pairs(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def pairs(facts: list[dict[str, Any]], excluded: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """How two characters stand, one entry per pair (PHASE-11 step 7, ADR 0038): the current relationship (one
     history for both directions), and each direction's current role (ADR 0059), feeling and speech level. Newest pair
-    first."""
+    first. A pair with an end the owner left out of the cast (`excluded` entity ids, PHASE-47) is not one."""
     out: dict[tuple[str, str], dict[str, Any]] = {}
     for f in facts:
         if f["predicate"] not in STANDING or not f.get("object"):
@@ -955,6 +958,8 @@ def pairs(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for role in ("subject", "object"):
             e = f.get(f"{role}_entity") or {}
             ends.append((e.get("id") or norm(f[role]), e.get("name") or f[role]))
+        if excluded and any(str(i) in excluded for i, _ in ends):
+            continue
         key = tuple(sorted(i for i, _ in ends))
         p = out.setdefault(key, {"ids": key, "names": {}, "relationship": [], "role": [], "feels": [], "speech": [],
                                     "position": -1})
@@ -965,7 +970,16 @@ def pairs(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(out.values(), key=lambda p: p["position"], reverse=True)
 
 
-def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")  # an entity's id (a pair end with one)
+
+
+def _exclude_marks(p: dict[str, Any], persona: frozenset[str]) -> str:
+    """A pair row's "not a character" for each end but the persona (PHASE-47 Q2), named so the button says which."""
+    return "".join(_act("entity_exclude", i, n) for i, n in sorted(p["names"].items(), key=lambda x: str(x[1]))
+                   if str(i) not in persona and _UUID.fullmatch(str(i)))
+
+
+def _pairs_table(entries: list[dict[str, Any]], lang: str, persona: frozenset[str] | None = None) -> str:
     def said(f: dict[str, Any], directed: bool) -> str:
         who = f"{_named(f, 'subject')} → {_named(f, 'object')}: " if directed else ""
         text = _v(who + (f.get("value") or "")) + f" <span class=\"muted\">{_turn(f)}</span>"
@@ -986,14 +1000,15 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
     story = [p for p in entries if not setting_only(p)]
     setting = [p for p in entries if setting_only(p)]
     if not setting:
-        return _pairs_rows(entries, lang, said)
-    return _setting_fold(lang, _pairs_rows(story, lang, said) if story else "", _pairs_rows(setting, lang, said),
-                         len(setting))
+        return _pairs_rows(entries, lang, said, persona)
+    return _setting_fold(lang, _pairs_rows(story, lang, said, persona) if story else "",
+                         _pairs_rows(setting, lang, said, persona), len(setting))
 
 
-def _pairs_rows(entries: list[dict[str, Any]], lang: str, said: Any) -> str:
+def _pairs_rows(entries: list[dict[str, Any]], lang: str, said: Any, persona: frozenset[str] | None = None) -> str:
     return table([_t(lang, k) for k in ("h.pair", "h.relationship", "h.role", "h.feelings", "h.speech")],
-                 [[_v(" ↔ ".join(sorted(p["names"].values()))),
+                 [[_v(" ↔ ".join(sorted(p["names"].values())))
+                   + (_exclude_marks(p, persona) if persona is not None else ""),
                    # a directed value ("엄마") says who is whose only with its direction; a symmetric one needs it
                    # only when both directions are current
                    "<br>".join(said(f, len(p["relationship"]) > 1 or not symmetric(f.get("value")))
@@ -1182,7 +1197,7 @@ def _act(kind: str, item: Any, extra: str | None = None) -> str:
 
 def _undo(rep: dict[str, Any]) -> str:
     """An undo; a name split's is marked so the panel previews it like a join (PHASE-20 Q2)."""
-    return _act("undo", rep["id"], "name_split" if rep.get("kind") == "name_split" else None)
+    return _act("undo", rep["id"], rep["kind"] if rep.get("kind") in ("name_split", "entity_exclude") else None)
 
 
 def _close(th: dict[str, Any]) -> str:
@@ -1272,6 +1287,8 @@ def _repair_target(rep: dict[str, Any]) -> str:
     t = rep["target"] or {}
     if rep["kind"] == "name_split":
         return _v(f"{t.get('name')} ≠ {t.get('other')}")
+    if rep["kind"] == "entity_exclude":
+        return _v(t.get("name"))
     if rep["kind"].startswith("thread_"):
         text = _who_to(t) + f": {t.get('text')}"
     else:
@@ -1282,6 +1299,10 @@ def _repair_target(rep: dict[str, Any]) -> str:
 def _repair_value(rep: dict[str, Any], lang: str) -> str:
     v = rep.get("value") or {}
     parts = []
+    if rep["kind"] == "entity_exclude":
+        parts.append(chip(lang, "ex", (rep.get("target") or {}).get("scope") or "cast"))
+        if rep.get("hidden"):
+            parts.append(f"<span class=\"muted\">{_v(_t(lang, 'ex.hidden').format(n=rep['hidden']))}</span>")
     if v.get("outcome"):
         parts.append(chip(lang, "t", v["outcome"]))
     for k in ("object", "value"):
@@ -1405,6 +1426,15 @@ def _other_table(other: list[dict[str, Any]], lang: str) -> str:
                    _v(a.get("object") or a.get("value")), _turn(a)] for a in other[:100]])
 
 
+def _not_a_character(entity: dict[str, Any], view: dict[str, Any], lang: str) -> str:
+    """A character's "not a character" (PHASE-47 S6): where the panel puts the button, or that it is marked so."""
+    if entity["type"] != "character" or entity.get("persona"):
+        return ""
+    if str(entity["id"]) in (view.get("excluded") or {}):
+        return f"<p class=\"muted\">{_v(_t(lang, 'ex.now'))} · {chip(lang, 'ex', view['excluded'][str(entity['id'])]['scope'])}</p>"
+    return f"<p>{_act('entity_exclude', entity['id'], entity['name'])}</p>"
+
+
 def _who(conv_id: Any, entities: list[dict[str, Any]], current: str | None, q: str, lang: str) -> str:
     """Character picker: links here (the panel turns them into a drop-down), the shown one in bold."""
     chars = [e for e in entities if e["type"] == "character"][:50]
@@ -1494,8 +1524,10 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         parts.append(("secrets", t("secrets"), len(secrets), _secrets_table(secrets, lang), True))
     if unrevealed:
         parts.append(("unrevealed", t("unrevealed"), len(unrevealed), _unrevealed_table(unrevealed, lang), True))
-    if both := pairs(facts if standing is None else standing):  # every pair, not only those in the capped facts
-        parts.append(("pairs", t("pairs"), len(both), _pairs_table(both, lang), True))
+    left_out = frozenset(str(e["id"]) for e in entities or () if e.get("excluded"))  # PHASE-47
+    if both := pairs(facts if standing is None else standing, left_out):  # every pair, not only the capped facts
+        persona = frozenset(str(e["id"]) for e in entities or () if e.get("persona"))
+        parts.append(("pairs", t("pairs"), len(both), _pairs_table(both, lang, persona), True))
     if summaries is not None:
         parts.append(("summaries", t("summaries"), summaries["done"], _summaries_section(summaries, lang, summaries.get("generation"), summaries.get("on", True),
                                                         conv.get("memory_narrator")), False))
@@ -1683,7 +1715,8 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
     parts: list[Section] = [("profile", t("profile"), None, table(
         [t("h.type"), t("h.names"), t("h.mentions"), t("h.alias_turns"), t("h.owner_links")],
         [[chip(lang, "e", entity["type"]), _v(" · ".join(entity["names"])), _v(entity["mentions"]),
-          _v(", ".join(str(a["turn"]) for a in entity["aliases"])), _owner_links(entity)]]), True)]
+          _v(", ".join(str(a["turn"]) for a in entity["aliases"])), _owner_links(entity)]]) + _not_a_character(entity, view, lang),
+        True)]
     if not embed and entity["type"] == "character":  # PHASE-32
         parts.append(("timeline", t("timeline"), None, timeline.character(
             _tl_t(lang), entity_id, facts, view.get("threads", []), names, now, span,
@@ -1697,8 +1730,9 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
         parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
     if threads:
         parts.append(("threads", t("threads"), len(threads), _threads_table(threads, lang, anchors=not embed), True))
-    if mine_pairs := [p for p in pairs(facts) if entity_id in p["ids"]]:
-        parts.append(("pairs", t("pairs"), len(mine_pairs), _pairs_table(mine_pairs, lang), True))
+    if mine_pairs := [p for p in pairs(facts, frozenset(view.get("excluded") or ())) if entity_id in p["ids"]]:
+        persona = frozenset(str(e["id"]) for e in view["entities"] if e.get("persona"))
+        parts.append(("pairs", t("pairs"), len(mine_pairs), _pairs_table(mine_pairs, lang, persona), True))
     if held:
         parts.append(("held", t("held"), len(held), table(
             [t("h.item"), t("h.turn"), t("h.timeline")],

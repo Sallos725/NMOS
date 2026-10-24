@@ -38,7 +38,7 @@ from .config import Settings
 from .db import make_pool
 from .entities import norm
 from .extraction import enqueue_after_apply, job_counts, recent_errors
-from .facts import STANDING, links_of as facts_links_of, memory_view, version_key
+from .facts import STANDING, excluded_ids, links_of as facts_links_of, memory_view, version_key
 from .ids import uuid7
 from .models import (
     ArchiveUploadChunk,
@@ -626,8 +626,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             names: list[str] = []
             if conv["head_commit_id"] is not None:
-                r = view_of(conn, conv["head_commit_id"])["resolution"]
-                names = [e["name"] for e in (r.entities() if r else []) if e["type"] == "character" and not e.get("persona")]
+                names = [e["name"] for e in view_of(conn, conv["head_commit_id"])["entities"]
+                         if e["type"] == "character" and not e.get("persona") and not e.get("excluded")]  # PHASE-47
             return {"strict": conv["memory_strict"], "narrator": conv["memory_narrator"], "characters": names}
 
     @app.put("/v1/conversations/{conv_id}/memory-mode", dependencies=[Depends(auth)])
@@ -695,6 +695,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             what_if = {"add_repairs": [{"id": "preview", "kind": "name_split", "target": target, "value": value,
                                         "note": None, "created_at": at}]}
             exclude = {"preview"}
+        elif action == "exclude":  # PHASE-47 S4: what leaving the name out would change, under both scopes
+            return exclusion_preview(conn, conv_id, head, now, at, a["entity_type"], a["name"], a.get("scope") or "cast")
+        elif action == "unexclude":
+            rep = in_force(conn, "owner_repair", conv_id, a["row"])
+            if rep is None:
+                raise HTTPException(status_code=404, detail="repair not found")
+            return exclusion_preview(conn, conv_id, head, now, at, rep["target"]["entity_type"], rep["target"]["name"],
+                                     rep["target"].get("scope") or "cast", undo=rep)
         elif action == "unlink":
             link = in_force(conn, "entity_link", conv_id, a["row"])
             if link is None:
@@ -724,6 +732,47 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  "repairs": sorted(str(x["id"]) for x in now["repairs"]), "extractor": rt["active_extractor"],
                  "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names")}
         return {"action": action, **out, "fingerprint": preview.fingerprint(out, state)}
+
+    def host_character(conn, conv_id: UUID, view: dict[str, Any], entity_type: str, name: str) -> None:
+        """422 for the character the host names for the chat (PHASE-47 S3): it is always a character."""
+        host = (readmodel.conversation(conn, conv_id) or {}).get("host_character_name")
+        r = view.get("resolution")
+        if host and r is not None and entity_type == "character":
+            a, b = r.entity("character", name), r.entity("character", host)
+            if norm(name) == norm(host) or (a is not None and b is not None and a["id"] == b["id"]):
+                raise HTTPException(status_code=422, detail="the chat's own character is always a character")
+
+    def exclusion_preview(conn, conv_id: UUID, head: UUID, now: dict[str, Any], at: Any, entity_type: str, name: str,
+                          scope: str, undo: dict[str, Any] | None = None) -> dict[str, Any]:
+        """What leaving an entity out would change (PHASE-47 S4), or taking that back (`undo`): for each scope, the
+        relationship pairs and the facts that leave, and the difference for the one asked; nothing is written. The
+        panel offers "memory" with its counts beside the default "cast" (Q1 a)."""
+        if undo is None:
+            host_character(conn, conv_id, now, entity_type, name)
+            try:
+                repairs.plan("entity_exclude", name, now, None, entity_type=entity_type, scope=scope)
+            except repairs.RepairError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+        standing = lambda v: [f for f in v["facts"] if f["predicate"] in STANDING]  # noqa: E731
+        pairs_now = len(inspector.pairs(standing(now), excluded_ids(now)))
+        scopes, chosen = {}, None
+        for s in (("cast", "memory") if undo is None else (scope,)):
+            what_if = ({"drop_repairs": {str(undo["id"])}} if undo is not None else {"add_repairs": [{
+                "id": "preview", "kind": "entity_exclude", "note": None, "created_at": at, "value": {},
+                "target": {"entity_type": entity_type, "name": name.strip(), "scope": s}}]})
+            then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if)
+            gone = (now if undo is not None else then).get("excluded") or {}
+            hidden = sum(x.get("hidden", 0) for i, x in gone.items() if undo is None or str(x["repair"]) == str(undo["id"]))
+            scopes[s] = {"pairs": abs(pairs_now - len(inspector.pairs(standing(then), excluded_ids(then)))),
+                         "facts": hidden}
+            if s == scope:
+                chosen = preview.diff(now, then, [(entity_type, name)], {"preview"} | ({str(undo["id"])} if undo else set()))
+        out = {**chosen, "changes": True, "scope": scope, "scopes": scopes}
+        state = {"head": head, "links": sorted(str(x["id"]) for x in facts_links_of(conn, conv_id)),
+                 "repairs": sorted(str(x["id"]) for x in now["repairs"]), "extractor": rt["active_extractor"],
+                 "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names"), "scope": scope}
+        return {"action": "unexclude" if undo else "exclude", **out,
+                "fingerprint": preview.fingerprint({**out, "lines": [*out["lines"], scopes]}, state)}
 
     def expect_same(conn, conv_id: UUID, expect: str | None, action: str, **a: Any) -> None:
         """An action made from a preview (Q4): 409 with a fresh preview when memory changed since. Called inside the
@@ -825,11 +874,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         """Every repair of a chat, newest first, with the item each in force applies to now (ADR 0044); a status
         flag's dismissal, the flag while the chat still raises it (`flags`, PHASE-39 Q4)."""
         applied = {str(x["id"]): x["applied"] for x in live}
+        hidden = {str(x["id"]): x["hidden"] for x in live if "hidden" in x}  # an exclusion's (PHASE-47)
         raised = {f["id"] for f in flags or ()}
         rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at FROM owner_repair"
                             " WHERE conversation_id = %s ORDER BY created_at DESC, id DESC", (conv_id,)).fetchall()
         return [{**row, "applied": ((row["target"] or {}).get("id") if (row["target"] or {}).get("id") in raised else None)
-                 if row["kind"] == "state_dismiss" else applied.get(str(row["id"]))} for row in rows]
+                 if row["kind"] == "state_dismiss" else applied.get(str(row["id"])),
+                 **({"hidden": hidden.get(str(row["id"]), 0)} if row["kind"] == "entity_exclude" else {})} for row in rows]
 
     def state_flags(conn, conv: dict[str, Any]) -> list[dict[str, Any]]:
         """A chat's status flags (PHASE-39 Q4), every one, dismissed or not; none without a watched key."""
@@ -889,9 +940,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     @app.post("/v1/conversations/{conv_id}/repairs/preview", dependencies=[Depends(auth)])
     def preview_repair(conv_id: UUID, body: RepairRequest, request: Request):
-        """What splitting two names would change in this chat's memory (PHASE-20 Q2); other repairs have no preview."""
+        """What splitting two names (PHASE-20 Q2), or leaving a name out (PHASE-47 S4), would change in this chat's
+        memory; other repairs have no preview."""
+        if body.kind == "entity_exclude":
+            with request.app.state.pool.connection() as conn:
+                return preview_of(conn, conv_id, head_of(conn, conv_id), "exclude", entity_type=body.entity_type,
+                                  name=body.item, scope=body.scope)
         if body.kind != "name_split":
-            raise HTTPException(status_code=422, detail="only a join or a split has a preview")
+            raise HTTPException(status_code=422, detail="only a join, a split or an exclusion has a preview")
         with request.app.state.pool.connection() as conn:
             return preview_of(conn, conv_id, head_of(conn, conv_id), "split", entity_type=body.entity_type,
                               name=body.item, other=body.other)
@@ -913,17 +969,22 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if body.kind == "state_dismiss":  # a status flag not yet dismissed (PHASE-39 Q4)
                 off = statewatch.dismissed(repair_rows(conn, conv_id, []))
                 view["state_flags"] = [f for f in state_flags(conn, conv) if f["id"] not in off]
+            if body.kind == "entity_exclude":
+                host_character(conn, conv_id, view, body.entity_type, body.item)
             try:
                 target, value = repairs.plan(body.kind, body.item, view,
                                              head_turn(conn, head), body.outcome, body.character, body.turn,
                                              body.new_object, body.new_value, body.other, body.entity_type,
-                                             version_key)
+                                             version_key, body.scope)
             except repairs.RepairError as e:
                 raise HTTPException(status_code=422, detail=str(e)) from e
             with conn.transaction():
                 if body.kind == "name_split":
                     expect_same(conn, conv_id, body.expect, "split", entity_type=body.entity_type, name=body.item,
                                 other=body.other)
+                if body.kind == "entity_exclude":
+                    expect_same(conn, conv_id, body.expect, "exclude", entity_type=body.entity_type, name=body.item,
+                                scope=body.scope)
                 row = conn.execute(
                     "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note) VALUES (%s, %s, %s, %s, %s, %s)"
                     " RETURNING id, kind, target, value, note, created_at",
@@ -936,9 +997,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     @app.post("/v1/conversations/{conv_id}/repairs/{repair_id}/remove/preview", dependencies=[Depends(auth)])
     def preview_remove_repair(conv_id: UUID, repair_id: UUID, request: Request):
-        """What taking a split back would change (PHASE-20 Q2)."""
+        """What taking a split back (PHASE-20 Q2), or an exclusion (PHASE-47 S4), would change."""
         with request.app.state.pool.connection() as conn:
-            return preview_of(conn, conv_id, head_of(conn, conv_id), "unsplit", row=repair_id)
+            rep = conn.execute("SELECT kind FROM owner_repair WHERE id = %s AND conversation_id = %s",
+                               (repair_id, conv_id)).fetchone()
+            action = "unexclude" if rep is not None and rep["kind"] == "entity_exclude" else "unsplit"
+            return preview_of(conn, conv_id, head_of(conn, conv_id), action, row=repair_id)
 
     @app.post("/v1/conversations/{conv_id}/repairs/{repair_id}/remove", dependencies=[Depends(auth)])
     def remove_repair(conv_id: UUID, repair_id: UUID, request: Request, body: ExpectRequest | None = None):
@@ -946,7 +1010,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         `removed_at` for audit. With `expect`, a split's undo made from its preview (PHASE-20 Q4)."""
         with request.app.state.pool.connection() as conn:
             with conn.transaction():
-                expect_same(conn, conv_id, body.expect if body else None, "unsplit", row=repair_id)
+                rep = conn.execute("SELECT kind FROM owner_repair WHERE id = %s AND conversation_id = %s",
+                                   (repair_id, conv_id)).fetchone()
+                action = "unexclude" if rep is not None and rep["kind"] == "entity_exclude" else "unsplit"
+                expect_same(conn, conv_id, body.expect if body else None, action, row=repair_id)
                 n = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE id = %s AND conversation_id = %s"
                                  " AND removed_at IS NULL", (repair_id, conv_id)).rowcount
         if not n:
@@ -1560,7 +1627,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         cast = [str(n) for n in ((trace or {}).get("latency_ms") or {}).get("scene_cast") or []]
         entities = character_ids(view)
         if not cast:  # no request yet: the characters most mentioned
-            cast = [e["name"] for e in view["entities"] if e.get("type") == "character"][:6]
+            cast = [e["name"] for e in view["entities"] if e.get("type") == "character" and not e.get("excluded")][:6]
         now = [x for x in scene_now(view, cast) if x["said"]]
         threads = [th for th in view["threads"] if th["status"] == "open"]
         key = rt.get("active_summarizer")
@@ -1571,7 +1638,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "now": now,
                 "threads": [th for th in threads if not inspector.stale(th, last)],
                 "stale": sum(1 for th in threads if inspector.stale(th, last)),
-                "pairs": inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING]),
+                "pairs": inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING], excluded_ids(view)),
                 "story": told.get("story"), "scenes": list(reversed(scenes)),
                 "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
                 "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
@@ -1584,7 +1651,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         out, seen = [], set()
         for name in cast:
             eid = ids.get(name.casefold())
-            if eid is not None and eid in seen:
+            if eid is not None and (eid in seen or eid in excluded_ids(view)):  # one line each; none left out (PHASE-47)
                 continue
             seen.add(eid)
             e = by_id.get(eid) if eid else None
@@ -1635,10 +1702,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  and (norm(th.get("by")) in names or norm(th.get("to")) in names)]
         return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
                          "turns": last},
-                "entity": {"id": eid, "name": e.get("name"), "names": list(e.get("names") or [])},
+                "entity": {"id": eid, "name": e.get("name"), "names": list(e.get("names") or []),
+                           "persona": bool(e.get("persona")), "excluded": e.get("excluded")},
                 "now": views.now_said(view["facts"], str(e.get("name") or "")),
-                "pairs": [p for p in inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING])
-                          if eid in {str(i) for i in p["ids"]}],
+                "pairs": [p for p in inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING],
+                                                     excluded_ids(view)) if eid in {str(i) for i in p["ids"]}],
                 "threads": open_,
                 "knows": [s for s in view["secrets"] if s.get("open") and names & {norm(n) for n in s.get("holders") or []}],
                 "kept": [s for s in view["secrets"] if names & {norm(n) for n in s.get("open") or []}],

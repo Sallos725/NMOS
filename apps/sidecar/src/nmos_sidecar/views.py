@@ -16,7 +16,7 @@ from typing import Any
 
 from . import tokens
 from .facts import symmetric
-from .inspector import _close, _v
+from .inspector import _act, _close, _v
 from .summaries import content
 
 # The hub's blocks are flex rows that always end flush: each block grows to fill what its row leaves (PHASE-52 D1).
@@ -123,6 +123,9 @@ T: dict[str, tuple[str, str]] = {
     "knows": ("알고 있음", "knows"),
     "unaware": ("모름 · {who}이(가) 숨김", "does not know · kept by {who}"),
     "back_memory": ("기억으로", "Back to memory"),
+    "not_char": ("캐릭터가 아닌가요? 몬스터나 상태창 봇이라면 인물 목록에서 뺄 수 있어요.",
+                 "Not a character? A monster or a status-window bot can leave the cast."),
+    "is_not_char": ("캐릭터 아님으로 표시됨 · 되돌리기는 자세히의 수정 목록에서", "Marked not a character · undo it in details, under repairs"),
     "tl_hint": ("굵은 원은 큰 사건이나 관계 변화예요. 위 막대는 그 일들이 언제쯤이었는지 보여줘요.",
                 "Rings are major events or relationship changes; the bar above shows when they happened."),
     "now_turn": ("지금 t{t}", "now t{t}"),
@@ -428,6 +431,9 @@ def person(d: dict[str, Any], lang: str) -> str:
             + section("s-threads", lang, more(threads, lang) or nothing, len(threads))
             + section("s-knows", lang, more(knows, lang) or nothing, len(knows)) + section("s-time", lang, time))
     cap = t(lang, "aka", names=", ".join(aka)) if aka else ""
+    if not e.get("persona"):  # PHASE-47 S6: the button, behind a tap like every repair here
+        body += (f'<p class="v-note">{_v(t(lang, "is_not_char"))}</p>' if e.get("excluded")
+                 else line(_v(t(lang, "not_char")), "", _act("entity_exclude", e["id"], e.get("name"))))
     return (f'<div class="v v-doc"><div class="v-head"><h1 class="v-h1">{_v(e.get("name"))}</h1>'
             f'<span class="v-cap">{_v(cap)}</span></div>{body}'
             f'<div class="v-foot"><a href="/views/c/{cid}/memory">{_v(t(lang, "back_memory"))}</a> · '

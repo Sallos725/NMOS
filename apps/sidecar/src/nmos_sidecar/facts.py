@@ -22,8 +22,8 @@ from .packet import Line
 from .keywords import keywords
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
 from . import canon, canonfacts
-from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, live, quoted_turns, secret_events,
-                      splits_of, thread_events, unedited_quotes)
+from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, exclusions, live, quoted_turns,
+                      secret_events, splits_of, thread_events, unedited_quotes)
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -480,6 +480,20 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         (head, restored_at, upto, upto)).fetchall()} if restored_at else {}
     rows, retracted = apply_facts(rows, in_force, r, applied, _annotate, turn_positions, turn_info)
     locks = apply_locks(rows, in_force, r, applied)  # PHASE-14 Q7
+    # PHASE-47 S2: entities the owner left out. Out of memory, their own facts and the standing they are one end of
+    # leave before the folds; a row that names them only as a participant, or as another's object, stays.
+    excluded = exclusions(in_force, r)
+    if gone := {i for i, x in excluded.items() if x["scope"] == "memory"}:
+        def left_out(a: dict[str, Any]) -> str | None:
+            """The left-out entity this row belongs to: its subject, or the other end of a standing."""
+            s, o = (str((a.get(f"{side}_entity") or {}).get("id")) for side in ("subject", "object"))
+            return s if s in gone else o if a["predicate"] in STANDING and o in gone else None
+
+        for a in rows:
+            if (who := left_out(a)) is not None:
+                excluded[who]["hidden"] = excluded[who].get("hidden", 0) + 1
+        rows = [a for a in rows if left_out(a) is None]
+        promises = [a for a in promises if left_out(a) is None]
     # Secrets (PHASE-10, ADR 0033): a reveal ends a secret for the character who found it out, from its
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
     # and a narrator must count them as knowing it). `learned` is not a fact itself. Before the threads, which copy
@@ -546,10 +560,12 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             items.setdefault(version_key(f, r), {
                 "item": f["object"] if f["predicate"] in HOLDER_PER_ITEM else f["subject"],
                 "position": f["position"], "history": f["history"]})
-    return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
+    entities = [{**e, "excluded": excluded[str(e["id"])]["scope"]} if str(e["id"]) in excluded else e
+                for e in r.entities()]
+    return {"facts": facts, "claims": claims, "other": other, "entities": entities, "excluded": excluded,
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
-            "repairs": [_report(rep, applied, r) for rep in repairs], "assertions": rows, "resolution": r,
+            "repairs": [_report(rep, applied, r, excluded) for rep in repairs], "assertions": rows, "resolution": r,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
 
 
@@ -626,9 +642,13 @@ def _hold(history: list[dict[str, Any]],
     return kept, off
 
 
-def _report(rep: dict[str, Any], applied: dict[str, str | None], r: Resolution) -> dict[str, Any]:
+def _report(rep: dict[str, Any], applied: dict[str, str | None], r: Resolution,
+            excluded: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     """A repair with what it applies to now (ADR 0044); a name split, the entity it left and the names that still
-    join the two when it could not separate them."""
+    join the two when it could not separate them; an exclusion, the entity it leaves out and how many rows (PHASE-47)."""
+    if rep["kind"] == "entity_exclude":
+        hit = next(((i, x) for i, x in (excluded or {}).items() if str(x["repair"]) == str(rep["id"])), None)
+        return {**rep, "applied": hit[0] if hit else None, "hidden": hit[1].get("hidden", 0) if hit else 0}
     if rep["kind"] != "name_split":
         return {**rep, "applied": applied.get(str(rep["id"]))}
     t = rep["target"]
@@ -717,6 +737,11 @@ LEXICAL_BAR = 0.35  # trigram overlap with the query that makes an unmentioned f
 # 0028), or a role one holds toward the other (ADR 0059). Read side only, like HOLDER_PER_ITEM: outside REGISTRY, so
 # changing it needs no new generation.
 STANDING = frozenset({"relationship", "role_toward", "feels_toward", "addresses"})
+
+
+def excluded_ids(view: dict[str, Any] | None) -> frozenset[str]:
+    """The entities the owner left out of the cast, either scope (PHASE-47 S2): not people, pair ends or <Cast>."""
+    return frozenset((view or {}).get("excluded") or ())
 # How a character stands now (the Cast's predicates, PHASE-12 Q4): with STANDING, what a message naming the character
 # needs whatever it asks (PHASE-36 Q1).
 NOW = frozenset({"located_in", "has_status", "feels_toward", "possesses"})

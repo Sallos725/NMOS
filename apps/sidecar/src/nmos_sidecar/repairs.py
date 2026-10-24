@@ -38,7 +38,7 @@ from .statewatch import target as flag_target
 from .threads import MATCH_MIN, similarity
 
 KINDS = ("thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-         "name_split", "fact_lock", "fact_restore", "state_dismiss")
+         "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude")
 # threads and secrets since step 3, facts and names since step 4, locks since Phase 14, restores since Phase 22, a
 # status flag's dismissal since Phase 39 (Q4: no memory read applies it; the Inspector leaves the flag out)
 ENABLED = frozenset(KINDS)
@@ -510,7 +510,7 @@ class RepairError(ValueError):
 def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outcome: str | None = None,
          character: str | None = None, turn: int | None = None, new_object: str | None = None,
          new_value: str | None = None, other: str | None = None, entity_type: str = "character",
-         version_key: Callable[..., tuple] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+         version_key: Callable[..., tuple] | None = None, scope: str = "cast") -> tuple[dict[str, Any], dict[str, Any]]:
     """The target and value a new repair stores, for the item the Inspector shows now (a thread's or a secret's id),
     checked against the current memory."""
     if kind not in ENABLED:
@@ -518,6 +518,8 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
     r = view.get("resolution")
     if kind == "name_split":
         return _plan_split(item, other, entity_type, r)
+    if kind == "entity_exclude":
+        return _plan_exclude(item, entity_type, scope, view)
     if kind == "state_dismiss":  # the caller lists the chat's undismissed status flags (`state_flags`, PHASE-39 Q4)
         flag = next((f for f in view.get("state_flags") or () if f["id"] == item), None)
         if flag is None:
@@ -586,6 +588,51 @@ def _plan_split(name: str, other: str | None, entity_type: str, r: Resolution | 
     if a is None or b is None or a["id"] != b["id"]:
         raise RepairError("the two names are not one entity now")
     return {"entity_type": entity_type, "name": name.strip(), "other": other.strip()}, {}
+
+
+SCOPES = ("cast", "memory")  # PHASE-47 Q1: out of the cast (every fact stays), or out of memory too
+
+
+def _plan_exclude(name: str, entity_type: str, scope: str, view: dict[str, Any]) -> tuple[dict, dict]:
+    """Leave an entity out of the cast, or out of memory (PHASE-47 S1, S3): named as the owner saw it, matched on every
+    read through entity resolution. The persona, a name the chat does not mention and an entity already left out are
+    refused (the API also refuses a character the host names for the chat)."""
+    r = view.get("resolution")
+    if scope not in SCOPES:
+        raise RepairError("the scope is cast or memory")
+    by_id = next((e for e in view.get("entities") or () if str(e["id"]) == name.strip()), None)
+    if by_id is not None:  # the panel names the entity by its id; the repair stores the name it goes by now
+        name, entity_type = by_id["name"], by_id["type"]
+    if r is not None and (r.is_persona(entity_type, name) or entity_type == "character" and norm(name) in r.persona_names):
+        raise RepairError("the persona is always a character")
+    if r is None or not name.strip() or r.status(entity_type, name) == "unresolved":
+        raise RepairError("the name is not mentioned in this chat")
+    e = r.entity(entity_type, name)
+    if e is None:
+        raise RepairError("the name is not one entity now")
+    if str(e["id"]) in (view.get("excluded") or {}):
+        raise RepairError("that entity is already left out")
+    return {"entity_type": entity_type, "name": name.strip(), "scope": scope}, {}
+
+
+def exclusions(repairs: list[dict[str, Any]], r: Resolution | None) -> dict[str, dict[str, Any]]:
+    """The entities the owner left out (PHASE-47 S2), by entity id: each exclusion's name resolved now, so a name the
+    story joins to it follows and a split name does not; one that resolves to nothing hides nothing. With two on one
+    entity, `memory` wins."""
+    out: dict[str, dict[str, Any]] = {}
+    if r is None:
+        return out
+    for rep in repairs:
+        if rep["kind"] != "entity_exclude":
+            continue
+        t = rep["target"]
+        e = r.entity(t.get("entity_type") or "character", t.get("name"))
+        if e is None:
+            continue
+        was = out.get(str(e["id"]))
+        if was is None or (t.get("scope") == "memory" and was["scope"] != "memory"):
+            out[str(e["id"])] = {"scope": t.get("scope") or "cast", "repair": rep["id"], "name": e["name"]}
+    return out
 
 
 def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None, new_object: str | None,

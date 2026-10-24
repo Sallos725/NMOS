@@ -11,6 +11,7 @@ names that canon and holds a quarter of the entries, the card and the persona in
     cd apps/sidecar && uv run python ../../tools/bench_story.py 10000
     cd apps/sidecar && BENCH_SUMMARIES=0 uv run python ../../tools/bench_story.py 10000  # summaries off
     cd apps/sidecar && BENCH_REPAIRS=100 uv run python ../../tools/bench_story.py 10000  # with 100 repairs
+    cd apps/sidecar && BENCH_EXCLUDES=100 uv run python ../../tools/bench_story.py 10000  # with 100 exclusions (PHASE-47)
     cd apps/sidecar && BENCH_CANON=200 uv run python ../../tools/bench_story.py 10000  # with a 200-entry lorebook
     cd apps/sidecar && BENCH_BUDGET=4000 uv run python ../../tools/bench_story.py 10000  # another memory budget
     cd apps/sidecar && NMOS_PACKET_POLICY=packet-v8 uv run python ../../tools/bench_story.py 10000  # another policy
@@ -178,6 +179,19 @@ def add_repairs(db: psycopg.Connection, conv, head, key: str, count: int) -> int
     return made
 
 
+def add_excludes(db: psycopg.Connection, conv, head, key: str, count: int) -> int:
+    """`count` exclusions (PHASE-47): every other character of the chat out of the cast, every fourth out of memory, then
+    names the chat never mentions (an exclusion that matches nothing still costs its lookup)."""
+    names = [e["name"] for e in memory_view(db, head, key)["entities"] if e["type"] == "character" and not e.get("persona")]
+    rows = [{"entity_type": "character", "name": n, "scope": "memory" if i % 4 == 3 else "cast"}
+            for i, n in enumerate(names[::2])][:count]
+    rows += [{"entity_type": "character", "name": f"없는이름{i}", "scope": "cast"} for i in range(count - len(rows))]
+    for t in rows:
+        db.execute("INSERT INTO owner_repair (id, conversation_id, kind, target, value) VALUES (%s, %s, 'entity_exclude',"
+                   " %s, '{}')", (uuid7(), conv, Jsonb(t)))
+    return len(rows)
+
+
 CARD = "하나는 항구 마을의 등대지기 딸로, 오래된 편지를 모으며 도서관에서 일한다. " * 40  # ≈ 1,800 characters
 PERSONA = "카이토는 바다를 건너온 우편배달부로, 하나에게 편지를 전한다. " * 30  # ≈ 1,000 characters
 LORE = "{name}은(는) 항구 마을 사람으로, {place}에서 일하며 {other}과(와) 오랜 친구 사이다. "  # × 12 ≈ 600 characters
@@ -290,6 +304,8 @@ def bench(n: int) -> dict:
             wanted = int(os.environ.get("BENCH_REPAIRS", "0"))
             if wanted and repairs is not None:
                 result["repairs"] = add_repairs(db, conv, head, generations.active(db, "extract"), wanted)
+            if (excludes := int(os.environ.get("BENCH_EXCLUDES", "0"))) and "entity_exclude" in getattr(repairs, "KINDS", ()):
+                result["excludes"] = add_excludes(db, conv, head, generations.active(db, "extract"), excludes)
             if held:
                 result["canon"] = {"lore": lore, "texts": held["texts"], "facts": held["facts"],
                                    "held": len(held["held"])}

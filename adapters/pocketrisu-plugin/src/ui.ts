@@ -16,7 +16,7 @@ import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
   localTime, markDetail, placeMarks, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
 import { copyText } from './notes';
-import type { EntityRow, Preview, RepairAction } from './inspector';
+import type { EntityRow, ExcludePreview, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
 import { uploadArchive, waitFor, type ArchiveSummary, type Method } from './restore';
@@ -556,7 +556,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const spot = el('div');
     button.addEventListener('click', () => {
       if (action.kind === 'fact_correct') correctForm(action, button);
-      else if (action.kind === 'undo' && action.extra === 'name_split') void undoSplit(action, button, spot);
+      else if (action.kind === 'undo' && (action.extra === 'name_split' || action.extra === 'entity_exclude')) {
+        void undoSplit(action, button, spot); // previewed: a split's and an exclusion's undo (PHASE-20 Q2, PHASE-47)
+      } else if (action.kind === 'entity_exclude') void notACharacter(action, button, spot);
       else if (action.kind === 'alias_join') void aliasJoin(action, button, spot);
       else void repairNow(action, button);
     });
@@ -648,6 +650,46 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       say(actionMsg, L('link.done', { a: pair.name, b: pair.same_as }), 'ok');
       await showInspector();
     });
+  }
+  /** "Not a character" (PHASE-47 S4, Q1 a): out of the cast by default, every fact kept; a box offers memory too,
+   * with how many facts that also hides. The action carries the fingerprint of the scope it was previewed for. */
+  async function notACharacter(action: RepairAction, button: HTMLButtonElement, spot: HTMLElement): Promise<void> {
+    const conversation = inspectorConversation(inspectorPath);
+    if (!conversation) return;
+    const path = `/v1/conversations/${conversation}/repairs`;
+    const body = { kind: 'entity_exclude', item: action.item };
+    const preview = (scope: string) => deps.api<ExcludePreview>('POST', `${path}/preview`, { ...body, scope }, 15_000);
+    button.disabled = true;
+    let p: ExcludePreview;
+    try {
+      p = await preview('cast');
+    } catch (error) {
+      say(actionMsg, errorText(lang, error), 'err');
+      button.disabled = false;
+      return;
+    }
+    const also = el('input', { type: 'checkbox', 'aria-label': L('ex.also', { f: p.scopes.memory.facts }) });
+    const ok = el('button', { class: 'mini', text: L('ex.confirm') });
+    const cancel = el('button', { class: 'mini', text: L('cancel') });
+    cancel.addEventListener('click', () => { spot.replaceChildren(); button.disabled = false; });
+    ok.addEventListener('click', async () => {
+      ok.disabled = true;
+      const scope = also.checked ? 'memory' : 'cast';
+      try {
+        const expect = scope === 'cast' ? p.fingerprint : (await preview('memory')).fingerprint;
+        await deps.api('POST', path, { ...body, scope, expect }, 15_000);
+        spot.replaceChildren();
+        say(actionMsg, L('ex.done'), 'ok');
+        await showInspector();
+      } catch (error) {
+        say(actionMsg, errorText(lang, error), 'err');
+        ok.disabled = false;
+      }
+    });
+    spot.replaceChildren(el('div', { class: 'preview' }, el('b', { text: L('pv.title') }),
+      el('div', { text: L('ex.cast', { p: p.scopes.cast.pairs }) }),
+      el('div', { class: 'check' }, also, el('span', { text: L('ex.also', { f: p.scopes.memory.facts }) })),
+      el('div', { class: 'btns' }, ok, cancel)));
   }
   /** The undo of a name split, previewed like a join (PHASE-20 Q2). */
   async function undoSplit(action: RepairAction, button: HTMLButtonElement, spot: HTMLElement): Promise<void> {
