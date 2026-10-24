@@ -28,6 +28,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from .entities import USER_NAMES, Resolution, norm
+from .predicates import horizon_of
 from .variants import widened
 
 KINDS = {"promised": "promise", "goal": "goal", "question": "question", "threat": "threat", "owes": "debt"}
@@ -204,6 +205,8 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
             same = _restated(a, open_by_maker, r)
             if same is not None:
                 same["restated"].append({"turn": a.get("turn"), "position": a["position"]})
+                if horizon_of(a):  # said again as lasting longer, or less (PHASE-51 S3)
+                    same["horizon"] = horizon_of(a)
             else:
                 t = {"id": a["id"], "kind": KINDS[a["predicate"]], "by": a["subject"], "to": a.get("object"), "text": a.get("value"),
                      "turn": a.get("turn"), "turn_hash": a.get("turn_hash"), "position": a["position"],
@@ -212,7 +215,7 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
                      "knowledge": a.get("knowledge"), "known_by": a.get("known_by"), "hidden_from": a.get("hidden_from"),
                      "revealed": a.get("revealed"), "repair": a.get("repair"),
                      "names": a.get("names") or [a["subject"], *([a["object"]] if a.get("object") else [])],
-                     "status": "open", "closed_by": None, "restated": [],
+                     "status": "open", "closed_by": None, "restated": [], "horizon": horizon_of(a),
                      "_maker": _maker(a, r), "_recipient": _recipient(a, r), "_norm": norm(a.get("value"))}
                 threads.append(t)
                 open_by_maker.setdefault(t["_maker"], []).append(t)

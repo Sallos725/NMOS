@@ -443,7 +443,9 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "k.threat": ("위협", "threat"), "k.debt": ("빚", "debt"),
     "p.question": ("질문", "question"), "p.threat": ("위협", "threat"), "p.owes": ("빚", "owes"),
     "p.resolved": ("스레드 종료", "resolved"),
-    "s.major": ("중요", "major"), "s.minor": ("사소", "minor"), "p.fulfilled": ("약속 이행", "fulfilled"),
+    "s.major": ("중요", "major"), "s.minor": ("사소", "minor"),
+    "hz.scene": ("이번 장면", "this scene"), "hz.arc": ("이야기 줄기", "storyline"), "hz.lasting": ("오래 감", "lasting"),
+    "p.fulfilled": ("약속 이행", "fulfilled"),
     "e.character": ("인물", "character"), "e.item": ("아이템", "item"), "e.place": ("장소", "place"),
     "e.group": ("집단", "group"), "e.concept": ("개념", "concept"),
 }
@@ -1113,7 +1115,8 @@ def _threads_table(threads: list[dict[str, Any]], lang: str, anchors: bool = Fal
                + "</p>") if counts else ""
     return summary + table([_t(lang, k) for k in ("h.kind", "h.by", "h.to", "h.promise", "h.turn", "h.status", "h.closed",
                                                   "h.restated")],
-                 [[chip(lang, "k", t.get("kind", "promise")), _v(t["by"]), _v(t.get("to") or ""), _v(t.get("text")),
+                 [[chip(lang, "k", t.get("kind", "promise")) + (" " + chip(lang, "hz", t["horizon"]) if t.get("horizon") else ""),
+                   _v(t["by"]), _v(t.get("to") or ""), _v(t.get("text")),
                    _turn(t), chip(lang, "t", t["status"])
                    + (_close(t) if t["status"] == "open"
                       else _act("thread_reopen", t["id"]) if not (t.get("closed_by") or {}).get("owner") else ""),
@@ -1146,6 +1149,9 @@ def _secret_status(s: dict[str, Any], lang: str) -> str:
 
 
 STALE_TURNS = 30  # an open thread not restated for this long is suggested for closing (PHASE-13 Q6)
+# By how long a thread is meant to last (PHASE-51 S3, Q4): a scene's business after 10 turns, a storyline's after 30, a
+# lasting one never; a thread with no horizon (an older generation's) keeps STALE_TURNS.
+HORIZON_TURNS: dict[str, int | None] = {"scene": 10, "arc": 30, "lasting": None}
 
 
 def last_said(th: dict[str, Any]) -> int | None:
@@ -1154,11 +1160,18 @@ def last_said(th: dict[str, Any]) -> int | None:
     return max((x for x in seen if x is not None), default=None)
 
 
+def stale_after(th: dict[str, Any]) -> int | None:
+    """The turns a thread may go unsaid before it is stale: by its horizon (PHASE-51 Q4), else STALE_TURNS; None never."""
+    horizon = th.get("horizon")
+    return HORIZON_TURNS[horizon] if horizon in HORIZON_TURNS else STALE_TURNS
+
+
 def stale(th: dict[str, Any], last_turn: int | None) -> bool:
-    """An open thread not said again for more than STALE_TURNS: the Inspector suggests closing it (PHASE-13 Q6), and
-    the author's note leaves it out (PHASE-50 amendment 3)."""
-    latest = last_said(th)
-    return th["status"] == "open" and last_turn is not None and latest is not None and latest < last_turn - STALE_TURNS
+    """An open thread not said again for longer than its horizon allows (`stale_after`): the Inspector suggests closing
+    it (PHASE-13 Q6), and the author's note and the panel's memory leave it out (PHASE-50 amendment 3, PHASE-51 S3)."""
+    latest, turns = last_said(th), stale_after(th)
+    return (th["status"] == "open" and turns is not None and last_turn is not None and latest is not None
+            and latest < last_turn - turns)
 
 
 def _act(kind: str, item: Any, extra: str | None = None) -> str:
@@ -1203,7 +1216,7 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
     if last_turn is not None:
         for th in view.get("threads", []):
             if stale(th, last_turn):
-                rows.append([_v(_t(lang, "at.stale").format(n=STALE_TURNS)),
+                rows.append([_v(_t(lang, "at.stale").format(n=stale_after(th) or STALE_TURNS)),
                              _v(_who_to(th) + f": {th.get('text') or ''}"), _v(last_said(th)),
                              _close(th)])
     for u in view.get("unmatched", []):

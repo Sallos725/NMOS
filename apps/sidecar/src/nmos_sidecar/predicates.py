@@ -311,6 +311,10 @@ def because(item: dict[str, Any]) -> str | None:
 
 
 SALIENCES = ("major", "minor")
+# How long a thread is meant to last (PHASE-51 S1), stored in `assertion.salience` for the predicates that open one
+# (S2): the scene or the day, a storyline over several scenes, or until the story ends it. Older rows have none.
+HORIZONS = ("scene", "arc", "lasting")
+THREAD_OPENERS = frozenset({"promised", "goal", "question", "threat", "owes"})
 
 
 def salience(item: dict[str, Any]) -> str | None:
@@ -320,6 +324,21 @@ def salience(item: dict[str, Any]) -> str | None:
         return None
     value = str(item.get("salience") or "").strip().lower()
     return value if value in SALIENCES else None
+
+
+def horizon(item: dict[str, Any]) -> str | None:
+    """`scene` / `arc` / `lasting` for a predicate that opens a thread (PHASE-51 S1), from the extractor's `horizon`;
+    None for anything else, or when missing or invalid."""
+    if item.get("predicate") not in THREAD_OPENERS:
+        return None
+    value = str(item.get("horizon") or "").strip().lower()
+    return value if value in HORIZONS else None
+
+
+def horizon_of(row: dict[str, Any]) -> str | None:
+    """A stored row's horizon: its `salience` when the predicate opens a thread and the word is one (PHASE-51 S2)."""
+    value = row.get("salience")
+    return value if row.get("predicate") in THREAD_OPENERS and value in HORIZONS else None
 
 
 KNOWLEDGE_SCOPES = ("public", "limited", "unknown")

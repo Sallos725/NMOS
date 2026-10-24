@@ -21,7 +21,7 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
-from .entities import norm
+from .entities import PERSONA, norm
 from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, lexically_related, memory_view, relevant_facts, thread_entry
 from . import overuse, quotes, scene, spans, statechange, summaries, variants, source_time
 from .ids import uuid7
@@ -1240,7 +1240,12 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             if c["host_logical_id"] not in in_context and str(c["id"]) not in seen:
                 found.append(c)
                 seen.add(str(c["id"]))
-        picked = quotes.pick(found, query, names, _last_position(conn, head, upto), first, rarity, met)
+        known = _quote_speakers(conn, [c["id"] for c in found], options.extractor_key, known_at)  # PHASE-45 S3
+        if known and resolution is not None:  # the speaker rule writes the persona's lines as "{{user}}"
+            me = next((e for e in resolution.entities() if e.get("persona") and e.get("name")), None)
+            if me is not None:
+                names = {norm(PERSONA): me["name"], **names}
+        picked = quotes.pick(found, query, names, _last_position(conn, head, upto), first, rarity, met, known)
         g.quotes = len(picked)
         g.ranked = [Excerpt(turn=q.turn if by_turn else q.position, speaker=q.speaker or "", text=q.text,
                             score=q.score, revision_id=q.revision_id, position=q.position, cut_ok=False, quote=True)
@@ -1624,6 +1629,25 @@ def _unextracted(conn: psycopg.Connection, head: UUID, ids: list[Any], extractor
                             AND x.created_at <= coalesce(%(at)s::timestamptz, now())
                             AND (x.discarded_at IS NULL OR x.discarded_at > coalesce(%(at)s::timestamptz, now())))
         """, {"head": head, "ids": ids, "key": extractor_key, "at": known_at}, prepare=False).fetchall()}
+
+
+def _quote_speakers(conn: psycopg.Connection, ids: list[Any], extractor_key: str | None,
+                    known_at: datetime | None = None) -> dict[str, str]:
+    """Normalized quoted words → the speaker an extraction of the generation in use named for them (PHASE-45 S3): live
+    then (with `known_at`, a replay: not written since, or discarded since). A line two extractions name differently
+    names nobody. Only extract-v17 writes speakers: with another generation in use there are none."""
+    if not ids or not extractor_key:
+        return {}
+    seen: dict[str, set[str]] = {}
+    for row in conn.execute(
+            "SELECT speakers FROM extraction WHERE extractor_key = %(key)s AND speakers IS NOT NULL"
+            " AND members && %(ids)s::uuid[] AND created_at <= coalesce(%(at)s::timestamptz, now())"
+            " AND (discarded_at IS NULL OR discarded_at > coalesce(%(at)s::timestamptz, now()))",
+            {"key": extractor_key, "ids": [str(i) for i in ids], "at": known_at}, prepare=False).fetchall():
+        for item in row["speakers"] or ():
+            if isinstance(item, dict) and item.get("q") and item.get("speaker"):
+                seen.setdefault(norm(str(item["q"])), set()).add(str(item["speaker"]))
+    return {k: next(iter(v)) for k, v in seen.items() if len(v) == 1}
 
 
 def _last_position(conn: psycopg.Connection, head: UUID, upto: int | None) -> int | None:

@@ -5,6 +5,17 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **The panel, rebuilt** (Phase 52). It opens on a hub of blocks (working, memory, needs a look, the author's note,
+  usage, settings, backup, other chats); a chat's memory reads as one document (now, open threads, people, so far,
+  secrets, changed from the setting), a person's sheet ends in a timeline (an overview bar and the changes as lines),
+  "working" says it in plain words, settings come in seven groups, and other chats are a list to search. Dark only, body
+  16 px. Closing a thread asks how it ended, offering only the endings of its kind.
+- **`extract-v17`, selectable, not the default** (Phases 45 and 51). An extractor generation that records how long a
+  thread is meant to last (this scene, a storyline, or lasting) and who says each quoted line of a turn. The Inspector,
+  the author's note and the panel's memory let a scene's business go after 10 turns and keep a lasting one; the quote
+  route names the speaker of a line its narration does not. Migration `0030`. Nothing changes until it is chosen.
+- **A thread's horizon decides when it needs a look** (Phase 51). Threads without one (every chat today) keep the
+  30-turn rule.
 - **A note for the author's note, made on request** (Phase 50). On a chat's page in the panel, **For the author's
   note** makes one text to paste into the chat's author's note, in English Markdown (names and forms of address as the
   chat writes them). It holds the parts picked: a **chronicle** of the events so far, how they went and how they ended

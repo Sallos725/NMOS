@@ -8,6 +8,54 @@ ADR 0067). Not approved for implementation. **Q1 answered (owner, 2026-10-13): (
 speakers go into `main` with the next extractor-generation change, and the re-extraction and its risk happen once.
 Merged as the record of the measurement, like PHASE-44.
 
+**Step 2 built, 2026-10-24** (branch `claude/extract-v17`, with Phase 51 in the same generation): `extract-v17` is
+selectable and not the default. It lists the TARGET turn's quoted lines (`[Q1] …`, up to 30, 80 characters each, the
+quote route's own `quotes_in`) and asks for `speakers` by number; "?" and unknown numbers are dropped, so a line whose
+speaker the turn does not show is not stored. Migration `0030` adds `extraction.speakers`; archives carry it (round-trip
+test). The quote route reads a stored speaker only where the line's own sentence names nobody, only from extractions of
+the generation in use (live at the request's time, so a replay reads what was known), and not when two extractions
+disagree; `{{user}}` is the persona. A question naming a speaker gets that speaker's other lines of the message after
+their line, within `QUOTE_CHARS`, the line as placed today kept whole (S4). With `extract-v16` in use nothing is stored
+and the route is unchanged (`tests/test_quote_speakers.py`); `extract-v15`'s and `extract-v16`'s prompts and generation
+keys are byte-identical to `main`'s before this step (checked against `origin/main`'s code). Steps 3–5 are paid and
+wait for the owner, with Q2 and Q3.
+
+**Q2 and Q3 answered, paid steps approved (owner, 2026-10-24):** Q2 Gemini 3.8 Flash for the live gate (comparable to
+step 3); Q3 `extract-v17` becomes the default when the live gate passes; step 3 here and PHASE-51's step 3 approved
+together, capped at $70, after acceptance 1's zero-call replay. **Raised to $90 (owner, 2026-10-24)** when the first
+group cost about $4.5 a copy against $3.3 on 2026-10-13 (more calls per turn), which projected step 3 to about $67.
+
+**Acceptance 1 met, 2026-10-24 (zero calls).** Every gate probe (bench 314, quotes 24) replayed under `packet-v19`
+with `extract-v16` in use. The replays ran on throwaway copies of the gate databases migrated to `0030`, so `main`'s
+code (`82081b9`) and this branch's read the same rows: three rounds each, with the eval embedder. By the majority:
+bench 300/314 on both, quotes 19/24 on both, none lost, none gained; mean tokens 2,041 and 2,040. Per round, both
+sides vary as the lexical route does (`main` 319/319/319, the branch 319/317/319: one irrelevant-question case of S2,
+in both its sets, failed in one round).
+
+**Step 3 started and stopped, 2026-10-24: $0 spent.** Every call was refused (403): the Vertex project's billing is
+disabled. The run waits for the owner.
+
+**Step 3 met its pass rule, 2026-10-25** (rerun on the owner's other Vertex key, same model, endpoint and prices).
+Private copies of the quotes and daily-play (S1) gate databases, each extracted three times per arm on Gemini 3.8 Flash
+(`extract-v16` against `extract-v17`), every probe replayed under `packet-v19` three rounds; a case passes a run by the
+majority of its rounds and an arm by the majority of its runs. Spend $59.41 (the cap was raised to $90 for steps 3 of
+both phases: about $4.5 a copy against $3.3 on 2026-10-13). Jobs that died on the first pass (a lane cap set too low
+for the second quotes group, and Vertex 429 storms) were requeued and extracted; every copy finished complete.
+
+| set | `extract-v16` runs | `extract-v17` runs | majority |
+|---|---|---|---|
+| quotes, 24 cases | 19 / 19 / 19 | 20 / 18 / 18 | 19 → 20 |
+| daily play (S1), 100 cases | 97 / 97 / 96 | 97 / 97 / 95 | 97 = 97 |
+
+- **By the majority over runs:** none lost; one gained, `q-first-01` (3 of 3 `extract-v17` runs, 0 of 3 `extract-v16`
+  runs), the case the 2026-10-13 measurement gained too.
+- **Single-run flips:** `q-first-03`, `q-first-16`, `q-said-56` and `q-turn-46` each failed in one `extract-v17` run
+  (all three rounds of that run), passing in the other two and in every `extract-v16` run; `q-turn-46` flipped the same
+  way on 2026-10-13. Extraction variance shows more on the quotes set under `extract-v17`.
+- **Speaker-labelled quote lines placed:** 36 → 380 over the runs and rounds; 6,693 speaker lines stored.
+- **The hand check of 20 stored speakers** (stop condition): every one names who says the line in its turn, from the
+  narration or the turn-taking; none is invented. The persona is written as `{{user}}` or by name; both resolve.
+
 **Step 3 run before approval, 2026-10-13: its pass rule is met, narrowly.** The owner approved the paid copy
 measurement (plan A, about $50; spent $49.64). It ran on the local experiment branch: `extract-v16` against
 `extract-v16` plus speakers. Each arm was extracted three times on Gemini 3.8 Flash, then each run was replayed under

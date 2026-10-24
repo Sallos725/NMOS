@@ -100,8 +100,9 @@ class Settings:
 
     def __post_init__(self) -> None:
         # A misspelt extractor would be a generation of its own (a full re-extraction): refused at startup.
-        if self.extract_compiler not in ("", "extract-v15", "extract-v16"):
-            raise ValueError(f"NMOS_EXTRACT_COMPILER must be empty, extract-v15 or extract-v16, not {self.extract_compiler!r}")
+        if self.extract_compiler not in ("", "extract-v15", "extract-v16", "extract-v17"):
+            raise ValueError("NMOS_EXTRACT_COMPILER must be empty, extract-v15, extract-v16 or extract-v17,"
+                             f" not {self.extract_compiler!r}")
         # A cap under one would embed nothing and mark every embed job done (ADR 0062): refused at startup.
         if self.embed_max_chunks < 1:
             raise ValueError(f"NMOS_EMBED_MAX_CHUNKS must be at least 1, not {self.embed_max_chunks}")

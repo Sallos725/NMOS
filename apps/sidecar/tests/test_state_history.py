@@ -292,7 +292,8 @@ def test_an_archive_made_at_schema_0028_restores_into_0029(migrated, database_ur
     assert json.loads(zipfile.ZipFile(old).read("manifest.json"))["schema"]["level"] == "0028_reveal_checks.sql"
     target = database_url_factory()
     done = archive.restore_file(target, str(old))
-    assert done.migrated == ["0029_state_dismiss.sql"]
+    from test_upgrade import LATEST
+    assert done.migrated[0] == "0029_state_dismiss.sql" and done.migrated[-1] == LATEST  # and whatever came after
     with psycopg.connect(target) as conn, psycopg.connect(migrated) as source:
         mine = conn.execute("SELECT kind, target FROM owner_repair ORDER BY id").fetchall()
         assert mine and mine == source.execute("SELECT kind, target FROM owner_repair ORDER BY id").fetchall()
