@@ -288,8 +288,9 @@ Done when:
   (`docs/perf/phase46-related-fill.md`): `packet-v1` 273, `packet-v18` 315, every category equal or better except
   `irrelevant` (20 → 16, the budget fill). `packet-v19` (Phase 46) gives 319 with no category worse, and the owner made
   it the default on 2026-10-13: met.
-- upgrades: met; fixtures from `v0.1.0-beta.7`, `.16`, `.21`, `v0.2.0`, `v0.3.0` and `v0.4.0` pass to the latest
-  migration (0032; the `v0.4.0` fixture applies 0030–0032). A `v0.5.0` fixture follows its tag.
+- upgrades: met; fixtures from `v0.1.0-beta.7`, `.16`, `.21`, `v0.2.0`, `v0.3.0`, `v0.4.0` and `v0.5.0` pass to the
+  latest migration (0032; the `v0.4.0` fixture applies 0030–0032). The `v0.5.0` fixture applies nothing today and is
+  checked by the first migration after it.
 - two quiet weeks: **started 2026-10-13 14:47 KST** on the 1.0 candidate `main` at `6d3f2f7`, earliest end
   2026-10-27. The owner counts them on the trial install (6113), where the owner has played every day since 2026-10-08;
   production (6003) had no request after 2026-10-02 (owner, 2026-10-13, option a). It runs with the build's defaults

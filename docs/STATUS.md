@@ -1,11 +1,19 @@
 # NMOS Status
 
-## Release v0.5.0 — prepared 2026-10-25, the tag awaits the owner
+## Release v0.5.0 — tagged 2026-10-25
 
-R8's contents are on `main` (#315–#319); the release PR sets the version to 0.5.0, rebuilds the plugin and writes the
-changelog's upgrade notes and limits. Defaults: `packet-v19`, `extract-v16` (`extract-v17` selectable), `clean-v3`;
-migrations through `0032`. Nothing is tagged or published until the owner says so, and production (6003) is not
-updated without asking. All pre-1.0 releases are GitHub pre-releases.
+R8's contents are on `main` (#315–#319); the release PR (#320) set the version to 0.5.0, rebuilt the plugin and wrote
+the changelog's upgrade notes and limits. Defaults: `packet-v19`, `extract-v16` (`extract-v17` selectable), `clean-v3`;
+migrations through `0032`. Annotated tag `v0.5.0` points to `fa95e74` (#321). Production (6003) is not updated
+without asking. All pre-1.0 releases are GitHub pre-releases.
+
+The first [release run](https://github.com/Sallos725/NMOS/actions/runs/40150816472), on the tag at `89b9af6` (#320),
+passed CI and the four bundles and then stopped at `tools/check_release.py`: this file's schema row still ended at
+0029. Nothing was published. #321 corrected the row, and with the owner's approval the tag was moved to its merge.
+The second [release run](https://github.com/Sallos725/NMOS/actions/runs/40153329160) passed and published the
+[pre-release](https://github.com/Sallos725/NMOS/releases/tag/v0.5.0) with 6 assets: the plugin, the compose file and
+the four portable bundles (Linux x64/arm64, macOS arm64, Windows x64). No failed run is erased.
+`fixtures/upgrade/v0.5.0.sql` is a database this release's own sidecar and worker wrote (stub models, synthetic chats).
 
 The trial install (6113) runs `candidate-050-421dc0b` since 2026-10-25 (schema 0029 → 0032, extractor key unchanged,
 backup kept); its `apps/` and `adapters/` trees equal the merged `main`'s, so the release differs from it only in the

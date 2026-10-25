@@ -60,6 +60,8 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
         assert written == "0028_reveal_checks.sql"
     if dump.stem == "v0.4.0":
         assert written == "0029_state_dismiss.sql"
+    if dump.stem == "v0.5.0":
+        assert written == "0032_replies_only.sql"
     applied = apply_migrations(database_url)
     # A release at the latest schema has nothing to apply; it still has to start and go on below.
     assert (applied and applied[-1] == LATEST) if written < LATEST else applied == []
