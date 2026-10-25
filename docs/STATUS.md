@@ -66,8 +66,9 @@ approved for implementation by this decision and still follows its own spec, pai
 quiet weeks are counted again on `0.5.0`'s build, and the same build is tagged `1.0.0` if they and the gate's other
 conditions hold. The count on the candidate `6d3f2f7` (from 2026-10-13) is kept as a record. [Roadmap R8](ROADMAP-1.0.md).
 Done so far: Phase 50 (#315) and Phase 52 (#316) merged 2026-10-24. `extract-v17` (Phases 45 and 51): step 2 built
-2026-10-24 on `claude/extract-v17`, selectable and not the default, migration `0030`; its paid measurements and live
-gate wait for the owner. Left: Phase 47, Phase 48 (on `extract-v17`), then the release.
+2026-10-24 on `claude/extract-v17`, selectable and not the default, migration `0030`; step 3 of both measured and
+passed 2026-10-25 ($75.08); the live gate and making it the default come after 1.0.0 (owner, 2026-10-25), so `0.5.0`
+ships it selectable. Left: Phase 47, Phase 48 (on `extract-v17`), then the release.
 
 **Phase 50 — notes for the author's note (a chronicle, what changed from the setting, address and standing), made on
 request for the owner to paste: approved 2026-10-23 (Q1–Q5 as recommended; AGE-88), high risk (canon, secrets).** An

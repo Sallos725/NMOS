@@ -23,6 +23,9 @@ Inspector's threads and the memory screen name the horizon. A parity test runs 2
 through the old and the new rule: the same. `extract-v17` asks for `horizon` beside `outcome` and `because` (S4) and
 stores it only under that compiler; `extract-v16`'s prompt and key are unchanged. Step 3 (paid) waits for the owner.
 
+**Step 4 (the generation's live gate and default) deferred with PHASE-45's (owner, 2026-10-25):** `extract-v17` ships
+selectable in `0.5.0`; without it, no thread carries a horizon and the 30-turn rule holds, as on `main` before.
+
 **Step 3 measured, 2026-10-25** (paid, $15.67; with PHASE-45's step 3 under the owner's $90 cap). A test-install copy
 reduced to its three longest chats (76, 60 and 49 turns), extracted three times under `extract-v17` on Gemini 3.8
 Flash (one turn of 185 in one run failed). Numbers only:
