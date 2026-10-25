@@ -3,7 +3,32 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
-## Unreleased
+## 0.5.0
+
+R8 (`docs/ROADMAP-1.0.md`): the owner's features pulled in before 1.0 — the rebuilt panel (Phase 52), notes for the
+author's note (Phase 50), "not a character" (Phase 47), "remember AI replies only" for recall (Phase 48 step 2) and
+`extract-v17` (Phases 45 and 51) as a selectable extractor. Prepared 2026-10-25; the owner authorizes the tag. Like
+every release before 1.0, it is a GitHub pre-release. The defaults are `packet-v19`, `extract-v16` and `clean-v3`;
+migrations run through `0032`.
+
+### Upgrading from 0.4.0
+
+Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS and back up its data folder).
+
+1. **Docker:** `docker compose pull && docker compose up -d`. **Bundle:** unpack the new version and start it; the
+   data folder is where 0.4.0 put it. At startup migrations `0030`–`0032` add a column for `extract-v17`'s speakers
+   and widen a check for its horizons, add the "not a character" repair kind, and add the per-chat "replies only"
+   flag. Nothing is extracted or embedded again, so the update itself makes no provider calls.
+2. **Replace the plugin and the sidecar together**, then reload PocketRisu. The panel opens on the new hub; today's
+   Inspector pages are under each screen's **details**. An older plugin with this sidecar keeps working with the
+   restyled Inspector pages.
+3. **Memory:** the default packet is `packet-v19` (since 2026-10-13, below): a question that relates to nothing in
+   memory no longer gets extra fact slots from the budget. `NMOS_PACKET_POLICY=packet-v18` keeps 0.4.0's packet.
+4. **`extract-v17` only if chosen:** `NMOS_EXTRACT_COMPILER=extract-v17` selects it, and choosing it re-extracts
+   every chat once (model calls). Its copy measurements passed; its full live gate has not run.
+5. **"Remember AI replies only"** affects recall only; facts and summaries are still made from both sides (K51).
+
+### Changes
 
 - **Remember AI replies only** (Phase 48, recall). For a chat where the AI writes your character's words and actions
   too, a toggle in the chat's settings ("AI 답장만 기억") leaves your own messages out of recall: none of them is an
@@ -47,10 +72,17 @@ later, is `docs/KNOWN-ISSUES.md`.
   rules and keeps hand-written rules under Advanced. NMOS finds a status bar by its shape
   (`[… key=value | key: value …]`, at least three fields) in a chat's last replies and offers it; tracking it binds the key
   set to the card, beside the card's other rules, so later chats of that card are read too. Pinned keys are told every
-  time. Nothing is tracked until it is confirmed.
-- **The current status reaches the model even when the preset strips status bars** (Phase 43 step 2). Under the default
-  `packet-v18`, the status block holds the date, time and place, the keys that change often, and whatever the last status
-  window changed, told as changes (`HP 150 / 200 (−30)`, `+횃불 · −열쇠`); an inventory is shown whole only when asked. It
+  time. Nothing is tracked until it is confirmed. An archive now carries the pinned keys too (Phase 43 step 5; before,
+  a restored install kept the tracked status window and lost its pins).
+- **Small talk keeps the configured limits: `packet-v19`, the default** (Phase 46, ADR 0075; the owner, 2026-10-13).
+  A message that ends in a question mark, names no one and shares no fact's or claim's words gets no extra fact or
+  claim slots from the budget, so "오늘 저녁은 뭐 해 먹을까?" no longer pulls in 30 facts about the scene's
+  characters. Every other message is compiled as under `packet-v18`.
+- **A character's possession lane draws what is held only.** "No longer has it" ends the lane, and an item that was
+  only ever denied has no lane (display only).
+- **The current status reaches the model even when the preset strips status bars** (Phase 43 step 2). Under `packet-v18`
+  and the default `packet-v19`, the status block holds the date, time and place, the keys that change often, and
+  whatever the last status window changed, told as changes (`HP 150 / 200 (−30)`, `+횃불 · −열쇠`); an inventory is shown whole only when asked. It
   is placed even when the last reply is in the prompt, since many presets remove its status bar. On the trial install the
   current date reached every replayed request of a card where it had reached none, in less space than the whole status.
 - **The Korean-particle keyword supplement skips words it cannot help** (Phase 41 amendment 2). A keyword of four
@@ -70,6 +102,25 @@ later, is `docs/KNOWN-ISSUES.md`.
   generation do not update; memory then kept a reply, status bar included, the model no longer saw. It now reads
   `data`, the text PocketRisu shows and sends. Replies already rewritten are sent again once, which re-extracts them,
   and the progress display says " · N script-edited replies picked up" when that happens.
+
+### Known limitations and verification
+
+- **Executed recall checks:** the replay gate scored 300/314 recall probes and 19/24 exact-quote probes on the merged
+  code, three rounds per snapshot, the same before and after Phases 47 and 48 with nothing turned on. With every replay
+  set to "replies only", nothing was lost (quotes 19 → 20). These measure source-linked memory packets, not final
+  response quality.
+- **`extract-v17` is not the default.** On copies of the trial install it kept every quote and gained one (19 → 20,
+  S1 97 = 97, nothing lost) and labeled thread horizons stably (60 of 65 matches); the full live gate it needs to become
+  the default was not run (the owner, 2026-10-25), and it is planned after 1.0.0. Choosing it re-extracts with model
+  calls. Without it, quote lines still rarely name their speaker (K47).
+- **"Remember AI replies only" is recall only** (K51): facts and summaries are still made from both sides until a real
+  full-impersonation chat can be measured (PHASE-48 step 3).
+- **Notes for the author's note** call the extraction model once for the chronicle; the other parts call none. NMOS
+  does not re-read a pasted note as the setting, so it does not check the note against later turns either.
+- **Manual evidence:** the owner checked the release candidate (`421dc0b`, this release's code before the version
+  change) on the trial install's PocketRisu, panel included. Final host-response quality and the 1.0 gate's two quiet weeks, counted
+  again on this build (`docs/ROADMAP-1.0.md`), are not certified by these tests.
+- The maintained full list is `docs/KNOWN-ISSUES.md`; 1.0's remaining gates are in `docs/ROADMAP-1.0.md`.
 
 ## 0.4.0
 
