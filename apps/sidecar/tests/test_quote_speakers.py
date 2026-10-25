@@ -79,12 +79,13 @@ def test_speakers_are_read_from_the_generation_in_use_and_a_disagreement_names_n
         assert retrieval._quote_speakers(conn, ids, "extract-other") == {}  # another generation in use: none
         assert retrieval._quote_speakers(conn, ids, None) == {}
         # a second live extraction of the turn names one line's speaker differently
-        conn.execute("INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
+        second = conn.execute("INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
                      " raw, coverage, members, speakers) SELECT gen_random_uuid(), source_revision_id, window_hash || 'b',"
                      " compiler_version, extractor_key, model, raw, coverage, members,"
                      " jsonb_build_array(jsonb_build_object('q', '알았어, 늦지 마.', 'speaker', '하나'))"
-                     " FROM extraction WHERE id = %s", (x["id"],))
+                     " FROM extraction WHERE id = %s RETURNING id", (x["id"],)).fetchone()["id"]
         got = retrieval._quote_speakers(conn, ids, x["extractor_key"])
         assert norm("알았어, 늦지 마.") not in got and got[norm("평생 이 빚은 갚을게.")] == "하나"
-        conn.execute("UPDATE extraction SET discarded_at = now() WHERE window_hash LIKE '%%b'")
+        # by id: the first row's window hash is hex and may itself end in "b"
+        conn.execute("UPDATE extraction SET discarded_at = now() WHERE id = %s", (second,))
         assert retrieval._quote_speakers(conn, ids, x["extractor_key"])[norm("알았어, 늦지 마.")] == "카이토"
