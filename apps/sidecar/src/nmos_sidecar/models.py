@@ -176,6 +176,11 @@ class MemoryModeRequest(BaseModel):
     narrator: Text | None = Field(default=None, max_length=60)
 
 
+class RepliesOnlyRequest(BaseModel):
+    """Remember this chat's AI replies only (PHASE-48 S1): for full impersonation, where the user's message directs."""
+    on: bool
+
+
 class RepairRequest(BaseModel):
     """The owner repairs one item of a conversation's memory (ADR 0044): the id the Inspector shows for a thread, a
     secret or a fact (for a name split, a name of the entity), what to do, and what the kind needs: a close's outcome,

@@ -260,6 +260,7 @@ class RecallOptions:
     query_prefix: str = ""
     policy: str = DEFAULT_POLICY  # packet compiler (ADR 0027)
     strict: bool = False  # this chat's memory mode (ADR 0035): withhold what only some of the scene know
+    replies_only: bool = False  # this chat remembers the AI's replies only (PHASE-48): no user message is a candidate
     narrator: str | None = None  # this chat is told in this character's first person (ADR 0035)
     summarize_key: str | None = None  # summaries of this generation in <Story> (packet-v8, ADR 0043); None: off
     canon_key: str | None = None  # canon facts of this generation (ADR 0047); None: off
@@ -290,7 +291,8 @@ class RecallOptions:
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
             "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key",
-            "lexical_keywords", "keyword_particles", "state_changes", "state_pins", "source_clock", "first_cue", "history_marks", "name_variants", "excerpt_anchor", "rest_after")
+            "lexical_keywords", "keyword_particles", "state_changes", "state_pins", "source_clock", "first_cue", "history_marks", "name_variants", "excerpt_anchor", "rest_after",
+            "replies_only")
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
@@ -364,7 +366,7 @@ _RESTORED = ("enable_seqscan", "enable_indexscan", "statement_timeout")  # the t
 
 def _lexical(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, cut: int,
              threshold: float, timeout_ms: int, upto: int | None = None,
-             ids: list[UUID] | None = None) -> tuple[list[dict[str, Any]], str]:
+             ids: list[UUID] | None = None, replies: bool = False) -> tuple[list[dict[str, Any]], str]:
     """Lexical candidates over the normalized projection (#9) and the trace mode: "on", "too_broad"
     (more than BROAD_LIMIT matches) or "timeout". Recall abstains from lexical candidates in the last two."""
     try:
@@ -375,7 +377,8 @@ def _lexical(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str,
                       "enable_indexscan": "off", "statement_timeout": str(timeout_ms)}
             _apply(conn, wanted)
             matches = _lexical_matches(conn, head, query, cut, BROAD_LIMIT + 1, upto, ids)
-            rows = _lexical_candidates(conn, head, matches, query, previous_ai) if len(matches) <= BROAD_LIMIT else None
+            rows = (_lexical_candidates(conn, head, matches, query, previous_ai, replies) if len(matches) <= BROAD_LIMIT
+                    else None)
             _apply(conn, dict(previous))
             return (rows, "on") if rows is not None else ([], "too_broad")
     except psycopg.errors.QueryCanceled:
@@ -394,6 +397,9 @@ def _apply(conn: psycopg.Connection, settings: dict[str, str]) -> None:
 # an edit or a deletion makes a new head commit (D4), until the next autoanalyze. It could also plan a known head
 # through revision_text's primary key, checking every revision. `hit` has no other condition (the normalizer is checked
 # after it), so the trigram index is its only way in with sequential scans off.
+# PHASE-48 D3: a chat remembering the AI's replies only has no user message among its candidates, on any route. With
+# the flag off the clause is true for every row, so every route returns what it did.
+REPLIES_ONLY = "AND NOT (%(replies)s AND coalesce(sr.metadata->>'role', '') = 'user')"
 _MATCHES_HEAD = """
     SELECT sr.id
     FROM hit
@@ -471,7 +477,7 @@ def _lexical_matches(conn: psycopg.Connection, head: UUID, query: str, cut: int,
 
 
 def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], query: str,
-                        previous_ai: str) -> list[dict[str, Any]]:
+                        previous_ai: str, replies: bool = False) -> list[dict[str, Any]]:
     """Score the matched revisions: the user's message, with the previous AI turn as a tiebreak."""
     if not ids:
         return []
@@ -486,17 +492,18 @@ def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], q
         JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
         CROSS JOIN LATERAL (SELECT word_similarity(%(q)s, rt.clean_content) AS user_score) s
         WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
+        """ + REPLIES_ONLY + """
         ORDER BY score DESC, am.position DESC
         LIMIT %(limit)s
         """,
         {"head": head, "ids": ids, "q": query, "ai": previous_ai, "w": AI_TIEBREAK_WEIGHT, "limit": CANDIDATE_LIMIT,
-         "norm": NORMALIZER_VERSION},
+         "norm": NORMALIZER_VERSION, "replies": replies},
     ).fetchall()
 
 
 def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut: int, timeout_ms: int,
                      upto: int | None = None, *, particles: bool = False,
-                     head_ids: list[UUID] | None = None) -> tuple[list[dict[str, Any]], str]:
+                     head_ids: list[UUID] | None = None, replies: bool = False) -> tuple[list[dict[str, Any]], str]:
     """The keyword route (ADR 0052): messages holding the message's keywords, scored by the keywords' rarity
     (log of messages over matches, summed), best first, and the trace mode: "on", "none" (no keyword), "too_broad"
     (every keyword dropped as too common) or "timeout". All keywords share one budget of `timeout_ms`.
@@ -628,7 +635,8 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                     JOIN source_object so ON so.id = sr.source_object_id
                     JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
                     WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
-                    """, {"head": head, "ids": list(weights.keys() | additions.keys()), "norm": NORMALIZER_VERSION}).fetchall()
+                    """ + REPLIES_ONLY, {"head": head, "ids": list(weights.keys() | additions.keys()),
+                                         "norm": NORMALIZER_VERSION, "replies": replies}).fetchall()
             _apply(conn, dict(previous))
     except psycopg.errors.QueryCanceled:
         return [], "timeout"
@@ -969,13 +977,14 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         cut = _cut(conn, head, upto)
         head_ids = _head_ids(conn, head, cut, upto)  # ADR 0052 amendment 1: a short head is looked up by its revisions
         lexical, g.lexical_note = _lexical(conn, head, query, previous_ai, cut, options.threshold,
-                                           options.lexical_timeout_ms, upto, head_ids)
+                                           options.lexical_timeout_ms, upto, head_ids, options.replies_only)
         g.timings["lexical"] = round((time.perf_counter() - started) * 1000, 2)
         if options.lexical_keywords:
             t0 = time.perf_counter()
             keyword, g.keyword_note = _keyword_lexical(conn, head, keywords(query), cut, options.lexical_timeout_ms,
                                                        upto, particles=options.keyword_particles
-                                                       and options.policy in KEYWORD_PARTICLE_POLICIES, head_ids=head_ids)
+                                                       and options.policy in KEYWORD_PARTICLE_POLICIES, head_ids=head_ids,
+                                                       replies=options.replies_only)
             g.timings["keywords"] = round((time.perf_counter() - t0) * 1000, 2)
     # State, facts, threads, the scene and the summaries are read before the excerpts are chosen: none of them depends
     # on the candidates, and the query embedding answers meanwhile (ADR 0061). The excerpts follow, then what the
@@ -1133,7 +1142,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             g.timings["embed"] = pending.call_ms  # the embedder's own time, mostly spent during the reads
             t0 = time.perf_counter()
             vector = vector_candidates(conn, head, qvec, options.embed_projection, cut, CANDIDATE_LIMIT,
-                                       upto, None if vectors_now else known_at)
+                                       upto, None if vectors_now else known_at, options.replies_only)
             g.timings["vector"] = round((time.perf_counter() - t0) * 1000, 2)
             g.vector_note = "on"
         except (LLMError, ValueError) as exc:  # fail open to lexical-only
@@ -1222,18 +1231,20 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         found = [c for c in g.candidates if c["host_logical_id"] not in in_context][:quotes.CANDIDATES]
         extra: list[dict[str, Any]] = []
         if (named := quotes.named_turn(query)) is not None:
-            extra = _turn_messages(conn, head, named - quotes.TURN_SPAN, named + quotes.TURN_SPAN, upto, cut)
+            extra = _turn_messages(conn, head, named - quotes.TURN_SPAN, named + quotes.TURN_SPAN, upto, cut,
+                                   options.replies_only)
         met = None
         if first:  # how it started: the opening, and the turns where everyone the question names had appeared
             asked, others = quotes.named(query, names)
             met = _first_met(conn, head, [[k for k, d in names.items() if d == who] for who in asked | others], upto,
-                             cut)
+                             cut, options.replies_only)
             if met == 0:
                 met = None  # all there from the opening: no meeting to anchor on, the earliness bonus decides
-            extra = _turn_messages(conn, head, 0, quotes.TURN_SPAN, upto, cut)
+            extra = _turn_messages(conn, head, 0, quotes.TURN_SPAN, upto, cut, options.replies_only)
             if met is not None:
-                extra += _turn_messages(conn, head, met, met + quotes.TURN_SPAN, upto, cut)
-        searched, rarity, g.quote_note = _quote_messages(conn, head, quotes.query_words(query), upto, cut)
+                extra += _turn_messages(conn, head, met, met + quotes.TURN_SPAN, upto, cut, options.replies_only)
+        searched, rarity, g.quote_note = _quote_messages(conn, head, quotes.query_words(query), upto, cut,
+                                                         options.replies_only)
         seen = {str(c["id"]) for c in found}
         g.quote_only = {str(c["id"]) for c in extra + searched} - {str(c["id"]) for c in g.candidates}
         for c in extra + searched:
@@ -1460,7 +1471,7 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
 
 
 def _turn_messages(conn: psycopg.Connection, head: UUID, lo: int, hi: int, upto: int | None,
-                   cut: int) -> list[dict[str, Any]]:
+                   cut: int, replies: bool = False) -> list[dict[str, Any]]:
     """The messages of turns lo…hi on the head (PHASE-33 Q3), as candidates are shaped; none at or before the
     `allBefore` cut (invariant 7), as lexical and vector recall."""
     return conn.execute(
@@ -1476,14 +1487,15 @@ def _turn_messages(conn: psycopg.Connection, head: UUID, lo: int, hi: int, upto:
           AND sr.lifecycle = 'accepted'
           AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
           AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+        """ + REPLIES_ONLY + """
         ORDER BY am.position LIMIT 20
         """,
         {"head": head, "lo": lo, "hi": hi, "norm": NORMALIZER_VERSION, "cut": cut,
-         "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchall()
+         "upto": 2**31 - 1 if upto is None else upto, "replies": replies}, prepare=False).fetchall()
 
 
 def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto: int | None,
-               cut: int) -> int | None:
+               cut: int, replies: bool = False) -> int | None:
     """The turn by which every one of these characters (each a list of its normalized names) had been named in the
     chat: where they met. None when one of them never was, when there is nobody, or past the route's time slice."""
     keys = [k for k in keys if k]
@@ -1505,10 +1517,10 @@ def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto
                       AND sr.lifecycle = 'accepted'
                       AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
                       AND ({named})
-                    """).format(named=sql.SQL(" OR ").join(  # strpos, as the route's search (no case in Korean)
+                    """ + REPLIES_ONLY).format(named=sql.SQL(" OR ").join(  # strpos, as the route's search
                         sql.SQL("strpos(rt.clean_content, {}) > 0").format(sql.Literal(f)) for f in forms)),
                     {"head": head, "norm": NORMALIZER_VERSION, "cut": cut,
-                     "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchone()
+                     "upto": 2**31 - 1 if upto is None else upto, "replies": replies}, prepare=False).fetchone()
                 if row["t"] is None:
                     turns = []
                     break
@@ -1523,7 +1535,7 @@ _QUOTE_MARKS = ('"', "“", "「", "『")
 
 
 def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str], upto: int | None,
-                    cut: int) -> tuple[list[dict[str, Any]], dict[str, float], str]:
+                    cut: int, replies: bool = False) -> tuple[list[dict[str, Any]], dict[str, float], str]:
     """The quote route's own search (PHASE-33 Q2): messages on the head that hold a quote and the question's words,
     rarest words first, lexically (quotes prefer lexical to embeddings, original §78), and each word's rarity on the
     head: ln(1 + N/df) / ln(1 + N), 1 for a word one message holds, 0 for one none does. Abstains on its time slice.
@@ -1556,9 +1568,9 @@ def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str], upto
                   AND sr.lifecycle = 'accepted'
                   AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
                   AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
-                """).format(hits=sql.SQL(", ").join(holds(w) for w in words), quoted=quoted),
-                {"head": head, "norm": NORMALIZER_VERSION, "cut": cut, "upto": 2**31 - 1 if upto is None else upto},
-                prepare=False).fetchall()
+                """ + REPLIES_ONLY).format(hits=sql.SQL(", ").join(holds(w) for w in words), quoted=quoted),
+                {"head": head, "norm": NORMALIZER_VERSION, "cut": cut, "upto": 2**31 - 1 if upto is None else upto,
+                 "replies": replies}, prepare=False).fetchall()
             total = len(marks)
             df = [sum(1 for m in marks if m["hit"][i]) for i in range(len(words))]
             weight = [0.0 if not n else math.log(1 + total / n) / math.log(1 + max(total, 1)) for n in df]
@@ -1699,6 +1711,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     query = clean_text(request.query or "")
     previous_ai = clean_text(request.previous_ai or "")
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator,
+                                  replies_only=conv.replies_only,
                                   state_pins=dict(options.pins_by_card).get(snap["host_character_name"] or "", ()))
     in_context = set(request.in_context_ids)
     history = (overuse.recent(conn, conv.id, head, n=options.rest_after + 1)

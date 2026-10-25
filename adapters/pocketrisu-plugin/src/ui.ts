@@ -937,8 +937,35 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('div', { class: 'check' }, strict, el('span', { text: L('mode.strict') })),
       el('p', { class: 'sub', text: L('mode.strict_sub') }),
       el('div', { class: 'row' }, field(L('mode.narrator'), narrator)), el('p', { class: 'sub', text: L('mode.narrator_sub') }),
-      el('div', { class: 'btns' }, save), msg);
+      el('div', { class: 'btns' }, save), msg, ...await repliesOnly(conversation));
     modeCard.style.display = '';
+  }
+  /** "Remember AI replies only" (PHASE-48 S1, step 2): set at once, nothing queued, and undone at once; none on an
+   * older sidecar. */
+  async function repliesOnly(conversation: string): Promise<Node[]> {
+    let on: boolean;
+    try {
+      on = (await deps.api<{ on: boolean }>('GET', `/v1/conversations/${conversation}/replies-only`, undefined, 15_000)).on;
+    } catch {
+      return [];
+    }
+    const box = el('input', { type: 'checkbox', 'aria-label': L('ro.title') });
+    box.checked = on;
+    const msg = el('div', { class: 'msg' });
+    box.addEventListener('change', async () => {
+      box.disabled = true;
+      try {
+        const r = await deps.api<{ on: boolean }>('PUT', `/v1/conversations/${conversation}/replies-only`,
+          { on: box.checked }, 15_000);
+        box.checked = r.on;
+        say(msg, L(r.on ? 'ro.on' : 'ro.off'), 'ok');
+      } catch (error) {
+        box.checked = !box.checked;
+        say(msg, errorText(lang, error), 'err');
+      } finally { box.disabled = false; }
+    });
+    return [el('div', { class: 'check' }, box, el('span', { text: L('ro.title') })),
+      el('p', { class: 'sub', text: L('ro.sub') }), msg];
   }
   /** This chat's status windows (PHASE-43 S3): what was found by its shape, tracked on the owner's confirmation (Q1)
    *  for the card (Q2), with pins (Q3). Only this chat: every card's rules stay under Settings, folded. */
