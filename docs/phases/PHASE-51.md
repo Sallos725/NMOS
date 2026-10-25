@@ -16,6 +16,34 @@ since it was last said.
 - a change to what memory selects (the Inspector's "needs a look", the author's note, and, if Q3 says so, the
   packet's threads).
 
+**Step 2 built, 2026-10-24** (branch `claude/extract-v17`, with Phase 45): a thread takes its opening row's horizon
+(a restatement with another one changes it); `inspector.stale` is by horizon (`HORIZON_TURNS`: scene 10, arc 30,
+lasting never, none 30), and the Inspector's "needs a look", the author's note and the panel's memory follow it; the
+Inspector's threads and the memory screen name the horizon. A parity test runs 2,000 random threads without a horizon
+through the old and the new rule: the same. `extract-v17` asks for `horizon` beside `outcome` and `because` (S4) and
+stores it only under that compiler; `extract-v16`'s prompt and key are unchanged. Step 3 (paid) waits for the owner.
+
+**Step 4 (the generation's live gate and default) deferred with PHASE-45's (owner, 2026-10-25):** `extract-v17` ships
+selectable in `0.5.0`; without it, no thread carries a horizon and the 30-turn rule holds, as on `main` before.
+
+**Step 3 measured, 2026-10-25** (paid, $15.67; with PHASE-45's step 3 under the owner's $90 cap). A test-install copy
+reduced to its three longest chats (76, 60 and 49 turns), extracted three times under `extract-v17` on Gemini 3.8
+Flash (one turn of 185 in one run failed). Numbers only:
+- **Stability:** threads of run 1 matched in another run by maker, kind and text (`threads.similarity` ≥ 0.5) carried
+  the same horizon in 60 of 65 matches (92 %); 20 of the 23 found in all three runs had one horizon throughout. Runs
+  differ more in which threads they open at all (39–47 in the longest chat) than in how long one lasts.
+- **The longest chat's open threads** (16–20 a run): `scene` 5–7, `arc` 6–7, `lasting` 3–4, none 1–5 (an opening the
+  model left unlabeled keeps the 30-turn rule). Left out of the note: 8–11 by the 30-turn rule, 11–12 by horizon; every
+  `lasting` one stays, every `scene` one older than 10 turns goes. The other two chats: 3–6 open, 1–3 left out by
+  horizon against 2–5 by the old rule.
+- **The owner's labels** of a sample (17 open threads of the longest chat, 2026-10-25): no label disputed; on the one
+  the run disagreed about (a promise over by then), the owner's reading is `scene`, run 1's label.
+
+**Amendment 1 (2026-10-24): a migration after all.** S2 and Q2 (a) assumed `assertion.salience` takes the horizon
+without a migration; migration `0016` limits it to `major`/`minor` by a check. Migration `0030`, which Phase 45 needs
+anyway for `extraction.speakers`, widens the check to the horizon words. No new column, so Q2's choice stands; the
+restore rule is the one of any migration (an archive of `0030` is refused by an older build as newer).
+
 ## Why
 
 1. **Every thread weighs the same.** `salience` (`major`/`minor`) is asked for `event` only (ADR 0020, ADR 0024);

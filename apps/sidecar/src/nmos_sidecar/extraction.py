@@ -27,7 +27,7 @@ from .facts import _versions, fact_text, links_of, persona_of, served_assertions
 from . import canon
 from .repairs import repairs_of, splits_of
 from .predicates import (DERIVED, REGISTRY, alias_evidenced, because, fill_types, knowledge, outcome, participants,
-                         registry_prompt, salience, semantics, validate)
+                         horizon, registry_prompt, salience, semantics, validate)
 from .secrets import fold as fold_secrets, reveal_value
 from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity
 from .reconcile import Entry, RevKey, turn_layout
@@ -56,7 +56,10 @@ COMPILER_VERSION = "extract-v15"  # v2: known_by / hidden_from; v3: knowledge sc
 # listed role as listed (Q1, Q2), and `also_called` for a character written in full and by part of the name (Q4).
 # extract-v16 is the default since the owner's decision of 2026-10-04 (PHASE-28 step 3, ADR 0064 accepted); extract-v15
 # stays selectable, its prompt and generation key unchanged.
-COMPILERS = ("extract-v15", "extract-v16")
+# extract-v17 (PHASE-45 and PHASE-51, R8): extract-v16 with how long a thread is meant to last (`horizon`, stored in
+# `assertion.salience`) and who says each quoted line of the TARGET turn (`speakers`, stored in `extraction.speakers`).
+# Selectable, not the default until its live gate passes (PHASE-45 S5).
+COMPILERS = ("extract-v15", "extract-v16", "extract-v17")
 DEFAULT_COMPILER = "extract-v16"
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
@@ -333,11 +336,47 @@ PAIRS_RULE = ALIAS_PARTS[_PAIRS_AT:_GENERAL_AT]  # in the user prompt, with NAME
 _ROLE_EXAMPLE = '  `role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").\n'  # the role rule follows it
 SYSTEM_V16 = SYSTEM_PROMPT.replace(V15_ALIAS, ALIAS_RULE, 1).replace(_ANSWER_END, ANSWER_ROLES, 1)
 SYSTEM_V16_ROLES = SYSTEM_V16.replace(_ROLE_EXAMPLE, _ROLE_EXAMPLE + ROLE_ENDINGS, 1)  # when CURRENT ROLES are listed
-PROMPTS = {"extract-v15": SYSTEM_PROMPT, "extract-v16": SYSTEM_V16_ROLES}  # the full form, which the generation names
+# extract-v17 (PHASE-51 S1, S4): the horizon of a thread, in the same item as `outcome` and `because`; extract-v16's own
+# prompt is unchanged (a generation's prompt never changes: it would be another generation).
+HORIZON_RULE = """- `horizon`, for `promised`, `goal`, `question`, `threat` and `owes` only: how long the business is meant
+  to last, as the TARGET turn shows it. "scene" when it is meant to end within the scene or the day (meeting at the
+  café this afternoon, a question about what is in front of them); "arc" for a storyline over several scenes
+  (finding the archive, winning next week's match); "lasting" when it stays open until the story ends it (a debt
+  for life, a vow, a lifelong aim). Judge by how long it is meant to last, not by how much it matters.
+"""
+_BECAUSE_AT = "- `because`, for `event`, `feels_toward`,"
+_SALIENCE_ANSWER = '"salience": "major|minor (event only)",'
+_HORIZON_ANSWER = _SALIENCE_ANSWER + '\n"horizon": "scene|arc|lasting (promised, goal, question, threat, owes only)",'
+# PHASE-45 S1: the TARGET turn's quoted lines are listed in the user prompt (QUOTED LINES, Q1…), and the answer names a
+# speaker per number; the rule is repeated there, so it is fingerprinted with the generation (`extractor`).
+QUOTES_LISTED = 30  # quoted lines listed per turn, in order
+QUOTE_SHOWN = 80  # characters of each listed line
+SPEAKER_RULE = ("Before answering, name who says each QUOTED LINE (Q1…): in `speakers`, {\"Q1\": \"<name>\"}, the name"
+                " as the story writes it, read from the narration and the turn-taking of the exchange; \"?\" when"
+                " the TARGET does not show who. A line the user's character says is \"{{user}}\". Never guess.")
+_SPEAKERS_ANSWER = ',\n"speakers": {{"Q1": "name or ?"}}'
+_PAIRS_END = '"same_names": [{{"pair": "N1", "evidence": "..."}}]}}'
+
+
+def _v17(prompt: str) -> str:
+    """extract-v16's prompt with the horizon rule and answer, and the speakers answer (PHASE-45 S1, PHASE-51 S4)."""
+    assert prompt.count(_BECAUSE_AT) == 1 and prompt.count(_SALIENCE_ANSWER) == 1 and prompt.count(_PAIRS_END) == 1, \
+        "a v16 rule's place moved"
+    return (prompt.replace(_BECAUSE_AT, HORIZON_RULE + _BECAUSE_AT, 1).replace(_SALIENCE_ANSWER, _HORIZON_ANSWER, 1)
+            .replace(_PAIRS_END, _PAIRS_END[:-2] + _SPEAKERS_ANSWER + "}}", 1))
+
+
+SYSTEM_V17 = _v17(SYSTEM_V16)
+SYSTEM_V17_ROLES = _v17(SYSTEM_V16_ROLES)
+PROMPTS = {"extract-v15": SYSTEM_PROMPT, "extract-v16": SYSTEM_V16_ROLES,
+           "extract-v17": SYSTEM_V17_ROLES}  # the full form, which the generation names
 assert all(x in SYSTEM_V16_ROLES for x in (ROLE_ENDINGS, ALIAS_RULE, ANSWER_ROLES)), "a v16 rule's place moved"
 assert ROLE_ENDINGS not in SYSTEM_V16 and ALIAS_CHECK not in SYSTEM_V16_ROLES and PAIRS_RULE not in SYSTEM_V16_ROLES
-ROLES = frozenset({"extract-v16"})  # the compilers that list CURRENT ROLES
-PARTS_APART = frozenset({"extract-v16"})  # the compilers whose alias of a name and its part needs the part on its own
+assert HORIZON_RULE not in SYSTEM_V16_ROLES and "speakers" not in SYSTEM_V16_ROLES
+ROLES = frozenset({"extract-v16", "extract-v17"})  # the compilers that list CURRENT ROLES
+PARTS_APART = frozenset({"extract-v16", "extract-v17"})  # the compilers whose alias of a name and its part needs the part on its own
+HORIZONS = frozenset({"extract-v17"})  # the compilers whose threads carry a horizon (PHASE-51)
+SPEAKERS = frozenset({"extract-v17"})  # the compilers that name each quoted line's speaker (PHASE-45)
 # The same compilers' rule that a known name the turn does not write stands in only for a character the turn names
 # (`alias_evidenced`, ADR 0064 item 2): not in the prompt, so its own part of the generation names it.
 ALIASES_PRESENT = ("a known name stands in only for a ?-description or a character the turn writes by another name"
@@ -354,7 +393,7 @@ def prompt_of(compiler: str, roles: bool = True) -> str:
     upgrade by renaming it); the settings only select a compiler of PROMPTS (`Settings.__post_init__`). extract-v16's
     leaves the role-ending rules out when no CURRENT ROLE is listed (`roles` false)."""
     if compiler in ROLES and not roles:
-        return SYSTEM_V16
+        return SYSTEM_V17 if compiler == "extract-v17" else SYSTEM_V16
     return PROMPTS.get(compiler, SYSTEM_PROMPT)
 
 
@@ -864,7 +903,33 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
         lines += ["", ROLE_TARGET_CHECK, ROLE_COMPLETION_CHECK]
     if pairs and compiler in PARTS_APART:  # the NAME PAIRS answer and the alias check only with NAME PAIRS (focused v16)
         lines += ["", "Rules for NAME PAIRS:\n" + PAIRS_RULE, "", ALIAS_CHECK]
+    if compiler in SPEAKERS and (quoted := target_quotes(ctx)):  # PHASE-45 S1
+        lines += ["", "QUOTED LINES of the TARGET turn:"]
+        lines += [f"[Q{i}] \"{q[:QUOTE_SHOWN]}{'…' if len(q) > QUOTE_SHOWN else ''}\"" for i, q in enumerate(quoted, 1)]
+        lines += [SPEAKER_RULE]
     return "\n".join(lines)
+
+
+def target_quotes(ctx: dict[str, Any]) -> list[str]:
+    """The TARGET turn's quoted lines in order, as QUOTED LINES lists them (PHASE-45 S1): the quote route's own finder,
+    so a stored speaker names the very words the route places."""
+    from .quotes import quotes_in
+    return [q.words for r in ctx["members"] for q in quotes_in(r["content"][:TARGET_CHARS])][:QUOTES_LISTED]
+
+
+def speakers_of(answer: dict[str, Any], lines: list[str]) -> list[dict[str, str]] | None:
+    """The model's `speakers` (Q<n> → name) as [{"q": the quoted words, "speaker": name}] (PHASE-45 S2). An unknown
+    number, "?", an empty or overlong name gives nothing: a line whose speaker the turn does not show is left out."""
+    raw = answer.get("speakers")
+    if not lines or not isinstance(raw, dict):
+        return None
+    out = []
+    for k, v in raw.items():
+        n = str(k).strip().upper().lstrip("Q")
+        name = str(v or "").strip()
+        if n.isdigit() and 1 <= int(n) <= len(lines) and name and name != "?" and len(name) <= 60:
+            out.append({"q": lines[int(n) - 1], "speaker": name})
+    return out or None
 
 
 def coverage_of(ctx: dict[str, Any]) -> dict[str, int]:
@@ -1097,7 +1162,7 @@ Match the listed role's place and counterpart to the arrangement the TARGET actu
 Packing, a stripped bed or farewell gifts are preparations, not checkout. If the person is still staying in the room at the TARGET's end and the move is later, the guest role is still held: answer no, not yes. For yes, quote the completed departure or termination itself, not luggage, an emptied shelf or a farewell.
 Return only JSON: {"ended":"yes" or "no","evidence":"one verbatim passage from TARGET, at most 160 characters"}.
 The evidence must support your answer. For yes, quote what happens in TARGET that ends this exact arrangement. A reason, arrangement or plan in CONTEXT is not ending evidence. Never quote CONTEXT or join separate passages with an ellipsis. Do not add explanations or other fields."""
-CONFIRMS = frozenset({"extract-v16"})  # the compilers whose listed role endings are confirmed
+CONFIRMS = frozenset({"extract-v16", "extract-v17"})  # the compilers whose listed role endings are confirmed
 CONFIRM_TURNS = 2  # preceding turns the confirmation shows, each as the TARGET is shown (TARGET_CHARS per message)
 HELD = "role ending not confirmed"  # the reason prefix of a held ending (a pending row: no fact)
 
@@ -1373,7 +1438,7 @@ ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_t
 
 
 def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
-              shown: str | None = None, apart: bool = False) -> list[dict[str, Any]]:
+              shown: str | None = None, apart: bool = False, horizons: bool = False) -> list[dict[str, Any]]:
     """Model output → assertion rows (at most 40): missing entity types filled from the reply or the
     hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
     (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). `shown` (the turn worker, since extract-v14,
@@ -1422,7 +1487,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
                     "epistemic": "implied" if item.get("epistemic") == "implied" else "stated",
                     "confidence": confidence, "evidence": text("evidence"), "status": status, "reason": reason,
                     "knowledge": scope, "known_by": known_by, "hidden_from": hidden_from, "polarity": polarity,
-                    "modality": modality, "source": source, "asserted_by": asserted_by, "salience": salience(item),
+                    "modality": modality, "source": source, "asserted_by": asserted_by,
+                    "salience": salience(item) or (horizon(item) if horizons else None),  # PHASE-51 S2
                     "participants": participants(item) if status == "valid" else None,
                     "outcome": outcome(item), "because": because(item)})
     return out
@@ -1484,6 +1550,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
                                                            persona_of(ctx["target"].get("host_persona_name")))
         confirm_usage = summed(confirm_usage, alias_usage)
     usage = with_confirmations(usage, confirm_usage)
+    spoken = speakers_of(parsed, target_quotes(ctx)) if compiler in SPEAKERS and raw else None  # PHASE-45 S2
     with conn.transaction():
         # Still this worker's job? A rebuild or a re-extraction (PHASE-20 Q7) makes it obsolete, and a stale claim is
         # taken back after 10 minutes, while the model answers: a row built from the context loaded before must not
@@ -1495,7 +1562,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         extraction_id = uuid7()
         inserted = conn.execute(
             "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
-            " coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " coverage, members, hints, usage, speakers) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " ON CONFLICT DO NOTHING RETURNING id",
             (extraction_id, revision_id, window_hash, compiler, gen.key, gen.model,
              Jsonb({"reply": raw[:20000], **({"confirmations": confirmations} if confirmations else {}),
@@ -1504,13 +1571,14 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
              None if hints is None and not promises and not secrets and not threads and not roles
              else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets, "threads": threads,
                          **({"roles": roles} if roles else {}), **({"names": pairs} if pairs else {})}),
-             Jsonb(usage) if usage is not None else None),
+             Jsonb(usage) if usage is not None else None, Jsonb(spoken) if spoken else None),
         ).fetchone()
         if inserted is None:
             return "done"
         rows = [(extraction_id, revision_id, *(Jsonb(a[c]) if c == "participants" and a[c] is not None else a[c]
                                                for c in ASSERTION_COLUMNS))
-                for a in normalize(items, turn_text, hints, shown_target(ctx), compiler in PARTS_APART)]
+                for a in normalize(items, turn_text, hints, shown_target(ctx), compiler in PARTS_APART,
+                                  compiler in HORIZONS)]
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(
@@ -1547,6 +1615,8 @@ def extractor(settings: Settings) -> Generation | None:
            if compiler in CONFIRMS else {}),
         **({"aliases": generations.fingerprint(ALIASES_PRESENT + PAIRS_RULE + ALIAS_CHECK + SYSTEM_V16)}
            if compiler in PARTS_APART else {}),
+        **({"speakers": generations.fingerprint(f"{SPEAKER_RULE}|{QUOTES_LISTED}|{QUOTE_SHOWN}|{SYSTEM_V17}")}
+           if compiler in SPEAKERS else {}),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,
         json_mode=settings.llm_json_mode, temperature=0, unit="turn", context_turns=settings.extract_turns,
         target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS, hints=settings.extract_hints,

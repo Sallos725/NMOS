@@ -61,16 +61,20 @@ A translation plugin's original-only derived text and its button marker are defe
 ## Current phase
 
 **R8 — `0.5.0` before `1.0.0` (owner, 2026-10-23, AGE-90).** `0.5.0` carries Phases 45, 47, 48, 50, 51 and the panel's
-UI/UX overhaul (its spec to come, AGE-92), with one extractor generation `extract-v17` (Phases 45 and 51); each is
+UI/UX overhaul (Phase 52, AGE-92), with one extractor generation `extract-v17` (Phases 45 and 51); each is
 approved for implementation by this decision and still follows its own spec, paid measurements estimated first. The two
 quiet weeks are counted again on `0.5.0`'s build, and the same build is tagged `1.0.0` if they and the gate's other
 conditions hold. The count on the candidate `6d3f2f7` (from 2026-10-13) is kept as a record. [Roadmap R8](ROADMAP-1.0.md).
+Done so far: Phase 50 (#315) and Phase 52 (#316) merged 2026-10-24. `extract-v17` (Phases 45 and 51): step 2 built
+2026-10-24 on `claude/extract-v17`, selectable and not the default, migration `0030`; step 3 of both measured and
+passed 2026-10-25 ($75.08); the live gate and making it the default come after 1.0.0 (owner, 2026-10-25), so `0.5.0`
+ships it selectable. Left: Phase 47, Phase 48 (on `extract-v17`), then the release.
 
 **Phase 50 — notes for the author's note (a chronicle, what changed from the setting, address and standing), made on
 request for the owner to paste: approved 2026-10-23 (Q1–Q5 as recommended; AGE-88), high risk (canon, secrets).** An
 owner request beside the 1.0 gate, not a roadmap stage. Built now and tried on the test install (6131/6113) first; it
 reaches the install the owner uses only after the quiet weeks end (2026-10-27 at the earliest), the owner asked again
-before that deploy. Steps 2–4 are built (PR #315) and on the test install since 2026-10-23 20:52 KST (`trial-phase50-2dca211`); the database fingerprint is unchanged and the zero-call check passed on all 14 chats there. [Spec](phases/PHASE-50.md).
+before that deploy. Steps 2–4 are merged (#315, 2026-10-24) and on the test install since 2026-10-23 20:52 KST (`trial-phase50-2dca211`); the database fingerprint is unchanged and the zero-call check passed on all 14 chats there. [Spec](phases/PHASE-50.md).
 
 **Phase 43 — status windows by their shape, per chat, told as changes: approved 2026-10-11 (Q1–Q6 as recommended); steps 2–4 merged 2026-10-11 (#298 `a8f2421`, #299 `ff4cec0`), high risk; step 5 done 2026-10-11: A1–A5 measured on the merged code, and an archive correction (pinned status keys were left out of archives; high risk, restore compatibility). Steps 2–4 are on the trial install, not in production; the correction is on neither.**
 [Step 5 evidence](phases/PHASE-43.md#step-5-evidence-a1a5-against-the-merged-code).

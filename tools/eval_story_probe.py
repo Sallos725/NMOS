@@ -198,7 +198,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
     parser.add_argument("--out", type=Path, required=True, help="a new directory; existing output is never overwritten")
-    parser.add_argument("--compiler", choices=("extract-v15", "extract-v16"), default="extract-v16")
+    parser.add_argument("--compiler", choices=("extract-v15", "extract-v16", "extract-v17"), default="extract-v16")
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--execute", action="store_true", help="actually call the model; omit for a cost estimate")
     parser.add_argument("--url")

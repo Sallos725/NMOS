@@ -41,7 +41,7 @@ RESOLVER_VERSION = "resolve-v5"
 # The compilers whose alias of a name and a part of it (윤하람, 하람) the turn check passed with the part written on its
 # own (extraction.PARTS_APART). Such a part does not make its full name ambiguous (`_splits`, ADR 0012 amendment of
 # PHASE-28 Q4): 윤하람 → 하람 and 윤하람 → 람이 are one person's two names, not one name of two people (S1 turn 182).
-PART_EDGES = frozenset({"extract-v16"})
+PART_EDGES = frozenset({"extract-v16", "extract-v17"})
 USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
 PERSONA = "{{user}}"
 UNNAMED = "?"  # the extractor names a character shown without a name by a description starting with it (ADR 0024)

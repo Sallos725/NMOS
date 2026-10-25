@@ -11,6 +11,7 @@ line carries none rather than a guess (Q2).
 from __future__ import annotations
 
 import re
+import dataclasses
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -215,11 +216,13 @@ def _speaker(spoken: Spoken, names: dict[str, str], role: str | None, message_sp
 
 
 def pick(candidates: list[dict[str, Any]], query: str, names: dict[str, str], last_position: int | None,
-         first: bool, rarity: dict[str, float] | None = None, met: int | None = None) -> list[Quote]:
+         first: bool, rarity: dict[str, float] | None = None, met: int | None = None,
+         known: dict[str, str] | None = None) -> list[Quote]:
     """The best quotes for the question among the messages recall found. `candidates` are message rows in recall's
     order (`clean`, `position`, `turn`, `id`, `role`, `name`); `names` maps a normalized character name to how the
     packet shows it; `rarity` weighs a word by how few of the chat's messages hold it (1 when unknown); `met` is the
-    turn by which every character the question names had appeared, for a first cue."""
+    turn by which every character the question names had appeared, for a first cue; `known` maps normalized quoted
+    words to the speaker an extraction named for them (PHASE-45 S3), read only where the text names nobody."""
     terms = query_terms(query)
     wanted = [m.group(1) for m in QUERY_QUOTE.finditer(query)]
     turn = named_turn(query)
@@ -233,6 +236,7 @@ def pick(candidates: list[dict[str, Any]], query: str, names: dict[str, str], la
         weights = {w: v / top for w, v in weights.items()}
     scored: list[Quote] = []
     spans_of: dict[int, tuple[int, int, int]] = {}
+    lines_of: dict[str, list[tuple[str, str | None]]] = {}  # each message's quotes and their speakers (PHASE-45 S4)
     for rank, c in enumerate(candidates):
         for sp in quotes_in(c["clean"] or ""):
             in_quote, near, line = norm(sp.words), norm(sp.near), norm(sp.line)
@@ -241,6 +245,10 @@ def pick(candidates: list[dict[str, Any]], query: str, names: dict[str, str], la
                        for w, v in weights.items())
             phrase = any(norm(p) in in_quote for p in wanted)
             speaker = _speaker(sp, names, c.get("role"), c.get("name"))
+            if speaker is None and known and (said := known.get(norm(sp.words))):  # who the extraction says (S3)
+                speaker = names.get(norm(said), said)
+            if known:
+                lines_of.setdefault(str(c["id"]), []).append((sp.words, speaker))
             if not hits and not phrase and not (turn is not None and c.get("turn") == turn):
                 continue
             score = hits + (5 if phrase else 0) + 0.5 / (1 + rank)
@@ -263,14 +271,50 @@ def pick(candidates: list[dict[str, Any]], query: str, names: dict[str, str], la
             spans_of[id(q)] = (sp.first, sp.last, sp.at)
     scored.sort(key=lambda q: (-q.score, q.position))
     out: list[Quote] = []
+    gathered: set[tuple[str, str]] = set()  # (message, words) a speaker's line already shows
     for q in scored:
         a, b, at = spans_of[id(q)]
+        if (q.revision_id, q.words) in gathered:
+            continue
         if any(q.revision_id == o.revision_id and a <= spans_of[id(o)][1] and spans_of[id(o)][0] <= b for o in out):
             continue  # a line already placed shows this quote, or this line would show that one
+        if known and asked and q.speaker in asked and lines_of.get(q.revision_id):
+            # PHASE-45 S4: the asked speaker's other lines of this message follow their line, so they do not crowd
+            # each other out of the two places
+            placed, shown = speaker_line(q, lines_of[q.revision_id])
+            spans_of[id(placed)] = spans_of[id(q)]
+            q = placed
+            gathered.update((q.revision_id, w) for w in shown)
         out.append(q)
         if len(out) == QUOTES_MAX:
             break
     return out
+
+
+def speaker_line(q: Quote, lines: list[tuple[str, str | None]]) -> tuple[Quote, list[str]]:
+    """`q`'s line as placed, then its speaker's other quoted lines of the message that the line does not show, the
+    nearest first, within QUOTE_CHARS more (PHASE-45 S4): nothing the line showed is cut. Returns the line and the
+    words it shows."""
+    own = [w for w, who in lines if who == q.speaker]
+    if q.words not in own:
+        return q, [q.words]
+    i = own.index(q.words)
+    shown = [w for w in own if norm(w) in norm(q.text)]
+    extra: list[str] = []
+    size = 0
+    for j in sorted(range(len(own)), key=lambda j: (abs(j - i), j)):
+        w = own[j]
+        if w in shown or w in extra:
+            continue
+        if size + len(w) + 6 > QUOTE_CHARS:
+            break
+        extra.append(w)
+        size += len(w) + 6
+    if not extra:
+        return q, shown or [q.words]
+    extra.sort(key=own.index)
+    return (dataclasses.replace(q, text=q.text + f" … {q.speaker}: " + " … ".join(f'"{w}"' for w in extra)),
+            shown + extra)
 
 
 def character_names(entities: Iterable[dict[str, Any]]) -> dict[str, str]:
