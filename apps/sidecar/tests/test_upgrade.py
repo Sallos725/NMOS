@@ -65,6 +65,8 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
     assert (applied and applied[-1] == LATEST) if written < LATEST else applied == []
     if dump.stem == "v0.3.0":
         assert applied[0] == "0029_state_dismiss.sql"
+    if dump.stem == "v0.4.0":
+        assert applied[0] == "0030_extract_v17.sql"
     with psycopg.connect(database_url) as conn:
         assert conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == LATEST
         kind_check = conn.execute(

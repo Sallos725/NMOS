@@ -1,5 +1,17 @@
 # NMOS Status
 
+## Release v0.5.0 — prepared 2026-10-25, the tag awaits the owner
+
+R8's contents are on `main` (#315–#319); the release PR sets the version to 0.5.0, rebuilds the plugin and writes the
+changelog's upgrade notes and limits. Defaults: `packet-v19`, `extract-v16` (`extract-v17` selectable), `clean-v3`;
+migrations through `0032`. Nothing is tagged or published until the owner says so, and production (6003) is not
+updated without asking. All pre-1.0 releases are GitHub pre-releases.
+
+The trial install (6113) runs `candidate-050-421dc0b` since 2026-10-25 (schema 0029 → 0032, extractor key unchanged,
+backup kept); its `apps/` and `adapters/` trees equal the merged `main`'s, so the release differs from it only in the
+version strings and the plugin's build id (`024d6401c054`). The owner checked it on 6131 the same day.
+The 1.0 gate's two quiet weeks are counted again on this build (`ROADMAP-1.0.md`, R8).
+
 ## Release v0.4.0 — tagged 2026-10-10
 
 PR #291 merged at `41f410d`; annotated tag `v0.4.0` points to that merge.
@@ -65,13 +77,11 @@ UI/UX overhaul (Phase 52, AGE-92), with one extractor generation `extract-v17` (
 approved for implementation by this decision and still follows its own spec, paid measurements estimated first. The two
 quiet weeks are counted again on `0.5.0`'s build, and the same build is tagged `1.0.0` if they and the gate's other
 conditions hold. The count on the candidate `6d3f2f7` (from 2026-10-13) is kept as a record. [Roadmap R8](ROADMAP-1.0.md).
-Done so far: Phase 50 (#315) and Phase 52 (#316) merged 2026-10-24. `extract-v17` (Phases 45 and 51): step 2 built
-2026-10-24 on `claude/extract-v17`, selectable and not the default, migration `0030`; step 3 of both measured and
-passed 2026-10-25 ($75.08); the live gate and making it the default come after 1.0.0 (owner, 2026-10-25), so `0.5.0`
-ships it selectable. Phase 47 ("not a character", ADR 0076): steps 2–4 built 2026-10-24, stacked on
-`extract-v17` (migration `0031`). Phase 48 (remember AI replies only, ADR 0077): step 2, the flag and recall, built
-2026-10-24 on Phase 47 (migration `0032`); step 3 (extraction and summaries) deferred by the owner until a real
-full-impersonation chat can be measured (K51). Then the release.
+All merged: Phase 50 (#315) and Phase 52 (#316) on 2026-10-24; `extract-v17` (Phases 45 and 51, #317, migration
+`0030`), Phase 47 ("not a character", ADR 0076, #318, `0031`) and Phase 48 step 2 (remember AI replies only, ADR 0077,
+#319, `0032`) on 2026-10-25. `extract-v17`'s step 3 measurements passed ($75.08); its live gate and making it the
+default come after 1.0.0 (owner, 2026-10-25), so `0.5.0` ships it selectable. Phase 48 step 3 (extraction and
+summaries) waits for a real full-impersonation chat (K51). The release is prepared (above).
 
 **Phase 50 — notes for the author's note (a chronicle, what changed from the setting, address and standing), made on
 request for the owner to paste: approved 2026-10-23 (Q1–Q5 as recommended; AGE-88), high risk (canon, secrets).** An
