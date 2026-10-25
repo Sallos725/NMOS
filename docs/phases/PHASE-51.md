@@ -33,7 +33,8 @@ Flash (one turn of 185 in one run failed). Numbers only:
   model left unlabeled keeps the 30-turn rule). Left out of the note: 8–11 by the 30-turn rule, 11–12 by horizon; every
   `lasting` one stays, every `scene` one older than 10 turns goes. The other two chats: 3–6 open, 1–3 left out by
   horizon against 2–5 by the old rule.
-- **The owner's labels** of a sample: asked 2026-10-25.
+- **The owner's labels** of a sample (17 open threads of the longest chat, 2026-10-25): no label disputed; on the one
+  the run disagreed about (a promise over by then), the owner's reading is `scene`, run 1's label.
 
 **Amendment 1 (2026-10-24): a migration after all.** S2 and Q2 (a) assumed `assertion.salience` takes the horizon
 without a migration; migration `0016` limits it to `major`/`minor` by a check. Migration `0030`, which Phase 45 needs
