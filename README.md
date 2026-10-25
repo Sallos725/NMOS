@@ -13,7 +13,7 @@
 
 **English** · [한국어 안내](docs/guide.ko.md)
 
-[Install](#install) · [Panel](#nmos-panel-status-inspector-settings) · [What gets injected](#what-gets-injected) ·
+[Install](#install) · [Panel](#nmos-panel-hub-memory-settings) · [What gets injected](#what-gets-injected) ·
 [Configuration](#configuration-environment) · [Privacy](#privacy) · [Status and limits](#status-and-limits)
 
 </div>
@@ -30,7 +30,7 @@ longer see.
 | 📊 **State** | values parsed from your bots' status windows (rule-based, no LLM) | optional parsers |
 | 🧠 **Facts** | where people are, who knows what, promises, relationships — with history and provenance, extracted in the background | an LLM of your choice (optional) |
 
-<p align="center"><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: the last request injected 7,137 characters of memory in 399 ms, shown as the packet the model received" width="480"></p>
+<p align="center"><img src="docs/images/panel-hub.png" alt="The NMOS hub on a phone: this reply got its memory, the scene's characters, needs a look, the author's note, usage, settings, backup and other chats" width="320"></p>
 
 ```mermaid
 flowchart LR
@@ -56,7 +56,7 @@ or RisuAI.</sub>
 - PocketRisu opened at **`http://localhost…` or HTTPS** (PocketRisu Remote Access). NMOS hashes the chat with the
   browser's Web Crypto, which a page has only there. On a plain-HTTP LAN address such as `http://192.168.x.x:6001`,
   PocketRisu v1.12.0 did not load plugins at all; v1.13.0 loads NMOS, but every request goes without memory, and the
-  plugin says so on its Status tab and once in an alert (K6). If PocketRisu runs on another machine, use an SSH tunnel
+  plugin says so in Settings → Connection and once in an alert (K6). If PocketRisu runs on another machine, use an SSH tunnel
   (`ssh -L 6001:localhost:6001 -L 8790:localhost:8790 server`) and open `http://localhost:6001`.
 - Optional: an OpenAI-compatible LLM endpoint (Ollama, OpenRouter, vLLM, LM Studio…) for facts, and an
   embedding endpoint (e.g. Ollama `qwen3-embedding:0.6b`) for semantic recall.
@@ -162,7 +162,7 @@ docker compose exec -T postgres pg_dump -U nmos -d nmos -Fc > nmos-backup.dump
 
 Upgrade: replace `docker-compose.yml` with the new release's `nmos-docker-compose.yml`, then run
 `docker compose pull && docker compose up -d`. The sidecar applies database migrations when it starts.
-Replace the plugin file too and reload PocketRisu: the Inspector's first page then says whether the plugin
+Replace the plugin file too and reload PocketRisu: Settings → Connection in the panel then says whether the plugin
 in use is the sidecar's build, and links the matching file (`/v1/plugin/nmos-pocketrisu.js` on the sidecar;
 ADR 0037). Each release's CHANGELOG entry says what the upgrade re-processes, for example a new extractor generation. CI restores databases written by earlier releases
 (0.1.0-beta.7, 0.1.0-beta.16, 0.1.0-beta.21, 0.2.0 and 0.3.0) and upgrades them (`apps/sidecar/tests/test_upgrade.py`).
@@ -219,7 +219,7 @@ conversation's history, canon, your repairs and links, the recorded requests, an
 and summaries, so moving it does not pay for extraction again. It never holds an API key or the auth token; the whole
 install's archive also holds the settings without keys. It holds chat text: keep it as you keep the chat.
 
-- In the panel: **Settings → Export → Export everything** (tick "Include embeddings" for a larger file that needs no
+- In the panel: **Backup → Export everything** (tick "Include embeddings" for a larger file that needs no
   re-embedding), or **Export this chat** on a conversation's Inspector page. The browser saves the file.
 - From the shell: `docker compose exec -T sidecar python -m nmos_sidecar.archive export -o - > nmos.nmos.zip`
   (`--conversation <id>` for one chat, `--embeddings`, `--no-projections`).
@@ -228,9 +228,9 @@ install's archive also holds the settings without keys. It holds chat text: keep
 If NMOS finds a key or the token anywhere in what it would write (a key pasted into a chat), it refuses and says in
 which table. `pg_dump` backups stay the way to roll back an upgrade.
 
-Restore from the panel (Phase 38; Docker and without Docker alike): **Settings → Restore from an archive…**, pick the
+Restore from the panel (Phase 38; Docker and without Docker alike): **Backup → Restore from an archive**, pick the
 `.nmos.zip`. It is uploaded in 8 MB chunks and checked first; the panel then shows its chats (one already here blocks
-the restore: delete it in the Inspector first; nothing is merged), the settings it adds and the upgrades it needs.
+the restore: delete it first, in Settings → This chat; nothing is merged), the settings it adds and the upgrades it needs.
 **Restore** writes it while NMOS keeps running: recall goes on in every chat; a sync that would store a new message
 waits until the restore commits (about 1.6 s for an archive of 10,000 messages, `docs/perf/panel-restore.md`), and the
 plugin's deadline sends that reply without it, as when NMOS is slow. The new chats' derived text and missing jobs are
@@ -256,13 +256,13 @@ you want the Inspector's replays of old requests that used vectors to stay exact
 The Docker install and a bundle each keep their own database: switching from one to the other does not carry the
 memory over, and the new one starts empty while the old data stays where it was. Move it with an archive:
 
-1. In the panel, while it talks to the install you leave: **Settings → Export → Export everything**, with
+1. In the panel, while it talks to the install you leave: **Backup → Export everything**, with
    **Include embeddings** ticked (without them the new install embeds every message again, at the provider's cost
    with a paid embedder).
 2. Stop the old install and keep its data: `docker compose stop`, **not** `docker compose down -v` (which deletes the
    volume), or quit the bundle. Both listen on `127.0.0.1:8790`, and a bundle does not start on a port in use.
 3. Start the new install. The plugin's `sidecar_url` stays `http://127.0.0.1:8790`.
-4. **Settings → Restore from an archive…** with the file (Phase 38).
+4. **Backup → Restore from an archive** with the file (Phase 38).
 5. Enter the API keys again: an archive never holds them.
 6. Check the model addresses, which the archive does carry: an address that resolves only inside Docker fails on a
    bundle. For Ollama on the same PC, Docker uses `http://host.docker.internal:11434/v1` and a bundle
@@ -270,51 +270,57 @@ memory over, and the new one starts empty while the old data stays where it was.
 
 Keep the old install's data until the new one shows your chats. From a bundle to Docker the steps are the same.
 
-## NMOS panel (status, inspector, settings)
+## NMOS panel (hub, memory, settings)
 
 Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, from the **NMOS icon (an N) in the
-sidebar's ☰ menu**, or from PocketRisu → Settings → **NMOS 기억 / NMOS memory**. Tabs switch between **Status**, **Inspector** and **Settings**;
-the language picker (Korean by default, or English) is at the top right. Menu names follow the
-language after a page reload.
+sidebar's ☰ menu**, or from PocketRisu → Settings → **NMOS 기억 / NMOS memory**. The language picker (Korean by
+default, or English) is at the top right; menu names follow the language after a page reload. Since 0.5.0 (Phase 52)
+the panel opens on a **hub** for the chat open now, and **← NMOS** at the top of every screen goes back to it. It is
+dark only, with 16 px body text.
 
-- **Status**: first, **This chat**: whether NMOS is on for the chat open now, and a button to turn it off or back on
-  for that chat alone (ADR 0048). Off, nothing of the chat goes to the sidecar and no memory goes in; what NMOS
-  already keeps of it stays, and turned back on, the next generation catches up. The same switch is in the ☰ menu
-  left of the chat input (**NMOS: this chat off/on**), which says in a dialog which way it went. The switch, its
-  menu entry and the sidebar icon are read from the PocketRisu v1.13.0 source and not yet checked in a real UI run. Then the
-  sidecar connection, which features are on (status window, facts, semantic recall), and what the
-  last request injected. **Show the injected memory** opens the exact text that went into that request
-  (kept only until the page reloads). When memory did not fit the budget, a card says how much and offers the
-  budget that holds it all; after raising it, lower PocketRisu's max context by as much.
-- **Inspector**: the Inspector, inside the panel (PocketRisu does not let plugins open a browser tab).
-  Click a conversation for its state, facts, entities (names that refer to the same one), recent
-  retrievals, commits (with what each sync changed, e.g. `delete ×12`) and messages. On a conversation page three buttons act on that chat:
-  **Extract all history** extracts and embeds the older turns the first sync skipped (and moves turns
-  still served by an earlier LLM model to the current one; a turn extracted before an earlier turn's secret, K29,
-  keeps its facts and gets one short call that asks only whether the secret was found out there), and **Rebuild
-  memory** (click twice) discards the chat's facts, from every model, and extracts every turn again. Both leave raw
-  messages alone, run in the background and cost one LLM call per turn. **Delete conversation**
-  (click twice) deletes everything NMOS stored for that chat, raw messages included, and cannot be
-  undone. Use it after deleting the chat in PocketRisu. The PocketRisu chat itself is never touched;
-  generating in it again starts a new NMOS conversation. On an entity's page, **Same as another entity**
-  joins it with another entity of the same type when the story never linked the two names (e.g. someone
-  shown without a name and named later); **Undo** takes a join back. Joins survive a rebuild. Before a join, a split
-  or an undo, the panel shows what it changes in this chat's memory (which fact replaces which, a relationship or
-  promise of a character with themself, a secret kept from someone who knows it) and asks again when memory changed
-  since. Undoing a join offers to re-extract the turns extracted while it held (off by default; one extraction call
-  a turn).
-  The Inspector's lines carry the owner's **repairs** (ADR 0044): close a thread with an outcome (tick several to
-  close them together) or reopen one, mark a secret found out or still kept by a character, retract or correct a
-  fact, on an entity's page split two names the story joined, and mark a name **not a character** (a monster, a
-  status-window bot: it leaves the people and the relationships, its facts stay unless you also leave it out of
-  memory; ADR 0076). A chat where the AI writes your character too (full impersonation) can **remember AI replies
-  only**: a toggle in its settings leaves your own messages out of recall (ADR 0077; facts still come from both sides,
-  K51). A repair survives rebuilds and new extractor
-  generations, is listed under **Repairs** with **Undo**, and each chat's page starts with **Needs attention** (old
-  open threads, ends that matched no thread, disputed whereabouts, repairs that match nothing now, splits still
-  joined through another name, ambiguous names, and facts a re-extraction dropped: narrated facts of a turn that the
-  same model, extracting the turn again, did not state again and the chat holds nowhere else, each with **Restore**;
-  Phase 22). The panel's chat card counts the dropped facts.
+<p><img src="docs/images/panel-hub.png" alt="The NMOS hub on a phone: a working line (this reply got its memory, 0.3 s, 14 lines), memory with the scene's characters, needs a look, the author's note, usage, settings, backup and other chats" width="360"></p>
+
+- **The hub**: a **working** line across the top (green when the last reply got its memory and nothing failed, amber
+  or red with what and why otherwise), then a block per category: **memory** (characters, open threads and changed
+  setting values, with the first lines of "now"), **needs a look** (only while there is something to look at), **the
+  author's note**, **usage**, **settings**, **backup** and **other chats**. Without a chat NMOS knows, only settings,
+  backup and other chats.
+- **Working**: whether this reply got its memory (lines, about how many tokens, how long), **the memory just sent** as
+  readable lines grouped by kind (status, story, cast, promises and goals, facts, claims, secrets, excerpts, quotes)
+  instead of the packet's XML, then **processing** (fact extraction, search embeddings, scene summaries, reading the
+  setting: done of due, failed, waiting) with **Retry failed** while something failed, and **usage** (model calls,
+  tokens). The machinery is behind **details**.
+- **Memory**, one document for the chat: **now** (each character in the scene: where and how), **open threads**
+  (a thread not mentioned for a while is left out and counted; close one with an outcome from here), **people** (each
+  pair: relationship, roles, feelings, forms of address), **so far** (the story so far, then the scene summaries),
+  **secrets** (who knows, kept from whom) and **changed from the setting**. Chips at the top jump to a section; a list
+  shows its first three and "N more". Every name opens that **person's sheet**: now, relationships, promises and goals,
+  what they know and do not know, and a **timeline** (an overview bar with at most five rings for major events and
+  relationship changes, then the changes as lines). At the foot of a sheet, **not a character** takes a monster or a
+  status-window bot out of the people and the relationships; its facts stay unless you also leave it out of memory
+  (Phase 47, ADR 0076).
+- **The author's note** (Phase 50): **For the author's note** makes one text to paste into the chat's author's note,
+  in English Markdown: a **chronicle** of the events so far (one call to the extraction model, 3,000 or 6,000
+  characters), **what changed from the setting** and **address and standing** (no call). Secrets are left out unless
+  ticked. Copy the block from `[NMOS note …]` to `[/NMOS note]` whole; NMOS does not read it back as the setting.
+- **Other chats**: every chat NMOS knows, most recently used first, searchable by name or character, failures marked;
+  each opens that chat's hub.
+- **Details** (the Inspector, restyled; linked from the working, memory and person screens and from **needs a look**):
+  a conversation's state, facts, entities (names that refer to the same one), recent retrievals, commits (with what
+  each sync changed, e.g. `delete ×12`) and messages. On an entity's page, **Same as another entity** joins it with
+  another entity of the same type when the story never linked the two names (e.g. someone shown without a name and
+  named later); **Undo** takes a join back. Joins survive a rebuild. Before a join, a split or an undo, the panel shows
+  what it changes in this chat's memory (which fact replaces which, a relationship or promise of a character with
+  themself, a secret kept from someone who knows it) and asks again when memory changed since. Undoing a join offers
+  to re-extract the turns extracted while it held (off by default; one extraction call a turn).
+  The details pages carry the owner's **repairs** (ADR 0044): close a thread with an outcome (tick several to close
+  them together) or reopen one, mark a secret found out or still kept by a character, retract or correct a fact, on
+  an entity's page split two names the story joined, and mark a name **not a character**. A repair survives rebuilds
+  and new extractor generations, is listed under **Repairs** with **Undo**, and each chat's page starts with **Needs
+  attention** (old open threads, ends that matched no thread, disputed whereabouts, repairs that match nothing now,
+  splits still joined through another name, ambiguous names, and facts a re-extraction dropped: narrated facts of a
+  turn that the same model, extracting the turn again, did not state again and the chat holds nowhere else, each with
+  **Restore**; Phase 22).
   **Canon** (Phase 14, ADR 0045–0047): NMOS keeps each chat's card (its story fields and greeting), lorebook entries,
   persona and author's note as sources, a new revision on each edit, listed in the conversation page's **Canon**
   section. Lorebook keys give a character's other names. The extraction model reads the card, the persona and the note
@@ -323,33 +329,55 @@ language after a page reload.
   is listed in **Needs attention** with **Lock** (canon's stays, `locked="true"` in the packet) and **Retract** (the
   story's stays). On the owner's chats canon took 26–66 model calls at first; **Facts from canon** in Recall tuning
   turns it off. A chat whose large lorebook is read almost whole recalls more slowly (K36).
-  A conversation page lists the chat's **Secrets** (who knows, kept from whom, who found out and when), and the
-  last packet's section names the scene's characters and memory mode.
-  A conversation page also has a **Memory mode** card for that chat (ADR 0035): **Strict** gives only what
-  everyone in the scene knows (a secret becomes "something known to A, not known to B"; fewer leaks, but its
-  holder forgets it too), and **First-person narrator** leaves out what the narrator is not shown to know.
-  Both are off by default and apply from the next generation.
-- **Settings**: connection (sidecar URL, route, memory budget, deadline, on/off); **fact-extraction LLM**
-  and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, Google Vertex AI for the
-  LLM only, Voyage AI for embeddings only, any OpenAI-compatible endpoint), model list, API key and a **connection
-  test** that makes a real call; an embedding preset measured with its own similarity bar sets it
-  (`docs/perf/embedders.md`);
-  recall tuning; status-window JSON drafts and named presets, applied separately to an explicit character.
-  For **Google Vertex AI**, pick the service-account JSON key file with **Load key file** (or paste its whole
-  content into the LLM's API key field): the endpoint's project is filled from the key, the Gemini models Vertex
-  serves are listed, and the sidecar renews the access token itself (ADR 0022). Use a dedicated service account with only
-  the Vertex AI User role (`roles/aiplatform.user`). Enabling the APIs is not enough: a key without the
-  role gets HTTP 403 on `aiplatform.endpoints.predict`, and the connection test says so. Checked against
-  real Vertex with `google/gemini-3.8-flash`.
-- One **Save** button at the bottom saves every changed section together. Unsaved changes are listed
-  there, and closing asks whether to save them. Saving applies immediately and processes existing
-  chats in the background.
+- **Settings**, in seven groups, each its own page:
+  - **Connection**: whether NMOS is on for the chat open now, with a button to turn it off or back on for that chat
+    alone (ADR 0048; off, nothing of the chat goes to the sidecar and no memory goes in, what NMOS already keeps of it
+    stays, and turned back on, the next generation catches up; the same switch is in the ☰ menu left of the chat
+    input, **NMOS: this chat off/on**). Then the sidecar address, token and route, the memory budget and deadline,
+    memory on or off for every chat, which features are on, whether the
+    plugin matches the sidecar (with the matching plugin file), and what the last request injected: **Show the
+    injected memory** opens the exact text that went into that request (kept only until the page reloads). When
+    memory did not fit the budget, a card says how much and offers the budget that holds it all; after raising it,
+    lower PocketRisu's max context by as much.
+  - **Models**: the **fact-extraction LLM** and **embeddings** with provider presets (Ollama on this PC, OpenRouter,
+    OpenAI, Gemini, Google Vertex AI for the LLM only, Voyage AI for embeddings only, any OpenAI-compatible endpoint),
+    model list, API key and a **connection test** that makes a real call; an embedding preset measured with its own
+    similarity bar sets it (`docs/perf/embedders.md`). For **Google Vertex AI**, pick the service-account JSON key file
+    with **Load key file** (or paste its whole content into the LLM's API key field): the endpoint's project is filled
+    from the key, the Gemini models Vertex serves are listed, and the sidecar renews the access token itself (ADR
+    0022). Use a dedicated service account with only the Vertex AI User role (`roles/aiplatform.user`). Enabling the
+    APIs is not enough: a key without the role gets HTTP 403 on `aiplatform.endpoints.predict`, and the connection
+    test says so. Checked against real Vertex with `google/gemini-3.8-flash`.
+  - **How memory works**: recall tuning (the lexical and vector thresholds, the embedding wait, how many excerpts and
+    facts, turns extracted on first sync, scene summaries, facts from canon).
+  - **This chat**: the chat's **Memory mode** (ADR 0035): **Strict** gives only what everyone in the scene knows (a
+    secret becomes "something known to A, not known to B"; fewer leaks, but its holder forgets it too), and
+    **First-person narrator** leaves out what the narrator is not shown to know; both are off by default and apply
+    from the next generation. **Remember AI replies only**, for a chat where the AI writes your character too (full
+    impersonation): your own messages leave recall (ADR 0077; facts and summaries still come from both sides, K51).
+    The chat's **status window** (found by its shape; Track, pins, Stop tracking). And its actions: **Extract all
+    history** extracts and embeds the older turns the first sync skipped (and moves turns still served by an earlier
+    LLM model to the current one; a turn extracted before an earlier turn's secret, K29, keeps its facts and gets one
+    short call that asks only whether the secret was found out there); **Rebuild memory** (click twice) discards the
+    chat's facts, from every model, and extracts every turn again. Both leave raw messages alone, run in the
+    background and cost one LLM call per turn. **Delete conversation** (click twice) deletes everything NMOS stored
+    for that chat, raw messages included, and cannot be undone. Use it after deleting the chat in PocketRisu. The
+    PocketRisu chat itself is never touched; generating in it again starts a new NMOS conversation.
+  - **Status window rules**: every card's rules, and hand-written rules (JSON drafts and named presets, applied to an
+    explicit character).
+  - **Display**: the progress display on the chat screen (below).
+  - **Backup**: **Export** and **Restore from an archive** (below).
+- One **Save** button at the bottom saves every changed section together. Unsaved changes are listed there, and
+  closing asks whether to save them. Saving applies immediately and processes existing chats in the background.
+
+The browser Inspector (`/inspector`, below) shows the same screens. An older plugin with this sidecar keeps working
+with the restyled Inspector pages; a new plugin with an older sidecar falls back to the Inspector.
 
 ### Progress display (optional)
 
 A small pill at the top right of the chat screen shows whether memory went into each reply and how far
 background processing of the open chat has got. It is **off by default**. Turn it on in the panel
-(**Settings → Progress display**, or **Turn on progress display** on the Status tab). PocketRisu then
+(**Settings → Display**, or **Turn on progress display** in Settings → Connection). PocketRisu then
 asks *"Plugin nmos_memory is requesting to access the main Document, which may expose sensitive
 information."*: NMOS needs that access only to draw the pill and reads nothing on the page. If you answer
 No, PocketRisu remembers it; to ask again, use Settings → Plugin → the NMOS row menu → **Reset permission
@@ -359,8 +387,8 @@ responses**.
 |---|---|
 | NMOS icon + `기억 불러오는 중…` | NMOS is preparing memory for this request |
 | `✓ 기억 주입 (N자)` / `– 관련 기억 없음` | memory went in / nothing relevant (shown 4 s) |
-| `⏻ 이 채팅은 NMOS 꺼짐` | NMOS is off for this chat (the Status tab's switch) |
-| `… · 어휘 검색만` | memory went in, but the embedder did not answer in time, so it was found without semantic recall (K34; the Status tab explains) |
+| `⏻ 이 채팅은 NMOS 꺼짐` | NMOS is off for this chat (the switch in Settings → Connection) |
+| `… · 어휘 검색만` | memory went in, but the embedder did not answer in time, so it was found without semantic recall (K34; Settings → Connection explains) |
 | `… · 재사용` | the same request (a reroll, say), so the packet made a moment ago went in again |
 | `⚠ 건너뜀: 제한 시간 3초 초과 · 눌러서 늘리기` / `⚠ 건너뜀: 사이드카 오류` | the request went without memory; for the deadline, tap it for the panel's advice |
 | `추출 2/5 · 임베딩 5/5 · 요약 1개 남음` + bar | background extraction, embedding and summaries of this chat; `⚠ 실패 N` if some failed |
@@ -369,7 +397,7 @@ responses**.
 Tap the pill to open the panel. The text follows the panel language (English: `Recalling memory…`,
 `✓ Memory injected (N chars)`, `Facts 2/5 · Embeddings 5/5`, …).
 
-The Inspector lists conversations as **bot name · chat name** (after the next message in that chat)
+The Inspector (the panel's **details**) lists conversations as **bot name · chat name** (after the next message in that chat)
 and follows the panel language. The same pages are also served by the sidecar for a browser tab at
 **http://127.0.0.1:8790/inspector** (Korean by default, English at the top right).
 
@@ -401,8 +429,6 @@ Since 0.4.0 the Inspector also shows memory over time and where it came from:
 - **Status window over time** (Phase 39): each status key as a lane of the values it held (see
   [State parsers](#state-parsers)).
 
-<p><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: the last request injected 7,137 characters of memory in 399 ms, shown as the packet the model received" width="560"></p>
-<p><img src="docs/images/inspector.png" alt="NMOS Inspector in the panel: Needs attention lists threads left open for 30 turns, each with a repair (an outcome and Close)" width="760"></p>
 
 ## Configuration (environment)
 
@@ -637,7 +663,7 @@ you may want it back.
 - The plugin's `auth_token` is kept in PocketRisu's plugin settings and is readable by anyone who can
   open them (see [ADR 0003](docs/adr/0003-sidecar-token-without-secret-header.md)).
 - The Inspector in a browser tab (`/inspector?token=…`) keeps the token in its links, and so in that
-  browser's history. The sidecar's access log masks it (`token=***`). The panel's Inspector tab sends it
+  browser's history. The sidecar's access log masks it (`token=***`). The panel's details pages send it
   in a header instead.
 
 ## Status and limits
@@ -656,8 +682,8 @@ The full list with workarounds is [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md)
   messages, 2.7 s at 10,000 and 4.1 s at 15,000 (the host pauses after handing NMOS the chat). The
   default 3 s deadline covers up to about 10,000 messages without extraction and embeddings. With both on,
   recall adds about 0.4–0.7 s, and at 10,000 messages the 3 s default is no longer enough (3.1–3.3 s
-  measured). For long chats, raise Deadline (ms) in the panel's Settings tab: about 4,000 at 10,000
-  messages with extraction on, 5,000 at 15,000. The panel's Status tab tells you when a request used 80 %
+  measured). For long chats, raise Deadline (ms) in the panel's Settings → Connection: about 4,000 at 10,000
+  messages with extraction on, 5,000 at 15,000. Settings → Connection tells you when a request used 80 %
   of the deadline or missed it, with the value to set. A PocketRisu notice follows the first reply on a page
   that went without memory for it. See `docs/perf/scale.md`.
 - Changing the embedding model/endpoint re-embeds previously covered history (recent messages first;
