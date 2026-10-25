@@ -15,7 +15,8 @@ later, is `docs/KNOWN-ISSUES.md`.
   secrets, changed from the setting), a person's sheet ends in a timeline (an overview bar and the changes as lines),
   "working" says it in plain words, settings come in seven groups, and other chats are a list to search. Dark only, body
   16 px. Closing a thread asks how it ended, offering only the endings of its kind.
-- **`extract-v17`, selectable, not the default** (Phases 45 and 51). An extractor generation that records how long a
+- **`extract-v17`, selectable, not the default** (Phases 45 and 51; it becomes the default after 1.0.0, once its live
+  gate has run). An extractor generation that records how long a
   thread is meant to last (this scene, a storyline, or lasting) and who says each quoted line of a turn. The Inspector,
   the author's note and the panel's memory let a scene's business go after 10 turns and keep a lasting one; the quote
   route names the speaker of a line its narration does not. Migration `0030`. Nothing changes until it is chosen.
