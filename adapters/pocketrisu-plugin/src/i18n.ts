@@ -254,6 +254,12 @@ const STRINGS = {
   'rp.fact_restore': ['복원', 'Restore'],  // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
   'rp.state_dismiss': ['괜찮음', 'Dismiss'],  // a status flag the owner looked at (PHASE-39 Q4)
   'rp.undo': ['되돌리기', 'Undo'],
+  'rp.entity_exclude': ['{n}: 캐릭터 아님', '{n}: not a character'],
+  'ex.cast': ['인물 목록과 관계에서 빠져요 (관계 {p}개). 사실은 그대로 남아요.',
+    'It leaves the cast and the relationships ({p}). Every fact stays.'],
+  'ex.also': ['기억에서도 제외: 이 이름이 주인공인 사실 {f}개도 가려요', 'Also leave it out of memory: hides {f} facts about it'],
+  'ex.confirm': ['캐릭터 아님으로 표시', 'Mark not a character'],
+  'ex.done': ['캐릭터 아님으로 표시했어요.', 'Marked not a character.'],
   'rp.select': ['일괄 닫기에 넣기', 'Select to close'],
   'rp.outcome': ['닫는 결과', 'Outcome'],
   'oc.kept': ['지켜짐', 'kept'], 'oc.broken': ['깨짐', 'broken'], 'oc.achieved': ['이뤄짐', 'achieved'],

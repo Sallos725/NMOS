@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **"Not a character"** (Phase 47). On a character's page, on a relationship row, or at the foot of a person's sheet,
+  the panel marks a name as not a character: a monster, or a status-window or game-master bot card. It leaves the
+  people, the relationships, the author's note's address lines and the packet's `<Cast>`, and every fact about it stays,
+  so "how did the monster die?" is still answered. Tick **also leave it out of memory** to hide its own facts too (a
+  bot's). A preview counts what leaves; undo is in the chat's repairs. Migration `0031`.
 - **The panel, rebuilt** (Phase 52). It opens on a hub of blocks (working, memory, needs a look, the author's note,
   usage, settings, backup, other chats); a chat's memory reads as one document (now, open threads, people, so far,
   secrets, changed from the setting), a person's sheet ends in a timeline (an overview bar and the changes as lines),

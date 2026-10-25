@@ -1365,7 +1365,8 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
     reply brings more characters into the scene, and the one asked about must keep its group."""
     persona = scene.key(r, scene.PERSONA)
     said = norm(query)
-    order = [k for k in cast if k != persona]
+    left_out = frozenset(view.get("excluded") or ())  # PHASE-47: not a character, so no <Cast> group
+    order = [k for k in cast if k != persona and str(k) not in left_out]
     if aliases is not None:
         order.sort(key=lambda k: not any(n in said for n in scene.names({k: cast[k]}, r, aliases)))  # stable
     order = order[:CAST_MAX]

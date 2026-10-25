@@ -181,9 +181,10 @@ class RepairRequest(BaseModel):
     secret or a fact (for a name split, a name of the entity), what to do, and what the kind needs: a close's outcome,
     a secret's character, a correction's new object or value, a split's other name, and the turn it takes effect.
     `fact_lock` keeps a canon fact or a correction current against the story (ADR 0047); `fact_restore` adds back a fact
-    a re-extraction dropped (PHASE-22 Q7); `state_dismiss` dismisses a status flag (PHASE-39 Q4)."""
+    a re-extraction dropped (PHASE-22 Q7); `state_dismiss` dismisses a status flag (PHASE-39 Q4); `entity_exclude`
+    leaves a name (`item`) out of the cast, or with `scope` "memory" out of memory too (PHASE-47)."""
     kind: Literal["thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-                  "name_split", "fact_lock", "fact_restore", "state_dismiss"]
+                  "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude"]
     item: Text = Field(min_length=1, max_length=120)
     outcome: Text | None = Field(default=None, max_length=32)
     character: Text | None = Field(default=None, max_length=120)
@@ -194,6 +195,7 @@ class RepairRequest(BaseModel):
     other: Text | None = Field(default=None, max_length=120)
     entity_type: Literal["character", "place", "item", "group", "concept"] = "character"
     expect: str | None = Field(default=None, max_length=64)  # a split's preview fingerprint (PHASE-20 Q4)
+    scope: Literal["cast", "memory"] = "cast"  # an exclusion's (PHASE-47 Q1): the cast only, or memory too
 
 
 class EntityLinkRequest(BaseModel):
