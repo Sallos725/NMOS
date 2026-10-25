@@ -91,6 +91,10 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
   `6d3f2f7` stands as a record that the candidate was quiet; `0.5.0` adds a generation and migrations, heavy changes
   that restart the count. If the two weeks on `0.5.0` pass and the gate's other conditions hold for that build (the
   evaluation against `0.1.x`, the upgrades, the known issues), the same build is tagged `1.0.0`.
+- **Amended (owner, 2026-10-25): `extract-v17` ships selectable, not the default.** Its copy measurements passed
+  (PHASE-45 and PHASE-51 step 3, $75.08), but the full live gate it needs to become the default is a paid run the
+  owner will not fund now; `extract-v16` stays the default in `0.5.0` and `1.0.0`, and making `extract-v17` the default
+  (with its live gate) comes after 1.0.0. So `0.5.0` changes no extractor generation for anyone who does not choose it.
 - **One extractor generation in `0.5.0`** (`extract-v17`, Phases 45 and 51), as "each stage ships at most one" above;
   Phase 48's replies-only variant is built on it and changes no chat that does not turn it on. **Amended (owner,
   2026-10-24):** `0.5.0` carries Phase 48's step 2 (the flag and recall, no extractor variant); its step 3 waits for a

@@ -66,8 +66,9 @@ approved for implementation by this decision and still follows its own spec, pai
 quiet weeks are counted again on `0.5.0`'s build, and the same build is tagged `1.0.0` if they and the gate's other
 conditions hold. The count on the candidate `6d3f2f7` (from 2026-10-13) is kept as a record. [Roadmap R8](ROADMAP-1.0.md).
 Done so far: Phase 50 (#315) and Phase 52 (#316) merged 2026-10-24. `extract-v17` (Phases 45 and 51): step 2 built
-2026-10-24 on `claude/extract-v17`, selectable and not the default, migration `0030`; its paid measurements and live
-gate wait for the owner. Phase 47 ("not a character", ADR 0076): steps 2–4 built 2026-10-24, stacked on
+2026-10-24 on `claude/extract-v17`, selectable and not the default, migration `0030`; step 3 of both measured and
+passed 2026-10-25 ($75.08); the live gate and making it the default come after 1.0.0 (owner, 2026-10-25), so `0.5.0`
+ships it selectable. Phase 47 ("not a character", ADR 0076): steps 2–4 built 2026-10-24, stacked on
 `extract-v17` (migration `0031`). Phase 48 (remember AI replies only, ADR 0077): step 2, the flag and recall, built
 2026-10-24 on Phase 47 (migration `0032`); step 3 (extraction and summaries) deferred by the owner until a real
 full-impersonation chat can be measured (K51). Then the release.
