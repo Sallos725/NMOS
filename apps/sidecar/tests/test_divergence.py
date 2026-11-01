@@ -65,7 +65,8 @@ ENTITIES = [{"id": "e-Ren", "type": "character", "name": "Ren", "names": ["Ren",
 MANIFEST = [entry("card:name", "Hana"), entry("card:desc", "{{char}} serves under Captain Ren."),
             entry("persona", "{{user}} is a traveler.", name="Taku"),
             entry("note", "Keep it slow.\n[NMOS note · t3 · 2026-10-23]\nold\n[/NMOS note]"),
-            entry("lore:guard", "The Royal Guard answers to its captain.", keys=["Ren", "guard"], comment="Royal Guard"),
+            entry("lore:guard", "The Royal Guard answers to its captain.", keys=["Ren", "guard"],
+                  comment="Royal Guard"),
             entry("lore:bakery", "Mira bakes at dawn.", keys=["Mira"], comment="Bakery"),
             entry("lore:sea", "The current is cold.", keys=["sea"], comment="Sea")]  # "ren" inside a word: no
 

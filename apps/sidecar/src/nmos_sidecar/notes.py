@@ -5,8 +5,8 @@ words as the chat writes them, and holds up to four parts the owner picks: what 
 `divergence`: one checked model call, with Phase 50's changed lines as its fallback), the chronicle (the story's
 events, how they went and ended, from the scene summaries and the threads; one model call, with an assembled fallback),
 what changed from the setting (canon values a story fact now supersedes) and address and standing (each pair's
-relationship, role, feeling and form of address). The block sits between two marker lines: the author's note is canon (ADR 0045), so the
-canon never reads it (`noteblocks`).
+relationship, role, feeling and form of address). The block sits between two marker lines: the author's note is
+canon (ADR 0045), so the canon never reads it (`noteblocks`).
 
 Nothing is stored and no packet reads the note: it is a view of memory, made when asked.
 """

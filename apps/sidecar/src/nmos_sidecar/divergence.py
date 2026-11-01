@@ -203,7 +203,8 @@ def check(items: Any, given: list[dict[str, Any]], spans: list[tuple[int, int]],
             continue
         raw = it.get("turns") if isinstance(it.get("turns"), list) else [it.get("turns")]
         turns = sorted({int(m) for x in raw for m in TURN.findall(str(x))})
-        if not turns or last_turn is None or any(t > last_turn or not any(a <= t <= b for a, b in spans) for t in turns):
+        cited = last_turn is not None and all(t <= last_turn and any(a <= t <= b for a, b in spans) for t in turns)
+        if not turns or not cited:
             continue
         row = {"key": key, "label": labels[key], "quote": quote, "subject": str(it.get("subject") or "").strip(),
                "now": now, "turns": turns, "kind": it.get("kind") if it.get("kind") in KINDS else "other"}
@@ -249,8 +250,8 @@ every scene, in front of the characters it is kept from.
 SECRETS_TOLD = """
 SECRETS are listed: you may write them, each marked with who does not know it, like "(secret: Kaito does not know)".
 """
-NOTHING_HELD = ("\n\nNONE OF YOUR LAST ITEMS COULD BE USED: copy each quote exactly from its SETTING text, and cite only"
-                " turns the STORY gives.")
+NOTHING_HELD = ("\n\nNONE OF YOUR LAST ITEMS COULD BE USED: copy each quote exactly from its SETTING text, and cite"
+                " only turns the STORY gives.")
 
 
 def _user(given: list[dict[str, Any]], story: str, open_secrets: list[dict[str, Any]], told_secrets: bool) -> str:
