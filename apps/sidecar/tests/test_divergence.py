@@ -93,3 +93,46 @@ def test_the_setting_side_keeps_to_its_caps():
     given, left = divergence.canon_input(manifest, ENTITIES, [fact("Ren", "has_status", value="arrested")], "")
     assert all(len(g["text"]) <= divergence.ENTRY_CHARS for g in given)
     assert sum(len(g["text"]) for g in given) <= divergence.CANON_CHARS and left == 4
+
+
+# --- the check and the line -----------------------------------------------------------------------------------------
+
+GIVEN = [{"key": "card:desc", "label": "card", "text": "Hana serves under Captain Ren of the Royal Guard."},
+         {"key": "lore:guard", "label": 'lorebook "Royal Guard"', "text": "The Royal Guard answers to Captain Ren."}]
+SPANS = [(42, 42), (40, 47)]
+
+
+def item(**kw):
+    return {"key": "lore:guard", "quote": "answers to Captain Ren", "subject": "Ren", "now": "arrested",
+            "turns": [42], "kind": "life", **kw}
+
+
+def test_the_check_keeps_an_item_that_quotes_its_text_and_cites_the_story():
+    rows = divergence.check([item(quote="ANSWERS  to captain ren", turns=["t42", "44"])], GIVEN, SPANS, 50)
+    assert rows == [{"key": "lore:guard", "label": 'lorebook "Royal Guard"', "quote": "ANSWERS  to captain ren",
+                     "subject": "Ren", "now": "arrested", "turns": [42, 44], "kind": "life"}]
+
+
+def test_the_check_drops_what_it_cannot_find():
+    bad = [item(key="lore:moon"),                      # not a text given
+           item(quote="answers to Captain Mira"),      # not in the text
+           item(quote="Captain Ren"),                  # too short to be a quote
+           item(turns=[60]),                           # after the head
+           item(turns=[30]),                           # not a turn the story gave
+           item(turns=[]), item(now=""), "nonsense"]
+    assert divergence.check(bad, GIVEN, SPANS, 50) == []
+    assert divergence.check("nonsense", GIVEN, SPANS, 50) == []
+
+
+def test_the_same_quote_twice_is_one_line_with_the_newer_turns_and_an_unknown_kind_is_other():
+    rows = divergence.check([item(turns=[42]), item(turns=[45], kind="poem")], GIVEN, SPANS, 50)
+    assert len(rows) == 1 and rows[0]["turns"] == [45] and rows[0]["kind"] == "other"
+
+
+def test_a_line_names_its_text_and_turns():
+    assert divergence.line({**item(), "label": 'lorebook "Royal Guard"', "turns": [42, 44],
+                            "now": "arrested and held in the capital prison"}) == (
+        '- Ren (lorebook "Royal Guard"): the setting says "answers to Captain Ren" → now arrested and held in the'
+        ' capital prison (t42–44)')
+    assert divergence.line({**item(), "label": "card", "subject": "", "turns": [42]}).startswith(
+        '- card: the setting says "answers to Captain Ren" → now arrested (t42)')

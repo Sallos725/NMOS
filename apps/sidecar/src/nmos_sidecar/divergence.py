@@ -165,3 +165,49 @@ def canon_input(entries: list[dict[str, Any]], entities: list[dict[str, Any]], f
         given.append({"key": e["key"], "label": _label(e["key"], e.get("metadata") or {}), "text": text})
         total += len(text)
     return given, left
+
+
+TURN = re.compile(r"\d+")
+
+
+def _flat(text: Any) -> str:
+    return " ".join(str(text or "").casefold().split())
+
+
+def check(items: Any, given: list[dict[str, Any]], spans: list[tuple[int, int]],
+          last_turn: int | None) -> list[dict[str, Any]]:
+    """The items of a reply that hold (S4): a key given, a quote of at least QUOTE_MIN characters found in that text
+    (whitespace and case aside), a "now", and turns each at most the head's and inside a span the story's side cited.
+    The same key and quote twice is one item, the newer turns. Anything else is dropped."""
+    texts = {g["key"]: _flat(g["text"]) for g in given}
+    labels = {g["key"]: g["label"] for g in given}
+    out: list[dict[str, Any]] = []
+    seen: dict[tuple[str, str], int] = {}
+    for it in items if isinstance(items, list) else []:
+        if not isinstance(it, dict):
+            continue
+        key, quote, now = str(it.get("key") or ""), str(it.get("quote") or "").strip(), str(it.get("now") or "").strip()
+        q = _flat(quote)
+        if key not in texts or len(q) < QUOTE_MIN or q not in texts[key] or not now:
+            continue
+        raw = it.get("turns") if isinstance(it.get("turns"), list) else [it.get("turns")]
+        turns = sorted({int(m) for x in raw for m in TURN.findall(str(x))})
+        if not turns or last_turn is None or any(t > last_turn or not any(a <= t <= b for a, b in spans) for t in turns):
+            continue
+        row = {"key": key, "label": labels[key], "quote": quote, "subject": str(it.get("subject") or "").strip(),
+               "now": now, "turns": turns, "kind": it.get("kind") if it.get("kind") in KINDS else "other"}
+        at = seen.get((key, q))
+        if at is None:
+            seen[(key, q)] = len(out)
+            out.append(row)
+        elif turns[-1] > out[at]["turns"][-1]:
+            out[at] = row
+    return out
+
+
+def line(r: dict[str, Any]) -> str:
+    """One line of the note (S7), in the chronicle's turn style."""
+    a, b = r["turns"][0], r["turns"][-1]
+    when = f"t{a}" if a == b else f"t{a}–{b}"
+    head = f"{r['subject']} ({r['label']})" if r["subject"] else r["label"]
+    return f'- {head}: the setting says "{r["quote"]}" → now {r["now"]} ({when})'
