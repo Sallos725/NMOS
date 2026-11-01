@@ -505,7 +505,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
           return { last_turn: 12, chars: 60, text: '[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]',
             sections: [{ kind: 'chronicle', made: 'none', cached: false, held: 0, reason: 'no_scenes' },
               { kind: 'address', made: 'facts', cached: false, held: 0, reason: '' },
-              { kind: 'changed', made: 'facts', cached: false, held: 0, reason: 'none', stale: 0 }].map((p, i) => (i ? p : { ...p, stale: 21 })) } as T;
+              { kind: 'diverged', made: 'model', cached: false, held: 0, reason: '', entries: 3, left_out: 1 }].map((p, i) => (i ? p : { ...p, stale: 21 })) } as T;
         }
         if (path.endsWith('/reextract')) {
           if (state.failReextract > 0) { state.failReextract -= 1; throw new Error(`${path} -> HTTP 409: fact extraction is off`); }
@@ -546,16 +546,19 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     await openChat(d);
     button("For the author's note").click();
     const boxes = [...panel().querySelectorAll<HTMLInputElement>('input[type=checkbox][value]')];
-    expect(boxes.map((b) => [b.value, b.checked])).toEqual([['chronicle', true], ['changed', true], ['address', true]]);
-    boxes[1]!.click(); // not "changed"
+    // PHASE-53: what diverged from the setting first and on; the chronicle and address off.
+    expect(boxes.map((b) => [b.value, b.checked])).toEqual([['diverged', true], ['chronicle', false], ['address', false]]);
+    boxes[2]!.click(); // and "address"
     button('Make').click();
     await settle();
     expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
-      { sections: ['chronicle', 'address'], chars: 3000, secrets: false }]);
+      { sections: ['diverged', 'address'], chars: 3000, secrets: false }]);
     const shown = [...panel().querySelectorAll<HTMLTextAreaElement>('textarea[readonly]')];
     expect(shown.map((b) => b.value)).toEqual(['[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]']);
     expect(panel().textContent).toContain('chronicle: no scene summary yet');
     expect(panel().textContent).toContain('address and standing: straight from memory');
+    expect(panel().textContent).toContain('diverged from the setting: written by the model');
+    expect(panel().textContent).toContain('3 lorebook entries compared, 1 left out for length');
     expect(panel().textContent).toContain('Left out 21 open threads not mentioned again for more than 30 turns');
     expect(button('Copy')).toBeTruthy();
   });

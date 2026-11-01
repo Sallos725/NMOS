@@ -1247,7 +1247,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     return /HTTP 409/.test(error instanceof Error ? error.message : String(error)) ? L('act.off') : errorText(lang, error);
   }
   interface ActionResult { queued: { extract?: number; embed?: number }; discarded?: number }
-  interface NotePart { kind: string; made: string; cached: boolean; held: number; reason: string; stale?: number }
+  interface NotePart { kind: string; made: string; cached: boolean; held: number; reason: string; stale?: number; entries?: number; left_out?: number }
   interface NotesResult { text: string; chars: number; sections: NotePart[]; last_turn: number | null }
   retryButton.addEventListener('click', async () => {
     const conversation = actionConversation;
@@ -1315,12 +1315,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   /** The form: which sections, the chronicle's length, whether secrets go in (PHASE-50 S1). */
   function buildNotes(conversation: string): void {
     notesFor = conversation;
-    const pick = (key: StringKey, kind: string) => {
+    const pick = (key: StringKey, kind: string, on: boolean) => {
       const box = el('input', { type: 'checkbox', value: kind });
-      box.checked = true;
+      box.checked = on;
       return { box, row: el('div', { class: 'check' }, box, el('span', { text: L(key) })) };
     };
-    const kinds = [pick('notes.chronicle', 'chronicle'), pick('notes.changed', 'changed'), pick('notes.address', 'address')];
+    // PHASE-53: what diverged from the setting first and on; the chronicle and address stay, off by default.
+    const kinds = [pick('notes.diverged', 'diverged', true), pick('notes.chronicle', 'chronicle', false),
+      pick('notes.address', 'address', false)];
     const length = el('select', { 'aria-label': L('notes.length') },
       el('option', { value: '3000', text: L('notes.short') }), el('option', { value: '6000', text: L('notes.long') }));
     const secrets = el('input', { type: 'checkbox' });
@@ -1337,7 +1339,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       results.replaceChildren();
       try {
         const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,
-          { sections, chars: Number(length.value), secrets: secrets.checked }, 300_000); // a call and one retry
+          { sections, chars: Number(length.value), secrets: secrets.checked }, 600_000); // two calls, each with a retry
         if (notesFor !== conversation) return;
         results.replaceChildren(noteResult(r, msg));
         say(msg, r.text ? L('notes.done') : L('notes.part_none', { part: L('notes.title') }), r.text ? 'ok' : 'warn');
@@ -1357,6 +1359,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       const bits = [L(`notes.made_${p.made}` as StringKey)];
       if (p.cached) bits.push(L('notes.cached'));
       if (p.held) bits.push(L('notes.held', { n: p.held }));
+      if (p.kind === 'diverged' && p.entries !== undefined) bits.push(L('notes.entries', { n: p.entries, m: p.left_out ?? 0 }));
       return L('notes.part_made', { part, how: bits.join(', ') });
     };
     const stale = r.sections.reduce((n, p) => n + (p.stale ?? 0), 0);
