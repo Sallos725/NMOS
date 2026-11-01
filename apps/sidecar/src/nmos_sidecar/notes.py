@@ -1,10 +1,11 @@
 """A note for the author's note (PHASE-50): one block the owner pastes into a chat's author's note, made on request.
 
 It is written in English Markdown (amendment 2: the model reads the note, not a person), with names, titles and quoted
-words as the chat writes them, and holds up to three parts the owner picks: the chronicle (the story's events, how they
-went and ended, from the scene summaries and the threads; one model call, with an assembled fallback), what changed
-from the setting (canon values a story fact now supersedes) and address and standing (each pair's relationship, role,
-feeling and form of address). The block sits between two marker lines: the author's note is canon (ADR 0045), so the
+words as the chat writes them, and holds up to four parts the owner picks: what diverged from the setting (PHASE-53,
+`divergence`: one checked model call, with Phase 50's changed lines as its fallback), the chronicle (the story's
+events, how they went and ended, from the scene summaries and the threads; one model call, with an assembled fallback),
+what changed from the setting (canon values a story fact now supersedes) and address and standing (each pair's
+relationship, role, feeling and form of address). The block sits between two marker lines: the author's note is canon (ADR 0045), so the
 canon never reads it (`noteblocks`).
 
 Nothing is stored and no packet reads the note: it is a view of memory, made when asked.
@@ -19,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from . import divergence
 from .config import Settings
 from .entities import norm
 from .facts import symmetric
@@ -28,7 +30,7 @@ from .noteblocks import strip_blocks, wrap  # noqa: F401  (the API's names for t
 from .predicates import HOLDER_PER_ITEM, REGISTRY
 from .summaries import content, held as summary_held, leaks
 
-KINDS = ("chronicle", "changed", "address")  # the parts the owner can pick, in the note's order
+KINDS = ("diverged", "chronicle", "changed", "address")  # the parts the owner can pick, in the note's order
 PAIRS_MAX = 30  # address lines at most
 CHANGED_MAX = 30  # changed lines at most, newest first
 PAIRWISE = frozenset({"relationship", "role_toward", "feels_toward", "addresses"})
@@ -40,7 +42,9 @@ CHANGEABLE = (frozenset(p for p, d in REGISTRY.items() if d.cardinality == "sing
 WORDS = {"located_in": "location", "has_status": "status", "relationship": "relationship", "role_toward": "role",
          "feels_toward": "feels", "addresses": "calls", "possesses": "held by", "destroyed": "destroyed"}
 HEADER = ("# Story memory (NMOS, as of turn {turn})\n"
-          "What the story has established so far. The latest messages take precedence over it.")
+          "What the story has established so far. The latest messages take precedence over it.\n"
+          "The character card and lorebook were written before the story began: where they disagree with this note,"
+          " this note is true now.")
 CHANGED_HEAD = ("## Changed from the setting\n"
                 "The character card or lorebook still says the old value; the story has moved on.")
 ADDRESS_HEAD = "## Address and standing"
@@ -155,6 +159,7 @@ SECRETS are listed: you may write them, each marked with who does not know it, l
 def clear_cache() -> None:
     with _CACHE_LOCK:
         _CACHE.clear()
+    divergence.clear_cache()
 
 
 def _cut_lines(text: str, cap: int) -> str:
@@ -301,6 +306,8 @@ class Ask:
         sections = tuple(dict.fromkeys(body.get("sections") or ()))
         if not sections or any(s not in KINDS for s in sections):
             raise ValueError(f"sections must be some of {', '.join(KINDS)}")
+        if "diverged" in sections:  # its fallback is the same lines; an older plugin still asks for `changed` alone
+            sections = tuple(s for s in sections if s != "changed")
         chars = int(body.get("chars", 3000))
         if chars not in (3000, 6000):
             raise ValueError("chars must be 3000 or 6000")
@@ -317,13 +324,24 @@ def model_for(settings: Settings) -> Callable[..., tuple[Any, ...]] | None:
 
 
 def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn: int | None,
-         model: Callable[..., tuple[Any, ...]] | None, today: str) -> dict[str, Any]:
-    """The note: one block holding every part asked for that has something to say, and what each part was made of."""
+         model: Callable[..., tuple[Any, ...]] | None, today: str,
+         canon: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """The note: one block holding every part asked for that has something to say, and what each part was made of.
+    `canon` is the manifest in force with its texts (`canon.manifest`), which only the diverged part reads."""
     facts = view.get("facts") or []
     parts: list[str] = []
     info = []
     for kind in ask.sections:
-        if kind == "chronicle":
+        if kind == "diverged":
+            d = divergence.diverged(canon or [], view.get("entities") or [],
+                                    [f for f in facts if ask.secrets or not kept(f)], told,
+                                    [s for s in view.get("secrets") or [] if s.get("open")], last_turn,
+                                    model if ask.model else None, ask.secrets, changed_lines(facts, ask.secrets),
+                                    frozenset(view.get("excluded") or ()))
+            body = d["body"]
+            info.append({"kind": kind, **{k: d[k] for k in ("made", "cached", "held", "reason", "turns", "lines",
+                                                            "entries", "left_out", "dropped")}, "chars": len(body)})
+        elif kind == "chronicle":
             c = chronicle(told, view.get("threads") or [], facts, view.get("secrets") or [], ask.chars,
                           model if ask.model else None, ask.secrets, last_turn)
             body = c["body"]

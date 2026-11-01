@@ -270,6 +270,7 @@ def test_ask_refuses_what_it_does_not_know_and_keeps_the_notes_order():
             notes.Ask.of(bad)
     assert notes.Ask.of({"sections": ["address", "changed", "changed"]}) == notes.Ask(("changed", "address"), 3000,
                                                                                       False, True)
+    assert notes.Ask.of({"sections": ["address", "diverged", "changed"]}).sections == ("diverged", "address")
 
 
 def test_the_note_is_one_block_of_the_parts_that_have_something_to_say():
@@ -281,12 +282,26 @@ def test_the_note_is_one_block_of_the_parts_that_have_something_to_say():
     assert got["chronicle"]["reason"] == "no_scenes" and got["changed"]["reason"] == "none"
     assert out["text"] == ("[NMOS note · t12 · 2026-10-23]\n"
                            "# Story memory (NMOS, as of turn 12)\n"
-                           "What the story has established so far. The latest messages take precedence over it.\n\n"
+                           "What the story has established so far. The latest messages take precedence over it.\n"
+                           "The character card and lorebook were written before the story began: where they disagree"
+                           " with this note, this note is true now.\n\n"
                            "## Address and standing\n- Hana ↔ Kaito: Hana→Kaito relationship sister\n"
                            "[/NMOS note]")
     assert notes.strip_blocks(out["text"]) == ("", [{"turn": "12"}])
     nothing = notes.make(notes.Ask.of({"sections": ["changed"]}), view, None, 12, None, "2026-10-23")
     assert nothing["text"] == "" and nothing["sections"][0]["reason"] == "none"
+
+
+def test_diverged_comes_first_and_falls_back_to_what_changed():
+    notes.clear_cache()
+    hist = [canon_entry("Hana", "located_in", obj="harbor town")]
+    view = {"facts": [fact("Hana", "located_in", obj="old mill", turn=7, history=hist)], "threads": [], "secrets": [],
+            "entities": []}
+    out = notes.make(notes.Ask.of({"sections": ["address", "diverged"]}), view, told(), 12, None, "2026-11-01",
+                     canon=[])
+    assert [s["kind"] for s in out["sections"]] == ["diverged", "address"]
+    assert out["sections"][0]["made"] == "facts" and out["sections"][0]["lines"] == 1
+    assert "## Diverged from the setting\n- Hana — location: was harbor town → now old mill (t7)" in out["text"]
 
 
 def test_the_endpoint_lists_what_the_story_changed_of_the_card(migrated):
