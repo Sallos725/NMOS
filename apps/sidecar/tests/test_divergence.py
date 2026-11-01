@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from nmos_sidecar import divergence
+from nmos_sidecar.llm import LLMError
 
 
 def fact(subject, predicate, *, obj=None, value=None, turn=5, eid=None, canon=None, polarity="positive", **kw):
@@ -136,3 +137,93 @@ def test_a_line_names_its_text_and_turns():
         ' capital prison (t42–44)')
     assert divergence.line({**item(), "label": "card", "subject": "", "turns": [42]}).startswith(
         '- card: the setting says "answers to Captain Ren" → now arrested (t42)')
+
+
+# --- the call -------------------------------------------------------------------------------------------------------
+
+class Writer:
+    """A stand-in model: its replies in order (an exception is raised), the prompts it saw."""
+
+    def __init__(self, *replies):
+        self.replies, self.calls = list(replies), []
+
+    def __call__(self, system, user):
+        self.calls.append((system, user))
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply, "{}"
+
+
+FACTS = [fact("Ren", "has_status", value="arrested", turn=42)]
+TOLD = told(scene(40, 47, "Ren is taken away in chains."))
+GOOD = {"diverged": [{"key": "lore:guard", "quote": "The Royal Guard answers to its captain", "subject": "Ren",
+                      "now": "arrested", "turns": [42], "kind": "life"}]}
+FALLBACK = ["- Ren — status: was free → now arrested (t42)"]
+
+
+def run(model, *, secrets=(), told_secrets=False, fallback=FALLBACK, manifest=MANIFEST):
+    return divergence.diverged(manifest, ENTITIES, FACTS, TOLD, list(secrets), 47, model, told_secrets, fallback)
+
+
+def test_the_model_finds_it_and_the_part_says_it():
+    divergence.clear_cache()
+    w = Writer(GOOD)
+    out = run(w)
+    assert out["made"] == "model" and out["lines"] == 1 and out["dropped"] == 0 and out["entries"] == 1  # Mira unnamed
+    assert out["body"] == ('## Diverged from the setting\n- Ren (lorebook "Royal Guard"): the setting says "The Royal'
+                           ' Guard answers to its captain" → now arrested (t42)')
+    system, user = w.calls[0]
+    assert "SETTING" in user and "[key: lore:guard · lorebook \"Royal Guard\"]" in user and "[t42]" in user
+
+
+def test_nothing_changed_is_an_answer():
+    divergence.clear_cache()
+    out = run(Writer({"diverged": []}))
+    assert out["made"] == "model" and out["body"] == "" and out["reason"] == "none"
+
+
+def test_a_broken_reply_is_asked_again_then_the_fallback():
+    divergence.clear_cache()
+    w = Writer(LLMError("bad json"), {"diverged": "nope"})
+    out = run(w)
+    assert len(w.calls) == 2 and out["made"] == "facts"
+    assert out["body"] == "## Diverged from the setting\n- Ren — status: was free → now arrested (t42)"
+
+
+def test_a_reply_with_nothing_that_holds_is_asked_again_with_why():
+    divergence.clear_cache()
+    bad = {"diverged": [{**GOOD["diverged"][0], "quote": "The Royal Guard answers to the queen"}]}
+    w = Writer(bad, GOOD)
+    out = run(w)
+    assert out["made"] == "model" and "copy each quote exactly" in w.calls[1][1]
+
+
+def test_a_reply_that_tells_a_kept_secret_is_asked_again_then_the_fallback():
+    divergence.clear_cache()
+    secret = {"open": ["Kaito"], "holders": ["Ren"], "text": "Ren identity: royal guard traitor", "turn": 41,
+              "position": 41}
+    leak = {"diverged": [{**GOOD["diverged"][0], "now": "arrested as the royal guard traitor"}]}
+    w = Writer(leak, leak)
+    out = run(w, secrets=[secret])
+    assert len(w.calls) == 2 and "TOLD THESE SECRETS" in w.calls[1][1] and out["made"] == "facts"
+    assert "OPEN SECRETS" in w.calls[0][1]
+
+
+def test_no_model_no_setting_or_no_story_is_the_fallback_without_a_call():
+    divergence.clear_cache()
+    assert run(None)["made"] == "facts"
+    w = Writer(GOOD)
+    assert run(w, manifest=[])["made"] == "facts" and not w.calls
+    empty = run(None, fallback=[])
+    assert empty["body"] == "" and empty["reason"] == "none"
+
+
+def test_asked_twice_with_nothing_changed_the_model_answers_once_and_a_failure_is_not_remembered():
+    divergence.clear_cache()
+    w = Writer(GOOD)
+    first, again = run(w), run(w)
+    assert len(w.calls) == 1 and not first["cached"] and again["cached"]
+    divergence.clear_cache()
+    f = Writer(LLMError("down"), LLMError("down"), GOOD)
+    assert run(f)["made"] == "facts" and run(f)["made"] == "model"

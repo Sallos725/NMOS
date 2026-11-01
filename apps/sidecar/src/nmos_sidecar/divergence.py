@@ -211,3 +211,102 @@ def line(r: dict[str, Any]) -> str:
     when = f"t{a}" if a == b else f"t{a}–{b}"
     head = f"{r['subject']} ({r['label']})" if r["subject"] else r["label"]
     return f'- {head}: the setting says "{r["quote"]}" → now {r["now"]} ({when})'
+
+
+PROMPT = """You compare the SETTING of a role-play chat (its character card, persona, author's note and lorebook
+entries, all written before the story began) with the STORY so far (facts stored from it, each with its turn, and scene
+summaries with their turns). List every place where the story has left the setting: something a SETTING text states
+that no longer holds now. That includes a character's life and freedom (dead, arrested, missing, gravely wounded,
+exiled), a position or allegiance (dismissed, promoted, deserted, changed sides), a relationship turned around, and the
+world and its places (a city destroyed, a ruler fallen, an item gone).
+
+For each, give:
+- "key": the key of the SETTING text, exactly as given;
+- "quote": the words of that text that no longer hold, copied exactly from it;
+- "subject": who or what it is about, named as the input names it;
+- "now": how things stand in the story now, in English, one short clause;
+- "turns": the turns of the STORY items that show it, as numbers;
+- "kind": one of "life", "position", "relationship", "world", "other".
+Only what the input says. A story detail the setting does not contradict is not a divergence, and neither is something
+the setting leaves out. Keep names, titles, places and quoted words exactly as the input writes them.
+{secrets}
+Answer with JSON only: {{"diverged": [...]}}, an empty list when nothing the setting states has changed."""
+SECRETS_KEPT = """
+If OPEN SECRETS are listed, never write a secret's content, not even in other words or as a hint: the note is read in
+every scene, in front of the characters it is kept from.
+"""
+SECRETS_TOLD = """
+SECRETS are listed: you may write them, each marked with who does not know it, like "(secret: Kaito does not know)".
+"""
+NOTHING_HELD = ("\n\nNONE OF YOUR LAST ITEMS COULD BE USED: copy each quote exactly from its SETTING text, and cite only"
+                " turns the STORY gives.")
+
+
+def _user(given: list[dict[str, Any]], story: str, open_secrets: list[dict[str, Any]], told_secrets: bool) -> str:
+    lines = []
+    if open_secrets:
+        lines += ["SECRETS:" if told_secrets else "OPEN SECRETS (never write their content):"]
+        lines += [f"- {', '.join(s['holders'])} keep from {', '.join(s['open'])}: {content(s)}" for s in open_secrets]
+        lines += [""]
+    lines += ["SETTING:"]
+    for g in given:
+        lines += [f"[key: {g['key']} · {g['label']}]", g["text"], ""]
+    return "\n".join(lines + ["STORY:", story])
+
+
+def diverged(entries: list[dict[str, Any]], entities: list[dict[str, Any]], facts: list[dict[str, Any]],
+             told: dict[str, Any] | None, open_secrets: list[dict[str, Any]], last_turn: int | None,
+             model: Callable[..., tuple[Any, ...]] | None, told_secrets: bool, fallback: list[str],
+             excluded: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """The part's Markdown and how it was made (S4–S6). `facts` are already filtered for secrets by the caller, and
+    `fallback` is Phase 50's `changed` lines. One call, asked again once when its reply is not JSON with a list, when
+    no item it named holds, or (secrets off) when its lines tell a kept secret at LEAK_NEAR; then the fallback. A model
+    answer, an empty one included, is cached by its whole input; a fallback is not, so a failed call is tried again."""
+    story, spans, held = story_input(facts, told, open_secrets, told_secrets)
+    given, left = canon_input(entries, entities, facts, story, excluded)
+    base = {"turns": str(last_turn or 0), "held": held, "entries": sum(g["key"].startswith("lore:") for g in given),
+            "left_out": left, "cached": False, "dropped": 0}
+
+    def facts_part() -> dict[str, Any]:
+        return {**base, "made": "facts", "lines": len(fallback), "reason": "" if fallback else "none",
+                "body": f"{HEAD}\n" + "\n".join(fallback) if fallback else ""}
+
+    if model is None or not given or not spans:
+        return facts_part()
+    system = PROMPT.format(secrets=SECRETS_TOLD if told_secrets else (SECRETS_KEPT if open_secrets else ""))
+    user = _user(given, story, open_secrets, told_secrets)
+    which = getattr(getattr(model, "__self__", None), "model", "")
+    key = hashlib.sha256(f"{told_secrets}|{which}|{system}|{user}".encode()).hexdigest()
+    with _CACHE_LOCK:
+        hit = _CACHE.get(key)
+        if hit is not None:
+            _CACHE.move_to_end(key)
+            return {**hit, "cached": True}
+    everyone = _everyone(open_secrets)
+    ask = user
+    for _ in range(2):
+        try:
+            parsed, _, _ = metered(model, system, ask)
+        except LLMError:
+            continue
+        items = parsed.get("diverged") if isinstance(parsed, dict) else None
+        if not isinstance(items, list):
+            continue
+        rows = check(items, given, spans, last_turn)
+        if items and not rows:
+            ask = user + NOTHING_HELD
+            continue
+        lines = [line(r) for r in rows]
+        told_now = [] if told_secrets else leaks("\n".join(lines), open_secrets, everyone)
+        if told_now:
+            ask = user + "\n\nYOUR LAST ANSWER TOLD THESE SECRETS; write it again without them:\n" + "\n".join(
+                f"- {content(s)}" for s in told_now)
+            continue
+        out = {**base, "made": "model", "lines": len(lines), "reason": "" if lines else "none",
+               "dropped": len(items) - len(rows), "body": f"{HEAD}\n" + "\n".join(lines) if lines else ""}
+        with _CACHE_LOCK:
+            _CACHE[key] = out
+            while len(_CACHE) > CACHE_MAX:
+                _CACHE.popitem(last=False)
+        return out
+    return facts_part()
