@@ -101,12 +101,21 @@ def _names(e: dict[str, Any]) -> set[str]:
     return {n for n in (norm(x) for x in raw if x) if len(n) >= NAME_MIN}
 
 
-def _named_in(name: str, hay: str) -> bool:
-    """A normalized name in a normalized text: a Latin name as a whole word ("ren" is not in "current"); any other as
-    written, since a Korean particle joins its name ("레나는")."""
+LATIN = re.compile(r"[a-z0-9]+")
+
+
+def _words(text: str) -> str:
+    """A normalized text as its Latin words, space-padded: a whole-word match is a substring of it."""
+    return f" {' '.join(LATIN.findall(text))} "
+
+
+def _named_in(name: str, hay: str, words: str) -> bool:
+    """A normalized name in a normalized text (`words` = `_words(hay)`): a Latin name as whole words ("ren" is not in
+    "current"); any other as written, since a Korean particle joins its name ("레나는")."""
     if not name.isascii():
         return name in hay
-    return re.search(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])", hay) is not None
+    w = _words(name)
+    return w != "  " and w in words
 
 
 def canon_input(entries: list[dict[str, Any]], entities: list[dict[str, Any]], facts: list[dict[str, Any]],
@@ -135,9 +144,10 @@ def canon_input(entries: list[dict[str, Any]], entities: list[dict[str, Any]], f
             if isinstance(ref, dict) and ref.get("id"):
                 latest[str(ref["id"])] = max(latest.get(str(ref["id"]), -1), f["turn"])
     told_text = norm(story_text)
+    told_words = _words(told_text)
     names = {str(e["id"]): ns for e in entities
              if not e.get("persona") and str(e["id"]) not in excluded and (ns := _names(e))}
-    names = {i: ns for i, ns in names.items() if i in latest or any(_named_in(n, told_text) for n in ns)}
+    names = {i: ns for i, ns in names.items() if i in latest or any(_named_in(n, told_text, told_words) for n in ns)}
     given: list[dict[str, Any]] = []
     total = 0
     for key in ALWAYS:
@@ -152,7 +162,8 @@ def canon_input(entries: list[dict[str, Any]], entities: list[dict[str, Any]], f
             continue
         text = text_of(e)
         hay, keys = norm(text), {norm(k) for k in (e.get("metadata") or {}).get("keys") or []}
-        hit = [i for i, ns in names.items() if any(n in keys or _named_in(n, hay) for n in ns)]
+        words = _words(hay)
+        hit = [i for i, ns in names.items() if any(n in keys or _named_in(n, hay, words) for n in ns)]
         if not hit:
             continue
         touched = [latest[i] for i in hit if i in latest]
