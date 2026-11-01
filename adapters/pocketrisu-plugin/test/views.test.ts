@@ -147,7 +147,7 @@ describe('the hub (PHASE-52 D1)', () => {
     panel().querySelector<HTMLAnchorElement>('a[data-act="notes"]')!.click();
     await settle();
     expect(Array.from(panel().querySelectorAll('input[type=checkbox][value]')).map((b) => b.getAttribute('value')))
-      .toEqual(['chronicle', 'changed', 'address']);
+      .toEqual(['diverged', 'chronicle', 'address']);
     panel().querySelector<HTMLAnchorElement>('a[data-act="settings"]')!.click();
     await settle();
     expect(panel().querySelector<HTMLElement>('.bar')!.style.display).toBe('');

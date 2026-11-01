@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:024d6401c054".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:25d4fcdd5a1d".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -487,15 +487,17 @@
     "grp.backup": ["\uBC31\uC5C5", "Backup"],
     "grp.backup_sub": ["\uC804\uCCB4 \uB0B4\uBCF4\uB0B4\uAE30 \xB7 \uBCF5\uC6D0", "Export everything \xB7 restore"],
     "notes.title": ["\uC791\uAC00\uC758 \uB178\uD2B8\uC6A9 \uC815\uB9AC", "For the author's note"],
+    "notes.part.diverged": ["\uC124\uC815\uACFC \uB2EC\uB77C\uC9C4 \uAC83", "diverged from the setting"],
     "notes.part.chronicle": ["\uC5F0\uB300\uAE30", "chronicle"],
     "notes.part.changed": ["\uC124\uC815 \uBCC0\uACBD\uC810", "changed from the setting"],
     "notes.part.address": ["\uD638\uCE6D\xB7\uAD00\uACC4", "address and standing"],
     "notes.sub": [
-      "\uC774 \uCC44\uD305\uC758 \uAE30\uC5B5\uC73C\uB85C \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC744 \uAE00 \uD558\uB098\uB97C \uB9CC\uB4ED\uB2C8\uB2E4. \uBAA8\uB378\uC774 \uC77D\uAE30 \uC88B\uAC8C \uC601\uC5B4 \uB9C8\uD06C\uB2E4\uC6B4\uC73C\uB85C \uC4F0\uACE0, \uC774\uB984\uACFC \uD638\uCE6D\uC740 \uCC44\uD305\uC5D0 \uC801\uD78C \uADF8\uB300\uB85C \uB461\uB2C8\uB2E4. \uACB0\uACFC\uB97C [NMOS note \u2026] \uC904\uBD80\uD130 [/NMOS note] \uC904\uAE4C\uC9C0 \uD1B5\uC9F8\uB85C \uBCF5\uC0AC\uD574 \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC73C\uC138\uC694(\uC804\uC5D0 \uBD99\uC778 \uAC83\uC774 \uC788\uC73C\uBA74 \uADF8 \uBE14\uB85D\uC744 \uC9C0\uC6B0\uACE0 \uC0C8\uB85C \uBD99\uC774\uBA74 \uB429\uB2C8\uB2E4). \uADF8\uB798\uC57C NMOS\uAC00 \uADF8 \uBD80\uBD84\uC744 \uC6D0\uC804(\uC124\uC815)\uC73C\uB85C \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC791\uAC00\uC758 \uB178\uD2B8\uB294 \uB9E4 \uC694\uCCAD\uC5D0 \uD568\uAED8 \uAC00\uBBC0\uB85C, \uBD99\uC5EC\uB123\uC740 \uAE38\uC774\uB9CC\uD07C \uB9E4 \uD134 \uD1A0\uD070\uC774 \uB4ED\uB2C8\uB2E4.",
-      "Makes one text from this chat's memory to paste into its author's note: English Markdown, which the model reads well, with names and forms of address as the chat writes them. Copy it whole, from the [NMOS note \u2026] line to the [/NMOS note] line, into the author's note (replace the block you pasted before, if any), so NMOS does not read it as the setting. The note goes with every request, so what you paste is paid on every turn."
+      "\uC774 \uCC44\uD305\uC758 \uAE30\uC5B5\uC73C\uB85C \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC744 \uAE00 \uD558\uB098\uB97C \uB9CC\uB4ED\uB2C8\uB2E4. \uBAA8\uB378\uC774 \uC77D\uAE30 \uC88B\uAC8C \uC601\uC5B4 \uB9C8\uD06C\uB2E4\uC6B4\uC73C\uB85C \uC4F0\uACE0, \uC774\uB984\uACFC \uD638\uCE6D\uC740 \uCC44\uD305\uC5D0 \uC801\uD78C \uADF8\uB300\uB85C \uB461\uB2C8\uB2E4. \uACB0\uACFC\uB97C [NMOS note \u2026] \uC904\uBD80\uD130 [/NMOS note] \uC904\uAE4C\uC9C0 \uD1B5\uC9F8\uB85C \uBCF5\uC0AC\uD574 \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC73C\uC138\uC694(\uC804\uC5D0 \uBD99\uC778 \uAC83\uC774 \uC788\uC73C\uBA74 \uADF8 \uBE14\uB85D\uC744 \uC9C0\uC6B0\uACE0 \uC0C8\uB85C \uBD99\uC774\uBA74 \uB429\uB2C8\uB2E4). \uADF8\uB798\uC57C NMOS\uAC00 \uADF8 \uBD80\uBD84\uC744 \uC6D0\uC804(\uC124\uC815)\uC73C\uB85C \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC791\uAC00\uC758 \uB178\uD2B8\uB294 \uB9E4 \uC694\uCCAD\uC5D0 \uD568\uAED8 \uAC00\uBBC0\uB85C, \uBD99\uC5EC\uB123\uC740 \uAE38\uC774\uB9CC\uD07C \uB9E4 \uD134 \uD1A0\uD070\uC774 \uB4ED\uB2C8\uB2E4. \uC124\uC815\uACFC \uB2EC\uB77C\uC9C4 \uAC83\uACFC \uC5F0\uB300\uAE30\uB294 \uB9CC\uB4E4 \uB54C\uB9C8\uB2E4 \uBAA8\uB378\uC744 \uD55C \uBC88\uC529 \uBD80\uB985\uB2C8\uB2E4.",
+      "Makes one text from this chat's memory to paste into its author's note: English Markdown, which the model reads well, with names and forms of address as the chat writes them. Copy it whole, from the [NMOS note \u2026] line to the [/NMOS note] line, into the author's note (replace the block you pasted before, if any), so NMOS does not read it as the setting. The note goes with every request, so what you paste is paid on every turn. Diverged from the setting and the chronicle each call the model once when made."
     ],
+    "notes.diverged": ["\uC124\uC815\uACFC \uB2EC\uB77C\uC9C4 \uAC83: \uCE74\uB4DC\xB7\uB85C\uC5B4\uBD81\uACFC \uC9C0\uAE08 \uC774\uC57C\uAE30\uAC00 \uC5B4\uAE0B\uB09C \uACF3 (\uBAA8\uB378 1\uD68C \uD638\uCD9C)", "Diverged from the setting: where the story no longer fits the card or lorebook (one model call)"],
+    "notes.entries": ["\uB85C\uC5B4\uBD81 {n}\uAC1C \uD56D\uBAA9\uACFC \uBE44\uAD50, {m}\uAC1C\uB294 \uAE38\uC774 \uC0C1\uD55C\uC73C\uB85C \uC81C\uC678", "{n} lorebook entries compared, {m} left out for length"],
     "notes.chronicle": ["\uC5F0\uB300\uAE30: \uC9C0\uAE08\uAE4C\uC9C0\uC758 \uC0AC\uAC74\uACFC \uACB0\uACFC (\uBAA8\uB378 1\uD68C \uD638\uCD9C)", "Chronicle: the events so far and how they ended (one model call)"],
-    "notes.changed": ["\uC124\uC815 \uBCC0\uACBD\uC810: \uCE74\uB4DC\xB7\uB85C\uC5B4\uBD81\uACFC \uB2EC\uB77C\uC9C4 \uAC83", "Changed from the setting: what the card or lorebook no longer says right"],
     "notes.address": ["\uD638\uCE6D\xB7\uAD00\uACC4: \uC11C\uB85C \uBB50\uB77C\uACE0 \uBD80\uB974\uACE0 \uC5B4\uB5A4 \uC0AC\uC774\uC778\uC9C0", "Address and standing: what they call each other and how they stand"],
     "notes.length": ["\uC5F0\uB300\uAE30 \uAE38\uC774", "Chronicle length"],
     "notes.short": ["\uC9E7\uAC8C (3,000\uC790)", "Short (3,000 characters)"],
@@ -3946,12 +3948,16 @@ html,body{margin:0;background:${PALETTE.bg}}
     });
     function buildNotes(conversation) {
       notesFor = conversation;
-      const pick = (key, kind) => {
+      const pick = (key, kind, on) => {
         const box = el("input", { type: "checkbox", value: kind });
-        box.checked = true;
+        box.checked = on;
         return { box, row: el("div", { class: "check" }, box, el("span", { text: L(key) })) };
       };
-      const kinds = [pick("notes.chronicle", "chronicle"), pick("notes.changed", "changed"), pick("notes.address", "address")];
+      const kinds = [
+        pick("notes.diverged", "diverged", true),
+        pick("notes.chronicle", "chronicle", false),
+        pick("notes.address", "address", false)
+      ];
       const length = el(
         "select",
         { "aria-label": L("notes.length") },
@@ -3977,7 +3983,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             "POST",
             `/v1/conversations/${conversation}/notes`,
             { sections, chars: Number(length.value), secrets: secrets.checked },
-            3e5
+            6e5
           );
           if (notesFor !== conversation) return;
           results.replaceChildren(noteResult(r, msg));
@@ -4008,6 +4014,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         const bits = [L(`notes.made_${p.made}`)];
         if (p.cached) bits.push(L("notes.cached"));
         if (p.held) bits.push(L("notes.held", { n: p.held }));
+        if (p.kind === "diverged" && p.entries !== void 0) bits.push(L("notes.entries", { n: p.entries, m: p.left_out ?? 0 }));
         return L("notes.part_made", { part, how: bits.join(", ") });
       };
       const stale = r.sections.reduce((n, p) => n + (p.stale ?? 0), 0);

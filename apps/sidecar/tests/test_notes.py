@@ -270,6 +270,7 @@ def test_ask_refuses_what_it_does_not_know_and_keeps_the_notes_order():
             notes.Ask.of(bad)
     assert notes.Ask.of({"sections": ["address", "changed", "changed"]}) == notes.Ask(("changed", "address"), 3000,
                                                                                       False, True)
+    assert notes.Ask.of({"sections": ["address", "diverged", "changed"]}).sections == ("diverged", "address")
 
 
 def test_the_note_is_one_block_of_the_parts_that_have_something_to_say():
@@ -281,12 +282,26 @@ def test_the_note_is_one_block_of_the_parts_that_have_something_to_say():
     assert got["chronicle"]["reason"] == "no_scenes" and got["changed"]["reason"] == "none"
     assert out["text"] == ("[NMOS note · t12 · 2026-10-23]\n"
                            "# Story memory (NMOS, as of turn 12)\n"
-                           "What the story has established so far. The latest messages take precedence over it.\n\n"
+                           "What the story has established so far. The latest messages take precedence over it.\n"
+                           "The character card and lorebook were written before the story began: where they disagree"
+                           " with this note, this note is true now.\n\n"
                            "## Address and standing\n- Hana ↔ Kaito: Hana→Kaito relationship sister\n"
                            "[/NMOS note]")
     assert notes.strip_blocks(out["text"]) == ("", [{"turn": "12"}])
     nothing = notes.make(notes.Ask.of({"sections": ["changed"]}), view, None, 12, None, "2026-10-23")
     assert nothing["text"] == "" and nothing["sections"][0]["reason"] == "none"
+
+
+def test_diverged_comes_first_and_falls_back_to_what_changed():
+    notes.clear_cache()
+    hist = [canon_entry("Hana", "located_in", obj="harbor town")]
+    view = {"facts": [fact("Hana", "located_in", obj="old mill", turn=7, history=hist)], "threads": [], "secrets": [],
+            "entities": []}
+    out = notes.make(notes.Ask.of({"sections": ["address", "diverged"]}), view, told(), 12, None, "2026-11-01",
+                     canon=[])
+    assert [s["kind"] for s in out["sections"]] == ["diverged", "address"]
+    assert out["sections"][0]["made"] == "facts" and out["sections"][0]["lines"] == 1
+    assert "## Diverged from the setting\n- Hana — location: was harbor town → now old mill (t7)" in out["text"]
 
 
 def test_the_endpoint_lists_what_the_story_changed_of_the_card(migrated):
@@ -305,6 +320,37 @@ def test_the_endpoint_lists_what_the_story_changed_of_the_card(migrated):
     assert "identity" not in text  # a card's identity said again is not a change (ADR 0047 amendment 1)
     assert "## Address and standing" in text and "Hana ↔ Kaito" in text
     assert [s["made"] for s in out["sections"]] == ["facts", "facts"]
+
+
+def test_the_endpoint_compares_the_setting_with_the_story(migrated, monkeypatch):
+    import re
+
+    asked: list[str] = []
+
+    class Fake:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def complete_metered(self, system, user):
+            asked.append(user)
+            turn = int(re.search(r"\[t(\d+)\] Hana located in old mill", user)[1])
+            return {"diverged": [{"key": "card:desc", "quote": "Hana is in the harbor town", "subject": "Hana",
+                                  "now": "in the old mill", "turns": [turn], "kind": "world"}]}, "{}", None
+
+    monkeypatch.setattr(notes, "ChatModel", Fake)
+    notes.clear_cache()
+    chat, model = story(), Model()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        push(c, chat, canon_texts())
+        drain(migrated, model)
+        cid = canon_view(migrated, chat)["conversation"]
+        out = c.post(f"/v1/conversations/{cid}/notes", json={"sections": ["diverged"]}).json()
+    assert len(asked) == 1 and "[key: card:desc · card]\nHana is a lighthouse keeper." in asked[0]
+    assert "lore:mira" not in asked[0]  # Mira is in no story fact or scene
+    part = out["sections"][0]
+    assert part["kind"] == "diverged" and part["made"] == "model" and part["lines"] == 1
+    assert '- Hana (card): the setting says "Hana is in the harbor town" → now in the old mill (t' in out["text"]
 
 
 def test_the_endpoint_says_no_and_not_found(migrated):

@@ -1130,7 +1130,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     @app.post("/v1/conversations/{conv_id}/notes", dependencies=[Depends(auth)])
     def author_notes(conv_id: UUID, body: dict[str, Any], request: Request):
         """Sections for the chat's author's note (PHASE-50), made on request for the owner to paste: nothing is
-        stored and no packet reads them. Only the chronicle calls a model, after the database connection is back."""
+        stored and no packet reads them. Only the chronicle and what diverged from the setting (PHASE-53) call a model,
+        after the database connection is back."""
         try:
             ask = notes.Ask.of(body)
         except (TypeError, ValueError) as exc:
@@ -1143,9 +1144,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             view = view_of(conn, head)
             last = head_turn(conn, head)
             key = rt.get("active_summarizer")
-            told = summaries.current(conn, conv_id, head, key) if key and "chronicle" in ask.sections else None
-        model = notes.model_for(rt["settings"]) if ask.model and "chronicle" in ask.sections else None
-        out = notes.make(ask, view, told, last, model, date.today().isoformat())
+            calls = {"chronicle", "diverged"} & set(ask.sections)  # the parts that read summaries and call a model
+            told = summaries.current(conn, conv_id, head, key) if key and calls else None
+            manifest = canon.manifest(conn, conv_id) if "diverged" in ask.sections else None
+        model = notes.model_for(rt["settings"]) if ask.model and calls else None
+        out = notes.make(ask, view, told, last, model, date.today().isoformat(), canon=manifest)
         log.info("author notes conversation=%s sections=%s made=%s", conv_id, ",".join(ask.sections),
                  ",".join(s["made"] for s in out["sections"]))
         return out
