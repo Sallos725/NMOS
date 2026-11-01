@@ -1013,10 +1013,12 @@ W=/home/grantkim725/data/docker/risuaiNode/NMOS-p53
   (AGENTS §14: canon/provenance, secrets, a model claim in every prompt). Fix what it finds, re-run the touched tests.
 - [ ] **Step 2: Spec** — in `docs/phases/PHASE-53.md`: the S7 example line becomes the chronicle's turn style
   (`(t42–44)`); add `## Steps 2–4 evidence (date)` with the files, the test counts, the plugin build hash, the review's
-  fixes. Commit `docs(phase53): steps 2-4 evidence`.
+  fixes. In `docs/STATUS.md`'s "Phase specs" row, extend the range to `PHASE-53.md` and add "53 approved
+  (2026-11-01), the author's note's divergence part, steps 2–4 built". Commit `docs(phase53): steps 2-4 evidence`.
 - [ ] **Step 3: Push and open the PR** (ask the owner first): title `Phase 53: the author's note says where the story
   left the setting`, body with "Part of" no Linear key unless the owner gives one, **High risk** marked, the test
-  evidence, and the attribution line. Read Copilot's review when it comes (`nmos-read-copilot-reviews`); one
+  evidence, a line that the plugin's `//@version` is unchanged on purpose (bumped only at releases), and the
+  attribution line. Write the body with Write and pass `--body-file` (`shell-cat-is-bat`). Read Copilot's review when it comes (`nmos-read-copilot-reviews`); one
   `gh pr checks` for CI (`nmos-pr-bind-unavailable`).
 
 ### Task 9: Measurement (Q2, zero cost) and the trials
@@ -1030,7 +1032,9 @@ paid endpoint (`nmos-api-spend`).
   127.0.0.1:11500.
 - [ ] **Step 2: Zero-call check** — a script that, per chat copy, calls `divergence.story_input` and
   `divergence.canon_input` on the head's view and manifest and prints only counts: facts and scenes given, lorebook
-  candidates, entries given, left out, total characters. Report the owner-named divergences' entries as in or out by
+  candidates, entries given, left out, total characters, and whether one entity matched more than half of the
+  candidates (a two-character Korean name that is also a common word, e.g. a name meaning "one", would: then a Korean
+  word-boundary rule is a follow-up, not guessed now). Report the owner-named divergences' entries as in or out by
   role, not text.
 - [ ] **Step 3: Local model** — run the sidecar on a copy against eval Ollama :11500 and make the note per chat; keep
   each reply, the dropped count and the lines; the owner reads the lines.

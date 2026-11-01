@@ -65,7 +65,8 @@ with every request. The plugin change is the toggle's name, the defaults and the
 S2. **The story's side of the input**, all of it stored for the chat's head:
 - the current story facts (the Inspector's memory view, as `notes.make` reads it), each with its turn;
 - the story so far and the newest current scene summaries that fit, each with its turn range;
-- the named entities among them with their merged aliases (ADR 0046, 0058).
+- the named entities among them, with their merged aliases (ADR 0046, 0058), pick the lorebook entries (S3); the prompt
+  carries them only through the facts and summaries, which already name them.
 Together at most `STORY_CHARS` (20,000). With secrets off (S5) nothing secret or private goes in.
 
 S3. **The setting's side of the input** (owner, 2026-11-01: the relevant entries, not only the activated ones), from
