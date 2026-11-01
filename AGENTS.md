@@ -32,8 +32,9 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-52.md` is the latest, approved
-   2026-10-23: the panel rebuilt (a hub, memory as a document, status in plain words), in `0.5.0`; `PHASE-51.md`, in `0.5.0`
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-53.md` is the latest, approved
+   2026-11-01: the author's note says where the story left the setting (one checked model call; reworks Phase 50),
+   steps 2–4 built; `PHASE-52.md`, approved 2026-10-23: the panel rebuilt (a hub, memory as a document, status in plain words), in `0.5.0`; `PHASE-51.md`, in `0.5.0`
    (R8): how long a thread lasts, a horizon recorded at extraction, with Phase 45 in `extract-v17`, step 2 built; `PHASE-50.md`, approved
    2026-10-23: notes for the author's note (a chronicle, what changed from the setting, address and standing), copy-paste on request, after 1.0.0; Q1–Q5 answered as recommended; `PHASE-49.md`, a draft
    of 2026-10-15: a translation plugin's markup, memory reads the original text only (`clean-v4`), **closed** 2026-10-15 (Q6: `clean-v3` stays; the original only found 4/12 Korean questions, both 12/12); `PHASE-48.md`, a draft

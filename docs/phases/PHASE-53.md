@@ -109,7 +109,7 @@ the header, `## Diverged from the setting`, `## Chronicle (tA–B)`, `## Now`, `
 `## Address and standing`. The header gains one line: the card and the lorebook were written before the story began,
 and where they disagree with this note, the note is true now. A line reads
 `- Ren (lorebook "Royal Guard"): the setting says "Captain of the Royal Guard" → now arrested and held in the capital
-prison (t42–t44).`, with the entry's comment as the host shows it, or `card` / `persona`. Names and quoted words stay as
+prison (t42–44).`, with the entry's comment as the host shows it, or `card` / `persona` / `author's note`. Names and quoted words stay as
 the chat writes them. The cache is Phase 50 S7's, keyed by the fingerprint of both inputs (fact and summary ids, the
 canon revisions read), the options and the generation: making it again with nothing changed calls nothing. Nothing is
 stored; no packet reads it; the canon still never reads the block.
@@ -148,6 +148,35 @@ stored; no packet reads it; the canon still never reads the block.
 5. **Measurement** (Q2) and the owner's check on the test install: make, paste, reload, a request, the canon unchanged.
 6. **Second trial** (Q1): the same build on the install the owner uses, when the owner says; the owner's own use and
    report, with no read of that database by the agent.
+
+## Steps 2–4 evidence (2026-11-01)
+
+Built on `docs/phase53-diverged-from-setting`, plan `docs/superpowers/plans/2026-11-01-phase53-diverged.md`.
+
+- **Sidecar.** `divergence.py` (`story_input`, `canon_input`, `check`, `line`, `diverged`), `notes.py` (`KINDS` with
+  `diverged` first, the header's line that the setting is older, `Ask.of` drops `changed` beside `diverged`,
+  `make(..., canon=...)`), the endpoint passes `canon.manifest` and the summaries when the part is asked.
+  `tests/test_divergence.py`: 17 tests on synthetic chats (the story's side and its cap, a held scene left out, a
+  denial; the card, persona and note always in, the note without its block, the ranking, an alias with a particle,
+  "ren" not in "current", the caps; the check's drops and merge; the line; the call, an empty answer, a broken reply
+  asked again then the fallback, a reply with nothing that holds asked again with why, a reply telling a kept secret
+  asked again then the fallback, no model or no setting without a call, the cache and a failure not cached).
+  `tests/test_notes.py`: the header, `Ask`'s order, the part first with its fallback, the endpoint with a stand-in
+  model on a real canon sync. The whole sidecar suite: 1,678 passed and the two docs-consistency checks failed until `AGENTS.md` named Phase 53 the latest; with that, they and the touched files' tests pass.
+- **Plugin.** The form's first toggle is `diverged` and on, `chronicle` and `address` off; the part's line says how many
+  lorebook entries were compared and left out; the request's timeout is 600 s (two parts may call a model, each with a
+  retry); `notes.changed` removed (the form no longer offers it; `notes.part.changed` stays for an older sidecar or a
+  request for `changed` alone). 268 tests with typecheck. Build `25d4fcdd5a1d`; `//@version` unchanged (bumped only at
+  releases).
+- **Review** (scoped self-review, high risk: canon/provenance, secrets, a model claim in every prompt). Fixed: name
+  matching ran one regex per name and entry (a synthetic 200-entry, 425,000-character lorebook with 150 entities took
+  1.58 s; by word sets, 0.08 s). Checked: nothing in the packet path changed (the endpoint, `notes` and the new module
+  only), so packets are as on `main`; the canon guard (`noteblocks`, `canonfacts.process`) is untouched and its tests
+  pass; with secrets off the part reads facts `notes.kept` leaves in, summaries `summaries.held` does not hold, and its
+  lines pass `summaries.leaks` at 0.3, else the fallback, which is Phase 50's secret-filtered lines. Remaining: the
+  model's `now` is free text (checked for secrets, not for truth; its quote and turns are checked); a two-character
+  Korean name that is also a common word can make most entries candidates (ranking and the caps bound it; measured in
+  step 5).
 
 ## Acceptance criteria
 
