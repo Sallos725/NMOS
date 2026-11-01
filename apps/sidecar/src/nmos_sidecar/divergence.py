@@ -24,7 +24,7 @@ from .noteblocks import strip_blocks
 from .summaries import content, held as summary_held, leaks
 
 STORY_CHARS = 20_000  # the story's side (S2); facts take at most half
-CANON_CHARS = 30_000  # the setting's side (S3)
+CANON_CHARS = 60_000  # the setting's side (S3; amendment 1: 30,000 held 7–8 of 51–52 candidates on long chats)
 ENTRY_CHARS = 4_000  # of one canon text
 QUOTE_MIN = 12  # characters of a quote, normalized
 NAME_MIN = 2  # a shorter name picks too many entries

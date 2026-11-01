@@ -77,7 +77,8 @@ the manifest in force (`canon.manifest`):
 - **lorebook entries, ranked:** an entry is a candidate when its activation keys (the manifest's metadata) or its
   text name an entity of S2 by a name or an alias. Candidates rank by how many of S2's entities with a story fact
   they name, then by how many S2 entities, then by how recently the story stated a fact of one of them; ties by key.
-- **caps:** at most `ENTRY_CHARS` (4,000) of a text, at most `CANON_CHARS` (30,000) in all, the card and persona
+- **caps:** at most `ENTRY_CHARS` (4,000) of a text, at most `CANON_CHARS` (60,000 since amendment 1; 30,000 before)
+  in all, the card and persona
   first. The panel says how many entries went in and how many candidates did not fit.
 Entries are matched by name in Python over texts the sidecar already holds: no embedding and no extra call.
 

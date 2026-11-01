@@ -91,10 +91,11 @@ def test_an_alias_picks_an_entry_and_the_persona_picks_none():
 
 def test_the_setting_side_keeps_to_its_caps():
     manifest = [entry("card:desc", "d" * 9000)] + [
-        entry(f"lore:{i:02d}", f"Ren {i} " + "y" * 6000, keys=["Ren"]) for i in range(10)]
+        entry(f"lore:{i:02d}", f"Ren {i} " + "y" * 6000, keys=["Ren"]) for i in range(20)]
     given, left = divergence.canon_input(manifest, ENTITIES, [fact("Ren", "has_status", value="arrested")], "")
     assert all(len(g["text"]) <= divergence.ENTRY_CHARS for g in given)
-    assert sum(len(g["text"]) for g in given) <= divergence.CANON_CHARS and left == 4
+    # the card's 4,000 and fourteen entries of 4,000 fill the 60,000 (amendment 1)
+    assert sum(len(g["text"]) for g in given) <= divergence.CANON_CHARS and len(given) == 15 and left == 6
 
 
 # --- the check and the line -----------------------------------------------------------------------------------------
