@@ -1,7 +1,7 @@
 # Phase 53 — The author's note says where the story left the setting
 
 Status: **draft**, 2026-11-01 (an owner request, not a roadmap stage). It reworks Phase 50's note (AGE-88, PR #315).
-The shape below (S1–S7) was agreed with the owner in the design conversation of 2026-11-01; Q1 is answered, Q2 open.
+The shape below (S1–S7) was agreed with the owner in the design conversation of 2026-11-01; Q1–Q2 are answered. Implementation is not yet approved.
 
 The owner added the author's note feature for one purpose: to help the story model with events the setting does not
 allow for, such as a character's arrest or death, which the card and the lorebook keep contradicting on every turn.
@@ -129,7 +129,7 @@ stored; no packet reads it; the canon still never reads the block.
   trial on a database the implementation agent does not read: nothing of this phase reads, copies or measures it, and
   what it shows comes from the owner. The release itself is the next minor after `0.5.0` (a toggle and a new model call
   are not a patch).
-- **Q2 — measurement** (no paid call, `nmos-api-spend`). (a) **Recommended:** zero-call checks on throwaway copies of
+- **Q2 — measurement** (no paid call, `nmos-api-spend`). **Answered (owner, 2026-11-01): (a).** (a) **Recommended:** zero-call checks on throwaway copies of
   the test install's chats (test PG :5436): S3's candidates and caps per chat, and whether the entries of the
   divergences the owner can name are among them; then the model path on the local eval Ollama (:11500) only, every line
   checked by S4 and S5 and read by the owner; whether the note improves the replies is the owner's own trial, not a
