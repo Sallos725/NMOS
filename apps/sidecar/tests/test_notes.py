@@ -322,6 +322,37 @@ def test_the_endpoint_lists_what_the_story_changed_of_the_card(migrated):
     assert [s["made"] for s in out["sections"]] == ["facts", "facts"]
 
 
+def test_the_endpoint_compares_the_setting_with_the_story(migrated, monkeypatch):
+    import re
+
+    asked: list[str] = []
+
+    class Fake:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def complete_metered(self, system, user):
+            asked.append(user)
+            turn = int(re.search(r"\[t(\d+)\] Hana located in old mill", user)[1])
+            return {"diverged": [{"key": "card:desc", "quote": "Hana is in the harbor town", "subject": "Hana",
+                                  "now": "in the old mill", "turns": [turn], "kind": "world"}]}, "{}", None
+
+    monkeypatch.setattr(notes, "ChatModel", Fake)
+    notes.clear_cache()
+    chat, model = story(), Model()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        push(c, chat, canon_texts())
+        drain(migrated, model)
+        cid = canon_view(migrated, chat)["conversation"]
+        out = c.post(f"/v1/conversations/{cid}/notes", json={"sections": ["diverged"]}).json()
+    assert len(asked) == 1 and "[key: card:desc · card]\nHana is a lighthouse keeper." in asked[0]
+    assert "lore:mira" not in asked[0]  # Mira is in no story fact or scene
+    part = out["sections"][0]
+    assert part["kind"] == "diverged" and part["made"] == "model" and part["lines"] == 1
+    assert '- Hana (card): the setting says "Hana is in the harbor town" → now in the old mill (t' in out["text"]
+
+
 def test_the_endpoint_says_no_and_not_found(migrated):
     with make_client(migrated) as c:
         missing = "/v1/conversations/00000000-0000-0000-0000-000000000000/notes"
