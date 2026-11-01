@@ -251,7 +251,8 @@ For each, give:
 - "turns": the turns of the STORY items that show it, as numbers;
 - "kind": one of "life", "position", "relationship", "world", "other".
 Only what the input says. A story detail the setting does not contradict is not a divergence, and neither is something
-the setting leaves out. Keep names, titles, places and quoted words exactly as the input writes them.
+the setting leaves out, nor the same thing said again in another language or other words (a name, an item or a role
+translated is not a change). Keep names, titles, places and quoted words exactly as the input writes them.
 {secrets}
 Answer with JSON only: {{"diverged": [...]}}, an empty list when nothing the setting states has changed."""
 SECRETS_KEPT = """
