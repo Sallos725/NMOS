@@ -1035,7 +1035,8 @@ paid endpoint (`nmos-api-spend`).
   candidates, entries given, left out, total characters, and whether one entity matched more than half of the
   candidates (a two-character Korean name that is also a common word, e.g. a name meaning "one", would: then a Korean
   word-boundary rule is a follow-up, not guessed now). Report the owner-named divergences' entries as in or out by
-  role, not text.
+  role, not text. Also count the canon revisions `canon.manifest` loads against the ones in force (it reads every
+  revision's content; on a chat whose lorebook was edited often that is extra bytes per Make).
 - [ ] **Step 3: Local model** — run the sidecar on a copy against eval Ollama :11500 and make the note per chat; keep
   each reply, the dropped count and the lines; the owner reads the lines.
 - [ ] **Step 4: Test install** — after the owner's go, the build on 6131/6113 (backup first, as Phase 50 did); the
