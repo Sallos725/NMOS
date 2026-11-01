@@ -84,3 +84,84 @@ def story_input(facts: list[dict[str, Any]], told: dict[str, Any] | None, open_s
     lines += ["", "SCENES:"] + [f"[turns {r['first_turn']}–{r['last_turn']}] {r['text']}" for r in newest]
     spans += [(r["first_turn"], r["last_turn"]) for r in newest]
     return "\n".join(lines), spans, held
+
+
+def _label(key: str, metadata: dict[str, Any]) -> str:
+    if key.startswith("card:"):
+        return "card"
+    if key in ("persona", "note"):
+        return "persona" if key == "persona" else "author's note"
+    comment = metadata.get("comment")
+    return f'lorebook "{comment}"' if comment else "lorebook"
+
+
+def _names(e: dict[str, Any]) -> set[str]:
+    raw = [e.get("name"), *(e.get("names") or []), *(a.get("name") for a in e.get("aliases") or []),
+           *(a.get("other") for a in e.get("aliases") or [])]
+    return {n for n in (norm(x) for x in raw if x) if len(n) >= NAME_MIN}
+
+
+def _named_in(name: str, hay: str) -> bool:
+    """A normalized name in a normalized text: a Latin name as a whole word ("ren" is not in "current"); any other as
+    written, since a Korean particle joins its name ("레나는")."""
+    if not name.isascii():
+        return name in hay
+    return re.search(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])", hay) is not None
+
+
+def canon_input(entries: list[dict[str, Any]], entities: list[dict[str, Any]], facts: list[dict[str, Any]],
+                story_text: str, excluded: frozenset[str] = frozenset()) -> tuple[list[dict[str, Any]], int]:
+    """The setting's side (S3) from the manifest in force (`canon.manifest`): the card's story fields, the persona and
+    the note without NMOS's block always; then the lorebook entries whose keys or text name an entity of the story's
+    side (one with a story fact, or named in the scenes given), ranked by how many with a story fact they name, then how
+    many in all, then how late the story stated a fact of one, then key. Each text has its name macros filled in (as
+    the host fills them), at most ENTRY_CHARS of it, at most CANON_CHARS in all. Returns the texts given
+    (`{key, label, text}`) and how many candidate entries did not fit. The persona and the entities the owner left out
+    (PHASE-47) pick no entry."""
+    by_key = {e["key"]: e for e in entries if e.get("content")}
+    character = ((by_key.get("card:name") or {}).get("content") or "").strip() or None
+    user = ((by_key.get("persona") or {}).get("metadata") or {}).get("name") or None
+
+    def text_of(e: dict[str, Any]) -> str:
+        text = strip_blocks(e["content"])[0] if e["key"] == "note" else e["content"]
+        return named(text, character, user).strip()
+
+    latest: dict[str, int] = {}  # entity id -> the newest turn of a story fact about it
+    for f in facts:
+        if f.get("canon") or f.get("turn") is None or f["turn"] < 0:
+            continue
+        for side in ("subject_entity", "object_entity"):
+            ref = f.get(side)
+            if isinstance(ref, dict) and ref.get("id"):
+                latest[str(ref["id"])] = max(latest.get(str(ref["id"]), -1), f["turn"])
+    told_text = norm(story_text)
+    names = {str(e["id"]): ns for e in entities
+             if not e.get("persona") and str(e["id"]) not in excluded and (ns := _names(e))}
+    names = {i: ns for i, ns in names.items() if i in latest or any(_named_in(n, told_text) for n in ns)}
+    given: list[dict[str, Any]] = []
+    total = 0
+    for key in ALWAYS:
+        e = by_key.get(key)
+        text = text_of(e)[:ENTRY_CHARS] if e else ""
+        if text:
+            given.append({"key": key, "label": _label(key, e.get("metadata") or {}), "text": text})
+            total += len(text)
+    ranked = []
+    for e in entries:
+        if not e["key"].startswith("lore:") or not e.get("content"):
+            continue
+        text = text_of(e)
+        hay, keys = norm(text), {norm(k) for k in (e.get("metadata") or {}).get("keys") or []}
+        hit = [i for i, ns in names.items() if any(n in keys or _named_in(n, hay) for n in ns)]
+        if not hit:
+            continue
+        touched = [latest[i] for i in hit if i in latest]
+        ranked.append(((-len(touched), -len(hit), -max(touched, default=-1), e["key"]), e, text[:ENTRY_CHARS]))
+    left = 0
+    for _, e, text in sorted(ranked, key=lambda r: r[0]):
+        if total + len(text) > CANON_CHARS:
+            left += 1
+            continue
+        given.append({"key": e["key"], "label": _label(e["key"], e.get("metadata") or {}), "text": text})
+        total += len(text)
+    return given, left
