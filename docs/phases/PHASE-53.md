@@ -150,6 +150,37 @@ stored; no packet reads it; the canon still never reads the block.
 6. **Second trial** (Q1): the same build on the install the owner uses, when the owner says; the owner's own use and
    report, with no read of that database by the agent.
 
+## Amendment 1 (owner, 2026-11-01, from the measurement): 60,000 for the setting, the model through the eval Ollama
+
+Step 5's zero-call check (below) showed the setting's cap held 7–8 of 51–52 candidate entries on the three long chats.
+The owner chose to raise `CANON_CHARS` to 60,000 (about 10,000 more input tokens per Make, paid only when the owner
+makes the part); ranking still puts first the entries naming characters the story changed. The host has no local
+generation model (every one on the eval Ollama is a cloud model), so for Q2's model path the owner chose the cloud
+`gemma4:31b-cloud` through the eval Ollama on :11500 instead of a local one. Two fixes came from that run: a reply's key
+copied with its header label is still its key, and the prompt says a translation or restatement is not a divergence.
+
+## Step 5 evidence (2026-11-01): measurement on the test install's copy
+
+A throwaway copy of the test install's database (`nmos_p53_m` on test PG :5436, from `nmos_p32_try` by `pg_dump`; the
+source only read), 14 chats with a head. Scripts and every output (the parts, the raw replies) are outside the
+repository in `~/nmos-eval/phase53/`; below are counts and roles only.
+
+- **Zero-call** (`zero_call.py`): building both sides took at most 0.07 s and the reads at most 0.18 s per chat. At
+  30,000 the three long chats (49–76 turns) had 51–52 candidates and 7–8 given (44 left out); at 60,000, 15–21 given.
+  The entity that matched most entries matched 25–71 % of a chat's candidates and was never the card's character; of
+  the short Korean names' matches, none was inside a longer word (each was a name and its particle), so no Korean
+  word-boundary rule is needed now. `canon.manifest` loaded up to 1.4 times the revisions in force (215 for 154).
+- **Model** (`model_run.py`, three runs, about 30 calls, 3,400–23,600 input tokens each, 0.7–2.6 s a call). First run:
+  on 4 of 13 chats every item named its key as the whole header (`persona · persona`) and was dropped, falling back
+  after a retry; fixed (above). After both fixes, every chat's part was the model's in one call: 10 lines on 6 chats,
+  1 item dropped for a quote not in its text, nothing on the 6 chats of four turns or fewer. Read by the agent: 6 lines
+  are true divergences, among them the case this phase is for (a status two characters have in a lorebook entry that
+  the story ended, on two chats of the same card) and a card's described clothing the story changed; 4 are wrong or
+  doubtful (a persona's item named again in another language, a weak inference from a plugin's data entry kept in
+  the lorebook, a "former" read as "current", a reading of a persona's character). One event told by several setting
+  lines (a goal, a status) gives a line each. The owner reads the text before pasting it; no further prompt tuning.
+- Not yet: the owner's check on the test install (the build there, then make, paste, reload, a request).
+
 ## Steps 2–4 evidence (2026-11-01)
 
 Built on `docs/phase53-diverged-from-setting`, plan `docs/superpowers/plans/2026-11-01-phase53-diverged.md`.
