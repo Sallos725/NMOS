@@ -24,7 +24,7 @@ from .noteblocks import strip_blocks
 from .summaries import content, held as summary_held, leaks
 
 STORY_CHARS = 20_000  # the story's side (S2); facts take at most half
-CANON_CHARS = 30_000  # the setting's side (S3)
+CANON_CHARS = 60_000  # the setting's side (S3; amendment 1: 30,000 held 7–8 of 51–52 candidates on long chats)
 ENTRY_CHARS = 4_000  # of one canon text
 QUOTE_MIN = 12  # characters of a quote, normalized
 NAME_MIN = 2  # a shorter name picks too many entries
@@ -185,6 +185,16 @@ def _flat(text: Any) -> str:
     return " ".join(str(text or "").casefold().split())
 
 
+def _key(raw: Any, keys: dict[str, Any]) -> str:
+    """The key a reply named: as given, or a given key followed by what the header put beside it (measured: a model
+    copied "persona · persona" whole). The longest given key that ends at a separator; never a key's prefix."""
+    text = str(raw or "").strip().removeprefix("[").removeprefix("key:").strip()
+    if text in keys:
+        return text
+    found = [k for k in keys if text.startswith(k) and text[len(k)] in " ·]("]
+    return max(found, key=len) if found else text
+
+
 def check(items: Any, given: list[dict[str, Any]], spans: list[tuple[int, int]],
           last_turn: int | None) -> list[dict[str, Any]]:
     """The items of a reply that hold (S4): a key given, a quote of at least QUOTE_MIN characters found in that text
@@ -197,7 +207,8 @@ def check(items: Any, given: list[dict[str, Any]], spans: list[tuple[int, int]],
     for it in items if isinstance(items, list) else []:
         if not isinstance(it, dict):
             continue
-        key, quote, now = str(it.get("key") or ""), str(it.get("quote") or "").strip(), str(it.get("now") or "").strip()
+        key = _key(it.get("key"), texts)
+        quote, now = str(it.get("quote") or "").strip(), str(it.get("now") or "").strip()
         q = _flat(quote)
         if key not in texts or len(q) < QUOTE_MIN or q not in texts[key] or not now:
             continue
@@ -240,7 +251,8 @@ For each, give:
 - "turns": the turns of the STORY items that show it, as numbers;
 - "kind": one of "life", "position", "relationship", "world", "other".
 Only what the input says. A story detail the setting does not contradict is not a divergence, and neither is something
-the setting leaves out. Keep names, titles, places and quoted words exactly as the input writes them.
+the setting leaves out, nor the same thing said again in another language or other words (a name, an item or a role
+translated is not a change). Keep names, titles, places and quoted words exactly as the input writes them.
 {secrets}
 Answer with JSON only: {{"diverged": [...]}}, an empty list when nothing the setting states has changed."""
 SECRETS_KEPT = """
@@ -262,7 +274,7 @@ def _user(given: list[dict[str, Any]], story: str, open_secrets: list[dict[str, 
         lines += [""]
     lines += ["SETTING:"]
     for g in given:
-        lines += [f"[key: {g['key']} · {g['label']}]", g["text"], ""]
+        lines += [f"[key: {g['key']}] ({g['label']})", g["text"], ""]
     return "\n".join(lines + ["STORY:", story])
 
 

@@ -91,10 +91,11 @@ def test_an_alias_picks_an_entry_and_the_persona_picks_none():
 
 def test_the_setting_side_keeps_to_its_caps():
     manifest = [entry("card:desc", "d" * 9000)] + [
-        entry(f"lore:{i:02d}", f"Ren {i} " + "y" * 6000, keys=["Ren"]) for i in range(10)]
+        entry(f"lore:{i:02d}", f"Ren {i} " + "y" * 6000, keys=["Ren"]) for i in range(20)]
     given, left = divergence.canon_input(manifest, ENTITIES, [fact("Ren", "has_status", value="arrested")], "")
     assert all(len(g["text"]) <= divergence.ENTRY_CHARS for g in given)
-    assert sum(len(g["text"]) for g in given) <= divergence.CANON_CHARS and left == 4
+    # the card's 4,000 and fourteen entries of 4,000 fill the 60,000 (amendment 1)
+    assert sum(len(g["text"]) for g in given) <= divergence.CANON_CHARS and len(given) == 15 and left == 6
 
 
 # --- the check and the line -----------------------------------------------------------------------------------------
@@ -129,6 +130,21 @@ def test_the_check_drops_what_it_cannot_find():
 def test_the_same_quote_twice_is_one_line_with_the_newer_turns_and_an_unknown_kind_is_other():
     rows = divergence.check([item(turns=[42]), item(turns=[45], kind="poem")], GIVEN, SPANS, 50)
     assert len(rows) == 1 and rows[0]["turns"] == [45] and rows[0]["kind"] == "other"
+
+
+def test_a_key_copied_with_its_label_is_the_key_and_a_longer_key_is_not_a_shorter_one():
+    given = GIVEN + [{"key": "lore:1", "label": "lorebook", "text": "The Royal Guard answers to Captain Ren."},
+                     {"key": "lore:10", "label": "lorebook", "text": "The Royal Guard answers to Captain Ren."}]
+    # measured 2026-11-01 (cloud gemma4): the model copied the whole header, "persona · persona"
+    for raw, key in (('lore:guard · lorebook "Royal Guard"', "lore:guard"), ("[key: lore:guard]", "lore:guard"),
+                     ("lore:10 (lorebook)", "lore:10"), ("lore:1", "lore:1")):
+        assert [r["key"] for r in divergence.check([item(key=raw)], given, SPANS, 50)] == [key], raw
+    assert divergence.check([item(key="lore:100")], given, SPANS, 50) == []
+    assert divergence.check([item(key="lore:guardian")], given, SPANS, 50) == []
+
+
+def test_the_prompt_header_puts_the_key_alone():
+    assert "[key: lore:guard] (lorebook \"Royal Guard\")" in divergence._user(GIVEN, "STORY", [], False)
 
 
 def test_a_line_names_its_text_and_turns():
@@ -175,7 +191,7 @@ def test_the_model_finds_it_and_the_part_says_it():
     assert out["body"] == ('## Diverged from the setting\n- Ren (lorebook "Royal Guard"): the setting says "The Royal'
                            ' Guard answers to its captain" → now arrested (t42)')
     system, user = w.calls[0]
-    assert "SETTING" in user and "[key: lore:guard · lorebook \"Royal Guard\"]" in user and "[t42]" in user
+    assert "SETTING" in user and "[key: lore:guard] (lorebook \"Royal Guard\")" in user and "[t42]" in user
 
 
 def test_nothing_changed_is_an_answer():

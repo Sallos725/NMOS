@@ -346,7 +346,7 @@ def test_the_endpoint_compares_the_setting_with_the_story(migrated, monkeypatch)
         drain(migrated, model)
         cid = canon_view(migrated, chat)["conversation"]
         out = c.post(f"/v1/conversations/{cid}/notes", json={"sections": ["diverged"]}).json()
-    assert len(asked) == 1 and "[key: card:desc · card]\nHana is a lighthouse keeper." in asked[0]
+    assert len(asked) == 1 and "[key: card:desc] (card)\nHana is a lighthouse keeper." in asked[0]
     assert "lore:mira" not in asked[0]  # Mira is in no story fact or scene
     part = out["sections"][0]
     assert part["kind"] == "diverged" and part["made"] == "model" and part["lines"] == 1
