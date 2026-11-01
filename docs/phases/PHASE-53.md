@@ -1,7 +1,7 @@
 # Phase 53 — The author's note says where the story left the setting
 
 Status: **draft**, 2026-11-01 (an owner request, not a roadmap stage). It reworks Phase 50's note (AGE-88, PR #315).
-The shape below (S1–S7) was agreed with the owner in the design conversation of 2026-11-01; Q1–Q2 are open.
+The shape below (S1–S7) was agreed with the owner in the design conversation of 2026-11-01; Q1 is answered, Q2 open.
 
 The owner added the author's note feature for one purpose: to help the story model with events the setting does not
 allow for, such as a character's arrest or death, which the card and the lorebook keep contradicting on every turn.
@@ -123,8 +123,12 @@ stored; no packet reads it; the canon still never reads the block.
 
 ## Questions for the owner
 
-- **Q1 — release.** (a) **Recommended:** the next minor release after `0.5.0`, on the test install (6131/6113) first,
-  the owner asked before the install they use. (b) A patch: a toggle and a new model call are not a patch.
+- **Q1 — release. Answered (owner, 2026-11-01): the test install, then the install the owner uses as a second trial.**
+  The trial build goes to the test install (6131/6113) first and, once it passes there, to the install the owner uses
+  (`owner-deployment`), before any release; the owner says when that deploy runs. The second install is the owner's
+  trial on a database the implementation agent does not read: nothing of this phase reads, copies or measures it, and
+  what it shows comes from the owner. The release itself is the next minor after `0.5.0` (a toggle and a new model call
+  are not a patch).
 - **Q2 — measurement** (no paid call, `nmos-api-spend`). (a) **Recommended:** zero-call checks on throwaway copies of
   the test install's chats (test PG :5436): S3's candidates and caps per chat, and whether the entries of the
   divergences the owner can name are among them; then the model path on the local eval Ollama (:11500) only, every line
@@ -140,6 +144,8 @@ stored; no packet reads it; the canon still never reads the block.
 3. **Sidecar:** S5, with the stub model: a reply that tells a kept secret retried, then the fallback without secrets.
 4. **Plugin:** the new toggle first and on, the chronicle and address off, the texts (`i18n.ts`).
 5. **Measurement** (Q2) and the owner's check on the test install: make, paste, reload, a request, the canon unchanged.
+6. **Second trial** (Q1): the same build on the install the owner uses, when the owner says; the owner's own use and
+   report, with no read of that database by the agent.
 
 ## Acceptance criteria
 
