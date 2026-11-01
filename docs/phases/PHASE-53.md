@@ -1,7 +1,8 @@
 # Phase 53 — The author's note says where the story left the setting
 
-Status: **draft**, 2026-11-01 (an owner request, not a roadmap stage). It reworks Phase 50's note (AGE-88, PR #315).
-The shape below (S1–S7) was agreed with the owner in the design conversation of 2026-11-01; Q1–Q2 are answered. Implementation is not yet approved.
+Status: **approved**, 2026-11-01 (an owner request, not a roadmap stage). Implementation plan:
+`docs/superpowers/plans/2026-11-01-phase53-diverged.md`. It reworks Phase 50's note (AGE-88, PR #315).
+The shape below (S1–S7) was agreed with the owner in the design conversation of 2026-11-01; Q1–Q2 are answered. **Implementation approved (owner, 2026-11-01).**
 
 The owner added the author's note feature for one purpose: to help the story model with events the setting does not
 allow for, such as a character's arrest or death, which the card and the lorebook keep contradicting on every turn.
