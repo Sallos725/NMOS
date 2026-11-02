@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:25d4fcdd5a1d".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:e8bb67fccfba".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2228,15 +2228,16 @@ ${revisionHash}`;
   var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
   var TURN = "/t/(?:0|[1-9][0-9]{0,6})";
   var SECTION = /^s-[a-z]{1,20}$/;
+  var MAP = `map(?:\\?focus=${UUID})?`;
   var ACTS = /* @__PURE__ */ new Set(["notes", "settings", "backup", "retry"]);
   function inspectorApiPath(href) {
     const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
     if (m) return `/v1/inspector${m[1] ?? ""}`;
-    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, "i").exec(href ?? "");
+    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|${MAP}|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, "i").exec(href ?? "");
     return v ? `/v1/views${v[1]}` : null;
   }
   function inspectorConversation(path) {
-    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|working|person/${UUID})$`, "i").exec(path);
+    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|working|${MAP}|person/${UUID})$`, "i").exec(path);
     return m ? m[1] : null;
   }
   function inspectorEntity(path) {
@@ -3038,6 +3039,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     let notesFor = null;
     let hubConversation = null;
     let viewsOn = false;
+    let mapOn = false;
     const actionMsg = el("div", { class: "msg" });
     const actions = el(
       "div",
@@ -3427,7 +3429,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       const direct = routeFor(base, await deps.getArg("route")) === "direct";
       inspectorAddress.textContent = direct ? L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` }) : "";
       try {
-        const query = [conversation ? "timeline=lazy&status=lazy" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
+        const query = [conversation ? "timeline=lazy&status=lazy" : "", isView && mapOn ? "map=1" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
         const r = await deps.api(
           "GET",
           `${path}${query ? `${path.includes("?") ? "&" : "?"}${query}` : ""}`,
@@ -4884,7 +4886,9 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     document.body.append(root);
     try {
-      viewsOn = !!(await deps.status()).features?.views;
+      const features = (await deps.status()).features;
+      viewsOn = !!features?.views;
+      mapOn = viewsOn && !!features?.map;
     } catch {
       viewsOn = false;
     }

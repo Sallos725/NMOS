@@ -1,8 +1,9 @@
 # Phase 55 — The memory map: where a chat's memory came from, who is tied to whom, and what happened when
 
-Status: **proposed**, 2026-11-02 (an owner request, not a roadmap stage). The owner saw a local prototype of this view
-on 2026-11-02 and wants it in the product. Nothing is built; Q1–Q8 wait for the owner. Linear: to be filed by the
-owner (AGE-39 is Phase 32's time axis and is done).
+Status: **approved**, 2026-11-02 (an owner request, not a roadmap stage, pulled in by name: "진행 부탁해"). The owner saw
+a local prototype of this view on 2026-11-02 and wants it in the product. Q1–Q6 and Q8 as recommended; Q7 amended by the
+owner: the caps stay the default and the browser page gets a "show all" link that draws the whole cast ("전체보기
+버튼을 만들어서 전부 보여주는것도"). Linear: to be filed by the owner (AGE-39 is Phase 32's time axis and is done).
 
 Not high risk (`AGENTS.md §14`) with the answers proposed below: no stored data, schema, extraction, packet, recall or
 memory selection changes, and no new tag or attribute through the panel's sanitizer. **Q3 (b) would make step 4 high
@@ -62,16 +63,19 @@ A pure module, `memorymap.py`, shapes the four sections from the dictionary `mem
 with `history`, `entities`, `excluded`, `threads`, `assertions`, `resolution`, `canon_facts`). No new query, column,
 migration or model call; the HTTP read APIs are not called, the same in-process read is used.
 
-- **Sources (section 1).** A current fact (`view["facts"]`, `knows` and `event` left out, as in PHASE-32 Q4) falls in
-  one bucket by its history's `canon` marks, the rule PHASE-32's design review set for "Only from the setting":
+- **Sources (section 1).** Every current fact (`view["facts"]`) falls in one bucket by its history's `canon` marks, the
+  rule PHASE-32's design review set for "Only from the setting":
   - *setting only*: every history step is canon;
   - *story over the setting*: the current version is the story's and an earlier step is canon (the facts PHASE-52's
-    "changed from the setting" lists);
+    "changed from the setting" lists, and the story's restatements of a canon value);
   - *story only*: no step is canon;
   - *corrected by you*: the current version is the owner's (`owner`), whatever came before.
 
   Counted per predicate, shown in the panel's words ("위치", "관계"…, PHASE-52's change words). Story facts per turn:
-  the story's valid assertions (`view["assertions"]` without `canon`) counted by turn, over the turns extracted.
+  the story's current facts (the two story buckets) over the chat's turns. **Amended at step 5 (2026-11-02):** the
+  first draft left `knows` and `event` out of the counts and counted the story's assertions per turn; the prototype
+  counted every current fact and the story's current facts, and the map now counts as the prototype did, so the
+  owner sees the same numbers for the same chat (acceptance criterion 1).
 - **The graph (section 2).** Nodes and edges by the answer to Q4; an entity the owner left out (`entity_exclude`,
   PHASE-47) is not drawn and is counted; the persona is drawn and marked as "you" (PHASE-32 Q9, ADR 0023 keeps the
   persona's names out of recall, not out of view). Suspected split names by the answer to Q5.
@@ -136,12 +140,12 @@ its docstring when built).
 | Q4 | Which facts are edges? | **Character to character: one edge per pair** carrying `relationship`, `role_toward` and `feels_toward` in both directions (its detail lists each with its direction); `addresses` only in the edge's detail (speech level, too common to draw). **Character to group:** `member_of`. **Character to place:** the current `located_in` only. Not edges: `owes` and `promised` (threads, in the memory document), events (sharing an event would tie almost everyone), `knows` (never drawn). An edge is "setting" when every step of all its facts is canon, "changed from the setting" when a story value replaced a canon one, "story" otherwise. | (b) Events shared as edges (weighted by count). (c) `addresses` as its own edge. |
 | Q5 | How are suspected split names flagged? | **A "maybe one person?" line, and a dashed line in the drawing, between two character entities when one's name is a part of the other's by `extraction.name_parts`** (with PHASE-54's Hangul words once merged; the map reuses that helper, never a second rule), **or when one name's words are the first words of the other's.** Never for a pair the owner split (`Resolution.splits`), an entity left out, or the persona with anyone. Each links to the person's sheet; nothing is joined. | (b) Also two entities with the same ties to the same people (catches renamings, more false alarms). (c) No flag; leave it to PHASE-54. |
 | Q6 | The phone? | **The panel is lines (Q3). In the browser at under 700 px the whole graph is hidden and the lines show; each character line links to `?focus=<entity>`, which draws that person and their direct ties only** (fits 390 px, server-rendered, no script, like PHASE-32's `?span=`). The default focus is none: lines first. | (b) The whole graph scaled to the width (unreadable past a dozen nodes). (c) The focus view by default on the scene's lead. |
-| Q7 | Caps on a large cast? | **At most 24 characters (the scene's cast and the persona always, then by ties and mentions), 8 groups and 8 places in the drawing;** the lines list everyone, by three and "N more" (PHASE-52 D2). Section 3 folds by span; at most 200 event lines rendered, the rest counted. What is left out is counted ("+N"). | (b) No cap in the drawing. (c) 12 characters. |
+| Q7 | Caps on a large cast? | **At most 24 characters (the scene's cast and the persona always, then by ties and mentions), 8 groups and 8 places in the drawing;** the lines list everyone, by three and "N more" (PHASE-52 D2). Section 3 folds by span; at most 200 event lines rendered, the rest counted. What is left out is counted ("+N"). **Owner (2026-11-02): these caps by default, and a "show all" link beside the "+N" (`?all=1`, server-rendered like `?focus`, no script) draws every character, group and place; hidden under 700 px with the rest of the drawing.** | (b) No cap in the drawing. (c) 12 characters. |
 | Q8 | When? | **Build now on `main`, try it on the test install (6131/6113), ship it in the next release:** `0.6.0` if PHASE-54 makes one before `1.0.0` (owner, 2026-11-02, PHASE-54 Q5), else `1.1.0`. It is rendering only, not a heavy change (a packet policy, an extractor generation, a migration), so it does not restart the quiet weeks by itself; `1.0.0` stays `0.5.0`'s build (R8) unless a `0.6.0` is made. Until 1.0 a new phase needs the owner to pull it in by name (R7). | (b) Approve now, build after `1.0.0` is tagged, ship in `1.1.0` (AGE-39's original timing). (c) Into `1.0.0` itself: a new build, an R8 amendment. |
 
 ## Steps
 
-1. **This spec**, with the owner's answers.
+1. **This spec**, with the owner's answers (2026-11-02).
 2. **The data**: `memorymap.py`, pure, from `memory_view`'s dictionary; `tests/test_memorymap.py` on synthetic
    views: each bucket of section 1 (setting only, story over setting, story only, owner), story facts per turn,
    every edge kind and its setting/story/changed mark, a pair's two directions on one edge, `addresses` in the detail

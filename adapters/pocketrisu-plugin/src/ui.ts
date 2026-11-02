@@ -517,6 +517,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   let notesFor: string | null = null; // the chat the note form is for: a page's, or the hub's
   let hubConversation: string | null = null; // the chat the hub is about (PHASE-52), from its answer
   let viewsOn = false; // the sidecar has the new screens (PHASE-52): hub first, settings in groups
+  let mapOn = false; // and the memory map (PHASE-55): the hub and the memory document lead to it when asked
   const actionMsg = el('div', { class: 'msg' });
   const actions = el('div', {}, el('div', { class: 'btns' }, retryButton, historyButton, rebuildButton, exportButton, notesButton,
     deleteButton),
@@ -882,7 +883,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     try {
       // A chat's and a character's page get a closed timeline section, filled when it is opened (PHASE-32 step 3), and
       // a chat's page one for its status window (PHASE-39); a sidecar without them ignores the ask.
-      const query = [conversation ? 'timeline=lazy&status=lazy' : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
+      const query = [conversation ? 'timeline=lazy&status=lazy' : '', isView && mapOn ? 'map=1' : '', lang === 'en' ? 'lang=en' : '']
+        .filter(Boolean).join('&');
       const r = await deps.api<{ html: string; conversation?: string | null }>('GET',
         `${path}${query ? `${path.includes('?') ? '&' : '?'}${query}` : ''}`, undefined, 15_000);
       if (load !== loads) return;
@@ -2078,7 +2080,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   document.body.append(root);
   // A sidecar with the new screens (PHASE-52) opens on its hub; one without keeps today's.
-  try { viewsOn = !!(await deps.status()).features?.views; } catch { viewsOn = false; }
+  try {
+    const features = (await deps.status()).features;
+    viewsOn = !!features?.views;
+    mapOn = viewsOn && !!features?.map;
+  } catch { viewsOn = false; }
   if (viewsOn) {
     await viewsStyle();
     inspectorPath = await hubPath();

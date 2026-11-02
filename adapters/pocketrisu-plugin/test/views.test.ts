@@ -46,6 +46,20 @@ describe('view paths (PHASE-52)', () => {
     expect(inspectorConversation(`/v1/views/c/${id}/memory`)).toBe(id);
     expect(inspectorEntity(`/v1/views/c/${id}/person/${e}`)).toEqual({ conversation: id, entity: e });
   });
+
+  it('take the memory map, whole or around one person, and nothing else of it (PHASE-55)', () => {
+    expect(inspectorApiPath(`/views/c/${id}/map`)).toBe(`/v1/views/c/${id}/map`);
+    expect(inspectorApiPath(`/views/c/${id}/map#s-ties`)).toBe(`/v1/views/c/${id}/map`);
+    expect(inspectorApiPath(`/views/c/${id}/map?focus=${e}`)).toBe(`/v1/views/c/${id}/map?focus=${e}`);
+    for (const bad of [`/views/c/${id}/map?focus=x`, `/views/c/${id}/map?all=1`, `/views/c/${id}/map?focus=${e}&evil=1`,
+      `/views/c/${id}/maps`, `/views/c/${id}/map/x`]) {
+      expect(inspectorApiPath(bad), bad).toBeNull();
+    }
+    expect(keepAttribute('href', `/views/c/${id}/map?focus=${e}`)).toBe(true);
+    expect(inspectorConversation(`/v1/views/c/${id}/map`)).toBe(id);
+    expect(inspectorConversation(`/v1/views/c/${id}/map?focus=${e}`)).toBe(id);
+    expect(inspectorEntity(`/v1/views/c/${id}/map?focus=${e}`)).toBeNull();
+  });
 });
 
 const memory = `<div class="v v-doc"><div class="v-sec" id="s-open"><h2 class="v-h2">Open threads</h2>`
@@ -67,7 +81,7 @@ const hub = `<div class="v v-hub"><div class="v-blocks">`
   + `<a class="v-block" data-act="settings"><span class="v-bt">Settings</span></a>`
   + `<a class="v-block" data-act="notes"><span class="v-bt">Author's note</span></a></div></div>`;
 
-function deps(opts: { views?: boolean; css?: string } = {}) {
+function deps(opts: { views?: boolean; map?: boolean; css?: string } = {}) {
   const calls: [string, string][] = [];
   const bodies: unknown[] = [];
   const d: PanelDeps = {
@@ -95,7 +109,7 @@ function deps(opts: { views?: boolean; css?: string } = {}) {
       return {} as T;
     },
     status: async () => ({ enabled: true, sidecarUrl: 'http://127.0.0.1:8790', language: 'en', connected: true,
-      version: '0.5.0', features: opts.views === false ? {} : { views: true }, last: null }),
+      version: '0.5.0', features: opts.views === false ? {} : { views: true, ...(opts.map ? { map: true } : {}) }, last: null }),
     getArg: async (key) => (key === 'language' ? 'en' : ''),
     setArg: async () => {},
     show: async () => {},
@@ -125,6 +139,22 @@ describe('the hub (PHASE-52 D1)', () => {
     expect(hubCall?.[1]).toContain('chat=host-chat-1');
     expect(document.querySelectorAll('#nmos-views-style')).toHaveLength(1);
     expect(document.getElementById('nmos-views-style')!.textContent).toBe('.nmos .v{font-size:16px}');
+  });
+
+  it('asks for the memory map\'s block and link only when the sidecar has the map (PHASE-55)', async () => {
+    const old = deps();
+    await openPanel(old.d, 'status');
+    await settle();
+    expect(old.calls.filter(([, p]) => p.includes('map=1'))).toEqual([]); // an older sidecar: today's requests
+    document.body.replaceChildren();
+    const { d, calls } = deps({ map: true });
+    await openPanel(d, 'status');
+    await settle();
+    expect(calls.find(([, p]) => p.startsWith('/v1/views/hub'))?.[1]).toContain('map=1');
+    panel().querySelector<HTMLAnchorElement>(`a[href="/views/c/${id}/memory"]`)!.click();
+    await settle();
+    expect(calls.find(([, p]) => p.startsWith(`/v1/views/c/${id}/memory`))?.[1]).toContain('map=1');
+    expect(calls.filter(([, p]) => p.startsWith('/v1/inspector') && p.includes('map=1'))).toEqual([]);
   });
 
   it('follows a block into a page and comes back', async () => {
