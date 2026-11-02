@@ -752,15 +752,25 @@ def role_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPE
             for f in named + persona][:limit]
 
 
+# The last syllable of a Hangul word that modifies the next one (검은 고양이, 윤서하의 아버지): a description, not a name
+# (PHASE-54 Q1).
+MODIFIER_ENDS = frozenset("은는운던의")
+
+
 def name_parts(name: str) -> list[str]:
     """The parts of a full name a story may call its bearer by (PHASE-28 Q4): the given name of a Hangul name of three
-    syllables (윤하나 → 하나) or four (남궁하나 → 하나); the first and the last word of a Latin name of two words or more."""
+    syllables (윤하나 → 하나) or four (남궁하나 → 하나); the first and the last word of a Latin name of two words or more;
+    the first word, of two syllables or more, of a Hangul name of two or three words (리아나 벨로스 → 리아나, 세라 델 모렌
+    → 세라, PHASE-54 Q1), unless that word modifies the next (검은 고양이)."""
     name = " ".join(name.split())
     if re.fullmatch(r"[가-힣]{3,4}", name):
         return [name[len(name) - 2:]]
     words = name.split(" ")
     if len(words) >= 2 and all(re.fullmatch(r"[A-Za-z][A-Za-z'’-]+", w) for w in words):
         return list(dict.fromkeys([words[0], words[-1]]))
+    if (2 <= len(words) <= 3 and all(re.fullmatch(r"[가-힣]+", w) for w in words) and len(words[0]) >= 2
+            and words[0][-1] not in MODIFIER_ENDS):
+        return [words[0]]
     return []
 
 
