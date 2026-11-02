@@ -334,6 +334,18 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    user prompt, only when NAME PAIRS are listed; the part-name rule and the guidance for unlisted pairs (`ALIAS_RULE`)
    stay in the system prompt. A new generation; given up: a nickname on a turn with no NAME PAIRS, which `extract-v15`
    never wrote and `extract-v16` wrote unreliably.
+6. **A name written in Hangul word by word gives its first word** (PHASE-54 Q1, an owner request; decided by the owner
+   2026-11-02 as proposed). `name_parts` also splits a name of two or three Hangul words whose first word has two syllables or more
+   (리아나 벨로스, 세라 델 모렌, a Western or Japanese name as a Korean story writes it) into its first word, unless that word ends
+   in a modifier syllable (`MODIFIER_ENDS`: 검은 고양이, 윤서하의 아버지). Before, such a name gave no part, so NAME PAIRS
+   never listed it, and on the trial install six characters of one chat were two entities each. The prompt text and
+   the generation key are unchanged (PHASE-54 Q2): `name_parts` was never in the fingerprint, and the pairs a turn was
+   shown stay in its extraction's hints. A zero-call replay of 5,246 stored extractions adds a pair on 93 turns and
+   removes none (PHASE-54, step 2 evidence).
+   With it (PHASE-54 Q4), a Hangul name of three or four syllables gives its last two only with a family name
+   (`variants.FAMILY`; `FAMILY_TWO` for 남궁하나): a transliterated word (카이토, 토비아스) was listed on every turn that
+   wrote its last syllables, refused every time, and the NAME PAIRS block it brings lowers the extraction's other
+   answers on those turns (PHASE-54, the control arm). 카이토 / 이토 is no longer a candidate.
 
 ## Withdrawn: `given_name_join`
 
@@ -364,7 +376,7 @@ same paid `extract-v16` run measures. The option, its setting and its tool flags
   Korean) and five short synthetic ones. Three guards are written per language: `LATER` knows Korean and English
   time words only, `BARE_PERSON_LABELS` Korean and English labels only (a label in another language passes
   unguarded), and NAME PAIRS splits Hangul names of three or four syllables and Latin names only (no kana or kanji
-  names). The confirmation prompt depends on no such list but is unmeasured outside Korean. No held-out story or
+  names; Hangul names of several words since item 6). The confirmation prompt depends on no such list but is unmeasured outside Korean. No held-out story or
   other language has been run; that evaluation, and any change it calls for, is after 1.0 (owner, 2026-10-03;
   NMO-34). A default switch before then rests on this evidence and says so.
 - Evaluation: `tools/eval_extract_sample.py --compiler extract-v16` (role endings as listed and others counted apart;
