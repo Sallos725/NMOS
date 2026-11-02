@@ -379,10 +379,10 @@ fact 2 of 3, as many as the full name. A given name no lorebook lists is still n
 *Since 0.3.0 (Phase 24, ADR 0058):* the given name of a three-syllable name with a common family name is a mention of
 that character, unless another entity holds it, two characters would share it, or it is the persona's; and a Hangul
 word is a mention of a character the story names in Latin letters when it spells that name.
-*Measured 2026-11-02 (PHASE-54, proposed):* a name the story writes in Hangul word by word (리아나 벨로스, a Western
+*Measured 2026-11-02 (PHASE-54, approved):* a name the story writes in Hangul word by word (리아나 벨로스, a Western
 or Japanese name) with no lorebook entry stays two entities with its first word (리아나): the extractor's NAME PAIRS
 (ADR 0064) never list such a name, so it is never asked to join them. Six characters of the trial install's longest
-chat are split so. PHASE-54 proposes listing the first word; not decided.
+chat are split so. PHASE-54 lists the first word (approved 2026-11-02; on its way to a release).
 
 **K32 — A third-person persona does not bring its own facts.** The persona's names never count as a mention
 (ADR 0023): a user who narrates by name writes that name in every message. Only a first-person question ("내 …",

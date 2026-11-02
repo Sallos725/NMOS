@@ -1,8 +1,9 @@
 # Phase 54 — A name written in Hangul word by word is asked about by its first word
 
-Status: **proposed**, 2026-11-02 (an owner request, not a roadmap stage: "이름부터 부탁할게", after the memory map of
-the trial install's longest chat showed six characters split in two). Step 2 is built on a draft PR for the owner's
-decision; nothing is merged, deployed or made a default before Q1–Q6 are answered.
+Status: **approved**, 2026-11-02 (an owner request, not a roadmap stage: "이름부터 부탁할게", after the memory map of
+the trial install's longest chat showed six characters split in two). Q1–Q4 and Q6 as recommended; Q5 amended by the
+owner: "Q5는 0.6.0을 내는 한이 있더라도 진행해야겠어" — it ships before `1.0.0`, in a `0.6.0` if need be. Step 2 is
+built on draft PR #325; next, Q3 (b) after the owner approves its estimate.
 
 **High risk** (`AGENTS.md §14`): **identity**. The change decides which name pairs the extractor is asked about; a
 pair it confirms becomes an `also_called`, and an alias joins two names' facts and knowledge marks (ADR 0012).
@@ -45,7 +46,7 @@ Read on the trial install (6113, `0.5.0`, database `nmos_p32_try`), read-only, n
 | Q3 | How is it measured? | **(a) done, zero calls:** deterministic cases in CI and the replay below. **(b) the confirmation, bounded:** the 93 replayed turns that gain a pair, extracted again on isolated copies with the owner's extraction model, three runs each; pass = every listed name pair confirmed in a majority of runs where the turn says both names of one person, no description pair confirmed, and no other change in the turn's assertions beyond the run-to-run noise. An exact call and token estimate goes to the owner before any call. | The full live gate (`AGENTS.md §7` item 6, "Extraction"): the prompt text is unchanged, only which pairs are listed, so (b) measures exactly what changes. Only trying it on the trial install in play. |
 | Q4 | What about the pairs the current rule lists for a three-syllable name that is not Korean (a transliterated name such as 카이토 / 이토)? | **Out of this phase, recorded.** The replay finds one transliterated three-syllable first name and its last two syllables (a 올라-like verb fragment) listed on 82 turns, and two more such pairs once each; the model refused every one (no such alias is stored). They cost tokens and can take a slot of `NAME_PAIRS` (8), and ADR 0064 lists 카이토 / 이토 as a candidate on purpose. | Ask only for a three-syllable name whose first syllable is a common family name (`variants.FAMILY`), as Phase 24 does on the read side; a Korean name with a rare family name would no longer be asked. |
 | Q6 | What about a name whose first word has one syllable (얀 하르트, a Western name such as Jan or Lin)? | **Left out, recorded.** A one-syllable part is written at the start of countless words: the matcher lets a Hangul name take any following syllable, so 솔 is in 솔직히, 린 in 린넨, 윤 in 윤기가. Replayed (zero calls, same 5,246 extractions): allowing it adds 519 turns, 511 of them one name and title's one-syllable family name in words such as 오늘 and 오랜만에, 5 a family name and a title, 6 the one real given name. Allowing it only when nothing or a particle follows (은, 이, 에게, 씨, …) still adds 99 turns, 93 of them the same syllable as an interjection ("오!", "오, 그래?") and 6 the given name. Such a character is joined by a lorebook key (ADR 0046), the owner's link (ADR 0025) or an alias the model writes unasked. | The particle-only match with a list of one-syllable interjections and common words left out: brittle, and the replay has one such character in 67 names. |
-| Q5 | When does it ship? | **Merged to `main` after Q3 (b); tried on the test install (6113) first; on the owner's install only after `1.0.0`.** `1.0.0` is tagged on `0.5.0`'s build (R8), so `main` moving does not change it; this reverses the deferral of ADR 0064's consequence (NMO-34) only for this gap. | Keep it after `1.0.0` as ADR 0064 says, on this branch. |
+| Q5 | When does it ship? | *Decided by the owner (amended): before `1.0.0`, in a `0.6.0` if need be* (R8 tags `1.0.0` on `0.5.0`'s build after its quiet weeks; shipping this changes the build the quiet weeks are counted on, which the owner accepts; the release mechanics are decided at release time). As proposed: **merged to `main` after Q3 (b); tried on the test install (6113) first; on the owner's install only after `1.0.0`.** `1.0.0` is tagged on `0.5.0`'s build (R8), so `main` moving does not change it; this reverses the deferral of ADR 0064's consequence (NMO-34) only for this gap. | Keep it after `1.0.0` as ADR 0064 says, on this branch. |
 
 ## Scope
 
@@ -111,4 +112,4 @@ two syllables (a one-syllable first word, 윤 하나, still gives none).
       and on this branch alike, and the existing fingerprint tests pass unchanged.
 - [x] Zero-call replay (above): no pair removed.
 - [ ] Q3 (b), after the owner's estimate approval.
-- [ ] Owner decisions Q1–Q6.
+- [x] Owner decisions Q1–Q6 (2026-11-02): Q1–Q4 and Q6 as recommended, Q5 amended (ships before `1.0.0`).
