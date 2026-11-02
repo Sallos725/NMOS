@@ -241,7 +241,10 @@ def test_name_parts_are_the_given_name_of_a_hangul_name_and_the_first_or_last_wo
     assert extraction.name_parts("Mary Anne Smith") == ["Mary", "Smith"]
     for name in ("하나", "윤하나나나나", "?검은 망토의 남자", "Hana", "윤 하나", "검은 고양이"):
         assert extraction.name_parts(name) == [], name
-    assert extraction.name_parts("카이토") == ["이토"]  # a candidate only: the turn must write 이토 apart, and the model confirm
+    # PHASE-54 Q4: only with a family name; a transliterated word (카이토, 리비아, 토비아스) is no family and given name
+    for name in ("카이토", "리비아", "토비아스", "가나다라"):
+        assert extraction.name_parts(name) == [], name
+    assert extraction.name_parts("제갈하나") == ["하나"] and extraction.name_parts("추오월") == ["오월"]
 
 
 def test_a_hangul_name_of_two_or_three_words_gives_its_first_word():

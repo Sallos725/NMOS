@@ -31,6 +31,7 @@ from .predicates import (DERIVED, REGISTRY, alias_evidenced, because, fill_types
 from .secrets import fold as fold_secrets, reveal_value
 from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity
 from .reconcile import Entry, RevKey, turn_layout
+from .variants import FAMILY
 
 log = logging.getLogger("nmos.extraction")
 
@@ -755,16 +756,21 @@ def role_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPE
 # The last syllable of a Hangul word that modifies the next one (검은 고양이, 윤서하의 아버지): a description, not a name
 # (PHASE-54 Q1).
 MODIFIER_ENDS = frozenset("은는운던의")
+# Two-syllable family names of a four-syllable Korean name (남궁하나); one-syllable ones are `variants.FAMILY` (PHASE-54
+# Q4: a transliterated word of three or four syllables, 비올라 or 토비아스, is not a family and a given name).
+FAMILY_TWO = frozenset({"남궁", "제갈", "선우", "독고", "황보", "사공", "서문", "동방", "망절", "어금"})
 
 
 def name_parts(name: str) -> list[str]:
     """The parts of a full name a story may call its bearer by (PHASE-28 Q4): the given name of a Hangul name of three
-    syllables (윤하나 → 하나) or four (남궁하나 → 하나); the first and the last word of a Latin name of two words or more;
-    the first word, of two syllables or more, of a Hangul name of two or three words (리아나 벨로스 → 리아나, 세라 델 모렌
-    → 세라, PHASE-54 Q1), unless that word modifies the next (검은 고양이)."""
+    syllables with a common family name (윤하나 → 하나) or of four with a two-syllable one (남궁하나 → 하나, PHASE-54 Q4);
+    the first and the last word of a Latin name of two words or more; the first word, of two syllables or more, of a
+    Hangul name of two or three words (리아나 벨로스 → 리아나, 세라 델 모렌 → 세라, PHASE-54 Q1), unless that word modifies
+    the next (검은 고양이)."""
     name = " ".join(name.split())
     if re.fullmatch(r"[가-힣]{3,4}", name):
-        return [name[len(name) - 2:]]
+        family = name[:len(name) - 2]
+        return [name[len(name) - 2:]] if family in FAMILY or family in FAMILY_TWO else []
     words = name.split(" ")
     if len(words) >= 2 and all(re.fullmatch(r"[A-Za-z][A-Za-z'’-]+", w) for w in words):
         return list(dict.fromkeys([words[0], words[-1]]))

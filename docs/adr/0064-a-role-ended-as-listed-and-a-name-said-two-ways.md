@@ -342,6 +342,10 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    the generation key are unchanged (PHASE-54 Q2): `name_parts` was never in the fingerprint, and the pairs a turn was
    shown stay in its extraction's hints. A zero-call replay of 5,246 stored extractions adds a pair on 93 turns and
    removes none (PHASE-54, step 2 evidence).
+   With it (PHASE-54 Q4), a Hangul name of three or four syllables gives its last two only with a family name
+   (`variants.FAMILY`; `FAMILY_TWO` for 남궁하나): a transliterated word (카이토, 토비아스) was listed on every turn that
+   wrote its last syllables, refused every time, and the NAME PAIRS block it brings lowers the extraction's other
+   answers on those turns (PHASE-54, the control arm). 카이토 / 이토 is no longer a candidate.
 
 ## Withdrawn: `given_name_join`
 

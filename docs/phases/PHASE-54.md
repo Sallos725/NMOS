@@ -2,7 +2,8 @@
 
 Status: **approved**, 2026-11-02 (an owner request, not a roadmap stage: "이름부터 부탁할게", after the memory map of
 the trial install's longest chat showed six characters split in two). Q1–Q4 and Q6 as recommended; Q5 amended by the
-owner: "Q5는 0.6.0을 내는 한이 있더라도 진행해야겠어" — it ships before `1.0.0`, in a `0.6.0` if need be. Step 2 is
+owner: "Q5는 0.6.0을 내는 한이 있더라도 진행해야겠어" — it ships before `1.0.0`, in a `0.6.0` if need be. After the
+control arm (Step 3) the owner also took Q4's alternative into the phase ("2: Q4 보강 포함"). Step 2 is
 built on draft PR #325; next, Q3 (b) after the owner approves its estimate.
 
 **High risk** (`AGENTS.md §14`): **identity**. The change decides which name pairs the extractor is asked about; a
@@ -44,15 +45,15 @@ Read on the trial install (6113, `0.5.0`, database `nmos_p32_try`), read-only, n
 | Q1 | Which part of a Hangul name of several words is asked about? | **The first word**, of two syllables or more, for a name of two or three Hangul words (a one-syllable particle such as 델 or 폰 may follow), unless the first word ends in a modifier syllable (은, 는, 운, 던, 의: 검은 고양이, 윤서하의 아버지). It covers every split pair found (all six are the first word), and a title is never the part (에반 교수 → 에반). The pair is still listed only when the turn writes the full name and the part apart, not for a part two known full names share, not for the persona (PHASE-28 Q6), and it becomes an alias only when the model confirms it with a quote of the turn. | The first and the last word, as for Latin names: also covers a family name used alone (벨로스 for 리아나 벨로스), but a title or a creature's kind becomes a part (교수, 고블린), and no split by family name was found. A read-side join without the model: withdrawn in PHASE-28 Q4 (no proof of identity). |
 | Q2 | Does it change the extractor generation? | **No.** `name_parts` is not in the generation fingerprint today, the prompt text is unchanged, and the pairs a turn was shown are stored in its extraction's hints (`names`), so provenance holds. No chat is re-extracted: turns extracted from now on list the new pairs; an existing split joins when a later turn writes both names, or after "Extract all history". | Put the rule in the fingerprint: every chat's recent window is extracted again under a new generation (paid on the owner's install) and the quiet weeks restart. |
 | Q3 | How is it measured? | **(a) done, zero calls:** deterministic cases in CI and the replay below. **(b) the confirmation, bounded:** the 93 replayed turns that gain a pair, extracted again on isolated copies with the owner's extraction model, three runs each; pass = every listed name pair confirmed in a majority of runs where the turn says both names of one person, no description pair confirmed, and no other change in the turn's assertions beyond the run-to-run noise. An exact call and token estimate goes to the owner before any call. | The full live gate (`AGENTS.md §7` item 6, "Extraction"): the prompt text is unchanged, only which pairs are listed, so (b) measures exactly what changes. Only trying it on the trial install in play. |
-| Q4 | What about the pairs the current rule lists for a three-syllable name that is not Korean (a transliterated name such as 카이토 / 이토)? | **Out of this phase, recorded.** The replay finds one transliterated three-syllable first name and its last two syllables (a 올라-like verb fragment) listed on 82 turns, and two more such pairs once each; the model refused every one (no such alias is stored). They cost tokens and can take a slot of `NAME_PAIRS` (8), and ADR 0064 lists 카이토 / 이토 as a candidate on purpose. | Ask only for a three-syllable name whose first syllable is a common family name (`variants.FAMILY`), as Phase 24 does on the read side; a Korean name with a rare family name would no longer be asked. |
+| Q4 | What about the pairs the current rule lists for a three-syllable name that is not Korean (a transliterated name such as 카이토 / 이토)? | *Amended by the owner, 2026-11-02, after the control arm (Step 3): the alternative, in this phase.* **Out of this phase, recorded.** The replay finds one transliterated three-syllable first name and its last two syllables (a 올라-like verb fragment) listed on 82 turns, and two more such pairs once each; the model refused every one (no such alias is stored). They cost tokens and can take a slot of `NAME_PAIRS` (8), and ADR 0064 lists 카이토 / 이토 as a candidate on purpose. | Ask only for a three-syllable name whose first syllable is a common family name (`variants.FAMILY`), as Phase 24 does on the read side; a Korean name with a rare family name would no longer be asked. |
 | Q6 | What about a name whose first word has one syllable (얀 하르트, a Western name such as Jan or Lin)? | **Left out, recorded.** A one-syllable part is written at the start of countless words: the matcher lets a Hangul name take any following syllable, so 솔 is in 솔직히, 린 in 린넨, 윤 in 윤기가. Replayed (zero calls, same 5,246 extractions): allowing it adds 519 turns, 511 of them one name and title's one-syllable family name in words such as 오늘 and 오랜만에, 5 a family name and a title, 6 the one real given name. Allowing it only when nothing or a particle follows (은, 이, 에게, 씨, …) still adds 99 turns, 93 of them the same syllable as an interjection ("오!", "오, 그래?") and 6 the given name. Such a character is joined by a lorebook key (ADR 0046), the owner's link (ADR 0025) or an alias the model writes unasked. | The particle-only match with a list of one-syllable interjections and common words left out: brittle, and the replay has one such character in 67 names. |
 | Q5 | When does it ship? | *Decided by the owner (amended): before `1.0.0`, in a `0.6.0` if need be* (R8 tags `1.0.0` on `0.5.0`'s build after its quiet weeks; shipping this changes the build the quiet weeks are counted on, which the owner accepts; the release mechanics are decided at release time). As proposed: **merged to `main` after Q3 (b); tried on the test install (6113) first; on the owner's install only after `1.0.0`.** `1.0.0` is tagged on `0.5.0`'s build (R8), so `main` moving does not change it; this reverses the deferral of ADR 0064's consequence (NMO-34) only for this gap. | Keep it after `1.0.0` as ADR 0064 says, on this branch. |
 
 ## Scope
 
-In: `extraction.name_parts` (Q1), its deterministic cases, ADR 0064 decision item 6, `docs/KNOWN-ISSUES.md` K31, this
+In: `extraction.name_parts` (Q1, Q4), its deterministic cases, ADR 0064 decision item 6, `docs/KNOWN-ISSUES.md` K31, this
 spec. Out: the prompt text, the generation fingerprint (Q2), the resolver, recall, any read-side join (PHASE-28 Q4),
-the three-syllable rule (Q4), a one-syllable first word (Q6), kana or kanji names, a re-extraction, a default, a
+a one-syllable first word (Q6), kana or kanji names, a re-extraction, a default, a
 deploy.
 
 `name_parts` has a second caller, and it changes with it: `role_party_named`, which accepts a listed role's ending
@@ -176,6 +177,21 @@ pair the model never confirms — the two creature descriptions here — is list
 transliterated name's last two syllables (82 turns of one chat on the trial install for one such pair); the model
 refuses it every time, so it never joins and the block stands on each of those turns today.
 
+## Step 4: Q4, the three- and four-syllable rule asks only with a family name
+
+The control arm showed the NAME PAIRS block lowering other answers on every turn that carries it, and a pair the model
+refuses is listed again on every turn that writes it. `main`'s three- and four-syllable rule lists such pairs for a
+transliterated word (one of them on 82 turns of one trial-install chat). `name_parts` now gives the last two syllables
+of a three-syllable Hangul name only when its first syllable is a common family name (`variants.FAMILY`, Phase 24's
+list), and of a four-syllable one only when its first two are a two-syllable family name (`FAMILY_TWO`).
+
+Zero-call replay, the same 5,246 extractions, `main` against this branch: the pairs added are those of Step 2 (93
+turns); removed, 130 listings of four pairs: a transliterated given name's last two syllables (124 and 1), a
+transliterated four-syllable name's last two (1), and a title's last two syllables (항만청장 / 청장, 4). No pair of a
+Korean name is removed (한지원 / 지원 stays). No call measures it: it only takes the block off turns, which the control
+arm measured as the block-free condition. A Korean name whose family name is not on the list is no longer asked
+about.
+
 ## Acceptance criteria
 
 - [x] Deterministic: a Hangul name of two or three words gives its first word; a description, a one-syllable word,
@@ -184,9 +200,10 @@ refuses it every time, so it never joins and the block stands on each of those t
 - [x] The generation key is unchanged (Q2): for the tests' settings `extract-v16` is
       `extract-78315fad68d2cef20e5e02e88e227f37` and `extract-v17` `extract-ca7705d83b48131b164c7444e6af612b` on `main`
       and on this branch alike, and the existing fingerprint tests pass unchanged.
-- [x] Zero-call replay (above): no pair removed.
+- [x] Zero-call replay (Step 2): no pair removed by Q1; (Step 4) Q4 removes only pairs of names that are not Korean, and a title.
 - [ ] Q3 (b), run 2026-11-02 (Step 3 evidence): names join their splits (8 of 9 pairs in every run), but per turn 50
       of 66 confirmed by majority, one description pair confirmed; the control arm shows the NAME PAIRS block lowers
       `resolved`, `knows` and `destroyed` on the turns that carry it (in story order about one or two turns per pair).
-      Not met as worded; owner to decide.
-- [x] Owner decisions Q1–Q6 (2026-11-02): Q1–Q4 and Q6 as recommended, Q5 amended (ships before `1.0.0`).
+      Not met as worded; the owner accepted the trade and took Q4 into the phase to take the block off refused pairs
+      (2026-11-02).
+- [x] Owner decisions Q1–Q6 (2026-11-02): Q1–Q3 and Q6 as recommended, Q5 amended (ships before `1.0.0`), Q4 amended after the control arm (the three- and four-syllable rule asks only with a family name).
