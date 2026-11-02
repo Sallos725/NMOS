@@ -102,6 +102,41 @@ measured chats are the owner's.)
 name with a one-syllable particle (세라 델 모렌); two of the main characters were such names. Only the first word needs
 two syllables (a one-syllable first word, 윤 하나, still gives none).
 
+## Step 3 evidence: the confirmation, three runs (Q3 b)
+
+Owner-approved option B (2026-11-02): the new rule only, three runs, against each turn's stored extraction; cap 300
+calls and 4.5M input tokens. `tools/eval_extract_sample.py run --compiler extract-v16` from this branch, read-only
+connections to the test databases, `gemma4:31b` on Ollama Cloud, the hints of each database's active generation.
+With those hints 54 of the 66 replayed turns list a new-rule pair (the rest list none, or only the old rule's pairs),
+so only those 54 ran. Spend: 168 calls, 2,146,284 input and 266,686 output tokens, plus a one-call pilot (10,298 /
+1,160). Results and scripts stay outside the repository.
+
+| Pair (synthetic description) | turns | confirmed in a majority of runs | in some run | the split joins (runs) |
+|---|---:|---:|---:|---:|
+| main character, Western name of two words | 43 | 32 | 33 | 3/3 in both chats |
+| main character, Western name of three words | 7 | 6 | 7 | 3/3 |
+| main character, three words with a particle | 11 | 8 | 9 | 3/3 |
+| minor character, three words with a particle | 2 | 1 | 2 | 2/3 |
+| character, Japanese name of two words | 2 | 2 | 2 | 3/3 in both chats |
+| minor character, a name and a title | 1 | 1 | 1 | 3/3 |
+| **names** | **66** | **50** | **54** | |
+| a creature: a kind word and its kind | 2 | 1 | 1 | 3/3 |
+| a creature: a rank word and its kind | 3 | 0 | 0 | — |
+
+- **Names.** Every name pair joins its split in every run but one (the minor character with a particle, 2 of 3): one
+  confirmed turn is enough for the resolver. Per turn, 50 of 66 are confirmed in a majority of runs, so the criterion as
+  worded ("every listed name pair confirmed in a majority of runs") is **not met per turn**; it is met per chat.
+- **A description confirmed.** "a kind word and its kind / the kind word" was confirmed in one turn in all three runs.
+  The turn calls that creature by the kind word alone later on ("…의 두꺼운 뼈"), so the alias is right in that scene;
+  but the criterion ("no description pair confirmed") is **not met**, and a common noun as an alias can join a later
+  creature of the same kind (the ambiguity rule then holds it apart only if it is linked to two names).
+- **Other assertions, against one stored extraction** (mean per run of the three, range, stored): event 76.7 (73–79)
+  vs 67, goal 23.0 (21–24) vs 29, knows 20.3 (18–23) vs 26, resolved 14 (14–14) vs 19, addresses 6.0 (5–7) vs 0;
+  located_in, possesses, feels_toward, identity, has_status and the rest within the runs' range of the stored count.
+  The stored extractions were made by the worker in story order with the hints of their time, and four turns by
+  `extract-v13`, so this comparison cannot tell the change from the different conditions. Role endings: none in the
+  runs or the stored extractions.
+
 ## Acceptance criteria
 
 - [x] Deterministic: a Hangul name of two or three words gives its first word; a description, a one-syllable word,
@@ -111,5 +146,7 @@ two syllables (a one-syllable first word, 윤 하나, still gives none).
       `extract-78315fad68d2cef20e5e02e88e227f37` and `extract-v17` `extract-ca7705d83b48131b164c7444e6af612b` on `main`
       and on this branch alike, and the existing fingerprint tests pass unchanged.
 - [x] Zero-call replay (above): no pair removed.
-- [ ] Q3 (b), after the owner's estimate approval.
+- [ ] Q3 (b), run 2026-11-02 (Step 3 evidence): names join their splits (8 of 9 pairs in every run), but per turn 50
+      of 66 confirmed by majority, one description pair confirmed, and the other-assertion comparison inconclusive.
+      Owner to decide.
 - [x] Owner decisions Q1–Q6 (2026-11-02): Q1–Q4 and Q6 as recommended, Q5 amended (ships before `1.0.0`).
