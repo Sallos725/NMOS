@@ -241,11 +241,33 @@ def test_name_parts_are_the_given_name_of_a_hangul_name_and_the_first_or_last_wo
     assert extraction.name_parts("Mary Anne Smith") == ["Mary", "Smith"]
     for name in ("하나", "윤하나나나나", "?검은 망토의 남자", "Hana", "윤 하나", "검은 고양이"):
         assert extraction.name_parts(name) == [], name
-    assert extraction.name_parts("카이토") == ["이토"]  # a candidate only: the turn must write 이토 apart, and the model confirm
+    # PHASE-54 Q4: only with a family name; a transliterated word (카이토, 리비아, 토비아스) is no family and given name
+    for name in ("카이토", "리비아", "토비아스", "가나다라"):
+        assert extraction.name_parts(name) == [], name
+    assert extraction.name_parts("제갈하나") == ["하나"] and extraction.name_parts("추오월") == ["오월"]
+
+
+def test_a_hangul_name_of_two_or_three_words_gives_its_first_word():
+    # PHASE-54 Q1: a name the story writes in Hangul word by word (a Western or Japanese name) is called by its first word
+    assert extraction.name_parts("리아나 벨로스") == ["리아나"]
+    assert extraction.name_parts("세라 델 모렌") == ["세라"]
+    assert extraction.name_parts("타카기 미오") == ["타카기"]
+    assert extraction.name_parts("에반 교수") == ["에반"]
+    for name in ("윤서하의 아버지", "붉은 고블린", "작은 운디네", "이어지던 계단", "윤 하나", "곽 조합장",
+                 "심연에 물든 룬 골렘 아라크네", "리아나 Velos"):
+        assert extraction.name_parts(name) == [], name
 
 
 def known(*names, also=None):
     return [{"name": n, "type": CHAR, **({"also": also[n]} if also and n in also else {})} for n in names]
+
+
+def test_a_hangul_name_of_two_words_is_paired_when_the_turn_writes_its_first_word_apart():
+    text = "리아나 벨로스가 책장 곁에 서 있었다. 리아나는 고개를 들었다."
+    assert extraction.name_pairs(known("리아나 벨로스"), text) == [{"full": "리아나 벨로스", "part": "리아나"}]
+    assert extraction.name_pairs(known("리아나 벨로스"), "리아나 벨로스가 책장 곁에 서 있었다.") == []
+    assert extraction.name_pairs(known("리아나 벨로스", "리아나 크로스"), text) == []  # two known full names share it
+    assert extraction.name_pairs(known("리아나 벨로스"), text, persona=["리아나"]) == []
 
 
 TWO_WAYS = "윤하나는 의자에 앉았다. 하나는 차를 마셨다."

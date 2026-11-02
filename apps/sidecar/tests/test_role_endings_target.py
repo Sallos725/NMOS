@@ -79,6 +79,20 @@ def test_the_counterpart_called_by_the_given_name_alone_is_named():
     assert len(X.ended_roles(answer(text), [], [latin], text)) == 1
 
 
+def test_the_counterpart_with_a_hangul_name_of_several_words_called_by_its_first_word_is_named():
+    """PHASE-54 Q1: `name_parts` gives the first word of a name written in Hangul word by word, here as for 강무진."""
+    role = ROLE | {"to": "리아나 벨로스", "role": "직원: 리아나 벨로스의 공방에서 일함"}
+    quote = "강세온은 공방 열쇠를 반납하고 리아나에게 그만두겠다고 말했다."
+    (row,) = X.ended_roles(answer(quote), [], [role], quote)
+    assert row["object"] == "리아나 벨로스"
+    namesake = [{"name": "리아나 벨로스", "type": "character"}, {"name": "리아나 크로스", "type": "character"}]
+    assert X.ended_roles(answer(quote), [], [role], quote, hints=namesake) == []
+    assert X.ended_roles(answer(quote), [], [role], quote, persona=["리아나"]) == []
+    described = ROLE | {"to": "붉은 고블린", "role": "하수인"}  # a description gives no part
+    text = "강세온은 고블린에게 더는 따르지 않겠다고 말했다."
+    assert X.ended_roles(answer(text), [], [described], text) == []
+
+
 def test_an_ending_with_a_pronoun_only_counterpart_is_conservatively_missed():
     quote = "강세온은 그녀에게 열쇠를 돌려주고 식당 일을 그만두었다."
     assert X.ended_roles(answer(quote), [], [ROLE], quote) == []
