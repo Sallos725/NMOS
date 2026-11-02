@@ -137,6 +137,45 @@ so only those 54 ran. Spend: 168 calls, 2,146,284 input and 266,686 output token
   `extract-v13`, so this comparison cannot tell the change from the different conditions. Role endings: none in the
   runs or the stored extractions.
 
+## Step 3 evidence, the control arm: `main`'s rule on the same turns
+
+Owner-approved the same day, after the stored comparison above was inconclusive. The same 54 turns, hints, model and
+tool, three runs, with `main`'s `name_parts` (`PYTHONPATH` on a detached checkout of `d05c51b`); no new-rule pair is
+listed (pilot: `pairs: []`). Spend: 168 calls, 2,078,665 input and 257,790 output tokens in the main calls, plus a
+one-call pilot (9,379 / 1,203).
+
+Valid assertions by predicate, per run (new rule | `main`'s rule); "no" where the two arms' ranges do not overlap:
+
+| predicate | new rule | `main` | overlap |
+|---|---|---|---|
+| `also_called`, the listed pair | 53, 50, 49 | 0, 0, 0 | no (the change) |
+| `also_called`, other | 5, 6, 6 | 7, 5, 7 | yes |
+| `resolved` | 14, 14, 14 | 17, 17, 19 | **no** |
+| `knows` | 23, 18, 20 | 25, 26, 27 | **no** |
+| `destroyed` | 1, 1, 2 | 3, 4, 4 | **no** |
+| `has_trait` | 4, 5, 4 | 6, 6, 6 | **no** |
+| `event` | 73, 78, 79 | 72, 68, 70 | **no** |
+| `located_in` | 44, 51, 48 | 43, 39, 41 | **no** |
+| `identity` | 24, 23, 20 | 18, 17, 19 | **no** |
+| `addresses` | 5, 7, 6 | 1, 1, 1 | **no** |
+| pending rows | 10, 10, 10 | 4, 6, 3 | **no** |
+| `goal`, `feels_toward`, `has_status`, `possesses`, `relationship`, `role_toward`, `owes`, `promised`, `threat`, `question`, `member_of`, `world_fact` | | | yes |
+
+**The NAME PAIRS block changes the rest of the extraction.** On a turn that lists a pair, the model also writes
+fewer endings of threads (`resolved` −22 %), fewer `knows` (−22 %) and `destroyed`, and more events, places,
+identities and forms of address. The rule and the alias check stand at the end of the user prompt only when a pair is
+listed (ADR 0064 item 5), the same placement item 5 found moving other answers ("planned" resignations).
+
+**How many turns carry it in use.** The runs give every turn the block, because every turn was extracted with hints
+where the pair was not yet joined. In use, turns are extracted in story order and a joined pair is not listed again
+(the hints show both names as one entity), so the block stands only on the turns up to the first confirmation. Taking
+the first turn confirmed in a majority of runs, in story order: 14 of the 71 listed turn-pairs (one or two per pair; a
+pair the model never confirms — the two creature descriptions here — is listed on every turn that writes it).
+
+**`main` already carries the same block where its own pairs are refused.** The three-syllable rule (Q4) lists a
+transliterated name's last two syllables (82 turns of one chat on the trial install for one such pair); the model
+refuses it every time, so it never joins and the block stands on each of those turns today.
+
 ## Acceptance criteria
 
 - [x] Deterministic: a Hangul name of two or three words gives its first word; a description, a one-syllable word,
@@ -147,6 +186,7 @@ so only those 54 ran. Spend: 168 calls, 2,146,284 input and 266,686 output token
       and on this branch alike, and the existing fingerprint tests pass unchanged.
 - [x] Zero-call replay (above): no pair removed.
 - [ ] Q3 (b), run 2026-11-02 (Step 3 evidence): names join their splits (8 of 9 pairs in every run), but per turn 50
-      of 66 confirmed by majority, one description pair confirmed, and the other-assertion comparison inconclusive.
-      Owner to decide.
+      of 66 confirmed by majority, one description pair confirmed; the control arm shows the NAME PAIRS block lowers
+      `resolved`, `knows` and `destroyed` on the turns that carry it (in story order about one or two turns per pair).
+      Not met as worded; owner to decide.
 - [x] Owner decisions Q1–Q6 (2026-11-02): Q1–Q4 and Q6 as recommended, Q5 amended (ships before `1.0.0`).
