@@ -5,6 +5,18 @@ a local prototype of this view on 2026-11-02 and wants it in the product. Q1–Q
 owner: the caps stay the default and the browser page gets a "show all" link that draws the whole cast ("전체보기
 버튼을 만들어서 전부 보여주는것도"). Linear: to be filed by the owner (AGE-39 is Phase 32's time axis and is done).
 
+**Amendment 1 (2026-11-02, the owner: "앵간해선 RisuAI 내부, 즉 플러그인에서 바로 interactive graph를 보고 싶은데",
+then "바로 진행해줘"): step 6, the drawing in the panel, interactive.** After the browser page was tried, the owner
+wanted the graph inside the panel. Q3 stays (a) for the sanitizer: no SVG goes through it. Instead the sidecar sends the
+drawing as data (`GET /v1/views/c/{id}/map/graph`: the same rings' positions, names, kinds, marks, the panel's words),
+and the plugin draws it with SVG elements of its own (`graph.ts`), every name as text, never parsed as markup; it checks
+every field against a fixed set or a number range and draws nothing on a mismatch. Pan with one finger, pinch or wheel
+to zoom, names at a fixed 14 px on screen (shown once nodes are far enough apart, a picked person's ties always);
+a tap picks a person and dims everything not tied to them, a second tap opens their own map (`?focus=`); "fit" and
+"show all" buttons. No layout runs on the phone. `features.map_graph` gates it; without it, or on any error, the note
+that sends the reader to the browser stays. Criterion 8 is amended to the measured growth (below). Q2's "no script"
+holds for the browser page; the panel's drawing is the plugin's own code, not a script from the sidecar.
+
 Not high risk (`AGENTS.md §14`) with the answers proposed below: no stored data, schema, extraction, packet, recall or
 memory selection changes, and no new tag or attribute through the panel's sanitizer. **Q3 (b) would make step 4 high
 risk** (the sanitizer, a security boundary), as PHASE-32 step 3 was.
@@ -163,6 +175,9 @@ its docstring when built).
    the trial install's chats read through the map, numbers only, and compared with the prototype's counts of
    2026-11-02 (the same chat should give the same shares); screenshots at 390 px and 1,100 px on synthetic data only;
    the owner's look on an iPhone and a desktop.
+6. **The drawing in the panel** (amendment 1): `views.map_graph` and its route, `graph.ts` and its loading in
+   `ui.ts`; tests: the data's shape and caps (sidecar), a spoiled field refused, names as text, fit and zoom
+   arithmetic, a tap picks, a second tap opens, a drag is not a tap, the note stays without the feature (plugin).
 
 ## Acceptance criteria
 
@@ -182,6 +197,8 @@ its docstring when built).
    focus view shown).
 7. The map at 10,000 messages renders in under one second; slower stops step 5 for the owner (PHASE-32 criterion 7).
 8. The plugin's gzipped build grows by at most 2 % (one block flag and one path; 69,576 bytes at PHASE-52).
+   **Amended (amendment 1):** with step 6's drawing, at most 5 %; measured 70,344 → 73,712 bytes (+4.79 %, `gzip -9`
+   against `main` at `446d5fb`).
 9. No test outside the map, the views, the hub flag and the plugin's view path changes; the packet, recall and
    extraction tests pass unchanged.
 10. The owner's look on an iPhone and a desktop.

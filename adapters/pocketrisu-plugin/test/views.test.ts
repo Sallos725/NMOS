@@ -81,7 +81,16 @@ const hub = `<div class="v v-hub"><div class="v-blocks">`
   + `<a class="v-block" data-act="settings"><span class="v-bt">Settings</span></a>`
   + `<a class="v-block" data-act="notes"><span class="v-bt">Author's note</span></a></div></div>`;
 
-function deps(opts: { views?: boolean; map?: boolean; css?: string } = {}) {
+const mapPage = `<div class="v v-doc v-map"><div class="v-sec" id="s-ties"><h2 class="v-h2">Ties</h2>`
+  + `<p class="v-note v-graph-note">Open it in a browser</p><div class="v-line">Hana</div></div></div>`;
+const graphData = {
+  nodes: [{ id: id, name: 'Hana', kind: 'character', lead: true, entity: '0190f3a4-1b2c-7d3e-8f40-00000000000a', x: 0, y: 0 },
+    { id: 'text:place:mill', name: 'the mill', kind: 'place', lead: false, entity: null, x: 120, y: 0 }],
+  edges: [{ a: id, b: 'text:place:mill', kind: 'place', mark: 'story' }], suspects: [], focus: null, everyone: false,
+  capped: false, words: { legend: 'Lines', fit: 'Fit', all: 'All', fewer: 'Fewer', tap: 'Tap', ties: '{n}', left: '' },
+};
+
+function deps(opts: { views?: boolean; map?: boolean; graph?: boolean; css?: string } = {}) {
   const calls: [string, string][] = [];
   const bodies: unknown[] = [];
   const d: PanelDeps = {
@@ -92,6 +101,8 @@ function deps(opts: { views?: boolean; map?: boolean; css?: string } = {}) {
       if (path.startsWith('/v1/views/hub')) return { html: hub, conversation: id } as T;
       if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: '<h1>Chat page</h1>' } as T;
       if (path.startsWith(`/v1/views/c/${id}/memory`)) return { html: memory } as T;
+      if (path.startsWith(`/v1/views/c/${id}/map/graph`)) return graphData as T;
+      if (path.startsWith(`/v1/views/c/${id}/map`)) return { html: mapPage } as T;
       if (path.includes('/person/')) return { html: person } as T;
       if (path.startsWith(`/v1/views/c/${id}/working`)) {
         return { html: '<div class="v"><span class="has-failed"></span><a data-act="retry">Retry failed</a></div>' } as T;
@@ -109,7 +120,8 @@ function deps(opts: { views?: boolean; map?: boolean; css?: string } = {}) {
       return {} as T;
     },
     status: async () => ({ enabled: true, sidecarUrl: 'http://127.0.0.1:8790', language: 'en', connected: true,
-      version: '0.5.0', features: opts.views === false ? {} : { views: true, ...(opts.map ? { map: true } : {}) }, last: null }),
+      version: '0.5.0', features: opts.views === false ? {} : { views: true, ...(opts.map ? { map: true } : {}),
+        ...(opts.graph ? { map_graph: true } : {}) }, last: null }),
     getArg: async (key) => (key === 'language' ? 'en' : ''),
     setArg: async () => {},
     show: async () => {},
@@ -155,6 +167,24 @@ describe('the hub (PHASE-52 D1)', () => {
     await settle();
     expect(calls.find(([, p]) => p.startsWith(`/v1/views/c/${id}/memory`))?.[1]).toContain('map=1');
     expect(calls.filter(([, p]) => p.startsWith('/v1/inspector') && p.includes('map=1'))).toEqual([]);
+  });
+
+  it('draws the memory map\'s graph in place of its note when the sidecar sends it as data (PHASE-55 step 6)', async () => {
+    for (const graph of [false, true]) {
+      document.body.replaceChildren();
+      const { d, calls } = deps({ map: true, graph });
+      await openPanel(d, 'status');
+      await settle();
+      const link = document.createElement('a');
+      link.setAttribute('href', `/views/c/${id}/map`);
+      panel().querySelector('.v-blocks')!.append(link);
+      link.click();
+      await settle();
+      expect(panel().querySelector('.v-line')?.textContent).toBe('Hana');
+      expect(!!panel().querySelector('svg.g-panel')).toBe(graph);
+      expect(!!panel().querySelector('.v-graph-note')).toBe(!graph);
+      expect(calls.some(([, p]) => p.includes('/map/graph'))).toBe(graph);
+    }
   });
 
   it('follows a block into a page and comes back', async () => {

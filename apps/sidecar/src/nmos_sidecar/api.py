@@ -439,7 +439,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                              "extraction": bool(rt["settings"].llm_url and rt["settings"].llm_model),
                              "vectors": rt["recall"].embedder is not None,
                              "views": True,  # PHASE-52: the panel's new screens
-                             "map": True},  # PHASE-55: the memory map
+                             "map": True,  # PHASE-55: the memory map
+                             "map_graph": True},  # and its drawing as data, for the panel (step 6)
                 "generations": {"extract": rt["active_extractor"],
                                 "embed": rt["projection"].key if rt["projection"] else None},
                 "plugin": {"expected": plugin.expected(), "seen": plugins.recent()},
@@ -1833,6 +1834,16 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         """The memory map for the panel (PHASE-55): lines only (Q3), `focus` one person and their ties (Q6)."""
         return {"html": view_page(request, conv_id, lambda conn, conv, lg: views.memory_map(
             map_data(conn, conv), lg, str(focus) if focus else None), lang)}
+
+    @app.get("/v1/views/c/{conv_id}/map/graph", dependencies=[Depends(auth)])
+    def views_map_graph(conv_id: UUID, request: Request, lang: str | None = None, focus: UUID | None = None,
+                        all: bool = False):  # noqa: A002
+        """The memory map's drawing as data, for the panel to draw and move itself (PHASE-55 step 6)."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            return views.map_graph(map_data(conn, conv), inspector.lang_of(lang), str(focus) if focus else None, all)
 
     @app.get("/views/c/{conv_id}/map", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def views_map_page(conv_id: UUID, request: Request, lang: str | None = None, focus: UUID | None = None,

@@ -88,7 +88,7 @@ A translation plugin's original-only derived text and its button marker are defe
 
 **Phase 55 — the memory map: approved 2026-11-02 (an owner request; Q1–Q6, Q8 as recommended; Q7 amended: the caps
 stay the default, with a "show all" link).** One screen per chat, rendered by the sidecar from the read every request
-makes: where the current facts came from (setting, story, the owner), who is tied to whom (a drawing in the browser,
+makes: where the current facts came from (setting, story, the owner), who is tied to whom (a drawing in the browser and an interactive one in the panel,
 lines in the panel, names that may be one person flagged), the story's events by turn, and how much an event record
 holds. Read-only; no stored data, schema, extraction or packet change; not high risk. Steps 2–5 built; the hub's block
 and the memory document's link only for a plugin that asks (`map=1`). On the trial install's longest chat it gives the

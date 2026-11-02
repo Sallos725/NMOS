@@ -82,6 +82,10 @@ STYLE = """
 .nmos .g-n{fill:var(--c-text-faint)} .nmos .g-n.lead{fill:var(--c-text-strong)}
 .nmos .g-n.group,.nmos .g-n.place{fill:var(--c-bg);stroke:var(--c-text-muted);stroke-width:2}
 .nmos .g-t{fill:var(--c-text-soft);font-size:16px} .nmos .g-t.lead{fill:var(--c-text-strong);font-weight:600}
+.nmos svg.g-panel{display:block;width:100%;height:min(62vh,480px);touch-action:none;user-select:none;-webkit-user-select:none;background:var(--c-sunken);border-radius:var(--r-block,12px)}
+.nmos svg.g-panel .g-e{vector-effect:non-scaling-stroke} .nmos svg.g-panel .g-e.on{stroke-width:2.5}
+.nmos svg.g-panel.sel .g-e:not(.on){opacity:.12} .nmos svg.g-panel.sel .g-node:not(.on){opacity:.3}
+.nmos .v-graph-btns{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 0}
 @media (min-width:700px){.nmos .v-block:not(.v-wide):not(.v-big){flex-basis:240px}}
 @media (max-width:699px){.nmos .v-graph.whole{display:none}}
 """
@@ -201,6 +205,8 @@ T: dict[str, tuple[str, str]] = {
                "Lines: grey setting · blue story · orange changed from the setting · dashed maybe one person"),
     "panel_graph": ("그림은 브라우저에서 이 화면을 열면 보여요: /views/c/{cid}/map",
                     "The drawing shows when this screen is opened in a browser: /views/c/{cid}/map"),
+    "g_fit": ("맞춤", "Fit"), "g_tap": ("한 번 더 누르면 이 사람 중심 지도로 가요", "Tap again for this person's own map"),
+    "g_ties": ("관계 {n}", "{n} ties"),
     "with": ("함께: {who}", "with {who}"), "because": ("이유: {why}", "because {why}"),
     "ev_span": ("t{lo}–t{hi} · 사건 {n}", "t{lo}–t{hi} · {n} events"),
     "ev_left": ("이전 사건 {n}개는 여기 넣지 않았어요", "{n} earlier events are left out here"),
@@ -806,6 +812,26 @@ def _depth(dp: dict[str, Any], lang: str) -> str:
     return out + (f'<details class="v-more"><summary>{_v(t(lang, "d_gen"))}</summary>{rows}</details>' if rows else "")
 
 
+def map_graph(d: dict[str, Any], lang: str, focus: str | None = None, everyone: bool = False) -> dict[str, Any]:
+    """The drawing as data, for the panel to draw itself (PHASE-55 step 6): positions from the same rings (Q2), names
+    as text the plugin never parses as markup, the marks from a fixed set, and the panel's words for its controls."""
+    from .memorymap import drawn
+    g = d["map"]["graph"]
+    if focus not in {n["id"] for n in g["nodes"]}:
+        focus = None
+    dr = drawn(g, focus, everyone)
+    nodes = [{"id": n["id"], "name": n["name"] + (f" ({t(lang, 'you')})" if n["persona"] else ""), "kind": n["kind"],
+              "lead": bool(n["scene"] or n["persona"]), "entity": n["entity"] if n["kind"] == "character" else None,
+              "x": dr["pos"][n["id"]][0], "y": dr["pos"][n["id"]][1]} for n in dr["nodes"]]
+    left = ", ".join(t(lang, f"n_{k}", n=n) for k, n in dr["left"].items())
+    return {"nodes": nodes, "edges": [{"a": e["a"], "b": e["b"], "kind": e["kind"], "mark": e["mark"]} for e in dr["edges"]],
+            "suspects": [{"a": s["full"]["id"], "b": s["short"]["id"]} for s in dr["suspects"]],
+            "focus": focus, "everyone": everyone, "capped": bool(dr["left"]),
+            "words": {"legend": t(lang, "legend"), "fit": t(lang, "g_fit"), "all": t(lang, "show_all"),
+                      "fewer": t(lang, "show_less"), "tap": t(lang, "g_tap"), "ties": t(lang, "g_ties", n="{n}"),
+                      "left": t(lang, "drawn_left", what=left) if left else ""}}
+
+
 def memory_map(d: dict[str, Any], lang: str, focus: str | None = None, everyone: bool = False,
                page: bool = False) -> str:
     """The memory map (PHASE-55): where the facts came from, who is tied to whom, what happened when, and how much an
@@ -818,7 +844,7 @@ def memory_map(d: dict[str, Any], lang: str, focus: str | None = None, everyone:
     if focus not in by:
         focus = None
     drawing = _drawing(cid, g, lang, focus, everyone) if page else \
-        f'<p class="v-note">{_v(t(lang, "panel_graph", cid=cid))}</p>'
+        f'<p class="v-note v-graph-note">{_v(t(lang, "panel_graph", cid=cid))}</p>'
     ties = section("s-ties", lang, drawing + _ties(cid, g, lang, focus))
     if focus is not None:
         head, body = t(lang, "focus", name=by[focus]["name"]), ties

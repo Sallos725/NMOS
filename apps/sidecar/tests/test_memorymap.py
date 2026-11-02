@@ -253,6 +253,27 @@ def test_show_all_draws_past_the_caps():
     assert "Left out" not in every and "Show fewer" in every and every.count('<circle') == 32
 
 
+def test_the_drawing_as_data_for_the_panel():
+    g = views.map_graph(map_data(), "ko")
+    ids = {n["id"] for n in g["nodes"]}
+    assert {HANA, KAITO, ME} <= ids and all(isinstance(n["x"], float) and isinstance(n["y"], float) for n in g["nodes"])
+    assert all(e["a"] in ids and e["b"] in ids and e["mark"] in ("setting", "story", "changed") for e in g["edges"])
+    assert g["suspects"] == [{"a": SERA_FULL, "b": SERA}] and not g["capped"]
+    me = next(n for n in g["nodes"] if n["id"] == ME)
+    assert me["name"] == "Yuu (나)" and me["lead"] and me["entity"] == ME
+    guild = next(n for n in g["nodes"] if n["id"] == GUILD)
+    assert guild["kind"] == "group" and guild["entity"] is None  # only a character opens a map
+    assert g["words"]["ties"] == "관계 {n}" and g["words"]["fit"] == "맞춤"
+    one = views.map_graph(map_data(), "en", focus=KAITO)
+    assert one["focus"] == KAITO and all(KAITO in (e["a"], e["b"]) for e in one["edges"])
+    assert views.map_graph(map_data(), "en", focus="nobody")["focus"] is None
+    facts = [fact(HANA, "relationship", f"c{i}", history=[step(2, "friend")]) for i in range(30)]
+    capped = views.map_graph(map_data(facts), "en")
+    assert capped["capped"] and capped["words"]["left"] == "Left out of the drawing: 8 characters"
+    assert len(views.map_graph(map_data(facts), "en", everyone=True)["nodes"]) == 32
+    assert 'class="v-note v-graph-note"' in views.memory_map(map_data(), "ko")  # where the panel draws it
+
+
 def test_an_empty_chat_has_a_map_that_says_so():
     html = views.memory_map(map_data([], entities=[entity(ME, persona=True)], scene=[]), "en")
     panel_safe(html)
@@ -303,4 +324,8 @@ def test_the_map_endpoints(migrated):
         assert page.status_code == 200 and '<div class="nmos">' in page.text
         assert c.get(f"/v1/views/c/{cid}/map", params={"focus": "x"}).status_code == 422
         assert c.get("/v1/views/c/0190f3a4-1b2c-7d3e-8f40-999999999999/map").status_code == 404
+        assert c.get("/v1/health").json()["features"]["map_graph"] is True
+        graph = c.get(f"/v1/views/c/{cid}/map/graph", params={"all": 1, "lang": "en"}).json()
+        assert {"nodes", "edges", "suspects", "words"} <= set(graph) and graph["everyone"] is True
+        assert c.get("/v1/views/c/0190f3a4-1b2c-7d3e-8f40-999999999999/map/graph").status_code == 404
     assert "Hana" in focus
