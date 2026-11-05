@@ -1369,7 +1369,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (custom.checked) Object.assign(body, { custom_prompt: text, custom_setting: setting.checked });
       try {
         const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,
-          body, 600_000); // up to three calls, each with a retry
+          body, 900_000); // up to three model parts, each with a retry
         if (notesFor !== conversation) return;
         results.replaceChildren(noteResult(r, msg));
         const done = r.text ? L('notes.done') : L('notes.part_none', { part: L('notes.title') });

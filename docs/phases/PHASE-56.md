@@ -142,7 +142,8 @@ parser presets, and `runtime.effective` hands every `EDITABLE` key to `Settings`
 with either. It is saved instead as the status pins are (PHASE-43): its own `app_config` key, `notes_custom_prompt`,
 read with `GET /v1/notes/prompt` and written with `PUT /v1/notes/prompt` (`{"prompt": "..."}`, at most `PROMPT_MAX`
 after trimming; an empty one deletes the row). It is still one prompt for every chat, the same on every device, and in
-a full archive (the archive copies `app_config` but the keys). Step 2's `runtime.EDITABLE` reads as this endpoint.
+a full archive (the archive copies the `app_config` rows it lists, `archive.SETTINGS`, so the key is added there).
+Step 2's `runtime.EDITABLE` reads as this endpoint.
 
 ## Steps
 

@@ -83,7 +83,7 @@ NEVER = ("job", "revision_text", "state_observation", "schema_migrations")
 # Settings an archive may hold: the editable ones but the keys (K21), the parser rules and presets, and the status
 # keys pinned per card (PHASE-43 A5).
 SETTINGS = tuple(sorted(set(runtime.EDITABLE) - runtime.SECRET)) + (runtime.PARSERS_KEY, runtime.PRESETS_KEY,
-                                                                    runtime.STATUS_PINS_KEY)
+                                                                    runtime.STATUS_PINS_KEY, runtime.NOTES_PROMPT_KEY)
 URL_SETTINGS = ("llm_url", "embed_url")
 # A credential shorter than this is not looked for: a key of one or two characters would refuse nearly every chat.
 MIN_SECRET = 4

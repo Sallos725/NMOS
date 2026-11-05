@@ -28,6 +28,7 @@ from .inspector import _named, pairs, stale
 from .llm import ChatModel, LLMError, metered
 from .noteblocks import strip_blocks, wrap  # noqa: F401  (the API's names for them)
 from .predicates import HOLDER_PER_ITEM, REGISTRY
+from .runtime import NOTES_PROMPT_KEY
 from .summaries import content, held as summary_held, leaks
 
 KINDS = ("diverged", "chronicle", "changed", "address", "custom")  # the parts the owner can pick, in the note's order
@@ -309,7 +310,7 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
 
 
 PROMPT_MAX = 4_000  # characters of the owner's prompt for the custom part (PHASE-56 C1)
-PROMPT_KEY = "notes_custom_prompt"  # its app_config row: one prompt for every chat (PHASE-56 C2, amendment 1)
+PROMPT_KEY = NOTES_PROMPT_KEY  # its app_config row: one prompt for every chat, in a full archive (PHASE-56 C2, amendment 1)
 CUSTOM_HEAD = "## Custom (owner's prompt)"
 CUSTOM_PROMPT = """You write one part of the author's note of a role-play chat: the user pastes the note so that the
 model writing the story keeps it in mind. You get SCENES (summaries in order, each with its turns), maybe the STORY SO

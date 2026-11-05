@@ -90,8 +90,8 @@ A translation plugin's original-only derived text and its button marker are defe
 Q1–Q4 as recommended), high risk (secrets; model text pasted into every prompt).** A fifth part of the note, **Custom**:
 the owner's prompt (one for every chat, `GET`/`PUT /v1/notes/prompt`, amendment 1) in a fixed frame over the
 chronicle's story input and, behind its own toggle, Phase 53's setting side; one call to the extraction model, asked
-again once on an unusable reply or a leaked secret, no fallback; the panel says NMOS did not check it. Steps 2–3 on
-the Phase 56 PR. The calling of the host's main or auxiliary model was considered and dropped by the owner.
+again once on an unusable reply or a leaked secret, no fallback; the panel says NMOS did not check it. Steps 2–4 on
+draft PR #327 (step 4: `docs/perf/phase56-custom-part.md`); the owner's trial on the test install is next (Q4). The calling of the host's main or auxiliary model was considered and dropped by the owner.
 Not merged or deployed. [Spec](phases/PHASE-56.md).
 
 **Phase 54 — a name written in Hangul word by word is asked about by its first word: approved 2026-11-02 (an owner

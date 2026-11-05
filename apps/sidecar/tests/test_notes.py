@@ -555,6 +555,20 @@ def test_the_prompt_is_one_for_every_chat(migrated):
         assert conn.execute("SELECT count(*) FROM app_config WHERE key = 'notes_custom_prompt'").fetchone()[0] == 0
 
 
+def test_the_prompt_goes_with_a_full_archive(migrated, database_url_factory, tmp_path):
+    """PHASE-56 criterion 5: a full archive restored into a fresh install carries the prompt (it is not a secret)."""
+    from nmos_sidecar import archive
+
+    with make_client(migrated) as c:
+        assert c.put("/v1/notes/prompt", json={"prompt": "List outfits."}).status_code == 200
+    path = tmp_path / f"all{archive.SUFFIX}"
+    archive.export_file(migrated, str(path))
+    target = database_url_factory()
+    archive.restore_file(target, str(path))
+    with make_client(target) as c:
+        assert c.get("/v1/notes/prompt").json() == {"prompt": "List outfits."}
+
+
 def test_the_endpoint_writes_the_custom_part(migrated, monkeypatch):
     from test_generations import conv_id
     from test_summaries import ON, drain as drain_summaries, story_chat
