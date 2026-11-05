@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:25d4fcdd5a1d".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:f4df2df0f923".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -50,6 +50,7 @@
 
   // src/notes.ts
   var BLOCK = /\[NMOS note(?: · t(\d+))?(?: · [^\]\n]*)?\]\n?[\s\S]*?\[\/NMOS note\]\n?/g;
+  var PROMPT_MAX = 4e3;
   function stripNoteBlocks(text2) {
     const blocks = [...text2.matchAll(BLOCK)].map((m) => ({ turn: m[1] ?? "" }));
     if (!blocks.length) return { text: text2, blocks };
@@ -491,15 +492,39 @@
     "notes.part.chronicle": ["\uC5F0\uB300\uAE30", "chronicle"],
     "notes.part.changed": ["\uC124\uC815 \uBCC0\uACBD\uC810", "changed from the setting"],
     "notes.part.address": ["\uD638\uCE6D\xB7\uAD00\uACC4", "address and standing"],
+    "notes.part.custom": ["\uCEE4\uC2A4\uD140", "custom"],
     "notes.sub": [
-      "\uC774 \uCC44\uD305\uC758 \uAE30\uC5B5\uC73C\uB85C \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC744 \uAE00 \uD558\uB098\uB97C \uB9CC\uB4ED\uB2C8\uB2E4. \uBAA8\uB378\uC774 \uC77D\uAE30 \uC88B\uAC8C \uC601\uC5B4 \uB9C8\uD06C\uB2E4\uC6B4\uC73C\uB85C \uC4F0\uACE0, \uC774\uB984\uACFC \uD638\uCE6D\uC740 \uCC44\uD305\uC5D0 \uC801\uD78C \uADF8\uB300\uB85C \uB461\uB2C8\uB2E4. \uACB0\uACFC\uB97C [NMOS note \u2026] \uC904\uBD80\uD130 [/NMOS note] \uC904\uAE4C\uC9C0 \uD1B5\uC9F8\uB85C \uBCF5\uC0AC\uD574 \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC73C\uC138\uC694(\uC804\uC5D0 \uBD99\uC778 \uAC83\uC774 \uC788\uC73C\uBA74 \uADF8 \uBE14\uB85D\uC744 \uC9C0\uC6B0\uACE0 \uC0C8\uB85C \uBD99\uC774\uBA74 \uB429\uB2C8\uB2E4). \uADF8\uB798\uC57C NMOS\uAC00 \uADF8 \uBD80\uBD84\uC744 \uC6D0\uC804(\uC124\uC815)\uC73C\uB85C \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC791\uAC00\uC758 \uB178\uD2B8\uB294 \uB9E4 \uC694\uCCAD\uC5D0 \uD568\uAED8 \uAC00\uBBC0\uB85C, \uBD99\uC5EC\uB123\uC740 \uAE38\uC774\uB9CC\uD07C \uB9E4 \uD134 \uD1A0\uD070\uC774 \uB4ED\uB2C8\uB2E4. \uC124\uC815\uACFC \uB2EC\uB77C\uC9C4 \uAC83\uACFC \uC5F0\uB300\uAE30\uB294 \uB9CC\uB4E4 \uB54C\uB9C8\uB2E4 \uBAA8\uB378\uC744 \uD55C \uBC88\uC529 \uBD80\uB985\uB2C8\uB2E4.",
-      "Makes one text from this chat's memory to paste into its author's note: English Markdown, which the model reads well, with names and forms of address as the chat writes them. Copy it whole, from the [NMOS note \u2026] line to the [/NMOS note] line, into the author's note (replace the block you pasted before, if any), so NMOS does not read it as the setting. The note goes with every request, so what you paste is paid on every turn. Diverged from the setting and the chronicle each call the model once when made."
+      "\uC774 \uCC44\uD305\uC758 \uAE30\uC5B5\uC73C\uB85C \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC744 \uAE00 \uD558\uB098\uB97C \uB9CC\uB4ED\uB2C8\uB2E4. \uBAA8\uB378\uC774 \uC77D\uAE30 \uC88B\uAC8C \uC601\uC5B4 \uB9C8\uD06C\uB2E4\uC6B4\uC73C\uB85C \uC4F0\uACE0, \uC774\uB984\uACFC \uD638\uCE6D\uC740 \uCC44\uD305\uC5D0 \uC801\uD78C \uADF8\uB300\uB85C \uB461\uB2C8\uB2E4. \uACB0\uACFC\uB97C [NMOS note \u2026] \uC904\uBD80\uD130 [/NMOS note] \uC904\uAE4C\uC9C0 \uD1B5\uC9F8\uB85C \uBCF5\uC0AC\uD574 \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC73C\uC138\uC694(\uC804\uC5D0 \uBD99\uC778 \uAC83\uC774 \uC788\uC73C\uBA74 \uADF8 \uBE14\uB85D\uC744 \uC9C0\uC6B0\uACE0 \uC0C8\uB85C \uBD99\uC774\uBA74 \uB429\uB2C8\uB2E4). \uADF8\uB798\uC57C NMOS\uAC00 \uADF8 \uBD80\uBD84\uC744 \uC6D0\uC804(\uC124\uC815)\uC73C\uB85C \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC791\uAC00\uC758 \uB178\uD2B8\uB294 \uB9E4 \uC694\uCCAD\uC5D0 \uD568\uAED8 \uAC00\uBBC0\uB85C, \uBD99\uC5EC\uB123\uC740 \uAE38\uC774\uB9CC\uD07C \uB9E4 \uD134 \uD1A0\uD070\uC774 \uB4ED\uB2C8\uB2E4. \uC124\uC815\uACFC \uB2EC\uB77C\uC9C4 \uAC83, \uC5F0\uB300\uAE30, \uCEE4\uC2A4\uD140\uC740 \uB9CC\uB4E4 \uB54C\uB9C8\uB2E4 \uBAA8\uB378\uC744 \uD55C \uBC88\uC529 \uBD80\uB985\uB2C8\uB2E4.",
+      "Makes one text from this chat's memory to paste into its author's note: English Markdown, which the model reads well, with names and forms of address as the chat writes them. Copy it whole, from the [NMOS note \u2026] line to the [/NMOS note] line, into the author's note (replace the block you pasted before, if any), so NMOS does not read it as the setting. The note goes with every request, so what you paste is paid on every turn. Diverged from the setting, the chronicle and the custom part each call the model once when made."
     ],
     "notes.diverged": ["\uC124\uC815\uACFC \uB2EC\uB77C\uC9C4 \uAC83: \uCE74\uB4DC\xB7\uB85C\uC5B4\uBD81\uACFC \uC9C0\uAE08 \uC774\uC57C\uAE30\uAC00 \uC5B4\uAE0B\uB09C \uACF3 (\uBAA8\uB378 1\uD68C \uD638\uCD9C)", "Diverged from the setting: where the story no longer fits the card or lorebook (one model call)"],
     "notes.entries": ["\uB85C\uC5B4\uBD81 {n}\uAC1C \uD56D\uBAA9\uACFC \uBE44\uAD50, {m}\uAC1C\uB294 \uAE38\uC774 \uC0C1\uD55C\uC73C\uB85C \uC81C\uC678", "{n} lorebook entries compared, {m} left out for length"],
     "notes.chronicle": ["\uC5F0\uB300\uAE30: \uC9C0\uAE08\uAE4C\uC9C0\uC758 \uC0AC\uAC74\uACFC \uACB0\uACFC (\uBAA8\uB378 1\uD68C \uD638\uCD9C)", "Chronicle: the events so far and how they ended (one model call)"],
     "notes.address": ["\uD638\uCE6D\xB7\uAD00\uACC4: \uC11C\uB85C \uBB50\uB77C\uACE0 \uBD80\uB974\uACE0 \uC5B4\uB5A4 \uC0AC\uC774\uC778\uC9C0", "Address and standing: what they call each other and how they stand"],
-    "notes.length": ["\uC5F0\uB300\uAE30 \uAE38\uC774", "Chronicle length"],
+    // PHASE-56: a part the owner words
+    "notes.custom": ["\uCEE4\uC2A4\uD140: \uB0B4\uAC00 \uC4F4 \uD504\uB86C\uD504\uD2B8\uB300\uB85C (\uBAA8\uB378 1\uD68C \uD638\uCD9C)", "Custom: written as your prompt asks (one model call)"],
+    "notes.custom_prompt": ["\uCEE4\uC2A4\uD140 \uD504\uB86C\uD504\uD2B8", "Custom prompt"],
+    "notes.custom_placeholder": [
+      "\uC608: \uC9C0\uAE08 \uC7A5\uBA74\uC5D0 \uC788\uB294 \uC778\uBB3C\uB4E4\uC758 \uC637\uCC28\uB9BC\uACFC \uC18C\uC9C0\uD488\uC744 \uC778\uBB3C\uBCC4\uB85C \uC815\uB9AC\uD574 \uC918.",
+      "e.g. List what each character in the current scene is wearing and carrying."
+    ],
+    "notes.custom_count": ["{n} / {max}\uC790 \xB7 \uBAA8\uB4E0 \uCC44\uD305\uC5D0 \uAC19\uC740 \uD504\uB86C\uD504\uD2B8\uAC00 \uC800\uC7A5\uB429\uB2C8\uB2E4", "{n} / {max} characters \xB7 one prompt, saved for every chat"],
+    "notes.custom_setting": ["\uC124\uC815(\uCE74\uB4DC\xB7\uB85C\uC5B4\uBD81)\uB3C4 \uB123\uAE30", "Include the setting (card, lorebook)"],
+    "notes.custom_setting_sub": [
+      "\uCF1C\uBA74 \uCE74\uB4DC\xB7\uD398\uB974\uC18C\uB098\xB7\uAD00\uB828 \uB85C\uC5B4\uBD81 \uD56D\uBAA9\uC774 \uD568\uAED8 \uB4E4\uC5B4\uAC00 \uC785\uB825\uC774 \uCD5C\uB300 60,000\uC790 \uB298\uC5B4\uB0A9\uB2C8\uB2E4.",
+      "With it on, the card, the persona and the related lorebook entries go in too: up to 60,000 more characters."
+    ],
+    "notes.custom_unchecked": [
+      "\uCEE4\uC2A4\uD140 \uD30C\uD2B8\uB294 \uD504\uB86C\uD504\uD2B8\uB300\uB85C \uC790\uC720\uB86D\uAC8C \uC4F0\uC5EC\uC11C NMOS\uAC00 \uC774\uC57C\uAE30\uC640 \uD55C \uC904\uC529 \uB300\uC870\uD558\uC9C0 \uBABB\uD569\uB2C8\uB2E4. \uBD99\uC5EC\uB123\uAE30 \uC804\uC5D0 \uAF2D \uC77D\uC5B4 \uBCF4\uC138\uC694.",
+      "The custom part is written freely from your prompt, so NMOS cannot check it line by line against the story. Read it before you paste it."
+    ],
+    "notes.custom_empty": ["\uCEE4\uC2A4\uD140 \uD504\uB86C\uD504\uD2B8\uB97C \uC801\uC5B4 \uC8FC\uC138\uC694.", "Write a custom prompt."],
+    "notes.custom_unsaved": ["(\uD504\uB86C\uD504\uD2B8\uB294 \uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C\uC5D0 \uB2E4\uC2DC \uC801\uC5B4\uC57C \uD560 \uC218 \uC788\uC5B4\uC694.)", "(The prompt could not be saved; you may need to write it again next time.)"],
+    "notes.unchecked": ["NMOS\uAC00 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC74C, \uC77D\uACE0 \uBD99\uC5EC\uB123\uC73C\uC138\uC694", "not checked by NMOS, read it before pasting"],
+    "notes.part_no_model": ["{part}: \uCD94\uCD9C \uBAA8\uB378\uC774 \uC124\uC815\uB418\uC9C0 \uC54A\uC544 \uB9CC\uB4E4\uC9C0 \uBABB\uD568", "{part}: not made, no extraction model is configured"],
+    "notes.part_failed": ["{part}: \uBAA8\uB378 \uB2F5\uC744 \uC4F8 \uC218 \uC5C6\uC5B4 \uBE90\uC74C (\uB2E4\uC2DC \uB9CC\uB4E4\uBA74 \uB2E4\uC2DC \uBD80\uB985\uB2C8\uB2E4)", "{part}: left out, the model's reply could not be used (Make calls it again)"],
+    "notes.part_held": ["{part}: \uBE44\uBC00\uC774 \uB4E4\uC5B4\uAC00\uC11C \uBE90\uC74C (\uB2E4\uC2DC \uB9CC\uB4E4\uBA74 \uB2E4\uC2DC \uBD80\uB985\uB2C8\uB2E4)", "{part}: left out, it told a secret (Make calls it again)"],
+    "notes.length": ["\uC5F0\uB300\uAE30\xB7\uCEE4\uC2A4\uD140 \uAE38\uC774", "Chronicle and custom length"],
     "notes.short": ["\uC9E7\uAC8C (3,000\uC790)", "Short (3,000 characters)"],
     "notes.long": ["\uAE38\uAC8C (6,000\uC790)", "Long (6,000 characters)"],
     "notes.secrets": ["\uBE44\uBC00 \uD3EC\uD568 (\uB204\uAC00 \uBAA8\uB974\uB294\uC9C0 \uD45C\uC2DC)", "Include secrets (marked with who does not know)"],
@@ -3956,8 +3981,46 @@ html,body{margin:0;background:${PALETTE.bg}}
       const kinds = [
         pick("notes.diverged", "diverged", true),
         pick("notes.chronicle", "chronicle", false),
-        pick("notes.address", "address", false)
+        pick("notes.address", "address", false),
+        pick("notes.custom", "custom", false)
       ];
+      const custom = kinds[3].box;
+      const prompt = el("textarea", {
+        rows: 6,
+        maxlength: String(PROMPT_MAX),
+        spellcheck: "false",
+        style: "font-family:inherit",
+        "aria-label": L("notes.custom_prompt"),
+        placeholder: L("notes.custom_placeholder")
+      });
+      const count2 = el("p", { class: "sub" });
+      const counted = () => {
+        count2.textContent = L("notes.custom_count", { n: prompt.value.trim().length, max: PROMPT_MAX });
+      };
+      prompt.addEventListener("input", counted);
+      counted();
+      const setting = el("input", { type: "checkbox" });
+      const customArea = el(
+        "div",
+        { style: "display:none" },
+        prompt,
+        count2,
+        el("div", { class: "check" }, setting, el("span", { text: L("notes.custom_setting") })),
+        el("p", { class: "sub", text: L("notes.custom_setting_sub") }),
+        el("p", { class: "sub", text: L("notes.custom_unchecked") })
+      );
+      custom.addEventListener("change", () => {
+        customArea.style.display = custom.checked ? "" : "none";
+      });
+      let saved = "";
+      void deps.api("GET", "/v1/notes/prompt", void 0, 15e3).then((r) => {
+        saved = typeof r?.prompt === "string" ? r.prompt : "";
+        if (!prompt.value) {
+          prompt.value = saved;
+          counted();
+        }
+      }).catch(() => {
+      });
       const length = el(
         "select",
         { "aria-label": L("notes.length") },
@@ -3975,19 +4038,33 @@ html,body{margin:0;background:${PALETTE.bg}}
       make.addEventListener("click", async () => {
         const sections = kinds.filter((k) => k.box.checked).map((k) => k.box.value);
         if (!sections.length) return say(msg, L("notes.pick"), "warn");
+        const text2 = prompt.value.trim();
+        if (custom.checked && !text2) return say(msg, L("notes.custom_empty"), "warn");
         make.disabled = true;
         say(msg, L("act.working"));
         results.replaceChildren();
+        let unsaved = false;
+        if (custom.checked && text2 !== saved) {
+          try {
+            await deps.api("PUT", "/v1/notes/prompt", { prompt: text2 }, 15e3);
+            saved = text2;
+          } catch {
+            unsaved = true;
+          }
+        }
+        const body = { sections, chars: Number(length.value), secrets: secrets.checked };
+        if (custom.checked) Object.assign(body, { custom_prompt: text2, custom_setting: setting.checked });
         try {
           const r = await deps.api(
             "POST",
             `/v1/conversations/${conversation}/notes`,
-            { sections, chars: Number(length.value), secrets: secrets.checked },
+            body,
             6e5
           );
           if (notesFor !== conversation) return;
           results.replaceChildren(noteResult(r, msg));
-          say(msg, r.text ? L("notes.done") : L("notes.part_none", { part: L("notes.title") }), r.text ? "ok" : "warn");
+          const done = r.text ? L("notes.done") : L("notes.part_none", { part: L("notes.title") });
+          say(msg, unsaved ? `${done} ${L("notes.custom_unsaved")}` : done, r.text && !unsaved ? "ok" : "warn");
         } catch (error) {
           say(msg, errorText(lang, error), "err");
         } finally {
@@ -3998,6 +4075,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("h2", { text: L("notes.title") }),
         el("p", { class: "sub", text: L("notes.sub") }),
         ...kinds.map((k) => k.row),
+        customArea,
         el("div", { class: "row" }, field(L("notes.length"), length)),
         el("div", { class: "check" }, secrets, el("span", { text: L("notes.secrets") })),
         warn,
@@ -4011,13 +4089,17 @@ html,body{margin:0;background:${PALETTE.bg}}
         const part = L(`notes.part.${p.kind}`);
         if (p.reason === "no_scenes") return L("notes.part_no_scenes", { part });
         if (p.reason === "none") return L("notes.part_none", { part });
+        if (p.reason === "no_model" || p.reason === "failed" || p.reason === "held") {
+          return L(`notes.part_${p.reason}`, { part });
+        }
         const bits = [L(`notes.made_${p.made}`)];
         if (p.cached) bits.push(L("notes.cached"));
         if (p.held) bits.push(L("notes.held", { n: p.held }));
-        if (p.kind === "diverged" && p.entries !== void 0) bits.push(L("notes.entries", { n: p.entries, m: p.left_out ?? 0 }));
+        if (p.entries !== void 0) bits.push(L("notes.entries", { n: p.entries, m: p.left_out ?? 0 }));
+        if (p.kind === "custom") bits.push(L("notes.unchecked"));
         return L("notes.part_made", { part, how: bits.join(", ") });
       };
-      const stale = r.sections.reduce((n, p) => n + (p.stale ?? 0), 0);
+      const stale = r.sections.reduce((n, p) => Math.max(n, p.stale ?? 0), 0);
       const about = el(
         "ul",
         { class: "sub" },

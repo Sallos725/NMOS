@@ -410,3 +410,176 @@ def test_an_open_thread_not_said_again_for_30_turns_is_left_out_and_counted():
     out = notes.chronicle(told(scene(0, 7, "Hana walked.")), [old, kept_alive], [], [], 3000, model=w, last_turn=50)
     assert out["stale"] == 1 and "fight at four" not in out["body"] and "fight at four" not in w.calls[0][1]
     assert "- Hana → Kaito: pay the debt (promise, since t6)" in out["body"]
+
+
+# --- the custom part (PHASE-56) ---------------------------------------------------------------------------------------
+
+def setting_entry(key, text, **metadata):
+    return {"key": key, "hash": "h", "metadata": metadata, "content": text, "revision_id": None}
+
+
+def test_ask_takes_the_custom_prompt_only_with_the_custom_part():
+    for bad in ({"sections": ["custom"]}, {"sections": ["custom"], "custom_prompt": "   "},
+                {"sections": ["custom"], "custom_prompt": 7},
+                {"sections": ["custom"], "custom_prompt": "x" * (notes.PROMPT_MAX + 1)}):
+        with pytest.raises(ValueError):
+            notes.Ask.of(bad)
+    ask = notes.Ask.of({"sections": ["custom", "chronicle"], "custom_prompt": "  List outfits.  ",
+                        "custom_setting": True})
+    assert ask.sections == ("chronicle", "custom") and ask.custom_prompt == "List outfits." and ask.custom_setting
+    # an older plugin's request is what it was, whatever else it sends
+    older = notes.Ask.of({"sections": ["chronicle"], "custom_prompt": "ignored", "custom_setting": True})
+    assert older == notes.Ask(("chronicle",), 3000, False, True)
+
+
+def test_the_custom_part_writes_what_the_prompt_asks_inside_the_frame():
+    notes.clear_cache()
+    w = Writer({"text": "### Outfits\n- Hana: a grey coat (t7)."})
+    out = notes.custom("List each character's outfit. {not a field}", told(scene(0, 7, "하나가 회색 코트를 입었다.")),
+                       THREADS, [], [], 3000, model=w)
+    assert out["made"] == "model" and out["turns"] == "0-7" and out["reason"] == ""
+    assert out["body"] == "## Custom (owner's prompt)\n### Outfits\n- Hana: a grey coat (t7)."
+    system, user = w.calls[0]
+    # the owner's words verbatim, then the frame's rules, which the prompt cannot come after
+    assert "List each character's outfit. {not a field}" in system
+    assert system.index("{not a field}") < system.index("from the input only") < system.index("OPEN SECRETS")
+    assert system.rstrip().endswith('{"text": "..."}') and "SETTING" not in system
+    assert "[turns 0–7] 하나가 회색 코트를 입었다." in user and "- Hana: find the bell → achieved (t9)" in user
+
+
+def test_the_custom_part_has_no_fallback():
+    notes.clear_cache()
+    args = ("Anything.", told(scene(0, 7, "Hana walked.")), [], [], [], 3000)
+    assert notes.custom(*args, model=None)["reason"] == "no_model"
+    assert notes.custom("Anything.", told(), [], [], [], 3000, model=Writer())["reason"] == "no_scenes"
+
+    def broken(system, user):
+        raise LLMError("not a JSON object")
+
+    out = notes.custom(*args, model=broken)
+    assert out["made"] == "none" and out["reason"] == "failed" and out["body"] == ""
+    w = Writer({"text": 3}, {"answer": "x"})
+    assert notes.custom(*args, model=w)["reason"] == "failed" and len(w.calls) == 2  # asked again once
+
+
+def test_a_custom_reply_that_tells_a_secret_is_asked_again_then_left_out():
+    notes.clear_cache()
+    bad = {"text": "- Hana is a smuggler."}
+    w = Writer(bad, bad)
+    out = notes.custom("Who is Hana?", told(scene(0, 7, "Hana walked.")), [], [], [SECRET], 3000, model=w)
+    assert len(w.calls) == 2 and "YOUR LAST ANSWER TOLD" in w.calls[1][1]
+    assert out["reason"] == "held" and out["body"] == "" and "smuggler" not in str(out)
+    w = Writer(bad, {"text": "- Hana walked."})
+    assert notes.custom("Who is Hana?", told(scene(0, 7, "Hana walked.")), [], [], [SECRET], 3000,
+                        model=w)["body"].endswith("- Hana walked.")
+
+
+def test_with_secrets_asked_for_the_custom_part_may_write_them():
+    notes.clear_cache()
+    w = Writer({"text": "- Hana is a smuggler (secret: Kaito does not know)."})
+    out = notes.custom("Who is Hana?", told(scene(0, 7, "Hana walked.")), [], [], [SECRET], 3000, model=w,
+                       told_secrets=True)
+    assert out["made"] == "model" and "smuggler" in out["body"] and len(w.calls) == 1
+
+
+def test_an_empty_custom_answer_is_an_answer():
+    notes.clear_cache()
+    w = Writer({"text": "  "})
+    out = notes.custom("Anything.", told(scene(0, 7, "Hana walked.")), [], [], [], 3000, model=w)
+    assert len(w.calls) == 1 and out["made"] == "model" and out["reason"] == "none" and out["body"] == ""
+
+
+def test_the_custom_part_is_cached_by_its_prompt_and_its_input():
+    notes.clear_cache()
+    w = Writer({"text": "- a"}, {"text": "- b"}, {"text": "- c"})
+    args = (told(scene(0, 7, "Hana walked.")), [], [], [], 3000)
+    first, again = notes.custom("One.", *args, model=w), notes.custom("One.", *args, model=w)
+    assert len(w.calls) == 1 and again["cached"] and again["body"] == first["body"]
+    assert notes.custom("One!", *args, model=w)["body"].endswith("- b") and len(w.calls) == 2
+    with_setting = notes.custom("One.", *args, model=w, setting=[])
+    assert with_setting["body"].endswith("- c") and len(w.calls) == 3
+
+
+def test_the_setting_goes_in_only_when_asked_for():
+    notes.clear_cache()
+    canon = [setting_entry("card:desc", "Hana is a lighthouse keeper.", field="desc"),
+             setting_entry("lore:kaito", "Kaito is a squire.", keys=["Kaito"], scope="character", mode="normal"),
+             setting_entry("lore:mira", "Mira is a baker.", keys=["Mira"], scope="character", mode="normal")]
+    entities = [{"id": "e-Kaito", "name": "Kaito", "aliases": []}]
+    w = Writer({"text": "- x"})
+    out = notes.custom("Compare.", told(scene(0, 7, "Kaito rode out.")), [], [], [], 3000, model=w, setting=canon,
+                       entities=entities)
+    system, user = w.calls[0]
+    assert "You also get the SETTING" in system and user.startswith("SETTING:\n[key: card:desc] (card)")
+    assert "Kaito is a squire." in user and "lore:mira" not in user
+    assert out["entries"] == 1 and out["left_out"] == 0
+    assert "entries" not in notes.custom("Compare.", told(scene(0, 7, "Kaito rode out.")), [], [], [], 3000,
+                                         model=Writer({"text": "- y"}))
+
+
+def test_a_fact_kept_from_someone_picks_no_setting_entry():
+    """As PHASE-53 ranks entries: with secrets off, a kept fact neither goes in nor picks the entry about its subject."""
+    notes.clear_cache()
+    canon = [setting_entry("lore:kaito", "Kaito is a squire.", keys=["Kaito"], scope="character", mode="normal")]
+    entities = [{"id": "e-Kaito", "name": "Kaito", "aliases": []}]
+    hidden = fact("Kaito", "has_status", value="spy", turn=6, knowledge="limited", hidden_from=["Hana"])
+    hidden["subject_entity"] = {"id": "e-Kaito", "name": "Kaito"}
+    args = ("Compare.", told(scene(0, 7, "Hana walked.")), [], [hidden], [], 3000)
+    off = notes.custom(*args, model=Writer({"text": "- x"}), setting=canon, entities=entities)
+    on = notes.custom(*args, model=Writer({"text": "- y"}), setting=canon, entities=entities, told_secrets=True)
+    assert off["entries"] == 0 and on["entries"] == 1
+
+
+def test_the_custom_part_comes_last_in_the_note():
+    notes.clear_cache()
+    view = {"facts": [fact("Hana", "relationship", obj="Kaito", value="sister")], "threads": [], "secrets": []}
+    ask = notes.Ask.of({"sections": ["custom", "address"], "custom_prompt": "One line."})
+    out = notes.make(ask, view, told(scene(0, 7, "Hana walked.")), 12, Writer({"text": "- one line"}), "2026-11-05")
+    assert [s["kind"] for s in out["sections"]] == ["address", "custom"]
+    assert out["text"].endswith("## Address and standing\n- Hana ↔ Kaito: Hana→Kaito relationship sister\n\n"
+                                "## Custom (owner's prompt)\n- one line\n[/NMOS note]")
+    part = out["sections"][1]
+    assert part["made"] == "model" and part["chars"] == len("## Custom (owner's prompt)\n- one line")
+
+
+def test_the_prompt_is_one_for_every_chat(migrated):
+    with make_client(migrated) as c:
+        assert c.get("/v1/notes/prompt").json() == {"prompt": ""}
+        assert c.put("/v1/notes/prompt", json={"prompt": "  List outfits.  "}).json() == {"prompt": "List outfits."}
+        assert c.get("/v1/notes/prompt").json() == {"prompt": "List outfits."}
+        assert c.put("/v1/notes/prompt", json={"prompt": "x" * (notes.PROMPT_MAX + 1)}).status_code == 422
+        assert c.put("/v1/notes/prompt", json={"prompt": None}).status_code == 422
+        assert c.put("/v1/notes/prompt", json={"prompt": ""}).json() == {"prompt": ""}
+        assert c.get("/v1/notes/prompt").json() == {"prompt": ""}
+    with psycopg.connect(migrated) as conn:
+        assert conn.execute("SELECT count(*) FROM app_config WHERE key = 'notes_custom_prompt'").fetchone()[0] == 0
+
+
+def test_the_endpoint_writes_the_custom_part(migrated, monkeypatch):
+    from test_generations import conv_id
+    from test_summaries import ON, drain as drain_summaries, story_chat
+
+    asked: list[tuple[str, str]] = []
+
+    class Fake:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def complete_metered(self, system, user):
+            asked.append((system, user))
+            return {"text": "- Turns went by."}, "{}", None
+
+    monkeypatch.setattr(notes, "ChatModel", Fake)
+    notes.clear_cache()
+    chat = story_chat(13)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain_summaries(migrated)
+        cid = conv_id(c, chat)
+        out = c.post(f"/v1/conversations/{cid}/notes",
+                     json={"sections": ["custom"], "custom_prompt": "Say what happened."}).json()
+        assert c.post(f"/v1/conversations/{cid}/notes", json={"sections": ["custom"]}).status_code == 422
+    assert len(asked) == 1 and "Say what happened." in asked[0][0] and "[turns 0–7] Turn 0 begins" in asked[0][1]
+    assert "SETTING" not in asked[0][1]
+    assert out["sections"][0]["kind"] == "custom" and out["sections"][0]["made"] == "model"
+    assert "## Custom (owner's prompt)\n- Turns went by.\n[/NMOS note]" in out["text"]

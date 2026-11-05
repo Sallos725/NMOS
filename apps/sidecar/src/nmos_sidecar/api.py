@@ -1144,14 +1144,35 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             view = view_of(conn, head)
             last = head_turn(conn, head)
             key = rt.get("active_summarizer")
-            calls = {"chronicle", "diverged"} & set(ask.sections)  # the parts that read summaries and call a model
+            # the parts that read summaries and call a model
+            calls = {"chronicle", "diverged", "custom"} & set(ask.sections)
             told = summaries.current(conn, conv_id, head, key) if key and calls else None
-            manifest = canon.manifest(conn, conv_id) if "diverged" in ask.sections else None
+            setting = "diverged" in ask.sections or ("custom" in ask.sections and ask.custom_setting)
+            manifest = canon.manifest(conn, conv_id) if setting else None
         model = notes.model_for(rt["settings"]) if ask.model and calls else None
         out = notes.make(ask, view, told, last, model, date.today().isoformat(), canon=manifest)
         log.info("author notes conversation=%s sections=%s made=%s", conv_id, ",".join(ask.sections),
                  ",".join(s["made"] for s in out["sections"]))
         return out
+
+    @app.get("/v1/notes/prompt", dependencies=[Depends(auth)])
+    def get_note_prompt(request: Request):
+        """The custom part's prompt (PHASE-56 C2, amendment 1): one for every chat, empty until the owner saves one."""
+        with request.app.state.pool.connection() as conn:
+            row = conn.execute("SELECT value FROM app_config WHERE key = %s", (notes.PROMPT_KEY,)).fetchone()
+        value = row["value"] if row else ""
+        return {"prompt": value if isinstance(value, str) else ""}
+
+    @app.put("/v1/notes/prompt", dependencies=[Depends(auth)])
+    def put_note_prompt(body: dict[str, Any], request: Request):
+        """Save the custom part's prompt; an empty one deletes it. Nothing else of the configuration is touched."""
+        prompt = body.get("prompt")
+        if not isinstance(prompt, str) or len(prompt.strip()) > notes.PROMPT_MAX:
+            raise HTTPException(status_code=422, detail=f"prompt must be text of at most {notes.PROMPT_MAX} characters")
+        prompt = prompt.strip()
+        with request.app.state.pool.connection() as conn:
+            runtime.save(conn, {notes.PROMPT_KEY: prompt or None})
+        return {"prompt": prompt}
 
     @app.post("/v1/conversations/{conv_id}/rebuild", dependencies=[Depends(auth)])
     def rebuild_memory(conv_id: UUID, request: Request):

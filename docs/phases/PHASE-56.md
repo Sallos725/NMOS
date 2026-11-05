@@ -1,9 +1,10 @@
 # Phase 56 — The author's note gets a part the owner words: a custom prompt
 
-Status: **proposed**, 2026-11-05 (an owner request, not a roadmap stage). Nothing is built. The shape below (C1–C7)
-follows the owner's answers in the design conversation of 2026-11-05: a checkbox opens a prompt box and the model
-writes the part as the prompt asks; the input is the story, with the setting behind its own toggle, off by default;
-one prompt for every chat. Q1–Q4 wait for the owner. Linear: to be filed by the owner.
+Status: **approved**, 2026-11-05 (an owner request, not a roadmap stage): Q1–Q4 answered as recommended (owner,
+2026-11-05), implementation approved. The shape below (C1–C7) follows the owner's answers in the design conversation of
+2026-11-05: a checkbox opens a prompt box and the model writes the part as the prompt asks; the input is the story,
+with the setting behind its own toggle, off by default; one prompt for every chat. Amendment 1 (from the code, before
+step 2) changes where the prompt is saved, not what the owner sees. Linear: to be filed by the owner.
 
 In the same conversation the owner considered letting NMOS call the host's main or auxiliary model (the V3
 `runLLMModel`) and decided against it (2026-11-05): this phase uses the model the note already uses
@@ -81,8 +82,9 @@ C4. **The input, the call and its checks.** `notes.custom(...)`:
 - **The call:** one call to `notes.model_for` (the extraction model), JSON mode as configured. The system message is a
   fixed frame and the owner's prompt inside it, marked as the owner's instruction:
   the input's parts and what each is; *write what the instruction asks, from the input only, at most N characters;
-  keep names, titles, places and quoted words as the input writes them; write in the language the instruction asks
-  for, else English* (Q1); the secrets rule of the chronicle (`SECRETS_KEPT` or `SECRETS_TOLD`); and *answer with JSON
+  keep names, titles, places and quoted words as the input writes them; write in English unless the instruction
+  explicitly names another language, the instruction's own language not being such a request* (Q1; worded so after
+  step 4, `docs/perf/phase56-custom-part.md`); the secrets rule of the chronicle (`SECRETS_KEPT` or `SECRETS_TOLD`); and *answer with JSON
   only: `{"text": "..."}`*. The owner's prompt cannot remove the secrets rule or the JSON frame: it is placed before
   them, and the reply is checked whatever it asked for.
 - **The checks:** a reply that is not JSON with a non-empty `text` is asked again once. With secrets off, a reply that
@@ -116,21 +118,31 @@ prompt calls again. A failed or held part is not cached, so the next **Make** tr
 
 ## Questions and proposed answers
 
-- **Q1 — the language of the part.** The other parts are English (Phase 50 amendment 2: the story model reads the note).
+- **Q1 — the language of the part. Answered (owner, 2026-11-05): (a).** The other parts are English (Phase 50 amendment 2: the story model reads the note).
   **(a) Recommended:** English unless the owner's prompt asks for a language; names and quoted words as the chat writes
   them. (b) Always English, whatever the prompt says. (c) The chat's language.
-- **Q2 — what the frame forbids.** **(a) Recommended:** the frame says *from the input only* (no invented events, no
+- **Q2 — what the frame forbids. Answered (owner, 2026-11-05): (a).** **(a) Recommended:** the frame says *from the input only* (no invented events, no
   guesses), and the owner's prompt shapes what to pick and how to write it; the part is the owner's text, so it is not
   held to the provenance check (C5, C6). (b) No such line: the prompt may ask for anything, including what the input does
   not say (for example "suggest where the story could go next"); the panel's warning stays.
-- **Q3 — measurement** (no paid call, `nmos-api-spend`). **(a) Recommended:** the zero-call unit tests (the request,
+- **Q3 — measurement** (no paid call, `nmos-api-spend`). **Answered (owner, 2026-11-05): (a).** **(a) Recommended:** the zero-call unit tests (the request,
   the frame, the checks, the cache, the order) and, on throwaway copies of the test install's chats (test PG :5436), the
   model path on the local eval Ollama (:11500) only, with two or three prompts the owner gives; the owner reads every
   part. Whether the part helps the replies is the owner's own trial, not a gate. (b) The same and one paid sample, its
   cost estimated and approved first.
-- **Q4 — release.** **(a) Recommended:** as Phase 53 Q1: the test install (6131/6113) first, then the install the owner
+- **Q4 — release. Answered (owner, 2026-11-05): (a).** **(a) Recommended:** as Phase 53 Q1: the test install (6131/6113) first, then the install the owner
   uses, when the owner says; released with the next minor after `0.5.0` (a new part and a new setting, not a patch).
   (b) The test install only until a release.
+
+## Amendment 1 (2026-11-05, from the code, before step 2): the prompt has its own endpoint
+
+C2 put the prompt in `runtime.EDITABLE`, which is saved through `PUT /v1/config`. That route rebuilds the runtime
+configuration and runs `activate` (the extractor, projection, summarizer and canon generations) for any key but the
+parser presets, and `runtime.effective` hands every `EDITABLE` key to `Settings`. A note's prompt has nothing to do
+with either. It is saved instead as the status pins are (PHASE-43): its own `app_config` key, `notes_custom_prompt`,
+read with `GET /v1/notes/prompt` and written with `PUT /v1/notes/prompt` (`{"prompt": "..."}`, at most `PROMPT_MAX`
+after trimming; an empty one deletes the row). It is still one prompt for every chat, the same on every device, and in
+a full archive (the archive copies `app_config` but the keys). Step 2's `runtime.EDITABLE` reads as this endpoint.
 
 ## Steps
 
