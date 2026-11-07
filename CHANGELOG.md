@@ -65,6 +65,11 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
   and that code has run on production since that day. **The owner had not made a custom part on it when this was
   prepared**, so its only runs are the copy's above. The drawing's clipped names were measured in Chromium; WebKit did
   not start on the build host.
+- **The macOS bundle is built and checked on macOS 15**, because GitHub retired its macOS 14 runners on 2026-11-02; earlier
+  docs said macOS 13 or later. What the build compiles itself and the Python side still target macOS 13, and the app may
+  start there, but the pinned PostgreSQL build declares macOS 15. That same build passed 0.5.0's smoke and suite on
+  macOS 14, while no version has been checked on macOS 13, and this build has not run on 14. The build now fails if
+  anything in the app needs newer than these limits.
 - **Automated evidence.** The sidecar's and the plugin's suites pass on the merged code (CI). Final host-response
   quality and the 1.0 gate's two quiet weeks, counted again on this build (R8), remain open.
 

@@ -232,6 +232,9 @@ def build_windows_tray(stage: Path, work: Path) -> None:
 
 MACHO = (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xcf")
 BUNDLE_ID = "io.github.sallos725.nmos"
+MACOS_MIN = "13.0"  # the app, what is compiled here and the Python side; SMAppService needs 13
+PREBUILT_PG_MIN = "15.0"  # what the pinned PostgreSQL build declares (it ran on macOS 14 in 0.5.0's CI)
+COMPILED_HERE = ("vector.dylib", "pg_trgm.dylib")
 
 
 def apple_version(version: str) -> str:
@@ -254,7 +257,7 @@ def build_macos_app(stage: Path, work: Path, version: str) -> Path:
     subprocess.run([str(res / "python" / "bin" / "python3"), "-m", "compileall", "-q", "-j", "0",
                     str(res / "python" / "lib")], check=False, stdout=subprocess.DEVNULL)
     src = Path(__file__).parent / "macos"
-    subprocess.run(["swiftc", "-O", "-target", "arm64-apple-macos13.0", str(src / "NMOSApp.swift"),
+    subprocess.run(["swiftc", "-O", "-target", f"arm64-apple-macos{MACOS_MIN}", str(src / "NMOSApp.swift"),
                     "-o", str(contents / "MacOS" / "NMOS")], check=True)
     iconset = work / "nmos.iconset"
     shutil.rmtree(iconset, ignore_errors=True)
@@ -267,7 +270,7 @@ def build_macos_app(stage: Path, work: Path, version: str) -> Path:
             # Apple's version keys take dotted numbers only ("0.3.0-beta.1" → "0.3.0"); the full one is NMOSVersion.
             "CFBundleShortVersionString": apple_version(version), "CFBundleVersion": apple_version(version),
             "NMOSVersion": version,
-            "LSMinimumSystemVersion": "13.0", "LSUIElement": True,  # a menu-bar item, no Dock icon
+            "LSMinimumSystemVersion": MACOS_MIN, "LSUIElement": True,  # a menu-bar item, no Dock icon
             "NSHumanReadableCopyright": "MIT License",
             # App Transport Security blocks plain http by default; the menu asks the sidecar on 127.0.0.1 over http.
             "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
@@ -280,10 +283,44 @@ def build_macos_app(stage: Path, work: Path, version: str) -> Path:
                     subprocess.run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(p)], check=True,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     signed += 1
+    check_macos_min(contents)
     subprocess.run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(app)], check=True)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)], check=True)
     log(f"NMOS.app: {signed} Mach-O files signed ad hoc, then the app")
     return app
+
+
+def macos_minimums(shown: str) -> list[str]:
+    """The macOS versions `vtool -show-build` says a file needs. Its other "version" lines are the linker's own."""
+    return re.findall(r"^\s*minos\s+(\S+)\s*$|LC_VERSION_MIN_MACOSX\n.*\n\s*version\s+(\S+)\s*$", shown, re.M)
+
+
+def needs_newer(rel: Path, shown: str) -> str | None:
+    """Why a file breaks the promise, or None: what this build compiles or installs must run on MACOS_MIN, and the pinned
+    PostgreSQL build on what it declares (PREBUILT_PG_MIN), so that a new pin that raises it stops here."""
+    prebuilt = rel.parts[:2] == ("Resources", "pgsql") and rel.name not in COMPILED_HERE
+    limit = PREBUILT_PG_MIN if prebuilt else MACOS_MIN
+    for pair in macos_minimums(shown):
+        found = pair[0] or pair[1]
+        if tuple(int(x) for x in found.split(".")) > tuple(int(x) for x in limit.split(".")):
+            return f"{rel} needs macOS {found}, over {limit}"
+    return None
+
+
+def check_macos_min(contents: Path) -> None:
+    newer = []
+    for p in sorted(contents.rglob("*")):
+        if p.is_file() and not p.is_symlink():
+            with p.open("rb") as f:
+                if f.read(4) not in MACHO:
+                    continue
+            shown = subprocess.run(["vtool", "-show-build", str(p)], capture_output=True, text=True).stdout
+            why = needs_newer(p.relative_to(contents), shown)
+            if why:
+                newer.append(why)
+    if newer:
+        raise SystemExit("too new for what the README promises:\n" + "\n".join(newer))
+    log(f"every Mach-O within macOS {MACOS_MIN} (the pinned PostgreSQL within {PREBUILT_PG_MIN})")
 
 
 def build_dmg(app: Path, dmg: Path) -> Path:
@@ -378,6 +415,8 @@ def main() -> None:
                     help="Linux, inside the pinned build image (build_linux.py): fail unless the vendored libraries "
                          "come from the pinned package versions")
     a = ap.parse_args()
+    if sys.platform == "darwin":  # without it, what is compiled here (pgvector, pg_trgm) needs the build machine's macOS
+        os.environ["MACOSX_DEPLOYMENT_TARGET"] = MACOS_MIN
 
     triple = TARGETS[a.target]
     windows = a.target.startswith("win")

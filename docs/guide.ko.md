@@ -95,7 +95,7 @@ PostgreSQL 16과 Python, 같은 빌드의 플러그인이 들어 있고 따로 �
    (`plugin\nmos-pocketrisu.js`)·데이터 폴더(`nmos.log`가 있는 곳) 열기, Windows 시작 시 실행, 종료(DB도 같이 꺼짐)를 할 수
    있습니다. 서버처럼 쓸 때는 `NMOS.bat`으로 콘솔 창에서 켤 수도 있습니다.
 
-**macOS (Apple Silicon, macOS 13 이상)** — `NMOS-v<버전>-macos-arm64.dmg`
+**macOS (Apple Silicon. macOS 15에서 확인했고, 그 아래 버전은 될 수도 있습니다)** — `NMOS-v<버전>-macos-arm64.dmg`
 
 1. `.dmg`를 열고 `NMOS.app`을 응용 프로그램 폴더로 끌어 놓습니다.
 2. 응용 프로그램에서 NMOS를 엽니다. 악성 소프트웨어 확인을 못 했다는 창이 뜨면(공증 없이 ad-hoc 서명이라서)
