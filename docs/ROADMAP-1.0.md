@@ -296,7 +296,10 @@ Done when:
 - upgrades: met; fixtures from `v0.1.0-beta.7`, `.16`, `.21`, `v0.2.0`, `v0.3.0`, `v0.4.0`, `v0.5.0` and `v0.6.0` pass to the
   latest migration (0032; the `v0.4.0` fixture applies 0030–0032). The `v0.5.0` and `v0.6.0` fixtures apply nothing today
   and are checked by the first migration after them.
-- two quiet weeks: **started 2026-10-13 14:47 KST** on the 1.0 candidate `main` at `6d3f2f7`, earliest end
+- two quiet weeks: **started 2026-11-07 17:09 KST** on production's published `0.6.0` image, earliest end 2026-11-21 (R8,
+  amended). A heavy change (a packet policy, an extraction generation, a migration) restarts the count. The earlier counts,
+  kept as records, follow.
+- the first count: **started 2026-10-13 14:47 KST** on the 1.0 candidate `main` at `6d3f2f7`, earliest end
   2026-10-27. The owner counts them on the trial install (6113), where the owner has played every day since 2026-10-08;
   production (6003) had no request after 2026-10-02 (owner, 2026-10-13, option a). It runs with the build's defaults
   (`packet-v19`, `extract-v16`), the owner's models (Gemini 3.8 Flash, `voyage-4-large`) and no experiment switch;
