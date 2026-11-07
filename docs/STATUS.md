@@ -1,11 +1,25 @@
 # NMOS Status
 
-## Release v0.6.0 — prepared 2026-11-07
+## Release v0.6.0 — tagged 2026-11-07
 
-R8 as amended on 2026-11-07 (`ROADMAP-1.0.md`): Phases 53–56 (#323–#327), the owner's requests after `0.5.0`. This PR set
-the version to 0.6.0, rebuilt the plugin and wrote the changelog's upgrade notes and limits. Defaults unchanged:
-`packet-v19`, `extract-v16` (`extract-v17` selectable), `clean-v3`; migrations through `0032`. All pre-1.0 releases are
-GitHub pre-releases. The 1.0 gate's two quiet weeks are counted again on this build, from the day production runs it.
+R8 as amended on 2026-11-07 (`ROADMAP-1.0.md`): Phases 53–56 (#323–#327), the owner's requests after `0.5.0`; the release
+PR (#328) set the version to 0.6.0, rebuilt the plugin (build `11d481ba8f18`) and wrote the changelog's upgrade notes and
+limits. Defaults unchanged: `packet-v19`, `extract-v16` (`extract-v17` selectable), `clean-v3`; migrations through `0032`.
+Annotated tag `v0.6.0` points to `acb946e` (#329). All pre-1.0 releases are GitHub pre-releases.
+
+The first [release run](https://github.com/Sallos725/NMOS/actions/runs/42346999897), on the tag at `d7afdc8` (#328),
+stopped before publishing: GitHub retired its macOS 14 runners on 2026-11-02, so the macOS bundle's job could not start.
+Nothing was published. #329 moved the job to macOS 15, set the deployment target of what the build compiles, and added a
+check on what every binary declares; that check found the pinned PostgreSQL build declares macOS 15, as it did in `0.4.0`
+and `0.5.0`, so the docs now say what has been checked rather than "macOS 13 or later". With the owner's approval the tag
+was moved to its merge. The second [release run](https://github.com/Sallos725/NMOS/actions/runs/42351270149) passed and
+published the [pre-release](https://github.com/Sallos725/NMOS/releases/tag/v0.6.0) with 6 assets: the plugin, the compose
+file and the four portable bundles (Linux x64/arm64, macOS arm64, Windows x64). No failed run is erased.
+`fixtures/upgrade/v0.6.0.sql` is a database this release's own sidecar and worker wrote (stub models, synthetic chats).
+
+**Not deployed yet.** Production (6003) and the trial install (6113) run local builds of this code before the version
+change (`trial-phase56-b893536`). The 1.0 gate's two quiet weeks start on the day production runs the published `0.6.0`
+image (`ROADMAP-1.0.md`, R8). The owner had not made a custom part on it when the tag was cut.
 
 ## Release v0.5.0 — tagged 2026-10-25
 
