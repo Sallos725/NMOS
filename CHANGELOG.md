@@ -3,6 +3,71 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
+## 0.6.0
+
+R8, amended (`docs/ROADMAP-1.0.md`): the owner's requests after 0.5.0 come before 1.0 — the author's note says where the
+story left the setting (Phase 53) and takes a part the owner words (Phase 56), a name written in Hangul word by word is
+asked about by its first word (Phase 54), and the memory map shows where a chat's memory came from (Phase 55). Like
+every release before 1.0, it is a GitHub pre-release. The defaults are unchanged: `packet-v19`, `extract-v16`
+(`extract-v17` selectable) and `clean-v3`; migrations still end at `0032`.
+
+### Upgrading from 0.5.0
+
+Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS and back up its data folder).
+
+1. **Docker:** `docker compose pull && docker compose up -d`. **Bundle:** unpack the new version and start it; the
+   data folder is where 0.5.0 put it. No migration runs, no generation changes, and nothing is extracted or embedded
+   again, so the update itself makes no provider calls.
+2. **Replace the plugin and the sidecar together**, then reload PocketRisu. The plugin's `//@version` is higher, so
+   Settings → Plugin offers the update. An older plugin with this sidecar keeps working, without the map's block or the
+   Custom toggle; a request without `custom` is answered as before.
+3. **Names already split stay split:** Phase 54 applies to turns extracted from now on. An owner's join still joins them
+   by hand.
+
+### Changes
+
+- **The memory map** (Phase 55). A screen for each chat, from the hub's block and the foot of the memory document:
+  where the current facts came from (the setting, the story, the owner), who is tied to whom, the story's events by
+  turn, and how much an event record holds. In the panel the ties are a drawing of its own: pan, pinch or wheel to zoom,
+  a tap lights one person's ties, a second tap opens that person's own map. Names that may be one person are joined by
+  a dashed line. The drawing holds up to 24 characters, 8 groups and 8 places, with **show all** past them; in a browser
+  the same screen is at `/views/c/{id}/map`. Read-only: no model call, no stored data, no packet change.
+- **Diverged from the setting** (Phase 53), the note's first part, replacing **what changed from the setting** in the
+  form. One call to the extraction model compares the setting (the card, the persona, the author's note and the lorebook
+  entries that bear on the story, up to 60,000 characters) with the story (up to 20,000): a death, an arrest, a
+  dismissal, a relationship turned around, a place destroyed. Every line must name a setting text it was given, quote
+  words that are in it and cite turns of the story, or it is dropped. With no model or an unusable reply, the part is
+  the old **Changed from the setting**, marked so.
+- **A part the owner words** (Phase 56). **Custom** in the same form: write a prompt and the extraction model writes one
+  more part of the note as it asks, over the chronicle's story input and, behind its own toggle, the setting side above.
+  One prompt for every chat, saved on **Make** and carried by a full archive. The part is written in English unless the
+  prompt names a language. Kept secrets stay out as in the chronicle: a reply that tells one is asked again once, then
+  the part is left out. There is no fallback: the panel says why a part was not made (no model, failed, held for a
+  secret). `GET`/`PUT /v1/notes/prompt`.
+- **A Hangul name of several words** (Phase 54). NAME PAIRS now ask the extractor about a full name written word by word
+  and its first word, so the two can join (ADR 0064 item 6); a three- or four-syllable name is asked about only with a
+  family name. The generation key is unchanged.
+
+### Known limitations and verification
+
+- **Diverged from the setting is a model's reading.** On a copy of the trial install, of 10 lines written after the
+  phase's fixes, 6 were true divergences and 4 wrong or doubtful, every one past the quote and turn check. Read it before
+  pasting it.
+- **The custom part is not checked line by line.** Only the leak check for kept secrets runs on it, and the panel says
+  so each time. On a copy of the trial install with the eval model and stand-in prompts: 12 parts in 12 calls, none held,
+  none failed (`docs/perf/phase56-custom-part.md`). With the setting toggle on, an input reached 19,700 tokens.
+- **Phase 54's cost.** Measured against the previous rule on the same turns, the split names join, but a turn that lists
+  a pair extracts fewer thread endings and `knows`: one or two turns per pair in story order.
+- **The map.** Names in the middle of a crowded drawing overlap until zoomed. In a browser, a whole map past 1,400 units
+  wide names only the scene's cast and the persona; the others are in the lines below. Worst p95 at 10,000 messages:
+  279 ms (`docs/perf/memory-map.md`).
+- **Manual evidence.** The owner checked the memory map's graph on this code before the version change (2026-11-07),
+  and that code has run on production since that day. **The owner had not made a custom part on it when this was
+  prepared**, so its only runs are the copy's above. The drawing's clipped names were measured in Chromium; WebKit did
+  not start on the build host.
+- **Automated evidence.** The sidecar's and the plugin's suites pass on the merged code (CI). Final host-response
+  quality and the 1.0 gate's two quiet weeks, counted again on this build (R8), remain open.
+
 ## 0.5.0
 
 R8 (`docs/ROADMAP-1.0.md`): the owner's features pulled in before 1.0 — the rebuilt panel (Phase 52), notes for the

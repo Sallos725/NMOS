@@ -1,6 +1,7 @@
 # Phase 56 — The author's note gets a part the owner words: a custom prompt
 
-Status: **approved**, 2026-11-05 (an owner request, not a roadmap stage): Q1–Q4 answered as recommended (owner,
+Status: **approved**, 2026-11-05 (an owner request, not a roadmap stage); shipped in `v0.6.0`. The owner called the
+release (2026-11-07: "릴리즈 바로 가자") before making a part with it, so Q4's trial on real chats is the owner's use after the tag. Q1–Q4 answered as recommended (owner,
 2026-11-05), implementation approved. The shape below (C1–C7) follows the owner's answers in the design conversation of
 2026-11-05: a checkbox opens a prompt box and the model writes the part as the prompt asks; the input is the story,
 with the setting behind its own toggle, off by default; one prompt for every chat. Amendment 1 (from the code, before

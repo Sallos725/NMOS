@@ -25,7 +25,7 @@ picks with a name cut by the edge (up to 117 px). Now: the page's drawing fits t
 whole map keeps only the scene's cast and the persona as names, the others in their `<title>` and the lines below (one
 person's map keeps every name); in both, a name by a side of the drawing runs inward and a drawn name stops at 24
 characters; the panel's fit leaves 36 px whatever the scale. After it: no dot or name outside the drawing on the page,
-0 of 42 picks cut at either width. WebKit could not be started on the host, so the owner's iPhone look stays open.
+0 of 42 picks cut at either width. WebKit could not be started on the host. The owner checked the graph on this build (2026-11-07), and it ships in `v0.6.0`.
 
 Not high risk (`AGENTS.md §14`) with the answers proposed below: no stored data, schema, extraction, packet, recall or
 memory selection changes, and no new tag or attribute through the panel's sanitizer. **Q3 (b) would make step 4 high
@@ -211,7 +211,7 @@ its docstring when built).
    against `main` at `446d5fb`, with amendment 2).
 9. No test outside the map, the views, the hub flag and the plugin's view path changes; the packet, recall and
    extraction tests pass unchanged.
-10. The owner's look on an iPhone and a desktop.
+10. The owner's look on an iPhone and a desktop. **Done 2026-11-07, on amendment 2's build.**
 
 ## Stop conditions
 

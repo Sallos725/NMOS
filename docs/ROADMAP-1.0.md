@@ -39,7 +39,8 @@ approved 2026-09-30, complete 2026-10-01) is not a stage either: it ships the ch
 | `0.1.x` | the feature set of the betas; `v0.1.0-beta.21` was the last, and only urgent fixes followed |
 | `0.2.0` … `0.4.0` | one per stage, in the order of R1, when that stage meets its done criteria (`0.3.0` Stage 6, `0.4.0` Stage 7). `v0.2.0` (2026-09-28) was cut early at the owner's request: it carries Stages 4 and 5 together, plus the Stage 6 work then on `main` |
 | `0.5.0` | R8: the owner's features pulled in before 1.0 (Phases 45, 47, 48, 50, 51 and the panel's UI/UX overhaul), with one extractor generation (`extract-v17`) |
-| `1.0.0` | the 1.0 gate below, on `0.5.0`'s build (R8) |
+| `0.6.0` | R8, amended 2026-11-07: the owner's requests after `0.5.0` (Phases 53–56), no migration or generation |
+| `1.0.0` | the 1.0 gate below, on `0.6.0`'s build (R8) |
 
 Every version before 1.0.0 is a GitHub pre-release. Between versions the owner runs `:edge` (a build of
 every `main` merge; `AGENTS.md` §13). Each stage ships at most one new extractor generation.
@@ -91,6 +92,10 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
   `6d3f2f7` stands as a record that the candidate was quiet; `0.5.0` adds a generation and migrations, heavy changes
   that restart the count. If the two weeks on `0.5.0` pass and the gate's other conditions hold for that build (the
   evaluation against `0.1.x`, the upgrades, the known issues), the same build is tagged `1.0.0`.
+- **Amended (owner, 2026-11-07): `0.6.0` before `1.0.0`, and the count restarts on it.** Phases 53–56, the owner's
+  requests after `0.5.0`, ship as `0.6.0`. Production left `0.5.0`'s build on 2026-11-02 to run them, which ended that
+  count. The two weeks are counted on `0.6.0`'s build from the day production runs it; if they and the gate's other
+  conditions hold for it, the same build is tagged `1.0.0`.
 - **Amended (owner, 2026-10-25): `extract-v17` ships selectable, not the default.** Its copy measurements passed
   (PHASE-45 and PHASE-51 step 3, $75.08), but the full live gate it needs to become the default is a paid run the
   owner will not fund now; `extract-v16` stays the default in `0.5.0` and `1.0.0`, and making `extract-v17` the default
@@ -100,7 +105,7 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
   2026-10-24):** `0.5.0` carries Phase 48's step 2 (the flag and recall, no extractor variant); its step 3 waits for a
   real full-impersonation chat to measure (K51).
 
-The road left is `0.5.0` (R8), then the 1.0 gate below on its build. Stage 7 shipped in `v0.4.0` (2026-10-10), and
+The road left is the 1.0 gate below, on `0.6.0`'s build (R8, amended 2026-11-07). Stage 7 shipped in `v0.4.0` (2026-10-10), and
 `v0.3.0` and `v0.4.0` carry Phase 23's four bundles.
 
 ## Measuring progress (M0, before the first stage)
@@ -277,8 +282,8 @@ Done when:
 - Phase 23 is complete: a release carries a bundle for each PocketRisu portable target;
 - no evaluation category is worse than in `0.1.x`;
 - an upgrade from a `v0.1.0-beta.21` database and from each `0.x.0` works (`tests/test_upgrade.py`);
-- two weeks on the owner's production with no heavy change, on `0.5.0`'s build (R8; the first count, on the
-  candidate `6d3f2f7` from 2026-10-13, is kept as a record);
+- two weeks on the owner's production with no heavy change, on `0.6.0`'s build, from the day production runs it (R8,
+  amended 2026-11-07; the counts on the candidate `6d3f2f7` from 2026-10-13 and on `0.5.0` are kept as records);
 - every open known issue is a host limit or an accepted trade-off.
 
 **Standing on 2026-10-11** (Linear AGE-13 tracks the evidence):
