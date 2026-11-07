@@ -30,7 +30,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
-               normtext, notes, overuse, views,
+               memorymap, normtext, notes, overuse, views,
                plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
                vectors)
 from . import usage as model_usage
@@ -438,7 +438,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "features": {"state": bool(rt["rules"].rules),
                              "extraction": bool(rt["settings"].llm_url and rt["settings"].llm_model),
                              "vectors": rt["recall"].embedder is not None,
-                             "views": True},  # PHASE-52: the panel's new screens
+                             "views": True,  # PHASE-52: the panel's new screens
+                             "map": True,  # PHASE-55: the memory map
+                             "map_graph": True},  # and its drawing as data, for the panel (step 6)
                 "generations": {"extract": rt["active_extractor"],
                                 "embed": rt["projection"].key if rt["projection"] else None},
                 "plugin": {"expected": plugin.expected(), "seen": plugins.recent()},
@@ -1624,7 +1626,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "chats": chats}
 
     def hub_html(request: Request, chat: str | None, conversation: UUID | None, lang: str | None, off: bool,
-                 all_off: bool) -> tuple[str, str | None]:
+                 all_off: bool, map_: bool = False) -> tuple[str, str | None]:
         with request.app.state.pool.connection() as conn:
             conv = None
             if conversation is not None:
@@ -1633,7 +1635,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 found = readmodel.list_conversations(conn, host_chat_ref=chat)
                 conv = readmodel.conversation(conn, found[0]["id"]) if found else None
             data = hub_data(conn, conv, off, all_off)
-        return views.hub(data, inspector.lang_of(lang)), (data["conv"] or {}).get("id")
+        return views.hub(data, inspector.lang_of(lang), map_), (data["conv"] or {}).get("id")
 
     def memory_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """What the panel's memory screen holds (PHASE-52 D2), from what the Inspector's chat page reads."""
@@ -1666,6 +1668,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "story": told.get("story"), "scenes": list(reversed(scenes)),
                 "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
                 "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+
+    def map_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
+        """The memory map (PHASE-55), from the read every request makes, and the newest request's scene."""
+        cid, head = conv["id"], conv["head_commit_id"]
+        view = inspector.with_participants(view_of(conn, head))
+        trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
+                             " ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
+        cast = [str(n) for n in ((trace or {}).get("latency_ms") or {}).get("scene_cast") or []]
+        last = head_turn(conn, head)
+        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
+                         "turns": last},
+                "map": memorymap.build(view, last, cast), "entities": character_ids(view)}
 
     def scene_now(view: dict[str, Any], cast: list[str]) -> list[dict[str, Any]]:
         """Each character of the scene once, with where and how they are now (PHASE-52): the scene's cast may name
@@ -1804,13 +1818,39 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return build(conn, conv, inspector.lang_of(lang))
 
     @app.get("/v1/views/c/{conv_id}/memory", dependencies=[Depends(auth)])
-    def views_memory(conv_id: UUID, request: Request, lang: str | None = None):
-        return {"html": view_page(request, conv_id, lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg), lang)}
+    def views_memory(conv_id: UUID, request: Request, lang: str | None = None, map: bool = False):  # noqa: A002
+        # `map`: the plugin can open the memory map (PHASE-55); without it, the document is as before
+        return {"html": view_page(request, conv_id,
+                                  lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg, map), lang)}
 
     @app.get("/views/c/{conv_id}/memory", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def views_memory_page(conv_id: UUID, request: Request, lang: str | None = None):
         return views.full_page("NMOS", view_page(
-            request, conv_id, lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg), lang), inspector.lang_of(lang))
+            request, conv_id, lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg, True), lang),
+            inspector.lang_of(lang))
+
+    @app.get("/v1/views/c/{conv_id}/map", dependencies=[Depends(auth)])
+    def views_map(conv_id: UUID, request: Request, lang: str | None = None, focus: UUID | None = None):
+        """The memory map for the panel (PHASE-55): lines only (Q3), `focus` one person and their ties (Q6)."""
+        return {"html": view_page(request, conv_id, lambda conn, conv, lg: views.memory_map(
+            map_data(conn, conv), lg, str(focus) if focus else None), lang)}
+
+    @app.get("/v1/views/c/{conv_id}/map/graph", dependencies=[Depends(auth)])
+    def views_map_graph(conv_id: UUID, request: Request, lang: str | None = None, focus: UUID | None = None,
+                        all: bool = False):  # noqa: A002
+        """The memory map's drawing as data, for the panel to draw and move itself (PHASE-55 step 6)."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            return views.map_graph(map_data(conn, conv), inspector.lang_of(lang), str(focus) if focus else None, all)
+
+    @app.get("/views/c/{conv_id}/map", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_map_page(conv_id: UUID, request: Request, lang: str | None = None, focus: UUID | None = None,
+                       all: bool = False):  # noqa: A002
+        """The memory map in a browser, with its drawing (Q2); `all` draws past the caps (Q7)."""
+        return views.full_page("NMOS", view_page(request, conv_id, lambda conn, conv, lg: views.memory_map(
+            map_data(conn, conv), lg, str(focus) if focus else None, all, page=True), lang), inspector.lang_of(lang))
 
     @app.get("/v1/views/style", dependencies=[Depends(auth)])
     def views_style():
@@ -1819,14 +1859,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     @app.get("/v1/views/hub", dependencies=[Depends(auth)])
     def views_hub(request: Request, chat: str | None = None, conversation: UUID | None = None, lang: str | None = None,
-                  off: bool = False, all_off: bool = False):
-        html, cid = hub_html(request, chat, conversation, lang, off, all_off)
+                  off: bool = False, all_off: bool = False, map: bool = False):  # noqa: A002
+        # `map`: the plugin can open the memory map (PHASE-55); without it, the hub is as before
+        html, cid = hub_html(request, chat, conversation, lang, off, all_off, map)
         return {"html": html, "conversation": cid}
 
     @app.get("/views/hub", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def views_hub_page(request: Request, chat: str | None = None, conversation: UUID | None = None,
                        lang: str | None = None):
-        return views.full_page("NMOS", hub_html(request, chat, conversation, lang, False, False)[0],
+        return views.full_page("NMOS", hub_html(request, chat, conversation, lang, False, False, True)[0],
                                inspector.lang_of(lang))
 
     def inspector_status_html(conv_id: UUID, request: Request, lang: str | None, span: str | None) -> str:

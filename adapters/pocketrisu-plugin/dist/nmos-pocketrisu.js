@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:25d4fcdd5a1d".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:a6d753760060".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2228,15 +2228,16 @@ ${revisionHash}`;
   var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
   var TURN = "/t/(?:0|[1-9][0-9]{0,6})";
   var SECTION = /^s-[a-z]{1,20}$/;
+  var MAP = `map(?:\\?focus=${UUID})?`;
   var ACTS = /* @__PURE__ */ new Set(["notes", "settings", "backup", "retry"]);
   function inspectorApiPath(href) {
     const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
     if (m) return `/v1/inspector${m[1] ?? ""}`;
-    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, "i").exec(href ?? "");
+    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|${MAP}|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, "i").exec(href ?? "");
     return v ? `/v1/views${v[1]}` : null;
   }
   function inspectorConversation(path) {
-    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|working|person/${UUID})$`, "i").exec(path);
+    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|working|${MAP}|person/${UUID})$`, "i").exec(path);
     return m ? m[1] : null;
   }
   function inspectorEntity(path) {
@@ -2500,6 +2501,230 @@ ${revisionHash}`;
     const rest = p.lines.length - Math.min(lines.length, max);
     if (rest > 0) out.push(say2("pv.more", { n: rest }));
     return out;
+  }
+
+  // src/graph.ts
+  var SVG = "http://www.w3.org/2000/svg";
+  var UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  var KINDS = /* @__PURE__ */ new Set(["character", "group", "place"]);
+  var EDGE_KINDS = /* @__PURE__ */ new Set(["tie", "group", "place"]);
+  var MARKS = /* @__PURE__ */ new Set(["setting", "story", "changed"]);
+  var LIMIT = { nodes: 2e3, edges: 6e3, text: 200 };
+  var LABEL_PX = 14;
+  var ARC = 96;
+  var NAMES_FROM = 60;
+  var NAME_MAX = 24;
+  var str = (v, max = LIMIT.text) => typeof v === "string" && v.length <= max ? v : null;
+  var num2 = (v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 1e6 ? v : null;
+  function parseGraph(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const r = raw;
+    if (!Array.isArray(r.nodes) || !Array.isArray(r.edges) || !Array.isArray(r.suspects)) return null;
+    if (r.nodes.length > LIMIT.nodes || r.edges.length + r.suspects.length > LIMIT.edges) return null;
+    const nodes = [];
+    for (const n of r.nodes) {
+      const id = str(n?.id), name = str(n?.name), kind = str(n?.kind), x = num2(n?.x), y = num2(n?.y);
+      const entity = n?.entity === null ? null : str(n?.entity);
+      if (id === null || name === null || kind === null || !KINDS.has(kind) || x === null || y === null) return null;
+      if (entity !== null && !UUID2.test(entity)) return null;
+      nodes.push({ id, name, kind, lead: n.lead === true, entity, x, y });
+    }
+    const ids = new Set(nodes.map((n) => n.id));
+    const ends = (e) => {
+      const a = str(e?.a), b = str(e?.b);
+      return a !== null && b !== null && ids.has(a) && ids.has(b) ? { a, b } : null;
+    };
+    const edges = [];
+    for (const e of r.edges) {
+      const ab = ends(e), kind = str(e?.kind), mark = str(e?.mark);
+      if (!ab || kind === null || !EDGE_KINDS.has(kind) || mark === null || !MARKS.has(mark)) return null;
+      edges.push({ ...ab, kind, mark });
+    }
+    const suspects = [];
+    for (const s of r.suspects) {
+      const ab = ends(s);
+      if (!ab) return null;
+      suspects.push(ab);
+    }
+    const w = r.words ?? {};
+    const words = {};
+    for (const k of ["legend", "fit", "all", "fewer", "tap", "ties", "left"]) words[k] = str(w[k], 400) ?? "";
+    const focus = r.focus === null || r.focus === void 0 ? null : str(r.focus);
+    return {
+      nodes,
+      edges,
+      suspects,
+      focus: focus !== null && ids.has(focus) ? focus : null,
+      everyone: r.everyone === true,
+      capped: r.capped === true,
+      words
+    };
+  }
+  function fitView(nodes, width, height) {
+    const xs = nodes.map((n) => n.x), ys = nodes.map((n) => n.y);
+    const x0 = Math.min(0, ...xs), x1 = Math.max(0, ...xs), y0 = Math.min(0, ...ys), y1 = Math.max(0, ...ys);
+    const pad = 36;
+    const s = Math.min(Math.max(width - 2 * pad, 1) / Math.max(x1 - x0, 1), Math.max(height - 2 * pad, 1) / Math.max(y1 - y0, 1), 1);
+    const w = width / s, h = height / s;
+    return { x: (x0 + x1 - w) / 2, y: (y0 + y1 - h) / 2, w, h };
+  }
+  function zoomAt(v, factor, px, py, width, min, max) {
+    const scale = Math.min(Math.max(width / v.w * factor, min), max);
+    const f = scale / (width / v.w);
+    const w = v.w / f, h = v.h / f;
+    return { x: px - (px - v.x) / f, y: py - (py - v.y) / f, w, h };
+  }
+  function around(g, id) {
+    const out = /* @__PURE__ */ new Set([id]);
+    for (const e of g.edges) {
+      if (e.a === id) out.add(e.b);
+      if (e.b === id) out.add(e.a);
+    }
+    return out;
+  }
+  var make = (tag, cls) => {
+    const node = document.createElementNS(SVG, tag);
+    if (cls) node.setAttribute("class", cls);
+    return node;
+  };
+  function drawGraph(box, g, open, toggle) {
+    const svg2 = make("svg", "g-panel");
+    const edges = make("g", ""), nodes = make("g", "");
+    svg2.append(edges, nodes);
+    const caption = document.createElement("p");
+    caption.className = "v-note";
+    caption.textContent = g.words.legend;
+    const buttons = document.createElement("div");
+    buttons.className = "v-graph-btns";
+    const button = (text2, act) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = text2;
+      b.addEventListener("click", act);
+      buttons.append(b);
+    };
+    const pos = new Map(g.nodes.map((n) => [n.id, n]));
+    const lines = [];
+    for (const e of [...g.edges, ...g.suspects.map((s) => ({ ...s, mark: "split" }))]) {
+      const a = pos.get(e.a), b = pos.get(e.b);
+      const line = make("line", `g-e ${e.mark}`);
+      line.setAttribute("x1", String(a.x));
+      line.setAttribute("y1", String(a.y));
+      line.setAttribute("x2", String(b.x));
+      line.setAttribute("y2", String(b.y));
+      edges.append(line);
+      lines.push({ e, el: line });
+    }
+    const dots = /* @__PURE__ */ new Map();
+    const parts = [];
+    const far = Math.max(...g.nodes.map((n) => Math.abs(n.x))) / 3;
+    for (const n of g.nodes) {
+      const group = make("g", "g-node");
+      const dot = make("circle", `g-n ${n.kind}${n.lead ? " lead" : ""}`);
+      dot.setAttribute("cx", String(n.x));
+      dot.setAttribute("cy", String(n.y));
+      const label = make("text", `g-t${n.lead ? " lead" : ""}`);
+      label.setAttribute("x", String(n.x));
+      label.setAttribute("text-anchor", n.x < -far ? "start" : n.x > far ? "end" : "middle");
+      label.textContent = n.name.length > NAME_MAX ? `${n.name.slice(0, NAME_MAX - 1)}\u2026` : n.name;
+      group.append(dot, label);
+      nodes.append(group);
+      dots.set(group, n);
+      parts.push({ n, dot, label, group });
+    }
+    box.replaceChildren(svg2, caption, buttons);
+    const size = () => ({ w: svg2.clientWidth || 360, h: svg2.clientHeight || 420 });
+    let fit = fitView(g.nodes, size().w, size().h);
+    let view2 = fit;
+    let picked = null;
+    const scaleOf = (v) => size().w / v.w;
+    const apply = () => {
+      svg2.setAttribute("viewBox", `${view2.x} ${view2.y} ${view2.w} ${view2.h}`);
+      const s = scaleOf(view2);
+      const near = picked ? around(g, picked) : null;
+      const names = ARC * s >= NAMES_FROM;
+      for (const { n, dot, label } of parts) {
+        dot.setAttribute("r", String((n.lead ? 9 : 6) / s));
+        label.setAttribute("y", String(n.y + ((n.lead ? 9 : 6) + LABEL_PX + 2) / s));
+        label.style.fontSize = `${LABEL_PX / s}px`;
+        label.style.display = names || n.lead || near?.has(n.id) ? "" : "none";
+      }
+    };
+    const pick = (id) => {
+      picked = id;
+      svg2.classList.toggle("sel", id !== null);
+      const near = id ? around(g, id) : /* @__PURE__ */ new Set();
+      for (const { n: n2, group } of parts) group.classList.toggle("on", near.has(n2.id));
+      for (const { e, el: el2 } of lines) el2.classList.toggle("on", id !== null && (e.a === id || e.b === id));
+      const n = id ? pos.get(id) : null;
+      caption.textContent = n ? `${n.name} \xB7 ${g.words.ties.replace("{n}", String(near.size - 1))}${n.entity ? ` \xB7 ${g.words.tap}` : ""}` : g.words.legend;
+      apply();
+    };
+    button(g.words.fit, () => {
+      view2 = fit = fitView(g.nodes, size().w, size().h);
+      apply();
+    });
+    if (g.capped || g.everyone) button(g.everyone ? g.words.fewer : g.words.all, () => toggle(!g.everyone));
+    if (g.capped && g.words.left) {
+      const left = document.createElement("span");
+      left.className = "v-meta";
+      left.textContent = g.words.left;
+      buttons.append(left);
+    }
+    const pointers = /* @__PURE__ */ new Map();
+    let moved = 0;
+    let downOn = null;
+    const unit = (clientX, clientY) => {
+      const r = svg2.getBoundingClientRect();
+      const s = scaleOf(view2);
+      return { x: view2.x + (clientX - r.left) / s, y: view2.y + (clientY - r.top) / s };
+    };
+    const limits = () => [scaleOf(fit) * 0.8, Math.max(scaleOf(fit) * 8, 3)];
+    svg2.addEventListener("pointerdown", (ev) => {
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (pointers.size === 1) {
+        moved = 0;
+        downOn = ev.target instanceof Element ? ev.target : null;
+      }
+      svg2.setPointerCapture?.(ev.pointerId);
+    });
+    svg2.addEventListener("pointermove", (ev) => {
+      const last = pointers.get(ev.pointerId);
+      if (!last) return;
+      const s = scaleOf(view2);
+      if (pointers.size === 1) {
+        moved += Math.abs(ev.clientX - last.x) + Math.abs(ev.clientY - last.y);
+        view2 = { ...view2, x: view2.x - (ev.clientX - last.x) / s, y: view2.y - (ev.clientY - last.y) / s };
+      } else if (pointers.size === 2) {
+        const [p, q] = [...pointers.entries()].map(([id, at]) => id === ev.pointerId ? { x: ev.clientX, y: ev.clientY } : at);
+        const [p0, q0] = [...pointers.values()];
+        const before = Math.hypot(p0.x - q0.x, p0.y - q0.y), after = Math.hypot(p.x - q.x, p.y - q.y);
+        const mid = unit((p.x + q.x) / 2, (p.y + q.y) / 2);
+        if (before > 0) view2 = zoomAt(view2, after / before, mid.x, mid.y, size().w, ...limits());
+        moved += 99;
+      }
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      apply();
+    });
+    const up = (ev) => {
+      const single = pointers.size === 1;
+      pointers.delete(ev.pointerId);
+      if (!single || moved > 8 || ev.type === "pointercancel") return;
+      const target = downOn?.closest(".g-node") ?? null;
+      const n = target ? dots.get(target) : void 0;
+      if (!n) return pick(null);
+      if (picked === n.id && n.entity) return open(n.entity);
+      pick(n.id);
+    };
+    svg2.addEventListener("pointerup", up);
+    svg2.addEventListener("pointercancel", up);
+    svg2.addEventListener("wheel", (ev) => {
+      ev.preventDefault();
+      const at = unit(ev.clientX, ev.clientY);
+      view2 = zoomAt(view2, Math.exp(-ev.deltaY * 15e-4), at.x, at.y, size().w, ...limits());
+      apply();
+    }, { passive: false });
+    pick(g.focus);
   }
 
   // src/restore.ts
@@ -3038,6 +3263,8 @@ html,body{margin:0;background:${PALETTE.bg}}
     let notesFor = null;
     let hubConversation = null;
     let viewsOn = false;
+    let mapOn = false;
+    let graphOn = false;
     const actionMsg = el("div", { class: "msg" });
     const actions = el(
       "div",
@@ -3334,6 +3561,12 @@ html,body{margin:0;background:${PALETTE.bg}}
           if (section.open && !box.dataset.state) void loadTimeline(box, "");
         });
       }
+      const note = graphOn ? page.querySelector(".v-graph-note") : null;
+      if (note) {
+        const box = el("div", { class: "v-graph panel" });
+        note.replaceWith(box);
+        void loadGraph(box, note, false);
+      }
       for (const spot of Array.from(page.querySelectorAll("span.rp[data-repair]"))) {
         const action = repairAction(spot.getAttribute("data-repair"));
         if (action) spot.replaceChildren(...repairControls(action));
@@ -3356,6 +3589,23 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       picker.addEventListener("change", () => go(picker.value));
       who.replaceChildren(el("span", { class: "muted", text: name }), picker);
+    }
+    async function loadGraph(box, note, everyone) {
+      const from = inspectorPath;
+      const conv = /^\/v1\/views\/c\/[^/]+\/map(?:\?|$)/.test(from) ? inspectorConversation(from) : null;
+      if (!conv) return void box.replaceWith(note);
+      const focus = /\?focus=([0-9a-f-]{36})$/i.exec(from)?.[1];
+      box.replaceChildren(el("div", { class: "muted", text: L("insp.loading") }));
+      try {
+        const query = [focus ? `focus=${focus}` : "", everyone ? "all=1" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
+        const raw = await deps.api("GET", `/v1/views/c/${conv}/map/graph${query ? `?${query}` : ""}`, void 0, 15e3);
+        if (!box.isConnected || inspectorPath !== from) return;
+        const graph = parseGraph(raw);
+        if (!graph?.edges.length) return void box.replaceWith(note);
+        drawGraph(box, graph, (entity) => go(`/v1/views/c/${conv}/map?focus=${entity}`), (all) => void loadGraph(box, note, all));
+      } catch {
+        if (box.isConnected) box.replaceWith(note);
+      }
     }
     async function loadTimeline(box, span) {
       const from = inspectorPath;
@@ -3427,7 +3677,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       const direct = routeFor(base, await deps.getArg("route")) === "direct";
       inspectorAddress.textContent = direct ? L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` }) : "";
       try {
-        const query = [conversation ? "timeline=lazy&status=lazy" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
+        const query = [conversation ? "timeline=lazy&status=lazy" : "", isView && mapOn ? "map=1" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
         const r = await deps.api(
           "GET",
           `${path}${query ? `${path.includes("?") ? "&" : "?"}${query}` : ""}`,
@@ -3969,13 +4219,13 @@ html,body{margin:0;background:${PALETTE.bg}}
       secrets.addEventListener("change", () => {
         warn.style.display = secrets.checked ? "" : "none";
       });
-      const make = el("button", { class: "primary", text: L("notes.make") });
+      const make2 = el("button", { class: "primary", text: L("notes.make") });
       const msg = el("div", { class: "msg" });
       const results = el("div");
-      make.addEventListener("click", async () => {
+      make2.addEventListener("click", async () => {
         const sections = kinds.filter((k) => k.box.checked).map((k) => k.box.value);
         if (!sections.length) return say(msg, L("notes.pick"), "warn");
-        make.disabled = true;
+        make2.disabled = true;
         say(msg, L("act.working"));
         results.replaceChildren();
         try {
@@ -3991,7 +4241,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         } catch (error) {
           say(msg, errorText(lang, error), "err");
         } finally {
-          make.disabled = false;
+          make2.disabled = false;
         }
       });
       notesCard.replaceChildren(
@@ -4001,7 +4251,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("div", { class: "row" }, field(L("notes.length"), length)),
         el("div", { class: "check" }, secrets, el("span", { text: L("notes.secrets") })),
         warn,
-        el("div", { class: "btns" }, make),
+        el("div", { class: "btns" }, make2),
         msg,
         results
       );
@@ -4884,7 +5134,10 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     document.body.append(root);
     try {
-      viewsOn = !!(await deps.status()).features?.views;
+      const features = (await deps.status()).features;
+      viewsOn = !!features?.views;
+      mapOn = viewsOn && !!features?.map;
+      graphOn = mapOn && !!features?.map_graph;
     } catch {
       viewsOn = false;
     }

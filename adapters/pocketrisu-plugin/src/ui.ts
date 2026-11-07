@@ -16,6 +16,7 @@ import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
   localTime, markDetail, placeMarks, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
 import { copyText } from './notes';
+import { drawGraph, parseGraph } from './graph';
 import type { EntityRow, ExcludePreview, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
@@ -517,6 +518,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   let notesFor: string | null = null; // the chat the note form is for: a page's, or the hub's
   let hubConversation: string | null = null; // the chat the hub is about (PHASE-52), from its answer
   let viewsOn = false; // the sidecar has the new screens (PHASE-52): hub first, settings in groups
+  let mapOn = false; // and the memory map (PHASE-55): the hub and the memory document lead to it when asked
+  let graphOn = false; // and its drawing as data, drawn here (PHASE-55 step 6)
   const actionMsg = el('div', { class: 'msg' });
   const actions = el('div', {}, el('div', { class: 'btns' }, retryButton, historyButton, rebuildButton, exportButton, notesButton,
     deleteButton),
@@ -785,6 +788,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         if (section.open && !box.dataset.state) void loadTimeline(box, '');
       });
     }
+    // The memory map's drawing (PHASE-55 step 6): drawn here from data, in place of the note that sends a reader to a
+    // browser for it; asked for after the page shows, so the lines never wait on it.
+    const note = graphOn ? page.querySelector<HTMLElement>('.v-graph-note') : null;
+    if (note) {
+      const box = el('div', { class: 'v-graph panel' });
+      note.replaceWith(box);
+      void loadGraph(box, note, false);
+    }
     for (const spot of Array.from(page.querySelectorAll('span.rp[data-repair]'))) {
       const action = repairAction(spot.getAttribute('data-repair'));
       if (action) spot.replaceChildren(...repairControls(action));
@@ -807,6 +818,23 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     picker.addEventListener('change', () => go(picker.value));
     who.replaceChildren(el('span', { class: 'muted', text: name }), picker);
+  }
+  async function loadGraph(box: HTMLElement, note: HTMLElement, everyone: boolean): Promise<void> {
+    const from = inspectorPath;
+    const conv = /^\/v1\/views\/c\/[^/]+\/map(?:\?|$)/.test(from) ? inspectorConversation(from) : null;
+    if (!conv) return void box.replaceWith(note);
+    const focus = /\?focus=([0-9a-f-]{36})$/i.exec(from)?.[1];
+    box.replaceChildren(el('div', { class: 'muted', text: L('insp.loading') }));
+    try {
+      const query = [focus ? `focus=${focus}` : '', everyone ? 'all=1' : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
+      const raw = await deps.api<unknown>('GET', `/v1/views/c/${conv}/map/graph${query ? `?${query}` : ''}`, undefined, 15_000);
+      if (!box.isConnected || inspectorPath !== from) return; // the reader moved on
+      const graph = parseGraph(raw);
+      if (!graph?.edges.length) return void box.replaceWith(note);
+      drawGraph(box, graph, (entity) => go(`/v1/views/c/${conv}/map?focus=${entity}`), (all) => void loadGraph(box, note, all));
+    } catch {
+      if (box.isConnected) box.replaceWith(note); // the lines below hold the same
+    }
   }
   async function loadTimeline(box: HTMLElement, span: string): Promise<void> {
     const from = inspectorPath;
@@ -882,7 +910,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     try {
       // A chat's and a character's page get a closed timeline section, filled when it is opened (PHASE-32 step 3), and
       // a chat's page one for its status window (PHASE-39); a sidecar without them ignores the ask.
-      const query = [conversation ? 'timeline=lazy&status=lazy' : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
+      const query = [conversation ? 'timeline=lazy&status=lazy' : '', isView && mapOn ? 'map=1' : '', lang === 'en' ? 'lang=en' : '']
+        .filter(Boolean).join('&');
       const r = await deps.api<{ html: string; conversation?: string | null }>('GET',
         `${path}${query ? `${path.includes('?') ? '&' : '?'}${query}` : ''}`, undefined, 15_000);
       if (load !== loads) return;
@@ -2078,7 +2107,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   document.body.append(root);
   // A sidecar with the new screens (PHASE-52) opens on its hub; one without keeps today's.
-  try { viewsOn = !!(await deps.status()).features?.views; } catch { viewsOn = false; }
+  try {
+    const features = (await deps.status()).features;
+    viewsOn = !!features?.views;
+    mapOn = viewsOn && !!features?.map;
+    graphOn = mapOn && !!features?.map_graph;
+  } catch { viewsOn = false; }
   if (viewsOn) {
     await viewsStyle();
     inspectorPath = await hubPath();
