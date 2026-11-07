@@ -1,5 +1,12 @@
 # NMOS Status
 
+## Release v0.6.0 — prepared 2026-11-07
+
+R8 as amended on 2026-11-07 (`ROADMAP-1.0.md`): Phases 53–56 (#323–#327), the owner's requests after `0.5.0`. This PR set
+the version to 0.6.0, rebuilt the plugin and wrote the changelog's upgrade notes and limits. Defaults unchanged:
+`packet-v19`, `extract-v16` (`extract-v17` selectable), `clean-v3`; migrations through `0032`. All pre-1.0 releases are
+GitHub pre-releases. The 1.0 gate's two quiet weeks are counted again on this build, from the day production runs it.
+
 ## Release v0.5.0 — tagged 2026-10-25
 
 R8's contents are on `main` (#315–#319); the release PR (#320) set the version to 0.5.0, rebuilt the plugin and wrote
@@ -91,8 +98,8 @@ Q1–Q4 as recommended), high risk (secrets; model text pasted into every prompt
 the owner's prompt (one for every chat, `GET`/`PUT /v1/notes/prompt`, amendment 1) in a fixed frame over the
 chronicle's story input and, behind its own toggle, Phase 53's setting side; one call to the extraction model, asked
 again once on an unusable reply or a leaked secret, no fallback; the panel says NMOS did not check it. Steps 2–4 on
-draft PR #327 (step 4: `docs/perf/phase56-custom-part.md`); the owner's trial on the test install is next (Q4). The calling of the host's main or auxiliary model was considered and dropped by the owner.
-Not merged or deployed. [Spec](phases/PHASE-56.md).
+#327 (step 4: `docs/perf/phase56-custom-part.md`), in `v0.6.0`; the owner had not made a custom part when it was prepared (Q4). The calling of the host's main or auxiliary model was considered and dropped by the owner.
+[Spec](phases/PHASE-56.md).
 
 **Phase 55 — the memory map: approved 2026-11-02 (an owner request; Q1–Q6, Q8 as recommended; Q7 amended: the caps
 stay the default, with a "show all" link).** One screen per chat, rendered by the sidecar from the read every request
@@ -100,18 +107,18 @@ makes: where the current facts came from (setting, story, the owner), who is tie
 lines in the panel, names that may be one person flagged), the story's events by turn, and how much an event record
 holds. Read-only; no stored data, schema, extraction or packet change; not high risk. Steps 2–5 built; the hub's block
 and the memory document's link only for a plugin that asks (`map=1`). On the trial install's longest chat it gives the
-2026-11-02 prototype's numbers (80.3 % of current facts the setting's only, 2.8 story facts a turn). The owner's look on
-an iPhone and a desktop is open. Ships in the next release (`0.6.0` if PHASE-54 makes one, else `1.1.0`).
+2026-11-02 prototype's numbers (80.3 % of current facts the setting's only, 2.8 story facts a turn). The owner
+checked it on 2026-11-07, after amendment 2 (the whole drawing no longer cut off). In `v0.6.0`.
 [Spec](phases/PHASE-55.md), [timings](perf/memory-map.md).
 
 **Phase 54 — a name written in Hangul word by word is asked about by its first word: approved 2026-11-02 (an owner
 request; Q1–Q3, Q6 as recommended; Q5 amended: ships before `1.0.0`, in a `0.6.0` if need be; Q4 amended: three- and
 four-syllable names asked about only with a family name), high risk (identity).** On the trial install six characters
 of one chat are two entities each (a full name of several Hangul words and its first word): NAME PAIRS (ADR 0064)
-never list such a name. Steps 2–4 (`name_parts`, deterministic cases, ADR 0064 item 6) are on draft PR #325; the
+never list such a name. Steps 2–4 (`name_parts`, deterministic cases, ADR 0064 item 6) are #325, in `v0.6.0`; the
 generation key is unchanged. Measured (three runs each, against `main`'s rule on the same turns): the split names join,
 but a turn that lists a pair extracts fewer thread endings and `knows`; in story order that is one or two turns per
-pair, and Q4 takes the block off the pairs the model always refuses. Not merged or deployed. [Spec](phases/PHASE-54.md).
+pair, and Q4 takes the block off the pairs the model always refuses. [Spec](phases/PHASE-54.md).
 
 **R8 — `0.5.0` before `1.0.0` (owner, 2026-10-23, AGE-90).** `0.5.0` carries Phases 45, 47, 48, 50, 51 and the panel's
 UI/UX overhaul (Phase 52, AGE-92), with one extractor generation `extract-v17` (Phases 45 and 51); each is

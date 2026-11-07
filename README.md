@@ -299,10 +299,19 @@ dark only, with 16 px body text.
   relationship changes, then the changes as lines). At the foot of a sheet, **not a character** takes a monster or a
   status-window bot out of the people and the relationships; its facts stay unless you also leave it out of memory
   (Phase 47, ADR 0076).
-- **The author's note** (Phase 50): **For the author's note** makes one text to paste into the chat's author's note,
-  in English Markdown: a **chronicle** of the events so far (one call to the extraction model, 3,000 or 6,000
-  characters), **what changed from the setting** and **address and standing** (no call). Secrets are left out unless
-  ticked. Copy the block from `[NMOS note …]` to `[/NMOS note]` whole; NMOS does not read it back as the setting.
+- **The memory map** (Phase 55): from the hub's block and the foot of the memory document, where a chat's current facts
+  came from (the setting, the story, the owner), who is tied to whom, the story's events by turn and how much an event
+  record holds. In the panel the ties are a drawing: pan, pinch or wheel to zoom, a tap lights one person's ties, a second
+  tap opens their own map; a dashed line joins names that may be one person. Read-only, no model call. In a browser:
+  `/views/c/{id}/map`.
+- **The author's note** (Phases 50, 53, 56): **For the author's note** makes one text to paste into the chat's author's
+  note, in English Markdown: **diverged from the setting** (one call to the extraction model compares the card, the
+  persona, the note and the relevant lorebook entries with the story; a line without a quote from the setting and turns
+  of the story is dropped; with no model, what changed from the setting, marked so), a **chronicle** of the events so
+  far (one call, 3,000 or 6,000 characters), **address and standing** (no call) and **custom** (one call, written as your
+  prompt asks, one prompt for every chat, the setting behind its own toggle, in English unless the prompt names a
+  language; NMOS does not check it line by line, so read it first). Secrets are left out unless ticked. Copy the block
+  from `[NMOS note …]` to `[/NMOS note]` whole; NMOS does not read it back as the setting.
 - **Other chats**: every chat NMOS knows, most recently used first, searchable by name or character, failures marked;
   each opens that chat's hub.
 - **Details** (the Inspector, restyled; linked from the working, memory and person screens and from **needs a look**):
