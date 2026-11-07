@@ -232,6 +232,7 @@ def build_windows_tray(stage: Path, work: Path) -> None:
 
 MACHO = (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xcf")
 BUNDLE_ID = "io.github.sallos725.nmos"
+MACOS_MIN = "13.0"  # README; SMAppService needs 13
 
 
 def apple_version(version: str) -> str:
@@ -254,7 +255,7 @@ def build_macos_app(stage: Path, work: Path, version: str) -> Path:
     subprocess.run([str(res / "python" / "bin" / "python3"), "-m", "compileall", "-q", "-j", "0",
                     str(res / "python" / "lib")], check=False, stdout=subprocess.DEVNULL)
     src = Path(__file__).parent / "macos"
-    subprocess.run(["swiftc", "-O", "-target", "arm64-apple-macos13.0", str(src / "NMOSApp.swift"),
+    subprocess.run(["swiftc", "-O", "-target", f"arm64-apple-macos{MACOS_MIN}", str(src / "NMOSApp.swift"),
                     "-o", str(contents / "MacOS" / "NMOS")], check=True)
     iconset = work / "nmos.iconset"
     shutil.rmtree(iconset, ignore_errors=True)
@@ -267,7 +268,7 @@ def build_macos_app(stage: Path, work: Path, version: str) -> Path:
             # Apple's version keys take dotted numbers only ("0.3.0-beta.1" → "0.3.0"); the full one is NMOSVersion.
             "CFBundleShortVersionString": apple_version(version), "CFBundleVersion": apple_version(version),
             "NMOSVersion": version,
-            "LSMinimumSystemVersion": "13.0", "LSUIElement": True,  # a menu-bar item, no Dock icon
+            "LSMinimumSystemVersion": MACOS_MIN, "LSUIElement": True,  # a menu-bar item, no Dock icon
             "NSHumanReadableCopyright": "MIT License",
             # App Transport Security blocks plain http by default; the menu asks the sidecar on 127.0.0.1 over http.
             "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
@@ -280,10 +281,29 @@ def build_macos_app(stage: Path, work: Path, version: str) -> Path:
                     subprocess.run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(p)], check=True,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     signed += 1
+    check_macos_min(contents)
     subprocess.run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(app)], check=True)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)], check=True)
     log(f"NMOS.app: {signed} Mach-O files signed ad hoc, then the app")
     return app
+
+
+def check_macos_min(contents: Path) -> None:
+    """Every Mach-O in the app runs on MACOS_MIN: what the README promises, whichever macOS the build machine runs."""
+    limit = tuple(int(x) for x in MACOS_MIN.split("."))
+    newer = []
+    for p in sorted(contents.rglob("*")):
+        if p.is_file() and not p.is_symlink():
+            with p.open("rb") as f:
+                if f.read(4) not in MACHO:
+                    continue
+            shown = subprocess.run(["vtool", "-show-build", str(p)], capture_output=True, text=True).stdout
+            for found in re.findall(r"^\s*(?:minos|version)\s+(\d+(?:\.\d+)*)\s*$", shown, re.M):
+                if tuple(int(x) for x in found.split(".")) > limit:
+                    newer.append(f"{p.relative_to(contents)} needs macOS {found}")
+    if newer:
+        raise SystemExit(f"newer than macOS {MACOS_MIN}:\n" + "\n".join(newer))
+    log(f"every Mach-O runs on macOS {MACOS_MIN}")
 
 
 def build_dmg(app: Path, dmg: Path) -> Path:
@@ -378,6 +398,8 @@ def main() -> None:
                     help="Linux, inside the pinned build image (build_linux.py): fail unless the vendored libraries "
                          "come from the pinned package versions")
     a = ap.parse_args()
+    if sys.platform == "darwin":  # without it, what is compiled here (pgvector, pg_trgm) needs the build machine's macOS
+        os.environ["MACOSX_DEPLOYMENT_TARGET"] = MACOS_MIN
 
     triple = TARGETS[a.target]
     windows = a.target.startswith("win")

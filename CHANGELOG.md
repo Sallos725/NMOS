@@ -65,6 +65,8 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
   and that code has run on production since that day. **The owner had not made a custom part on it when this was
   prepared**, so its only runs are the copy's above. The drawing's clipped names were measured in Chromium; WebKit did
   not start on the build host.
+- **The macOS bundle** is built on macOS 15, because GitHub retired its macOS 14 runners on 2026-11-02. It still targets
+  macOS 13, and the build now fails if any binary in it needs a newer macOS; it has only been run on macOS 15 (CI).
 - **Automated evidence.** The sidecar's and the plugin's suites pass on the merged code (CI). Final host-response
   quality and the 1.0 gate's two quiet weeks, counted again on this build (R8), remain open.
 
