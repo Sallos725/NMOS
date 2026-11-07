@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:c6ce75383f74".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:a6d753760060".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2513,6 +2513,7 @@ ${revisionHash}`;
   var LABEL_PX = 14;
   var ARC = 96;
   var NAMES_FROM = 60;
+  var NAME_MAX = 24;
   var str = (v, max = LIMIT.text) => typeof v === "string" && v.length <= max ? v : null;
   var num2 = (v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 1e6 ? v : null;
   function parseGraph(raw) {
@@ -2561,18 +2562,11 @@ ${revisionHash}`;
   }
   function fitView(nodes, width, height) {
     const xs = nodes.map((n) => n.x), ys = nodes.map((n) => n.y);
-    const pad = 70;
-    let x = Math.min(0, ...xs) - pad, y = Math.min(0, ...ys) - pad;
-    let w = Math.max(0, ...xs) + pad - x, h = Math.max(0, ...ys) + pad - y;
-    const ratio = width / height;
-    if (w / h < ratio) {
-      x -= (h * ratio - w) / 2;
-      w = h * ratio;
-    } else {
-      y -= (w / ratio - h) / 2;
-      h = w / ratio;
-    }
-    return { x, y, w, h };
+    const x0 = Math.min(0, ...xs), x1 = Math.max(0, ...xs), y0 = Math.min(0, ...ys), y1 = Math.max(0, ...ys);
+    const pad = 36;
+    const s = Math.min(Math.max(width - 2 * pad, 1) / Math.max(x1 - x0, 1), Math.max(height - 2 * pad, 1) / Math.max(y1 - y0, 1), 1);
+    const w = width / s, h = height / s;
+    return { x: (x0 + x1 - w) / 2, y: (y0 + y1 - h) / 2, w, h };
   }
   function zoomAt(v, factor, px, py, width, min, max) {
     const scale = Math.min(Math.max(width / v.w * factor, min), max);
@@ -2623,6 +2617,7 @@ ${revisionHash}`;
     }
     const dots = /* @__PURE__ */ new Map();
     const parts = [];
+    const far = Math.max(...g.nodes.map((n) => Math.abs(n.x))) / 3;
     for (const n of g.nodes) {
       const group = make("g", "g-node");
       const dot = make("circle", `g-n ${n.kind}${n.lead ? " lead" : ""}`);
@@ -2630,8 +2625,8 @@ ${revisionHash}`;
       dot.setAttribute("cy", String(n.y));
       const label = make("text", `g-t${n.lead ? " lead" : ""}`);
       label.setAttribute("x", String(n.x));
-      label.setAttribute("text-anchor", "middle");
-      label.textContent = n.name;
+      label.setAttribute("text-anchor", n.x < -far ? "start" : n.x > far ? "end" : "middle");
+      label.textContent = n.name.length > NAME_MAX ? `${n.name.slice(0, NAME_MAX - 1)}\u2026` : n.name;
       group.append(dot, label);
       nodes.append(group);
       dots.set(group, n);

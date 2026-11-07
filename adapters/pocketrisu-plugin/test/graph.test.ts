@@ -50,6 +50,10 @@ describe('the drawing as data', () => {
       expect(n.y).toBeLessThan(v.y + v.h);
     }
     expect(v.w / v.h).toBeCloseTo(360 / 420);
+    const wide = { ...g.nodes[0]!, x: 2000, y: 2000 };
+    const small = fitView([{ ...wide, x: -2000, y: -2000 }, wide], 358, 480);
+    expect((-2000 - small.x) * (358 / small.w)).toBeGreaterThanOrEqual(36); // room in px whatever the scale
+    expect((small.y + small.h - 2000) * (358 / small.w)).toBeGreaterThanOrEqual(36);
     const closer = zoomAt(v, 2, 0, 0, 360, 0.01, 100);
     expect(closer.w).toBeCloseTo(v.w / 2);
     expect((0 - closer.x) / closer.w).toBeCloseTo((0 - v.x) / v.w); // the point under the fingers stays put
@@ -77,7 +81,7 @@ describe('the drawing in the panel', () => {
     expect(svg.querySelectorAll('circle')).toHaveLength(3);
     expect(svg.querySelectorAll('line')).toHaveLength(2);
     expect(box.querySelector('img')).toBeNull();
-    expect(Array.from(svg.querySelectorAll('text')).map((t) => t.textContent)).toContain('<img src=x onerror=alert(1)>');
+    expect(Array.from(svg.querySelectorAll('text')).map((t) => t.textContent)).toContain('<img src=x onerror=aler…');
     const hana = svg.querySelectorAll('.g-node')[0]!;
     tap(hana.querySelector('circle')!);
     expect(svg.classList.contains('sel')).toBe(true);
@@ -95,6 +99,19 @@ describe('the drawing in the panel', () => {
     expect(buttons.map((b) => b.textContent)).toEqual(['Fit', 'Show all']);
     buttons[1]!.click();
     expect(toggled).toEqual([true]);
+  });
+
+  it('runs a name by a side of the drawing inward and shortens a long one', () => {
+    const r = raw();
+    r.nodes[0]!.x = -300;
+    r.nodes[1]!.x = 300;
+    r.nodes[1]!.name = 'n'.repeat(40);
+    const box = document.createElement('div');
+    document.body.append(box);
+    drawGraph(box, parseGraph(r)!, () => {}, () => {});
+    const labels = Array.from(box.querySelectorAll('text'));
+    expect(labels.map((t) => t.getAttribute('text-anchor'))).toEqual(['start', 'end', 'middle']);
+    expect(labels[1]!.textContent).toBe(`${'n'.repeat(23)}…`);
   });
 
   it('a drag is not a tap', () => {

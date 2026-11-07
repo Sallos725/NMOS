@@ -17,6 +17,16 @@ a tap picks a person and dims everything not tied to them, a second tap opens th
 that sends the reader to the browser stays. Criterion 8 is amended to the measured growth (below). Q2's "no script"
 holds for the browser page; the panel's drawing is the plugin's own code, not a script from the sidecar.
 
+**Amendment 2 (2026-11-07, the owner's look, criterion 10: the whole drawing shows cut off; moving nodes by hand is a
+wish, not a need, and stays out because the plugin stays light for an iPhone).** On the longest chat of the trial install
+(126 nodes with "show all"), measured in Chromium with the real panel and page: the browser page drew at natural size
+(2,599 px wide in a 788 px column, so only a corner showed), and in the panel at 390 px a tap on a node left 31 of 42
+picks with a name cut by the edge (up to 117 px). Now: the page's drawing fits the column; past 1,400 units wide its
+whole map keeps only the scene's cast and the persona as names, the others in their `<title>` and the lines below (one
+person's map keeps every name); in both, a name by a side of the drawing runs inward and a drawn name stops at 24
+characters; the panel's fit leaves 36 px whatever the scale. After it: no dot or name outside the drawing on the page,
+0 of 42 picks cut at either width. WebKit could not be started on the host, so the owner's iPhone look stays open.
+
 Not high risk (`AGENTS.md §14`) with the answers proposed below: no stored data, schema, extraction, packet, recall or
 memory selection changes, and no new tag or attribute through the panel's sanitizer. **Q3 (b) would make step 4 high
 risk** (the sanitizer, a security boundary), as PHASE-32 step 3 was.
@@ -197,8 +207,8 @@ its docstring when built).
    focus view shown).
 7. The map at 10,000 messages renders in under one second; slower stops step 5 for the owner (PHASE-32 criterion 7).
 8. The plugin's gzipped build grows by at most 2 % (one block flag and one path; 69,576 bytes at PHASE-52).
-   **Amended (amendment 1):** with step 6's drawing, at most 5 %; measured 70,344 → 73,712 bytes (+4.79 %, `gzip -9`
-   against `main` at `446d5fb`).
+   **Amended (amendment 1):** with step 6's drawing, at most 5 %; measured 70,344 → 73,780 bytes (+4.88 %, `gzip -9`
+   against `main` at `446d5fb`, with amendment 2).
 9. No test outside the map, the views, the hub flag and the plugin's view path changes; the packet, recall and
    extraction tests pass unchanged.
 10. The owner's look on an iPhone and a desktop.

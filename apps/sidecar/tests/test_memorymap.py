@@ -329,3 +329,38 @@ def test_the_map_endpoints(migrated):
         assert {"nodes", "edges", "suspects", "words"} <= set(graph) and graph["everyone"] is True
         assert c.get("/v1/views/c/0190f3a4-1b2c-7d3e-8f40-999999999999/map/graph").status_code == 404
     assert "Hana" in focus
+
+
+def _crowd(n: int) -> dict:
+    nodes = [{"id": f"c{i}", "name": f"Person {i}", "kind": "character", "entity": None, "scene": i == 0,
+              "persona": False} for i in range(n)]
+    pos = {x["id"]: memorymap.rings([x["id"] for x in nodes[:1]], [x["id"] for x in nodes[1:]], [])[0][x["id"]]
+           for x in nodes}
+    radius = max(abs(v) for xy in pos.values() for v in xy)
+    return {"nodes": nodes, "edges": [], "suspects": [], "pos": pos, "radius": radius}
+
+
+def test_the_page_drawing_fits_its_column_and_a_large_one_keeps_only_the_cast_named():
+    """PHASE-55 amendment 2: the whole map showed cut off; nothing scrolls sideways, every dot is inside the viewBox."""
+    assert "overflow-x" not in views.STYLE.split(".nmos .v-graph{")[1].split("}")[0]
+    assert "max-width:100%" in views.STYLE.split(".nmos .v-graph svg{")[1].split("}")[0]
+    big = _crowd(120)
+    svg = views._svg("c", big, "en")
+    x, y, w, h = (float(v) for v in re.search(r'viewBox="([^"]+)"', svg).group(1).split())
+    for cx, cy, r in re.findall(r'cx="([-\d.]+)" cy="([-\d.]+)" r="([\d.]+)"', svg):
+        assert x <= float(cx) - float(r) and float(cx) + float(r) <= x + w
+        assert y <= float(cy) - float(r) and float(cy) + float(r) <= y + h
+    assert svg.count("<text") == 1 and ">Person 0</text>" in svg and "<title>Person 7</title>" in svg
+    assert views._svg("c", big, "en", True).count("<text") == 120  # one person's map keeps every name
+    small = views._svg("c", _crowd(9), "en")
+    assert small.count("<text") == 9 and "font-size" not in small
+
+
+def test_a_drawn_name_runs_inward_at_a_side_and_stops_at_its_length():
+    d = _crowd(9)
+    d["nodes"][1]["name"] = "n" * 40
+    d["pos"]["c1"], d["pos"]["c2"], d["pos"]["c3"] = (-200.0, 0.0), (200.0, 0.0), (0.0, 200.0)
+    d["radius"] = 200.0
+    svg = views._svg("c", d, "en")
+    assert f'text-anchor="start">{"n" * 23}…</text>' in svg and f'<title>{"n" * 40}</title>' in svg
+    assert 'text-anchor="end">Person 2</text>' in svg and 'text-anchor="middle">Person 3</text>' in svg

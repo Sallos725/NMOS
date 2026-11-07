@@ -74,16 +74,16 @@ STYLE = """
 .nmos .v-seg.story{background:var(--c-link)} .nmos .v-seg.owner{background:var(--c-ok)}
 .nmos .g-m{color:var(--c-text-muted)} .nmos .g-m.story{color:var(--c-link)}
 .nmos .g-m.changed,.nmos .g-m.over{color:var(--c-warn)} .nmos .g-m.owner{color:var(--c-ok)}
-.nmos .v-graph{overflow-x:auto;margin:8px 0 4px}
-.nmos .v-graph svg{display:block;margin:0 auto}
-.nmos .v-graph.one svg{max-width:100%;height:auto} .nmos .v-graph.one .g-t{font-size:20px}
-.nmos .g-e{stroke:var(--c-text-ghost);stroke-width:1.5} .nmos .g-e.story{stroke:var(--c-link)}
+.nmos .v-graph{margin:8px 0 4px}
+.nmos .v-graph svg{display:block;margin:0 auto;max-width:100%;height:auto;max-height:90vh}
+.nmos .v-graph.one .g-t{font-size:20px}
+.nmos .g-e{stroke:var(--c-text-ghost);stroke-width:1.5;vector-effect:non-scaling-stroke} .nmos .g-e.story{stroke:var(--c-link)}
 .nmos .g-e.changed{stroke:var(--c-warn)} .nmos .g-e.split{stroke:var(--c-text-muted);stroke-dasharray:5 4}
 .nmos .g-n{fill:var(--c-text-faint)} .nmos .g-n.lead{fill:var(--c-text-strong)}
 .nmos .g-n.group,.nmos .g-n.place{fill:var(--c-bg);stroke:var(--c-text-muted);stroke-width:2}
 .nmos .g-t{fill:var(--c-text-soft);font-size:16px} .nmos .g-t.lead{fill:var(--c-text-strong);font-weight:600}
 .nmos svg.g-panel{display:block;width:100%;height:min(62vh,480px);touch-action:none;user-select:none;-webkit-user-select:none;background:var(--c-sunken);border-radius:var(--r-block,12px)}
-.nmos svg.g-panel .g-e{vector-effect:non-scaling-stroke} .nmos svg.g-panel .g-e.on{stroke-width:2.5}
+.nmos svg.g-panel .g-e.on{stroke-width:2.5}
 .nmos svg.g-panel.sel .g-e:not(.on){opacity:.12} .nmos svg.g-panel.sel .g-node:not(.on){opacity:.3}
 .nmos .v-graph-btns{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 0}
 @media (min-width:700px){.nmos .v-block:not(.v-wide):not(.v-big){flex-basis:240px}}
@@ -712,11 +712,21 @@ def _ties(cid: str, g: dict[str, Any], lang: str, focus: str | None) -> str:
     return out
 
 
-def _svg(cid: str, d: dict[str, Any], lang: str) -> str:
-    """The drawing (Q2): inline SVG of circles, lines and text, no script; a character leads to their own map."""
+DRAWN_WIDTH = 760  # the page's width: a drawing wider than this is shown smaller
+DRAWN_NAMES_TO = 1400  # past this width names would overlap into a blot (PHASE-55 amendment 2)
+NAME_MAX = 24  # a drawn name's length (graph.ts NAME_MAX); the whole name is in its <title> and the lines below
+
+
+def _svg(cid: str, d: dict[str, Any], lang: str, every_name: bool = False) -> str:
+    """The drawing (Q2): inline SVG of circles, lines and text, no script; a character leads to their own map. It fits
+    the page's width whatever its size, so dots and names grow with a large drawing to stay readable, and past
+    DRAWN_NAMES_TO only the scene's cast and the persona keep a name on it (`every_name`: all of them, one person's map):
+    the others' are in their <title> and the lines below. A name by a side of the drawing runs inward, so it stays in."""
     pos, r = d["pos"], d["radius"]
-    mx, my = 110, 40
-    w, h = round(2 * (r + mx)), round(2 * (r + my) + 30)
+    grow = max(1.0, 2 * (r + 40) / DRAWN_WIDTH)
+    mx = my = 40 * grow
+    w, h = round(2 * (r + mx)), round(2 * (r + my) + 30 * grow)
+    size_style = f' style="font-size:{16 * grow:.0f}px"' if grow > 1 else ""
     lines = []
     for e in d["edges"]:
         (x1, y1), (x2, y2) = pos[e["a"]], pos[e["b"]]
@@ -728,10 +738,14 @@ def _svg(cid: str, d: dict[str, Any], lang: str) -> str:
     for n in d["nodes"]:
         x, y = pos[n["id"]]
         lead = " lead" if n["scene"] or n["persona"] else ""
-        size = 11 if lead else 8
+        size = round((11 if lead else 8) * grow, 1)
         name = n["name"] + (f" ({t(lang, 'you')})" if n["persona"] else "")
-        dot = (f'<circle class="g-n {n["kind"]}{lead}" cx="{x:g}" cy="{y:g}" r="{size}"/>'
-               f'<text class="g-t{lead}" x="{x:g}" y="{y + size + 18:g}" text-anchor="middle">{_v(name)}</text>')
+        short = name if len(name) <= NAME_MAX else name[:NAME_MAX - 1] + "…"
+        side = "start" if x < -r / 3 else "end" if x > r / 3 else "middle"
+        label = (f'<text class="g-t{lead}" x="{x:g}" y="{y + size + 18 * grow:g}" text-anchor="{side}"{size_style}>'
+                 f'{_v(short)}</text>') if lead or every_name or w <= DRAWN_NAMES_TO else ""
+        dot = (f'<g><title>{_v(name)}</title><circle class="g-n {n["kind"]}{lead}" cx="{x:g}" cy="{y:g}" r="{size:g}"/>'
+               f'{label}</g>')
         if n.get("entity") and n["kind"] == "character":
             dot = f'<a href="/views/c/{cid}/map?focus={n["entity"]}">{dot}</a>'
         dots.append(dot)
@@ -754,7 +768,7 @@ def _drawing(cid: str, g: dict[str, Any], lang: str, focus: str | None, everyone
                   f'<a class="v-name" href="/views/c/{cid}/map?all=1#s-ties">{_v(t(lang, "show_all"))}</a>')
     elif everyone:
         toggle = f'<a class="v-name" href="/views/c/{cid}/map#s-ties">{_v(t(lang, "show_less"))}</a>'
-    return (f'<div class="{cls}">{_svg(cid, d, lang)}<p class="v-note">{_v(t(lang, "legend"))}</p>'
+    return (f'<div class="{cls}">{_svg(cid, d, lang, focus is not None)}<p class="v-note">{_v(t(lang, "legend"))}</p>'
             + (f'<p class="v-note">{toggle}</p>' if toggle else "") + "</div>")
 
 

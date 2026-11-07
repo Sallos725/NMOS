@@ -12,6 +12,7 @@ const LIMIT = { nodes: 2000, edges: 6000, text: 200 };
 const LABEL_PX = 14; // a name's size on screen at any zoom
 const ARC = 96; // the sidecar's room per node along a ring (memorymap.ARC): names show once it is this many px apart
 const NAMES_FROM = 60;
+const NAME_MAX = 24; // a drawn name's length (the sidecar's too); the whole name is in the caption and the lines below
 
 export interface GraphNode { id: string; name: string; kind: string; lead: boolean; entity: string | null; x: number; y: number }
 export interface GraphEdge { a: string; b: string; kind: string; mark: string }
@@ -68,15 +69,14 @@ export function parseGraph(raw: unknown): Graph | null {
     everyone: r.everyone === true, capped: r.capped === true, words };
 }
 
-/** The view that shows every node, with room for names around them, kept in the box's proportions. */
+/** The view that shows every node, with room in px for a dot and the name under it at any scale, in the box's proportions. */
 export function fitView(nodes: GraphNode[], width: number, height: number): View {
   const xs = nodes.map((n) => n.x), ys = nodes.map((n) => n.y);
-  const pad = 70;
-  let x = Math.min(0, ...xs) - pad, y = Math.min(0, ...ys) - pad;
-  let w = Math.max(0, ...xs) + pad - x, h = Math.max(0, ...ys) + pad - y;
-  const ratio = width / height;
-  if (w / h < ratio) { x -= (h * ratio - w) / 2; w = h * ratio; } else { y -= (w / ratio - h) / 2; h = w / ratio; }
-  return { x, y, w, h };
+  const x0 = Math.min(0, ...xs), x1 = Math.max(0, ...xs), y0 = Math.min(0, ...ys), y1 = Math.max(0, ...ys);
+  const pad = 36;
+  const s = Math.min(Math.max(width - 2 * pad, 1) / Math.max(x1 - x0, 1), Math.max(height - 2 * pad, 1) / Math.max(y1 - y0, 1), 1);
+  const w = width / s, h = height / s;
+  return { x: (x0 + x1 - w) / 2, y: (y0 + y1 - h) / 2, w, h };
 }
 
 /** The view zoomed by `factor` (> 1 closer) around a point in drawing units, within `min`–`max` px per unit. */
@@ -133,14 +133,15 @@ export function drawGraph(box: HTMLElement, g: Graph, open: (entity: string) => 
   }
   const dots = new Map<Element, GraphNode>();
   const parts: { n: GraphNode; dot: SVGCircleElement; label: SVGTextElement; group: SVGGElement }[] = [];
+  const far = Math.max(...g.nodes.map((n) => Math.abs(n.x))) / 3; // a name by a side of the drawing runs inward, so it stays in
   for (const n of g.nodes) {
     const group = make('g', 'g-node');
     const dot = make('circle', `g-n ${n.kind}${n.lead ? ' lead' : ''}`);
     dot.setAttribute('cx', String(n.x)); dot.setAttribute('cy', String(n.y));
     const label = make('text', `g-t${n.lead ? ' lead' : ''}`);
     label.setAttribute('x', String(n.x));
-    label.setAttribute('text-anchor', 'middle');
-    label.textContent = n.name;
+    label.setAttribute('text-anchor', n.x < -far ? 'start' : n.x > far ? 'end' : 'middle');
+    label.textContent = n.name.length > NAME_MAX ? `${n.name.slice(0, NAME_MAX - 1)}…` : n.name;
     group.append(dot, label);
     nodes.append(group);
     dots.set(group, n);
