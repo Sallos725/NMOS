@@ -25,7 +25,7 @@ jobs:
         include:
           - { target: linux-x64, os: ubuntu-22.04, suite: true }
           - { target: linux-arm64, os: ubuntu-22.04-arm, suite: false }
-          # GitHub retired macOS 14 on 2026-11-02. The runner's version is not the bundle's: build_bundle.py targets macOS 13.
+          # GitHub retired macOS 14 on 2026-11-02. build_bundle.py sets and checks what the bundle needs (MACOS_MIN).
           - { target: macos-arm64, os: macos-15, suite: true }
           # C:\ has 8.3 short names (the launcher's way around PostgreSQL's ANSI paths), and a folder made at its
           # root inherits access for every signed-in user, which the launcher must take away from data/.

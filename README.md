@@ -116,7 +116,7 @@ language. It is a read-only status page; settings stay in the PocketRisu panel.
    plugin's folder (`plugin\nmos-pocketrisu.js`) and the data folder (with `nmos.log`), turns on start at login,
    and quits (which stops the database too). `NMOS.bat` starts it in a console window instead, for servers.
 
-**macOS (Apple Silicon, macOS 13 or later)** — `NMOS-v<version>-macos-arm64.dmg`
+**macOS (Apple Silicon; checked on macOS 15, and earlier versions may work)** — `NMOS-v<version>-macos-arm64.dmg`
 
 1. Open the `.dmg` and drag `NMOS.app` onto Applications.
 2. Open NMOS from Applications. macOS says it cannot check the app for malicious software (it is signed ad hoc,

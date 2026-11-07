@@ -232,7 +232,9 @@ def build_windows_tray(stage: Path, work: Path) -> None:
 
 MACHO = (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xcf")
 BUNDLE_ID = "io.github.sallos725.nmos"
-MACOS_MIN = "13.0"  # README; SMAppService needs 13
+MACOS_MIN = "13.0"  # the app, what is compiled here and the Python side; SMAppService needs 13
+PREBUILT_PG_MIN = "15.0"  # what the pinned PostgreSQL build declares (it ran on macOS 14 in 0.5.0's CI)
+COMPILED_HERE = ("vector.dylib", "pg_trgm.dylib")
 
 
 def apple_version(version: str) -> str:
@@ -288,9 +290,24 @@ def build_macos_app(stage: Path, work: Path, version: str) -> Path:
     return app
 
 
+def macos_minimums(shown: str) -> list[str]:
+    """The macOS versions `vtool -show-build` says a file needs. Its other "version" lines are the linker's own."""
+    return re.findall(r"^\s*minos\s+(\S+)\s*$|LC_VERSION_MIN_MACOSX\n.*\n\s*version\s+(\S+)\s*$", shown, re.M)
+
+
+def needs_newer(rel: Path, shown: str) -> str | None:
+    """Why a file breaks the promise, or None: what this build compiles or installs must run on MACOS_MIN, and the pinned
+    PostgreSQL build on what it declares (PREBUILT_PG_MIN), so that a new pin that raises it stops here."""
+    prebuilt = rel.parts[:2] == ("Resources", "pgsql") and rel.name not in COMPILED_HERE
+    limit = PREBUILT_PG_MIN if prebuilt else MACOS_MIN
+    for pair in macos_minimums(shown):
+        found = pair[0] or pair[1]
+        if tuple(int(x) for x in found.split(".")) > tuple(int(x) for x in limit.split(".")):
+            return f"{rel} needs macOS {found}, over {limit}"
+    return None
+
+
 def check_macos_min(contents: Path) -> None:
-    """Every Mach-O in the app runs on MACOS_MIN: what the README promises, whichever macOS the build machine runs."""
-    limit = tuple(int(x) for x in MACOS_MIN.split("."))
     newer = []
     for p in sorted(contents.rglob("*")):
         if p.is_file() and not p.is_symlink():
@@ -298,12 +315,12 @@ def check_macos_min(contents: Path) -> None:
                 if f.read(4) not in MACHO:
                     continue
             shown = subprocess.run(["vtool", "-show-build", str(p)], capture_output=True, text=True).stdout
-            for found in re.findall(r"^\s*(?:minos|version)\s+(\d+(?:\.\d+)*)\s*$", shown, re.M):
-                if tuple(int(x) for x in found.split(".")) > limit:
-                    newer.append(f"{p.relative_to(contents)} needs macOS {found}")
+            why = needs_newer(p.relative_to(contents), shown)
+            if why:
+                newer.append(why)
     if newer:
-        raise SystemExit(f"newer than macOS {MACOS_MIN}:\n" + "\n".join(newer))
-    log(f"every Mach-O runs on macOS {MACOS_MIN}")
+        raise SystemExit("too new for what the README promises:\n" + "\n".join(newer))
+    log(f"every Mach-O within macOS {MACOS_MIN} (the pinned PostgreSQL within {PREBUILT_PG_MIN})")
 
 
 def build_dmg(app: Path, dmg: Path) -> Path:
