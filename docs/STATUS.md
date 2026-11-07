@@ -17,9 +17,12 @@ published the [pre-release](https://github.com/Sallos725/NMOS/releases/tag/v0.6.
 file and the four portable bundles (Linux x64/arm64, macOS arm64, Windows x64). No failed run is erased.
 `fixtures/upgrade/v0.6.0.sql` is a database this release's own sidecar and worker wrote (stub models, synthetic chats).
 
-**Not deployed yet.** Production (6003) and the trial install (6113) run local builds of this code before the version
-change (`trial-phase56-b893536`). The 1.0 gate's two quiet weeks start on the day production runs the published `0.6.0`
-image (`ROADMAP-1.0.md`, R8). The owner had not made a custom part on it when the tag was cut.
+**Deployed to production 2026-11-07 17:09 KST (owner request), on the published `0.6.0` image.** `NMOS_VERSION=0.6.0` (was
+the local `trial-phase56-b893536`, the same code before the version change) after a fresh `pg_dump` and an `.env` backup.
+Schema stays 0032; row counts and id hashes are identical before and after, the extractor key is unchanged, so nothing
+is re-extracted. No job queued, no log error. The sidecar expects plugin build `11d481ba8f18`; the owner updates the plugin
+and reloads. The trial install (6113) stays on `trial-phase56-b893536`. **The 1.0 gate's two quiet weeks started at this
+deployment; earliest end 2026-11-21** (`ROADMAP-1.0.md`, R8). The owner had not made a custom part when the tag was cut.
 
 ## Release v0.5.0 — tagged 2026-10-25
 
