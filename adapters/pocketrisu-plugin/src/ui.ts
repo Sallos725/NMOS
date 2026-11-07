@@ -15,7 +15,7 @@ import { parserBindings, parserDraft, presetRules, type ParserPreset } from './p
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
   localTime, markDetail, placeMarks, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
-import { copyText } from './notes';
+import { copyText, PROMPT_MAX } from './notes';
 import { drawGraph, parseGraph } from './graph';
 import type { EntityRow, ExcludePreview, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
@@ -1351,7 +1351,26 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     };
     // PHASE-53: what diverged from the setting first and on; the chronicle and address stay, off by default.
     const kinds = [pick('notes.diverged', 'diverged', true), pick('notes.chronicle', 'chronicle', false),
-      pick('notes.address', 'address', false)];
+      pick('notes.address', 'address', false), pick('notes.custom', 'custom', false)];
+    // PHASE-56: the owner's prompt, one for every chat (the sidecar keeps it), and whether the setting goes in.
+    const custom = kinds[3]!.box;
+    const prompt = el('textarea', { rows: 6, maxlength: String(PROMPT_MAX), spellcheck: 'false',
+      style: 'font-family:inherit', 'aria-label': L('notes.custom_prompt'), placeholder: L('notes.custom_placeholder') });
+    const count = el('p', { class: 'sub' });
+    const counted = () => { count.textContent = L('notes.custom_count', { n: prompt.value.trim().length, max: PROMPT_MAX }); };
+    prompt.addEventListener('input', counted);
+    counted();
+    const setting = el('input', { type: 'checkbox' });
+    const customArea = el('div', { style: 'display:none' }, prompt, count,
+      el('div', { class: 'check' }, setting, el('span', { text: L('notes.custom_setting') })),
+      el('p', { class: 'sub', text: L('notes.custom_setting_sub') }),
+      el('p', { class: 'sub', text: L('notes.custom_unchecked') }));
+    custom.addEventListener('change', () => { customArea.style.display = custom.checked ? '' : 'none'; });
+    let saved = '';
+    void deps.api<{ prompt?: string }>('GET', '/v1/notes/prompt', undefined, 15_000).then((r) => {
+      saved = typeof r?.prompt === 'string' ? r.prompt : '';
+      if (!prompt.value) { prompt.value = saved; counted(); }
+    }).catch(() => {}); // an older sidecar has no prompt: the box starts empty
     const length = el('select', { 'aria-label': L('notes.length') },
       el('option', { value: '3000', text: L('notes.short') }), el('option', { value: '6000', text: L('notes.long') }));
     const secrets = el('input', { type: 'checkbox' });
@@ -1363,19 +1382,31 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     make.addEventListener('click', async () => {
       const sections = kinds.filter((k) => k.box.checked).map((k) => k.box.value);
       if (!sections.length) return say(msg, L('notes.pick'), 'warn');
+      const text = prompt.value.trim();
+      if (custom.checked && !text) return say(msg, L('notes.custom_empty'), 'warn');
       make.disabled = true;
       say(msg, L('act.working'));
       results.replaceChildren();
+      let unsaved = false;
+      if (custom.checked && text !== saved) {
+        try {
+          await deps.api('PUT', '/v1/notes/prompt', { prompt: text }, 15_000);
+          saved = text;
+        } catch { unsaved = true; } // the note is still made from the box (C2)
+      }
+      const body: Record<string, unknown> = { sections, chars: Number(length.value), secrets: secrets.checked };
+      if (custom.checked) Object.assign(body, { custom_prompt: text, custom_setting: setting.checked });
       try {
         const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,
-          { sections, chars: Number(length.value), secrets: secrets.checked }, 600_000); // two calls, each with a retry
+          body, 900_000); // up to three model parts, each with a retry
         if (notesFor !== conversation) return;
         results.replaceChildren(noteResult(r, msg));
-        say(msg, r.text ? L('notes.done') : L('notes.part_none', { part: L('notes.title') }), r.text ? 'ok' : 'warn');
+        const done = r.text ? L('notes.done') : L('notes.part_none', { part: L('notes.title') });
+        say(msg, unsaved ? `${done} ${L('notes.custom_unsaved')}` : done, r.text && !unsaved ? 'ok' : 'warn');
       } catch (error) { say(msg, errorText(lang, error), 'err'); } finally { make.disabled = false; }
     });
     notesCard.replaceChildren(el('h2', { text: L('notes.title') }), el('p', { class: 'sub', text: L('notes.sub') }),
-      ...kinds.map((k) => k.row), el('div', { class: 'row' }, field(L('notes.length'), length)),
+      ...kinds.map((k) => k.row), customArea, el('div', { class: 'row' }, field(L('notes.length'), length)),
       el('div', { class: 'check' }, secrets, el('span', { text: L('notes.secrets') })), warn,
       el('div', { class: 'btns' }, make), msg, results);
   }
@@ -1385,13 +1416,19 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       const part = L(`notes.part.${p.kind}` as StringKey);
       if (p.reason === 'no_scenes') return L('notes.part_no_scenes', { part });
       if (p.reason === 'none') return L('notes.part_none', { part });
+      // PHASE-56: the custom part has no fallback; it is left out and says why
+      if (p.reason === 'no_model' || p.reason === 'failed' || p.reason === 'held') {
+        return L(`notes.part_${p.reason}` as StringKey, { part });
+      }
       const bits = [L(`notes.made_${p.made}` as StringKey)];
       if (p.cached) bits.push(L('notes.cached'));
       if (p.held) bits.push(L('notes.held', { n: p.held }));
-      if (p.kind === 'diverged' && p.entries !== undefined) bits.push(L('notes.entries', { n: p.entries, m: p.left_out ?? 0 }));
+      if (p.entries !== undefined) bits.push(L('notes.entries', { n: p.entries, m: p.left_out ?? 0 }));
+      if (p.kind === 'custom') bits.push(L('notes.unchecked'));
       return L('notes.part_made', { part, how: bits.join(', ') });
     };
-    const stale = r.sections.reduce((n, p) => n + (p.stale ?? 0), 0);
+    // the chronicle and the custom part read the same threads: the same stale ones, counted once (PHASE-56)
+    const stale = r.sections.reduce((n, p) => Math.max(n, p.stale ?? 0), 0);
     const about = el('ul', { class: 'sub' }, ...r.sections.map((p) => el('li', { text: how(p) })),
       ...(stale ? [el('li', { text: L('notes.stale', { n: stale }) })] : []));
     if (!r.text) return el('div', {}, about);

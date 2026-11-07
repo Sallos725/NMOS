@@ -6,6 +6,9 @@ const BLOCK = /\[NMOS note(?: · t(\d+))?(?: · [^\]\n]*)?\]\n?[\s\S]*?\[\/NMOS 
 
 export interface NoteBlock { turn: string }
 
+/** Characters of the owner's prompt for the custom part (PHASE-56 C1), as the sidecar's `notes.PROMPT_MAX`. */
+export const PROMPT_MAX = 4000;
+
 /** The note without NMOS's blocks, and the turn each was made at. A note without one comes back exactly as it was;
  *  an unclosed marker is not a block. */
 export function stripNoteBlocks(text: string): { text: string; blocks: NoteBlock[] } {

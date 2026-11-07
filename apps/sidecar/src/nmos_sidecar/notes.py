@@ -28,9 +28,10 @@ from .inspector import _named, pairs, stale
 from .llm import ChatModel, LLMError, metered
 from .noteblocks import strip_blocks, wrap  # noqa: F401  (the API's names for them)
 from .predicates import HOLDER_PER_ITEM, REGISTRY
+from .runtime import NOTES_PROMPT_KEY
 from .summaries import content, held as summary_held, leaks
 
-KINDS = ("diverged", "chronicle", "changed", "address")  # the parts the owner can pick, in the note's order
+KINDS = ("diverged", "chronicle", "changed", "address", "custom")  # the parts the owner can pick, in the note's order
 PAIRS_MAX = 30  # address lines at most
 CHANGED_MAX = 30  # changed lines at most, newest first
 PAIRWISE = frozenset({"relationship", "role_toward", "feels_toward", "addresses"})
@@ -194,18 +195,12 @@ def _input(scenes: list[dict[str, Any]], story: dict[str, Any] | None, threads: 
     return "\n".join(lines)
 
 
-def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts: list[dict[str, Any]],
-              secrets: list[dict[str, Any]], chars: int, model: Callable[..., tuple[Any, ...]] | None,
-              told_secrets: bool = False, last_turn: int | None = None) -> dict[str, Any]:
-    """The chronicle's Markdown (PHASE-50 S2): Events and Now from the model, or assembled from the summaries when there
-    is no model or its replies fail; Open threads always from the stored threads. An open thread not said again for
-    longer than its horizon allows (`inspector.stale`, the Inspector's "needs a look") is left out of both, and
-    counted (amendment 3): the note is read every turn, and a lasting thread (PHASE-51) never goes stale.
-
-    With `told_secrets` off, nothing kept from someone goes in. A scene summary or story is left out when the packet
-    would hold it with every character a secret is kept from in the scene (`summaries.held`: it repeats a secret at
-    LEAK_NEAR, or was written before a secret it should have been told about; the note is read in every scene), and a
-    reply is refused when it repeats one at LEAK_NEAR (asked once more, then the assembled text)."""
+def _story(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts: list[dict[str, Any]],
+           secrets: list[dict[str, Any]], told_secrets: bool, last_turn: int | None) -> dict[str, Any]:
+    """The chronicle's story input (PHASE-50 S2), which the custom part reads too (PHASE-56 C4): the newest scene
+    summaries in INPUT_CHARS, the story so far for the turns they leave out, the threads shown, the NOW facts, how many
+    summaries were held for a secret, the stale threads, and `tells`, the leak check of a reply. `newest` is empty when
+    there is no scene summary to read."""
     open_secrets = [s for s in secrets if s.get("open")]
     everyone = frozenset(norm(n) for s in open_secrets for n in s["open"])
 
@@ -229,9 +224,6 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
     if story is not None and holds(story):
         story, held = None, held + 1
     old = [t for t in threads if stale(t, last_turn) and (told_secrets or not kept(t))]
-    if not scenes:
-        return {"body": "", "turns": "", "made": "none", "cached": False, "held": held, "reason": "no_scenes",
-                "stale": len(old)}
     newest: list[dict[str, Any]] = []
     size = 0
     for row in reversed(scenes):
@@ -239,10 +231,34 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
         if size > INPUT_CHARS and newest:
             break
         newest.insert(0, row)
-    story = story if story is not None and newest[0]["first_turn"] > 0 else None  # only for turns the scenes leave out
+    # the story so far only for the turns the scenes leave out
+    story = story if story is not None and newest and newest[0]["first_turn"] > 0 else None
     shown = [t for t in threads if (told_secrets or not kept(t)) and not stale(t, last_turn)]
     now = [f for f in facts if f["predicate"] in NOW_PREDICATES and not f.get("canon")
            and (told_secrets or not kept(f))][:NOW_MAX]
+    return {"open_secrets": open_secrets, "tells": tells, "held": held, "old": old, "newest": newest, "story": story,
+            "shown": shown, "now": now}
+
+
+def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts: list[dict[str, Any]],
+              secrets: list[dict[str, Any]], chars: int, model: Callable[..., tuple[Any, ...]] | None,
+              told_secrets: bool = False, last_turn: int | None = None) -> dict[str, Any]:
+    """The chronicle's Markdown (PHASE-50 S2): Events and Now from the model, or assembled from the summaries when there
+    is no model or its replies fail; Open threads always from the stored threads. An open thread not said again for
+    longer than its horizon allows (`inspector.stale`, the Inspector's "needs a look") is left out of both, and
+    counted (amendment 3): the note is read every turn, and a lasting thread (PHASE-51) never goes stale.
+
+    With `told_secrets` off, nothing kept from someone goes in. A scene summary or story is left out when the packet
+    would hold it with every character a secret is kept from in the scene (`summaries.held`: it repeats a secret at
+    LEAK_NEAR, or was written before a secret it should have been told about; the note is read in every scene), and a
+    reply is refused when it repeats one at LEAK_NEAR (asked once more, then the assembled text)."""
+    s = _story(told, threads, facts, secrets, told_secrets, last_turn)
+    open_secrets, held, old, newest, story, shown, now = (s["open_secrets"], s["held"], s["old"], s["newest"],
+                                                          s["story"], s["shown"], s["now"])
+    tells = s["tells"]
+    if not newest:
+        return {"body": "", "turns": "", "made": "none", "cached": False, "held": held, "reason": "no_scenes",
+                "stale": len(old)}
     first, last = (story or newest[0])["first_turn"], newest[-1]["last_turn"]
     title = f"## Chronicle (t{first}–{last})"
     opened = [_thread_line(t) for t in shown if t["status"] == "open"]
@@ -293,6 +309,94 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
     return out
 
 
+PROMPT_MAX = 4_000  # characters of the owner's prompt for the custom part (PHASE-56 C1)
+PROMPT_KEY = NOTES_PROMPT_KEY  # its app_config row: one prompt for every chat, in a full archive (PHASE-56 C2, amendment 1)
+CUSTOM_HEAD = "## Custom (owner's prompt)"
+CUSTOM_PROMPT = """You write one part of the author's note of a role-play chat: the user pastes the note so that the
+model writing the story keeps it in mind. You get SCENES (summaries in order, each with its turns), maybe the STORY SO
+FAR (it covers turns before the first scene given), THREADS (promises, goals, questions, threats and debts, each with
+its state and, when it ended, its outcome) and NOW (where characters are and how they are).{setting}
+
+The user's instruction for this part, between the two lines of equals signs:
+==========
+{prompt}
+==========
+
+Write what the instruction asks, from the input only: no invented events, no guesses. Keep names, titles, places and
+quoted words exactly as the input writes them. Write in English, unless the instruction explicitly names another
+language to write in: the language the instruction itself is written in is not such a request. You may use "###"
+headings and "- " lists; do not repeat the part's heading. At most {chars} characters.
+{secrets}
+Answer with JSON only: {{"text": "..."}}"""
+CUSTOM_SETTING = """
+You also get the SETTING: the character card, the persona, the author's note and lorebook entries, each under its key.
+It was written before the story began; where the story has moved on, the story is true now."""
+
+
+def custom(prompt: str, told: dict[str, Any] | None, threads: list[dict[str, Any]], facts: list[dict[str, Any]],
+           secrets: list[dict[str, Any]], chars: int, model: Callable[..., tuple[Any, ...]] | None,
+           told_secrets: bool = False, last_turn: int | None = None, setting: list[dict[str, Any]] | None = None,
+           entities: list[dict[str, Any]] | None = None, excluded: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """The custom part's Markdown (PHASE-56): the owner's prompt in a fixed frame over the chronicle's story input and,
+    when `setting` (the manifest in force) is given, the setting's side as PHASE-53 S3 picks it. One call, asked again
+    once when the reply is not JSON with a string `text` or (secrets off) when it repeats an open secret at LEAK_NEAR;
+    then the part is left out, with its reason: there is no fallback. An answer, an empty one included, is cached by
+    the whole input; a failed or held part is not, so the next request calls again."""
+    s = _story(told, threads, facts, secrets, told_secrets, last_turn)
+    open_secrets, newest, story, tells = s["open_secrets"], s["newest"], s["story"], s["tells"]
+    base = {"body": "", "turns": "", "made": "none", "cached": False, "held": s["held"], "reason": "",
+            "stale": len(s["old"])}
+    if not newest:
+        return {**base, "reason": "no_scenes"}
+    first, last = (story or newest[0])["first_turn"], newest[-1]["last_turn"]
+    base["turns"] = f"{first}-{last}"
+    user = _input(newest, story, s["shown"], s["now"], open_secrets, told_secrets)
+    if setting is not None:
+        shown_facts = [f for f in facts if told_secrets or not kept(f)]  # as PHASE-53 ranks entries
+        given, left = divergence.canon_input(setting, entities or [], shown_facts, user, excluded)
+        base |= {"entries": sum(g["key"].startswith("lore:") for g in given), "left_out": left}
+        lines = ["SETTING:"]
+        for g in given:
+            lines += [f"[key: {g['key']}] ({g['label']})", g["text"], ""]
+        user = "\n".join(lines) + "\n" + user
+    if model is None:
+        return {**base, "reason": "no_model"}
+    budget = max(500, chars - len(CUSTOM_HEAD) - 1)
+    system = CUSTOM_PROMPT.format(setting=CUSTOM_SETTING if setting is not None else "", prompt=prompt.strip(),
+                                  chars=budget, secrets=SECRETS_TOLD if told_secrets else SECRETS_KEPT)
+    which = getattr(getattr(model, "__self__", None), "model", "")
+    key = hashlib.sha256(f"custom|{chars}|{told_secrets}|{which}|{system}|{user}".encode()).hexdigest()
+    with _CACHE_LOCK:
+        hit = _CACHE.get(key)
+        if hit is not None:
+            _CACHE.move_to_end(key)
+            return {**hit, "cached": True}
+    ask, reason = user, "failed"
+    for _ in range(2):
+        try:
+            parsed, _, _ = metered(model, system, ask)
+        except LLMError:
+            continue
+        text = parsed.get("text") if isinstance(parsed, dict) else None
+        if not isinstance(text, str):
+            continue
+        told_now = tells(text)
+        if told_now:
+            reason = "held"
+            ask = user + "\n\nYOUR LAST ANSWER TOLD THESE SECRETS; write it again without them:\n" + "\n".join(
+                f"- {content(x)}" for x in told_now)
+            continue
+        body = _cut_lines(text, budget)
+        out = {**base, "made": "model", "reason": "" if body else "none",
+               "body": f"{CUSTOM_HEAD}\n{body}" if body else ""}
+        with _CACHE_LOCK:
+            _CACHE[key] = out
+            while len(_CACHE) > CACHE_MAX:
+                _CACHE.popitem(last=False)
+        return out
+    return {**base, "reason": reason}
+
+
 @dataclass(frozen=True)
 class Ask:
     """What the owner asked for (PHASE-50 S7)."""
@@ -300,6 +404,8 @@ class Ask:
     chars: int
     secrets: bool
     model: bool
+    custom_prompt: str = ""  # PHASE-56: only when `custom` is asked for
+    custom_setting: bool = False
 
     @classmethod
     def of(cls, body: dict[str, Any]) -> "Ask":
@@ -311,8 +417,14 @@ class Ask:
         chars = int(body.get("chars", 3000))
         if chars not in (3000, 6000):
             raise ValueError("chars must be 3000 or 6000")
+        prompt, setting = "", False
+        if "custom" in sections:
+            prompt = body.get("custom_prompt")
+            if not isinstance(prompt, str) or not prompt.strip() or len(prompt.strip()) > PROMPT_MAX:
+                raise ValueError(f"custom_prompt must be text of 1 to {PROMPT_MAX} characters")
+            prompt, setting = prompt.strip(), bool(body.get("custom_setting", False))
         return cls(tuple(k for k in KINDS if k in sections), chars, bool(body.get("secrets", False)),
-                   bool(body.get("model", True)))
+                   bool(body.get("model", True)), prompt, setting)
 
 
 def model_for(settings: Settings) -> Callable[..., tuple[Any, ...]] | None:
@@ -341,6 +453,14 @@ def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn:
             body = d["body"]
             info.append({"kind": kind, **{k: d[k] for k in ("made", "cached", "held", "reason", "turns", "lines",
                                                             "entries", "left_out", "dropped")}, "chars": len(body)})
+        elif kind == "custom":
+            c = custom(ask.custom_prompt, told, view.get("threads") or [], facts, view.get("secrets") or [], ask.chars,
+                       model if ask.model else None, ask.secrets, last_turn,
+                       setting=(canon or []) if ask.custom_setting else None, entities=view.get("entities") or [],
+                       excluded=frozenset(view.get("excluded") or ()))
+            body = c["body"]
+            info.append({"kind": kind, **{k: c[k] for k in ("made", "cached", "held", "reason", "turns", "stale")},
+                         **{k: c[k] for k in ("entries", "left_out") if k in c}, "chars": len(body)})
         elif kind == "chronicle":
             c = chronicle(told, view.get("threads") or [], facts, view.get("secrets") or [], ask.chars,
                           model if ask.model else None, ask.secrets, last_turn)

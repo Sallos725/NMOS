@@ -40,6 +40,7 @@ RANGES = {"recall_threshold": (0.05, 1.0), "vector_min_sim": (0.0, 1.0), "recall
 PARSERS_KEY = "parsers"
 PRESETS_KEY = "parser_presets"
 STATUS_PINS_KEY = "status_pins"  # PHASE-43: {card: [status keys told every time]}
+NOTES_PROMPT_KEY = "notes_custom_prompt"  # PHASE-56: the custom part's prompt, one for every chat
 PINS_MAX = 40
 PARSER_MAX_BYTES = 256_000
 PARSER_MAX_RULES = 100

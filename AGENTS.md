@@ -32,9 +32,10 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-55.md` is the latest, approved
-   2026-11-02: the memory map, a chat's memory by source, ties and events, read-only (a screen of the sidecar's),
-   steps 2–5 built; `PHASE-54.md`, approved
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-56.md` is the latest, approved
+   2026-11-05: the author's note gets a part the owner words, a custom prompt (high risk); `PHASE-55.md`, approved
+   2026-11-02: the memory map, a chat's memory by source, ties and events, read-only (a screen of the sidecar's);
+   `PHASE-54.md`, approved
    2026-11-02 (ships before `1.0.0`): a name written in Hangul word by word is asked about by its first word (NAME PAIRS, ADR 0064 item 6),
    step 2 on a draft PR, Q3 (b) next; `PHASE-53.md`, approved
    2026-11-01: the author's note says where the story left the setting (one checked model call; reworks Phase 50),

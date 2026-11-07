@@ -470,7 +470,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
   function deps(entities: unknown[] = []) {
     const calls: [string, string, unknown][] = [];
     const state = { html: page(goal + promise), refuse: new Set<string>(), stale: 0, turns: 0, failReextract: 0,
-      hold: null as Promise<void> | null };
+      hold: null as Promise<void> | null, prompt: 'List outfits.', failPrompt: false };
     const d: PanelDeps = {
       api: async <T>(method: 'GET' | 'POST' | 'PUT', address: string, body?: unknown) => {
         const path = address.replace(/\?lang=en$/, '');
@@ -501,6 +501,13 @@ describe('owner repairs in the panel (ADR 0044)', () => {
           throw new Error(`${path} -> HTTP 409: [object Object]`);
         }
         if (path.endsWith('/retry-failed')) return { retried: { extract: 1, embed: 1, canon: 0 } } as T;
+        if (path === '/v1/notes/prompt') {  // PHASE-56
+          if (method === 'PUT') {
+            if (state.failPrompt) throw new Error(`${path} -> HTTP 503`);
+            state.prompt = (body as { prompt: string }).prompt;
+          }
+          return { prompt: state.prompt } as T;
+        }
         if (path.endsWith('/notes')) {  // PHASE-50
           return { last_turn: 12, chars: 60, text: '[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]',
             sections: [{ kind: 'chronicle', made: 'none', cached: false, held: 0, reason: 'no_scenes' },
@@ -547,7 +554,8 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     button("For the author's note").click();
     const boxes = [...panel().querySelectorAll<HTMLInputElement>('input[type=checkbox][value]')];
     // PHASE-53: what diverged from the setting first and on; the chronicle and address off.
-    expect(boxes.map((b) => [b.value, b.checked])).toEqual([['diverged', true], ['chronicle', false], ['address', false]]);
+    expect(boxes.map((b) => [b.value, b.checked])).toEqual([['diverged', true], ['chronicle', false], ['address', false],
+      ['custom', false]]);
     boxes[2]!.click(); // and "address"
     button('Make').click();
     await settle();
@@ -561,6 +569,65 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect(panel().textContent).toContain('3 lorebook entries compared, 1 left out for length');
     expect(panel().textContent).toContain('Left out 21 open threads not mentioned again for more than 30 turns');
     expect(button('Copy')).toBeTruthy();
+  });
+
+  it('writes a custom part from the saved prompt and saves an edited one (PHASE-56)', async () => {
+    const { d, calls, state } = deps();
+    await openChat(d);
+    button("For the author's note").click();
+    await settle();
+    const prompt = panel().querySelector<HTMLTextAreaElement>('textarea[aria-label="Custom prompt"]')!;
+    expect(prompt.closest('div')!.style.display).toBe('none');
+    const box = (v: string) => panel().querySelector<HTMLInputElement>(`input[type=checkbox][value="${v}"]`)!;
+    box('diverged').click(); // off: custom alone
+    box('custom').click();
+    expect(prompt.closest('div')!.style.display).toBe('');
+    expect(prompt.value).toBe('List outfits.'); // one prompt for every chat, from the sidecar
+    expect(panel().textContent).toContain('NMOS cannot check it line by line');
+    button('Make').click();
+    await settle();
+    expect(calls.filter(([m]) => m === 'PUT')).toEqual([]); // unchanged: not saved again
+    expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
+      { sections: ['custom'], chars: 3000, secrets: false, custom_prompt: 'List outfits.', custom_setting: false }]);
+    prompt.value = '  Who owes whom?  ';
+    const setting = [...panel().querySelectorAll<HTMLInputElement>('input[type=checkbox]:not([value])')]
+      .find((b) => b.nextElementSibling?.textContent === 'Include the setting (card, lorebook)')!;
+    setting.click();
+    button('Make').click();
+    await settle();
+    expect(calls.filter(([m]) => m === 'PUT')).toEqual([['PUT', '/v1/notes/prompt', { prompt: 'Who owes whom?' }]]);
+    expect(posts(calls).at(-1)![2]).toMatchObject({ custom_prompt: 'Who owes whom?', custom_setting: true });
+    state.failPrompt = true;
+    prompt.value = 'Something else.';
+    button('Make').click();
+    await settle();
+    expect(posts(calls).at(-1)![2]).toMatchObject({ custom_prompt: 'Something else.' }); // made from the box anyway
+    expect(panel().textContent).toContain('The prompt could not be saved');
+    prompt.value = '   ';
+    button('Make').click();
+    await settle();
+    expect(panel().textContent).toContain('Write a custom prompt.');
+  });
+
+  it('says why a custom part was left out and that NMOS did not check it (PHASE-56)', async () => {
+    const { d } = deps();
+    const api = d.api;
+    d.api = (async (method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeout?: number) => {
+      if (path.endsWith('/notes') && method === 'POST') {
+        return { last_turn: 12, chars: 10, text: '', sections: [
+          { kind: 'chronicle', made: 'assembled', cached: false, held: 0, reason: '', stale: 4 },
+          { kind: 'custom', made: 'none', cached: false, held: 0, reason: 'held', stale: 4 }] };
+      }
+      return api(method, path, body, timeout);
+    }) as PanelDeps['api'];
+    await openChat(d);
+    button("For the author's note").click();
+    await settle();
+    panel().querySelector<HTMLInputElement>('input[type=checkbox][value="custom"]')!.click();
+    button('Make').click();
+    await settle();
+    expect(panel().textContent).toContain('custom: left out, it told a secret');
+    expect(panel().textContent).toContain('Left out 4 open threads'); // the same threads, counted once
   });
 
   it('exports the chat on its page (ADR 0050)', async () => {
