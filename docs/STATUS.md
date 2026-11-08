@@ -110,12 +110,12 @@ A translation plugin's original-only derived text and its button marker are defe
 
 ## Current phase
 
-**Phase 57 — pay once, and the Inspector's queue in bulk: proposed 2026-11-08 (an owner request; Q1–Q5 answered as
-recommended), not approved; high risk.** Canon read once for every chat that sends the model the same input
+**Phase 57 — pay once, and the Inspector's queue in bulk: approved 2026-11-08 (an owner request; Q1–Q5 answered as
+recommended), high risk.** Canon read once for every chat that sends the model the same input
 (copied per chat; a rebuild re-reads its own chat only); summaries served from an earlier generation as ADR 0014 serves
 turns; a model change chosen in the panel, carrying on by default (nothing redone), the setting's re-read a checkbox;
 **Needs attention** applied or retracted in bulk after a preview, and a conflicting statement corrected from its row.
-Two pull requests (A: canon and the model change; B: the queue). Built after approval; the install the owner uses only
+Two pull requests (A: canon and the model change; B: the queue), in progress; the install the owner uses only
 after `1.0.0`. [Spec](phases/PHASE-57.md).
 
 **Phase 56 — the author's note gets a part the owner words (a custom prompt): approved 2026-11-05 (an owner request;

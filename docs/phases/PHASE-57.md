@@ -1,10 +1,10 @@
 # Phase 57 — Pay once: canon read once per input, a model change carries on, and the Inspector's queue in bulk
 
-Status: **proposed**, 2026-11-08 (an owner request, not a roadmap stage; after `1.0.0`). The owner chose the shape in
+Status: **approved**, 2026-11-08 (an owner request, not a roadmap stage; after `1.0.0`). The owner chose the shape in
 the design conversation of 2026-11-08: canon read once for every chat that sends the model the same input, a rebuild
 re-reading only its own chat; ADR 0014's fallback for summaries too; canon's re-read on a model change made a choice;
 a "carry on" option when the model changes; and in the Inspector's **Needs attention**, a bulk apply and retract, and a
-correction on a conflicting fact. Q1–Q5 answered as recommended (owner, 2026-11-08); the spec awaits the owner's approval. Linear: to be filed.
+correction on a conflicting fact. Q1–Q5 answered as recommended and the spec approved for implementation (owner, 2026-11-08: "승인, 구현 시작"). Linear: to be filed.
 
 **High risk if built** (`AGENTS.md §14`):
 - **memory selection across generations:** summaries are served from an earlier generation (A2), and a model change
