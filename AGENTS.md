@@ -32,7 +32,9 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-56.md` is the latest, approved
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-57.md` is the latest, proposed
+   2026-11-08, not approved: canon read once per input, a model change carries on, the Inspector's queue in bulk (high
+   risk); `PHASE-56.md`, approved
    2026-11-05: the author's note gets a part the owner words, a custom prompt (high risk); `PHASE-55.md`, approved
    2026-11-02: the memory map, a chat's memory by source, ties and events, read-only (a screen of the sidecar's);
    `PHASE-54.md`, approved
@@ -156,6 +158,7 @@ If two normative documents appear to conflict:
 | 54 — a name written in Hangul word by word is asked about by its first word (NAME PAIRS) | complete (2026-11-02), in `0.6.0`; Q3 b not met as worded (owner accepted) | `PHASE-54.md`, ADR 0064 item 6 |
 | 55 — the memory map: a chat's memory by source, ties and events, with an interactive drawing in the panel; read-only | complete (2026-11-07), in `0.6.0` | `PHASE-55.md` |
 | 56 — the author's note gets a part the owner words (custom prompt; high risk) | complete (2026-11-05), in `0.6.0`; the owner's own use after the tag | `PHASE-56.md` |
+| 57 — pay once: canon read once per input across chats, summaries served from an earlier generation and a model change that carries on by default, the Inspector's queue applied or retracted in bulk and a conflict corrected where it is shown (an owner request, not a roadmap stage; after `1.0.0`) | **proposed** (2026-11-08; Q1–Q5 answered as recommended), not approved; high risk (memory selection across generations, canon copied between chats, bulk repairs, two migrations) | `PHASE-57.md` |
 | Stage 8 (after 1.0, R7) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
