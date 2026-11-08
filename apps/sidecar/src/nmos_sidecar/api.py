@@ -43,6 +43,7 @@ from .ids import uuid7
 from .models import (
     ArchiveUploadChunk,
     ArchiveUploadCreate,
+    BatchRepairRequest,
     BodiesRequest,
     BodiesResponse,
     CanonSyncRequest, CanonSyncResponse,
@@ -928,7 +929,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         applied = {str(x["id"]): x["applied"] for x in live}
         hidden = {str(x["id"]): x["hidden"] for x in live if "hidden" in x}  # an exclusion's (PHASE-47)
         raised = {f["id"] for f in flags or ()}
-        rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at FROM owner_repair"
+        rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at, batch_id FROM owner_repair"
                             " WHERE conversation_id = %s ORDER BY created_at DESC, id DESC", (conv_id,)).fetchall()
         return [{**row, "applied": ((row["target"] or {}).get("id") if (row["target"] or {}).get("id") in raised else None)
                  if row["kind"] == "state_dismiss" else applied.get(str(row["id"])),
@@ -1014,22 +1015,16 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
-            view = view_of(conn, head)
-            if body.kind == "fact_restore":  # a fact a re-extraction dropped, or a held role ending (PHASE-28 Q7)
-                view["dropped"] = (dropped.find(conn, head, rt["active_extractor"], view)
-                                   + endings.held(conn, head, rt["active_extractor"], view))
-            if body.kind == "state_dismiss":  # a status flag not yet dismissed (PHASE-39 Q4)
-                off = statewatch.dismissed(repair_rows(conn, conv_id, []))
-                view["state_flags"] = [f for f in state_flags(conn, conv) if f["id"] not in off]
+            if body.lock and body.kind != "fact_correct":
+                raise HTTPException(status_code=422, detail="only a correction is locked with it")
+            view = repair_view(conn, conv, head, {body.kind})
             if body.kind == "entity_exclude":
                 host_character(conn, conv_id, view, body.entity_type, body.item)
-            try:
-                target, value = repairs.plan(body.kind, body.item, view,
-                                             head_turn(conn, head), body.outcome, body.character, body.turn,
-                                             body.new_object, body.new_value, body.other, body.entity_type,
-                                             version_key, body.scope)
-            except repairs.RepairError as e:
-                raise HTTPException(status_code=422, detail=str(e)) from e
+            if (body.kind == "fact_correct" and not body.lock
+                    and not any(str(f["id"]) == body.item for f in view["facts"])):
+                # a canon statement the story replaced: corrected alone it would be replaced at once (PHASE-57 B2)
+                raise HTTPException(status_code=422, detail="a statement the story replaced is corrected with its lock")
+            target, value = plan_repair(conn, head, view, body)
             with conn.transaction():
                 if body.kind == "name_split":
                     expect_same(conn, conv_id, body.expect, "split", entity_type=body.entity_type, name=body.item,
@@ -1037,15 +1032,135 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 if body.kind == "entity_exclude":
                     expect_same(conn, conv_id, body.expect, "exclude", entity_type=body.entity_type, name=body.item,
                                 scope=body.scope)
-                row = conn.execute(
-                    "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note) VALUES (%s, %s, %s, %s, %s, %s)"
-                    " RETURNING id, kind, target, value, note, created_at",
-                    (uuid7(), conv_id, body.kind, Jsonb(target), Jsonb(value), (body.note or "").strip() or None)).fetchone()
+                row = insert_repair(conn, conv_id, body.kind, target, value, body.note)
+                if body.lock:  # the corrected canon is kept against the story (PHASE-57 B2)
+                    later = view_of(conn, head)
+                    # the owner's version, current or held off by the story's later statement
+                    mine = next((a for a in later["assertions"] if a.get("owner") and a.get("repair") == str(row["id"])),
+                                None)
+                    if mine is None:
+                        raise HTTPException(status_code=422, detail="the correction is not a current fact to lock")
+                    try:
+                        lt, lv = repairs.plan("fact_lock", str(mine["id"]), later, head_turn(conn, head),
+                                              version_key=version_key)
+                    except repairs.RepairError as e:
+                        raise HTTPException(status_code=422, detail=str(e)) from e
+                    insert_repair(conn, conv_id, "fact_lock", lt, lv, None)
             applied = target["id"] if body.kind == "state_dismiss" else next(
                 (x["applied"] for x in view_of(conn, head)["repairs"] if x["id"] == row["id"]), None)
         log.info("owner repair conversation=%s repair=%s kind=%s applied=%s", conv_id, row["id"], body.kind,
                  applied is not None)
         return {"repair": row, "applied": applied}
+
+    # A repair that needs its preview first is made one at a time (PHASE-20 Q4, PHASE-47 S4), never in a batch.
+    PREVIEWED = frozenset({"name_split", "entity_exclude"})
+
+    def repair_view(conn, conv: dict[str, Any], head: UUID, kinds: set[str]) -> dict[str, Any]:
+        """The chat's memory as a repair of these kinds is planned against: with the dropped facts and held endings a
+        restore names, and the status flags a dismissal names."""
+        view = view_of(conn, head)
+        if "fact_restore" in kinds:  # a fact a re-extraction dropped, or a held role ending (PHASE-28 Q7)
+            view["dropped"] = (dropped.find(conn, head, rt["active_extractor"], view)
+                               + endings.held(conn, head, rt["active_extractor"], view))
+        if "state_dismiss" in kinds:  # a status flag not yet dismissed (PHASE-39 Q4)
+            off = statewatch.dismissed(repair_rows(conn, conv["id"], []))
+            view["state_flags"] = [f for f in state_flags(conn, conv) if f["id"] not in off]
+        return view
+
+    def plan_repair(conn, head: UUID, view: dict[str, Any], body: RepairRequest) -> tuple[dict, dict]:
+        try:
+            return repairs.plan(body.kind, body.item, view, head_turn(conn, head), body.outcome, body.character,
+                                body.turn, body.new_object, body.new_value, body.other, body.entity_type,
+                                version_key, body.scope)
+        except repairs.RepairError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+
+    def insert_repair(conn, conv_id: UUID, kind: str, target: dict, value: dict, note: str | None,
+                      batch: UUID | None = None) -> dict[str, Any]:
+        return conn.execute(
+            "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note, batch_id)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id, kind, target, value, note, created_at, batch_id",
+            (uuid7(), conv_id, kind, Jsonb(target), Jsonb(value), (note or "").strip() or None, batch)).fetchone()
+
+    @app.post("/v1/conversations/{conv_id}/repairs/batch", dependencies=[Depends(auth)])
+    def add_repairs(conv_id: UUID, body: BatchRepairRequest, request: Request):
+        """Several repairs at once (PHASE-57 B1, ADR 0080): each item planned as `POST .../repairs` plans it, against one
+        read of the chat's memory, and `undo` taken back, in one transaction: all, or with any item refused, none (422
+        with each item's error). The repairs written share a batch id. With `preview`, the plan only."""
+        if not body.items and not body.undo:
+            raise HTTPException(status_code=422, detail="nothing to do")
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            head = conv["head_commit_id"]
+            view = repair_view(conn, conv, head, {i.kind for i in body.items})
+            plan: list[dict[str, Any]] = []
+            planned: list[tuple[RepairRequest, dict, dict]] = []
+            seen: set[tuple] = set()
+            for n, item in enumerate(body.items):
+                entry: dict[str, Any] = {"index": n, "kind": item.kind, "item": item.item}
+                key = (item.kind, item.item, item.outcome, item.character, item.new_object, item.new_value, item.turn)
+                if item.kind in PREVIEWED or item.lock:
+                    entry["error"] = "this repair is made one at a time, from its preview"
+                elif key in seen:
+                    entry["error"] = "the same repair twice"
+                else:
+                    seen.add(key)
+                    try:
+                        target, value = repairs.plan(item.kind, item.item, view, head_turn(conn, head), item.outcome,
+                                                     item.character, item.turn, item.new_object, item.new_value,
+                                                     item.other, item.entity_type, version_key, item.scope)
+                        planned.append((item, target, value))
+                    except repairs.RepairError as e:
+                        entry["error"] = str(e)
+                plan.append(entry)
+            undo = conn.execute(
+                "SELECT id, kind, removed_at FROM owner_repair WHERE conversation_id = %s AND id = ANY(%s)",
+                (conv_id, list(dict.fromkeys(body.undo)))).fetchall()
+            found = {r["id"]: r for r in undo}
+            undone = []
+            for n, rid in enumerate(dict.fromkeys(body.undo)):
+                r = found.get(rid)
+                error = ("no such repair in this chat" if r is None else "taken back already" if r["removed_at"]
+                         else "this repair is taken back one at a time, from its preview" if r["kind"] in PREVIEWED
+                         else None)
+                plan.append({"undo": str(rid), **({"error": error} if error else {"kind": r["kind"]})})
+                if error is None:
+                    undone.append(rid)
+            counts: dict[str, int] = {}
+            for item, _, _ in planned:
+                counts[item.kind] = counts.get(item.kind, 0) + 1
+            if undone:
+                counts["undo"] = len(undone)
+            errors = sum(1 for p in plan if "error" in p)
+            out = {"plan": plan, "counts": counts, "errors": errors}
+            if errors:
+                if body.preview:
+                    return out
+                raise HTTPException(status_code=422, detail=out)
+            if body.preview:
+                return out
+            batch = uuid7()
+            with conn.transaction():
+                for item, target, value in planned:
+                    insert_repair(conn, conv_id, item.kind, target, value, item.note, batch)
+                if undone:
+                    conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s"
+                                 " AND id = ANY(%s) AND removed_at IS NULL", (conv_id, undone))
+        log.info("owner repairs conversation=%s batch=%s counts=%s", conv_id, batch, counts)
+        return {**out, "batch": str(batch)}
+
+    @app.post("/v1/conversations/{conv_id}/repairs/batch/{batch_id}/remove", dependencies=[Depends(auth)])
+    def remove_repairs(conv_id: UUID, batch_id: UUID, request: Request):
+        """The owner takes a batch back (PHASE-57 B1): every repair of it still in force, together."""
+        with request.app.state.pool.connection() as conn:
+            n = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s AND batch_id = %s"
+                             " AND removed_at IS NULL", (conv_id, batch_id)).rowcount
+        if not n:
+            raise HTTPException(status_code=404, detail="no repair of that batch in force")
+        log.info("owner repairs removed conversation=%s batch=%s repairs=%d", conv_id, batch_id, n)
+        return {"removed": n}
 
     @app.post("/v1/conversations/{conv_id}/repairs/{repair_id}/remove/preview", dependencies=[Depends(auth)])
     def preview_remove_repair(conv_id: UUID, repair_id: UUID, request: Request):

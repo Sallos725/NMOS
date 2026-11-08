@@ -14,10 +14,10 @@ import { failureKind } from './failure';
 import { parserBindings, parserDraft, presetRules, type ParserPreset } from './parser-form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
-  localTime, markDetail, placeMarks, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
+  bulkMark, localTime, markDetail, placeMarks, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
 import { copyText, PROMPT_MAX } from './notes';
 import { drawGraph, parseGraph } from './graph';
-import type { EntityRow, ExcludePreview, Preview, RepairAction } from './inspector';
+import type { BulkMark, BulkRequest, EntityRow, ExcludePreview, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
 import { uploadArchive, waitFor, type ArchiveSummary, type Method } from './restore';
@@ -539,13 +539,69 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const chosen = new Map<string, string>(); // the outcome picked for a thread, kept through a refresh
   let closers = new Map<string, { first?: string; boxes: HTMLInputElement[]; selects: HTMLSelectElement[] }>();
   const bulkClose = el('button');
-  const bulkBar = el('div', { class: 'btns', style: 'display:none' }, bulkClose);
+  // Needs attention in bulk (PHASE-57 B1): the rows picked, by what they send; select all of a kind; apply or retract
+  // the picked rows after the sidecar's preview. The sidecar says what each row's Apply and Retract are.
+  const bulkPicked = new Map<string, BulkMark>();
+  let bulkGroups = new Map<string, { label: string; boxes: HTMLInputElement[] }>();
+  let pendingBulk: 'apply' | 'retract' | null = null;
+  const bulkKinds = el('div', { class: 'btns' });
+  const bulkApply = el('button');
+  const bulkRetract = el('button');
+  const bulkBar = el('div', { style: 'display:none' }, el('div', { class: 'btns' }, bulkClose, bulkApply, bulkRetract),
+    bulkKinds);
   inspectorView.append(el('div', { class: 'btns inspbar' }, inspectorBack, inspectorRefresh), actions, actionMsg, notesCard,
     bulkBar, modeCard, statusCard, linkCard, inspectorBody, inspectorAddress);
   function updateBulk(): void {
-    bulkBar.style.display = picked.size ? '' : 'none';
+    bulkBar.style.display = picked.size || bulkGroups.size ? '' : 'none';
+    bulkClose.style.display = picked.size ? '' : 'none';
     bulkClose.textContent = L('rp.bulk', { n: picked.size });
+    const marks = [...bulkPicked.values()];
+    for (const [button, side, key] of [[bulkApply, 'apply', 'bk.apply'], [bulkRetract, 'retract', 'bk.retract']] as const) {
+      button.style.display = marks.length ? '' : 'none';
+      button.textContent = pendingBulk === side ? L('bk.again') : L(key, { n: marks.filter((m) => m[side]).length });
+    }
+    bulkKinds.style.display = bulkGroups.size ? '' : 'none';
   }
+  /** Apply or retract the picked rows: first the sidecar's preview (what each would do, what is skipped), then, on a
+   * second press, the batch, written in one transaction or not at all. */
+  async function runBulk(side: 'apply' | 'retract', button: HTMLButtonElement): Promise<void> {
+    const conversation = inspectorConversation(inspectorPath);
+    if (!conversation || !bulkPicked.size) return;
+    const marks = [...bulkPicked.values()];
+    const sent = marks.map((m) => m[side]).filter((r): r is BulkRequest => r !== undefined);
+    const skipped = marks.length - sent.length;
+    if (!sent.length) return void say(actionMsg, L('bk.none', { n: skipped }), 'warn');
+    const body = { items: sent.filter((r) => 'kind' in r), undo: sent.flatMap((r) => ('undo' in r ? [r.undo] : [])) };
+    const path = `/v1/conversations/${conversation}/repairs/batch`;
+    button.disabled = true;
+    try {
+      if (pendingBulk !== side) {
+        const plan = await deps.api<{ counts: Record<string, number>; errors: number; plan: { error?: string }[] }>(
+          'POST', path, { ...body, preview: true }, 15_000);
+        if (plan.errors) {
+          const first = plan.plan.find((p) => p.error)?.error ?? '';
+          return void say(actionMsg, L('bk.refused', { n: plan.errors, e: first }), 'err');
+        }
+        const what = Object.entries(plan.counts).map(([k, n]) => `${L(`rp.${k}` as StringKey)} ${n}`).join(', ');
+        pendingBulk = side;
+        say(actionMsg, L('bk.confirm', { what, n: skipped }), 'warn');
+        return;
+      }
+      pendingBulk = null;
+      await deps.api('POST', path, body, 30_000);
+      bulkPicked.clear();
+      say(actionMsg, L('bk.done', { n: sent.length }), 'ok');
+      await showInspector();
+    } catch (error) {
+      pendingBulk = null;
+      say(actionMsg, errorText(lang, error), 'err');
+    } finally {
+      button.disabled = false;
+      updateBulk();
+    }
+  }
+  bulkApply.addEventListener('click', () => void runBulk('apply', bulkApply));
+  bulkRetract.addEventListener('click', () => void runBulk('retract', bulkRetract));
   /** The outcome a close of this thread sends: the one picked on the page, else its kind's default. */
   function outcomeOf(item: string): Record<string, string> {
     const c = closers.get(item);
@@ -555,9 +611,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   /** The controls for one repair the page marks. */
   function repairControls(action: RepairAction): Node[] {
     if (action.kind === 'thread_close') return closeControls(action);
-    const n = action.kind === 'fact_correct' ? L(action.extra === 'object' ? 'rp.field_object' : 'rp.field_value')
+    const field = (action.extra ?? '').split('.')[0];
+    const n = action.kind === 'fact_correct' ? L(field === 'object' ? 'rp.field_object' : 'rp.field_value')
       : action.extra ?? '';
-    const button = el('button', { class: 'mini', text: L(`rp.${action.kind}` as StringKey, { n }) });
+    // canon's statement in a conflict is corrected and kept (PHASE-57 B2)
+    const label = action.kind === 'fact_correct' && action.extra?.endsWith('.lock') ? 'rp.fact_correct_lock' : `rp.${action.kind}`;
+    const button = el('button', { class: 'mini', text: L(label as StringKey, { n }) });
     const spot = el('div');
     button.addEventListener('click', () => {
       if (action.kind === 'fact_correct') correctForm(action, button);
@@ -620,7 +679,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   function correctForm(action: RepairAction, button: HTMLButtonElement): void {
     const spot = button.parentElement;
     if (!spot) return;
-    const field = action.extra === 'object' ? 'object' : 'value';
+    const field = (action.extra ?? '').split('.')[0] === 'object' ? 'object' : 'value';
     const text = el('input', { type: 'text', placeholder: L('rp.correct_prompt', { f: L(`rp.field_${field}`) }),
       'aria-label': L(`rp.field_${field}`) });
     const turn = el('input', { type: 'number', min: '0', step: '1', class: 'turn', placeholder: L('rp.turn_hint'),
@@ -632,6 +691,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       const next = text.value.trim();
       if (!next) return void text.focus();
       const body: Record<string, unknown> = { [field === 'object' ? 'new_object' : 'new_value']: next };
+      if (action.extra?.endsWith('.lock')) body.lock = true;  // canon's statement, kept as corrected (PHASE-57 B2)
       const at = turn.value.trim();
       if (at) {
         const n = Number(at);
@@ -716,6 +776,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (action.kind === 'undo') {
       path = `${path}/${action.item}/remove`;
       body = {};
+    } else if (action.kind === 'undo_batch') {  // every repair of one bulk action still in force (PHASE-57 B1)
+      path = `${path}/batch/${action.item}/remove`;
+      body = {};
     } else if (action.kind === 'secret_found_out' || action.kind === 'secret_keep') {
       body.character = action.extra;
     }
@@ -724,7 +787,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       await deps.api('POST', path, body, 15_000);
       picked.delete(action.item);
       updateBulk();
-      say(actionMsg, L(action.kind === 'undo' ? 'rp.undone' : 'rp.done'), 'ok');
+      say(actionMsg, L(action.kind === 'undo' || action.kind === 'undo_batch' ? 'rp.undone' : 'rp.done'), 'ok');
       await showInspector();
     } catch (error) {
       say(actionMsg, errorText(lang, error), 'err');
@@ -803,6 +866,35 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (action) spot.replaceChildren(...repairControls(action));
     }
     for (const item of Array.from(picked)) if (!closers.has(item)) picked.delete(item); // closed or gone since
+    bulkGroups = new Map();
+    const shown = new Set<string>();
+    for (const spot of Array.from(page.querySelectorAll('span.rq[data-bulk]'))) {
+      const mark = bulkMark(spot.getAttribute('data-bulk'));
+      if (!mark) continue;
+      const key = JSON.stringify([mark.g, mark.apply ?? null, mark.retract ?? null]);
+      shown.add(key);
+      const box = el('input', { type: 'checkbox', 'aria-label': L('bk.select') });
+      box.checked = bulkPicked.has(key);
+      box.addEventListener('change', () => {
+        if (box.checked) bulkPicked.set(key, mark); else bulkPicked.delete(key);
+        pendingBulk = null;
+        updateBulk();
+      });
+      let group = bulkGroups.get(mark.g);
+      if (!group) bulkGroups.set(mark.g, group = { label: mark.l, boxes: [] });
+      group.boxes.push(box);
+      spot.replaceChildren(box);
+    }
+    for (const key of Array.from(bulkPicked.keys())) if (!shown.has(key)) bulkPicked.delete(key); // settled since
+    pendingBulk = null;
+    bulkKinds.replaceChildren(...Array.from(bulkGroups.values(), (group) => {
+      const all = el('button', { class: 'mini', text: L('bk.all', { k: group.label, n: group.boxes.length }) });
+      all.addEventListener('click', () => {
+        const on = !group.boxes.every((b) => b.checked);
+        for (const b of group.boxes) if (b.checked !== on) { b.checked = on; b.dispatchEvent(new Event('change')); }
+      });
+      return all;
+    }));
     updateBulk();
     for (const span of Array.from(page.querySelectorAll('span.ts[title]'))) {
       const shown = localTime(span.getAttribute('title') ?? '', lang);

@@ -581,7 +581,7 @@ def test_a_disputed_owner_correction_offers_its_undo_not_a_retraction():
     view = {"facts": [{"id": -7, "owner": True, "repair": rid}, {"id": 8}],
             "conflicts": [{"fact": -7, "text": "the owner's version", "turn": 3},
                           {"fact": 8, "text": "the story's", "turn": 4}]}
-    acts = [row[-1] for row in _attention(view, [], 10, "en")]
+    acts = [row[-1].split('<span class="rq"')[0] for row in _attention(view, [], 10, "en")]
     assert acts == [f'<span class="rp" data-repair="undo:{rid}"></span>',
                     '<span class="rp" data-repair="fact_retract:8"></span>']
 

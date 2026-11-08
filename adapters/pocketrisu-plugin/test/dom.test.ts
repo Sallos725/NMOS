@@ -723,6 +723,67 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect(posts(calls)[1]).toEqual(['POST', `/v1/conversations/${id}/repairs/${t1}/remove`, {}]);
   });
 
+  it('selects rows of Needs attention, previews, then applies or retracts them at once (PHASE-57 B1, B2)', async () => {
+    const { d, calls, state } = deps();
+    const bulk = (data: unknown) => `<span class="rq" data-bulk="${JSON.stringify(data).replace(/"/g, '&quot;')}"></span>`;
+    const lock = { kind: 'fact_lock', item: '81' };
+    const off = { kind: 'fact_retract', item: '81' };
+    const restore = { kind: 'fact_restore', item: '93' };
+    state.html = `<details id="s-attention" open><summary>Needs attention</summary><table>`
+      + `<tr><td>canon</td><td>${mark('fact_lock:81')}${mark('fact_correct:81:value.lock')}${mark('fact_correct:82:value')}`
+      + `${bulk({ g: 'canon', l: 'Conflicts with the setting', apply: lock, retract: off })}</td></tr>`
+      + `<tr><td>dropped</td><td>${bulk({ g: 'dropped', l: 'Facts a re-extraction dropped', apply: restore })}</td></tr>`
+      + `<tr><td>forged</td><td>${bulk({ g: 'dropped', l: 'x', apply: { kind: 'name_split', item: '1' } })}</td></tr>`
+      + `</table></details><p>${mark(`undo_batch:${t1}`)}</p>`;
+    const api = d.api;
+    d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeout?: number) => {
+      if (path.endsWith('/repairs/batch')) {
+        calls.push([method, path, body]);
+        const b = body as { items: { kind: string }[]; undo: string[] };
+        const counts: Record<string, number> = {};
+        for (const i of b.items) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
+        return { counts, errors: 0, plan: [] } as T;
+      }
+      return api<T>(method, path, body, timeout);
+    };
+    await openChat(d);
+    const boxes = [...panel().querySelectorAll<HTMLInputElement>('span.rq input[type=checkbox]')];
+    expect(boxes).toHaveLength(2);  // the forged mark (a repair that needs its preview) is dropped
+    button('Select all Facts a re-extraction dropped (1)').click();
+    boxes[0]!.click();
+    await settle();
+    expect(button('Apply selected (2)')).toBeDefined();
+    expect(button('Retract selected (1)')).toBeDefined();
+    button('Apply selected (2)').click();
+    await settle();
+    expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/repairs/batch`,
+      { items: [restore, lock], undo: [], preview: true }]);
+    expect(panel().textContent).toContain('Restore 1, Lock 1 · 0 skipped. Click again to save them at once.');
+    button('Click again to do it').click();
+    await settle();
+    expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/repairs/batch`, { items: [restore, lock], undo: [] }]);
+    expect(panel().textContent).toContain('Done for 2 at once.');
+    // retract: the dropped row has none, so it is skipped
+    for (const b of [...panel().querySelectorAll<HTMLInputElement>('span.rq input[type=checkbox]')]) b.click();
+    await settle();
+    button('Retract selected (1)').click();
+    await settle();
+    expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/repairs/batch`,
+      { items: [off], undo: [], preview: true }]);
+    expect(panel().textContent).toContain('Retract 1 · 1 skipped.');
+    // canon's statement corrected and kept; a bulk action undone at once
+    button('Correct the setting value').click();
+    const form = panel().querySelector('span.rpform')!;
+    form.querySelector('input')!.value = 'elder sister';
+    button('Save').click();
+    await settle();
+    expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/repairs`,
+      { kind: 'fact_correct', item: '81', new_value: 'elder sister', lock: true }]);
+    button('Undo all').click();
+    await settle();
+    expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/repairs/batch/${t1}/remove`, {}]);
+  });
+
   it('corrects a fact in a form with the new value and the turn it takes effect (PHASE-13 Q5)', async () => {
     const { d, calls } = deps();
     await openChat(d);
@@ -773,7 +834,8 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     state.html = page(promise); // closed elsewhere: gone from the page
     button('Refresh').click();
     await settle();
-    expect(button('Close 0 selected threads')?.closest<HTMLElement>('.btns')?.style.display).toBe('none');
+    expect(button('Close 0 selected threads')?.style.display).toBe('none');  // and its bar, with no row to pick
+    expect(button('Close 0 selected threads')?.closest<HTMLElement>('.btns')?.parentElement?.style.display).toBe('none');
   });
 
   it('keeps the outcome picked for a thread through a refresh, and reports a refused close', async () => {
