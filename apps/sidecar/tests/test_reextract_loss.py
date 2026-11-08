@@ -6,7 +6,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from conftest import make_client
+from conftest import make_client, switched_client
 from memeval import stub_extractor
 from test_dropped import chat_of, damaged, forgetful
 from test_extraction import drain
@@ -41,7 +41,7 @@ def test_across_generations_is_measured_and_not_listed(migrated):
     with make_client(migrated, **LLM, extract_backfill=100) as c:
         sync(c, chat)
         drain(migrated, stub_extractor)
-    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2"):
+    with switched_client(migrated, "fake-2", extract_backfill=100, llm_url=LLM["llm_url"]):
         drain(migrated, forgetful)  # a new generation that leaves the occupation out
     (conv,) = tool.measure(migrated)
     across, same = conv["across_generations"], conv["same_generation"]

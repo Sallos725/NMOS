@@ -335,6 +335,49 @@ describe('panel', () => {
     expect(reserved.value).toBe('8000');  // and shows what it stored (Phase 15 real-host smoke)
   });
 
+  it('asks what a changed extraction model redoes, with what each choice queues (PHASE-57 A3)', async () => {
+    for (const pick of ['cancel', 'recent', 'continue'] as const) {
+      const { d, calls } = deps();
+      const api = d.api;
+      d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeout?: number) => {
+        if (path === '/v1/config/preview') {
+          calls.push([method, path, body]);
+          return { model_change: true, queued: { continue: { extract: 0, summarize: 0, canon: 0 },
+            recent: { extract: 90, summarize: 12, canon: 0 }, canon: { extract: 0, summarize: 0, canon: 7 } } } as T;
+        }
+        return api<T>(method, path, body, timeout);
+      };
+      await openPanel(d, 'settings');
+      const panel = document.getElementById('nmos-panel')!;
+      const model = [...panel.querySelectorAll('input')].find((i) => i.value === 'm')!;
+      model.value = 'm2';
+      model.dispatchEvent(new Event('input', { bubbles: true }));
+      (panel.querySelector('.bar button.primary') as HTMLButtonElement).click();
+      await settle();
+      const box = panel.querySelector('.bar .model-change')!;
+      expect(box.textContent).toContain('Carry on: nothing is redone');
+      expect(box.textContent).toContain('(102 jobs)');  // the latest turns and their summaries
+      expect(box.textContent).toContain('(+7 jobs)');
+      expect(calls.filter(([method]) => method === 'PUT')).toEqual([]);  // nothing saved before the answer
+      if (pick === 'recent') {
+        (box.querySelector('input[value="recent"]') as HTMLInputElement).click();
+        (box.querySelector('input[type="checkbox"]') as HTMLInputElement).click();
+      }
+      const button = [...box.querySelectorAll('button')].find((b) => b.textContent === (pick === 'cancel' ? 'Cancel' : 'Save'))!;
+      button.click();
+      await settle();
+      const puts = calls.filter(([method]) => method === 'PUT');
+      if (pick === 'cancel') {
+        expect(puts).toEqual([]);
+        expect(panel.querySelector('.bar')!.textContent).toContain('Not saved.');
+      } else {
+        expect(puts).toEqual([['PUT', '/v1/config', { llm_url: 'https://llm.example/v1', llm_model: 'm2',
+          on_model_change: pick === 'recent' ? { mode: 'recent', canon: true } : { mode: 'continue', canon: false } }]]);
+      }
+      panel.remove();
+    }
+  });
+
   it("fills an embedding preset's endpoint, model and its own similarity bar (AGE-40)", async () => {
     const { d, calls } = deps();
     await openPanel(d, 'settings');

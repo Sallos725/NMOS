@@ -74,6 +74,27 @@ def activate(conn: psycopg.Connection, gen: Generation) -> str | None:
     return previous
 
 
+MODEL_FIELDS = ("model", "endpoint")
+
+
+def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) -> str:
+    """What making `gen` active is, next to the generation `previous` that was (PHASE-57 A3): "same", "new" (none
+    was), "model" (only the model or the endpoint differs: the owner changed the model) or "version" (anything
+    else: a release's version or prompt, or a setting the key hashes)."""
+    if previous == gen.key:
+        return "same"
+    if previous is None:
+        return "new"
+    row = conn.execute("SELECT spec FROM projection_generation WHERE key = %s", (previous,)).fetchone()
+    if row is None:
+        return "version"
+
+    def rest(spec: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in spec.items() if k not in MODEL_FIELDS}
+
+    return "model" if rest(row["spec"]) == rest(json.loads(json.dumps(gen.spec))) else "version"
+
+
 def describe(conn: psycopg.Connection, key: str | None) -> dict[str, Any] | None:
     if key is None:
         return None

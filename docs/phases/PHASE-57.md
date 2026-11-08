@@ -1,6 +1,6 @@
 # Phase 57 — Pay once: canon read once per input, a model change carries on, and the Inspector's queue in bulk
 
-Status: **approved**, 2026-11-08 (an owner request, not a roadmap stage; after `1.0.0`). The owner chose the shape in
+Status: **approved**, 2026-11-08; PR A (steps 2–3) built 2026-11-08 (ADR 0078, ADR 0079, migration `0033`) (an owner request, not a roadmap stage; after `1.0.0`). The owner chose the shape in
 the design conversation of 2026-11-08: canon read once for every chat that sends the model the same input, a rebuild
 re-reading only its own chat; ADR 0014's fallback for summaries too; canon's re-read on a model change made a choice;
 a "carry on" option when the model changes; and in the Inspector's **Needs attention**, a bulk apply and retract, and a
@@ -192,7 +192,7 @@ with the owner's version on its side.
 3. **PR A, canon read once.** ADR 0079 (amends ADR 0045's consequence and ADR 0047 item 1); migration `0033`: an index on
    canon extractions' `(extractor_key, coverage->>'input')`. A1's fingerprint, lookup, copy and `fresh`; coverage's
    "reused" count. Tests: a second chat with the same card makes no call and gets the same assertions; a different
-   persona name re-reads only the texts that use `{{user}}`; another description of the same text re-reads it; a
+   persona name re-reads the texts that use the name macros and copies the plain ones (the names tag `wtag` holds both names, as within a chat, ADR 0047); another description of the same text re-reads it; a
    discarded source is not used; a rebuild calls the model for its chat only and leaves the other chat's rows; a repair
    in one chat does not reach the other; a stopped read goes on with the parts it lacks.
 4. **PR B, bulk and correction.** ADR 0080 (amends ADR 0044); migration `0034`: `owner_repair.batch_id`. B1's endpoint,

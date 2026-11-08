@@ -263,7 +263,7 @@ def test_coverage_counts_the_facts_and_summaries_the_chat_holds(migrated):
         again = c.get(f"/v1/conversations/{conv}/coverage").json()
     with psycopg.connect(migrated) as conn:
         assert conn.execute("SELECT count(*) FROM assertion WHERE status = 'valid'").fetchone()[0] > valid
-    assert again["produced"] == produced and again["summaries"] == {"pending": 0, "failed": 0}
+    assert again["produced"] == produced and again["summaries"] == {"pending": 0, "failed": 0, "older": 0}
 
 
 def test_older_rows_count_under_their_kind_and_unreported_fields_are_not_zeros(migrated):
@@ -307,16 +307,16 @@ def test_summary_counts_and_jobs_are_the_heads_own(migrated):
         sync(c, chat)
         conv = c.get("/v1/conversations").json()[0]["id"]
         cov = lambda: c.get(f"/v1/conversations/{conv}/coverage").json()
-        assert cov()["summaries"] == {"pending": 3, "failed": 0}  # three due scenes
+        assert cov()["summaries"] == {"pending": 3, "failed": 0, "older": 0}  # three due scenes
         with psycopg.connect(migrated, autocommit=True) as conn:
             conn.execute("UPDATE job SET status = 'dead' WHERE kind = 'summarize' AND payload->>'first_turn' = '0'")
         drain_summaries(migrated)
-        assert cov()["summaries"] == {"pending": 0, "failed": 1} and cov()["produced"]["summaries"] == 2  # no story yet
+        assert cov()["summaries"] == {"pending": 0, "failed": 1, "older": 0} and cov()["produced"]["summaries"] == 2  # no story yet
         chat.edit(2, "Reply 0 follows, edited.")  # turn 0's window gets a new key; its dead job is history
         sync(c, chat)
-        assert cov()["summaries"] == {"pending": 1, "failed": 0}
+        assert cov()["summaries"] == {"pending": 1, "failed": 0, "older": 0}
         drain_summaries(migrated)
-        assert cov()["summaries"] == {"pending": 0, "failed": 0} and cov()["produced"]["summaries"] == 4
+        assert cov()["summaries"] == {"pending": 0, "failed": 0, "older": 0} and cov()["produced"]["summaries"] == 4
         with psycopg.connect(migrated, autocommit=True) as conn:
             conn.execute("UPDATE summary SET text = '' WHERE level = 'scene' AND first_turn = 8 AND discarded_at IS NULL")
         assert cov()["produced"]["summaries"] == 3
@@ -326,14 +326,14 @@ def test_summary_counts_and_jobs_are_the_heads_own(migrated):
             head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (conv,)).fetchone()["head_commit_id"]
             w = summaries.windows(conn, head)[1]
             conn.execute(summaries._INSERT, summaries._scene_job(conv, gen.key, w, 100, ":abc123"))
-        assert cov()["summaries"] == {"pending": 1, "failed": 0}
+        assert cov()["summaries"] == {"pending": 1, "failed": 0, "older": 0}
         # A story job queued for scenes the poll did not see written yet still counts (Copilot review of #186).
         with psycopg.connect(migrated, autocommit=True) as conn:
             conn.execute("UPDATE job SET status = 'done' WHERE kind = 'summarize' AND status = 'queued'")
             conn.execute(summaries._INSERT, ("summarize", f"summarize:{gen.key}:{conv}:story:not-yet-seen", conv,
                                              Jsonb({"generation": gen.key, "level": "story", "window_key": "not-yet-seen",
                                                     "members": []}), 100))
-        assert cov()["summaries"] == {"pending": 1, "failed": 0}
+        assert cov()["summaries"] == {"pending": 1, "failed": 0, "older": 0}
 
 
 def test_the_totals_keep_canon_apart_and_count_a_rebuild_s_old_and_new_calls(migrated):
