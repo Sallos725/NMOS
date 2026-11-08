@@ -103,5 +103,7 @@ def work(conn: psycopg.Connection, conv: UUID, extractor: str | None, summarizer
         " AND payload->>'generation' = %s"
         " AND (payload->>'window_key' = ANY(%s) OR (payload->>'level' = 'story' AND status <> 'dead'))",
         (keys, conv, summarizer, keys)).fetchone()
+    # scenes an earlier summarizer's summary serves until this one writes them (PHASE-57 A2)
+    older = sum(1 for x in written if x["generation"] != summarizer)
     return {"produced": {"facts": int(facts), "summaries": made},
-            "summaries": {"pending": int(jobs["pending"]), "failed": int(jobs["failed"])}}
+            "summaries": {"pending": int(jobs["pending"]), "failed": int(jobs["failed"]), "older": older}}

@@ -127,7 +127,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.pair": ("두 인물", "Pair"), "h.relationship": ("관계", "Relationship"),
     "h.role": ("역할", "Role"), "h.feelings": ("감정", "Feelings"),
     "h.speech": ("말투·호칭", "Speech"), "before": ("이전", "before"), "first": ("처음", "first"),
-    "summaries": ("요약 (장면·지금까지의 이야기)", "Summaries (scenes, story so far)"), "toc.summaries": ("요약", "Summaries"),
+    "summaries": ("요약 (장면·지금까지의 이야기)", "Summaries (scenes, story so far)"), "sm.older": ("이전 모델이 쓴 요약", "written by an earlier model"), "toc.summaries": ("요약", "Summaries"),
     "story": ("지금까지의 이야기", "Story so far"), "h.turns": ("턴", "Turns"), "h.summary": ("요약", "Summary"),
     "sm.current": ("있음", "current"), "sm.waiting": ("대기", "waiting"), "sm.held": ("보류: 비밀을 담음", "held back: repeats a secret"),
     "sm.unlisted": ("보류: 뒤에 드러난 비밀, 다시 작성", "held back: a secret stated after it, written again"),
@@ -1037,6 +1037,8 @@ def _summary_state(x: dict[str, Any], lang: str) -> str:
         if x["near"]:
             names = ", ".join(sorted({n for s in x["near"] for n in s.get("open") or []}))
             out += f" <span class=\"chip\">{_v(_t(lang, 'sm.near').format(names=names))}</span>"
+        if x.get("older"):  # served by an earlier summarizer until this one writes it (PHASE-57 A2)
+            out += f" <span class=\"muted\">{_v(_t(lang, 'sm.older'))}</span>"
     else:
         out = ((chip(lang, "sm", "changed") if x.get("changed") else "") + pending).strip() or chip(lang, "sm", "waiting")
     return out + "".join(f"<br><span class=\"muted\">{_v(n[:160])}</span>" for n in notes)

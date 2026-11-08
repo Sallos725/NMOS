@@ -56,7 +56,7 @@ def test_changing_llm_model_reextracts_the_recent_window(migrated, db):
         drain(migrated)
         old = active_generation(db, "extract")
         assert [f["object"] for f in facts(c, chat)] == ["old chapel"]
-        out = c.put("/v1/config", json={"llm_model": "fake-2"}).json()
+        out = c.put("/v1/config", json={"llm_model": "fake-2", "on_model_change": REDO}).json()
         eligible = chat.complete_turns()
         assert out["queued_jobs"] == eligible  # the whole chat is inside the recent window (ADR 0014)
         new = active_generation(db, "extract")
@@ -77,7 +77,7 @@ def test_changing_llm_endpoint_reextracts_existing_chat(migrated, db):
         chat = fact_chat()
         sync(c, chat)
         drain(migrated)
-        out = c.put("/v1/config", json={"llm_url": "http://other-provider/v1"}).json()
+        out = c.put("/v1/config", json={"llm_url": "http://other-provider/v1", "on_model_change": REDO}).json()
         assert out["queued_jobs"] == chat.complete_turns()
         assert active_generation(db, "extract").endpoint == "http://other-provider/v1"
 
@@ -163,6 +163,16 @@ def test_compiler_upgrade_tracks_partial_coverage_and_backfills_beyond_recent_wi
                       ).fetchone()["n"] == eligible
 
 
+REDO = {"mode": "recent"}  # PHASE-57 A3: a model change carries on unless the owner asks for the latest turns again
+
+
+def switch(c, model: str = "fake-2", backfill: int = 2) -> dict:
+    """The owner changes the model and asks for the latest `backfill` turns again (PHASE-57 A3)."""
+    out = c.put("/v1/config", json={"llm_model": model, "extract_backfill": backfill, "on_model_change": REDO})
+    assert out.status_code == 200, out.text
+    return out.json()
+
+
 def fallback_chat() -> SimChat:
     chat = SimChat()
     chat.user("Akari is in the old chapel.")
@@ -187,7 +197,7 @@ def test_older_turns_are_served_by_the_previous_generation_one_generation_per_tu
         sync(c, chat)
         drain(migrated)
         old = active_generation(db, "extract").key
-    with make_client(migrated, extract_backfill=2, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        switch(c)
         new = active_generation(db, "extract").key
         assert queued(db, "extract") == 2  # the recent window only
         drain(migrated, v2_complete)
@@ -211,7 +221,7 @@ def test_rebuild_discards_every_generation_so_no_older_facts_reappear(migrated, 
     with make_client(migrated, **LLM) as c:
         sync(c, chat)
         drain(migrated)
-    with make_client(migrated, extract_backfill=2, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        switch(c)
         drain(migrated, v2_complete)
         cid = conv_id(c, chat)
         out = c.post(f"/v1/conversations/{cid}/rebuild").json()
@@ -228,7 +238,7 @@ def test_a_generation_that_never_covered_a_turn_does_not_serve_it(migrated, db):
     with make_client(migrated, **LLM) as c:
         sync(c, chat)
         drain(migrated)
-    with make_client(migrated, extract_backfill=2, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        switch(c)
         drain(migrated, v2_complete)
         chat.edit(0, "Akari is in the bell tower.")
         sync(c, chat)

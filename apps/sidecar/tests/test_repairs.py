@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from conftest import alias_yes, make_client
+from conftest import alias_yes, make_client, switched_client
 from nmos_sidecar.extraction import ALIAS_CONFIRM_SYSTEM
 from memeval import FOUND, stub_extractor
 from nmos_sidecar import repairs
@@ -94,7 +94,7 @@ def test_a_repair_survives_a_rebuild_and_a_new_generation_that_rewords_its_targe
         out = repair(c, cid, kind="thread_close", item=str(thread(c, cid)["id"]))
     assert rebuild_all(migrated)
     drain(migrated, stub_extractor)
-    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+    with switched_client(migrated, "fake-2", extract_backfill=100, llm_url=LLM["llm_url"]) as c:
         drain(migrated, reworded)
         t = thread(c, cid, f"{GOAL} soon")  # a new assertion, from another generation, in other words
         assert t["status"] == "achieved" and t["repair"] == out["repair"]["id"]
@@ -387,7 +387,7 @@ def test_a_fact_repair_survives_a_new_generation_that_rewords_the_fact(migrated)
     with make_client(migrated, **LLM, extract_backfill=100) as c:
         cid = setup(c, migrated, chat)
         out = repair(c, cid, kind="fact_retract", item=str(fact(c, cid, "Hana", "identity")["id"]))
-    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+    with switched_client(migrated, "fake-2", extract_backfill=100, llm_url=LLM["llm_url"]) as c:
         drain(migrated, knighted)
         assert not [f for f in c.get(f"/v1/conversations/{cid}/facts").json() if f["predicate"] == "identity"]
         assert c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"][0]["applied"] is not None
@@ -696,7 +696,7 @@ def test_every_thread_and_secret_repair_survives_a_rebuild_and_a_new_generation(
         rebuild(c, migrated, cid, stub_extractor)
         holds({})
         assert set(surviving(c, cid).values()).isdisjoint(before.values())  # new rows, found again by what they say
-    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+    with switched_client(migrated, "fake-2", extract_backfill=100, llm_url=LLM["llm_url"]) as c:
         assert drain(migrated, worded_anew) > 0  # the new generation extracted every turn
         holds(ANEW)
 
@@ -722,7 +722,7 @@ def test_every_fact_repair_survives_a_rebuild_and_a_new_generation(migrated):
         holds()
         rebuild(c, migrated, cid, stub_extractor)
         holds()
-    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+    with switched_client(migrated, "fake-2", extract_backfill=100, llm_url=LLM["llm_url"]) as c:
         assert drain(migrated, worded_anew) > 0  # the new generation extracted every turn
         assert fact(c, cid, "Hana", "identity")["value"] == "sworn knight"  # the new generation's words
         holds()
@@ -753,7 +753,7 @@ def test_a_name_split_and_an_owner_join_survive_a_rebuild_and_a_new_generation(m
         holds()
         rebuild(c, migrated, cid, aliased)
         holds()
-    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+    with switched_client(migrated, "fake-2", extract_backfill=100, llm_url=LLM["llm_url"]) as c:
         assert drain(migrated, aliased) > 0  # the new generation extracted every turn
         holds()
 
@@ -778,7 +778,7 @@ def test_a_repair_finds_a_new_generation_s_item_by_its_quote_when_the_words_diff
         stored = {r["kind"]: r["target"] for r in c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"]}
         assert stored["thread_close"]["evidence"] == "Hana wants to find the keeper."
         assert stored["secret_found_out"]["evidence"] == "Hana keeps a secret from Kaito: the letter is forged."
-    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+    with switched_client(migrated, "fake-2", extract_backfill=100, llm_url=LLM["llm_url"]) as c:
         assert drain(migrated, quoted_anew) > 0
         t = thread(c, cid, "locate a lighthouse warden")
         assert repairs.similarity(GOAL, t["text"]) < repairs.MATCH_MIN  # the text match alone would miss it

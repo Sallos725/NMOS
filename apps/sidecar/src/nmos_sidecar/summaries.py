@@ -153,39 +153,63 @@ _COLUMNS = ("id, conversation_id, generation, level, window_key, members, first_
             " created_at, discarded_at")  # not the model's raw answer
 
 
+# The same columns and time test with the summary table named `s`, for the reads that join its generation.
+_COLUMNS_S = ", ".join("s." + c.strip() for c in _COLUMNS.split(","))
+_AS_OF_Q = _AS_OF.replace("created_at", "s.created_at").replace("discarded_at", "s.discarded_at")
+# A generation that serves a window (PHASE-57 A2, ADR 0014 for summaries): the given one, else the most recently
+# activated other summarizer; one generation per window. Without `fallback`, the given one only.
+_SERVES = "(s.generation = %(key)s OR (%(fallback)s AND g.kind = 'summarize'))"
+_PREFER = "s.generation = %(key)s DESC, g.activated_at DESC"
+
+
 def _scenes(conn: psycopg.Connection, conv: UUID, key: str, ws: list[Window],
-            known_at: datetime | None = None) -> dict[str, dict[str, Any]]:
+            known_at: datetime | None = None, fallback: bool = True) -> dict[str, dict[str, Any]]:
+    """The scene summary each of these windows is served by, by window key (PHASE-57 A2: `key`'s, else the newest
+    earlier summarizer's that covers the window; with `fallback` off, `key`'s only)."""
     if not ws:
         return {}
     rows = conn.execute(
-        "SELECT " + _COLUMNS + " FROM summary WHERE conversation_id = %s AND generation = %s AND level = 'scene'"
-        " AND window_key = ANY(%s)"
-        " AND " + _AS_OF, (conv, key, [w.key for w in ws], known_at, known_at, known_at, known_at)).fetchall()
+        "SELECT DISTINCT ON (s.window_key) " + _COLUMNS_S + " FROM summary s"
+        " JOIN projection_generation g ON g.key = s.generation"
+        " WHERE s.conversation_id = %(conv)s AND s.level = 'scene' AND s.window_key = ANY(%(keys)s) AND " + _SERVES
+        + " AND " + _AS_OF_Q.replace("%s", "%(at)s") + " ORDER BY s.window_key, " + _PREFER
+        + ", s.created_at DESC, s.id DESC",
+        {"conv": conv, "keys": [w.key for w in ws], "key": key, "fallback": fallback, "at": known_at}).fetchall()
     return {r["window_key"]: r for r in rows}
 
 
 def _story(conn: psycopg.Connection, conv: UUID, key: str, have: list[UUID],
-           known_at: datetime | None = None) -> dict[str, Any] | None:
+           known_at: datetime | None = None, fallback: bool = True) -> dict[str, Any] | None:
     """The newest story made only from these scene summaries. A story is written each time a window is summarized,
-    so a long chat has hundreds: the database picks the one."""
-    return conn.execute(
-        "SELECT " + _COLUMNS + " FROM summary WHERE conversation_id = %s AND generation = %s AND level = 'story'"
-        " AND cardinality(members) > 0 AND members <@ %s::uuid[] AND " + _AS_OF + " ORDER BY created_at DESC, id DESC"
-        " LIMIT 1", (conv, key, list(have), known_at, known_at, known_at, known_at)).fetchone()
+    so a long chat has hundreds: the database picks the one. Per generation the newest; of those (PHASE-57 A2) the
+    one made from the most scenes, `key`'s first, then the most recently activated generation's."""
+    row = conn.execute(
+        "SELECT * FROM (SELECT DISTINCT ON (s.generation) " + _COLUMNS_S + ", g.activated_at AS served_by_at"
+        " FROM summary s JOIN projection_generation g ON g.key = s.generation"
+        " WHERE s.conversation_id = %(conv)s AND s.level = 'story' AND cardinality(s.members) > 0"
+        " AND s.members <@ %(have)s::uuid[] AND " + _SERVES + " AND " + _AS_OF_Q.replace("%s", "%(at)s")
+        + " ORDER BY s.generation, s.created_at DESC, s.id DESC) t"
+        " ORDER BY cardinality(t.members) DESC, t.generation = %(key)s DESC, t.served_by_at DESC LIMIT 1",
+        {"conv": conv, "have": list(have), "key": key, "fallback": fallback, "at": known_at}).fetchone()
+    if row is not None:
+        row.pop("served_by_at")
+    return row
 
 
 def current(conn: psycopg.Connection, conv: UUID, head: UUID, key: str | None,
             secrets: list[dict[str, Any]] | None = None, upto: int | None = None,
-            known_at: datetime | None = None, present: frozenset[str] = frozenset()) -> dict[str, Any]:
+            known_at: datetime | None = None, present: frozenset[str] = frozenset(),
+            fallback: bool = True) -> dict[str, Any]:
     """What the head's summaries are: each due window with its current summary (or None), and the newest story made
     only from current scene summaries (it may not cover the newest windows yet). With the head's `secrets`
     (facts.memory_view), each summary that repeats one still kept from someone is marked `held`: no packet may use
-    it. `upto` and `known_at` read them as an earlier request saw them (ADR 0027 replay)."""
+    it. `upto` and `known_at` read them as an earlier request saw them (ADR 0027 replay). A window `key` has not
+    summarized is served by an earlier summarizer's summary of it (PHASE-57 A2) unless `fallback` is off."""
     ws = windows(conn, head, upto=upto) if key else []
-    by_key = _scenes(conn, conv, key, ws, known_at) if key else {}
+    by_key = _scenes(conn, conv, key, ws, known_at, fallback) if key else {}
     scenes = [{"window": w, "summary": by_key.get(w.key)} for w in ws]
     ids = [s["summary"]["id"] for s in scenes if s["summary"]]
-    story = _story(conn, conv, key, ids, known_at) if ids else None
+    story = _story(conn, conv, key, ids, known_at, fallback) if ids else None
     for x in scenes:
         x["held"] = held(x["summary"], secrets, present) if x["summary"] and secrets else []
     return {"scenes": scenes, "story": story, "due": len(ws), "done": len(ids),
@@ -227,9 +251,10 @@ def inspect(conn: psycopg.Connection, conv: UUID, head: UUID, key: str,
     for x in view["scenes"]:
         w = x["window"]
         x.update(why(x["summary"]), job=jobs.get(("scene", w.key)),
-                 changed=x["summary"] is None and w.first_turn in earlier)
+                 changed=x["summary"] is None and w.first_turn in earlier,
+                 older=x["summary"] is not None and x["summary"]["generation"] != key)  # PHASE-57 A2
     story = view["story"]
-    view["story_why"] = why(story)
+    view["story_why"] = {**why(story), "older": story is not None and story["generation"] != key}
     # The story job that matters: one for the story that would replace the shown one, or the only one there is.
     view["story_job"] = story_job if story_job and (story is None or not view["story_current"]
                                                     or view["story_why"]["unlisted"]) else None
@@ -288,15 +313,18 @@ _CURRENT = (
     " f AS (SELECT min(am.turn) AS t FROM active_membership am JOIN source_revision sr ON sr.id = am.source_revision_id"
     " JOIN source_object so ON so.id = sr.source_object_id WHERE am.commit_id = %(head)s"
     " AND so.conversation_id = (SELECT id FROM c) AND so.host_logical_id = ANY(%(ctx)s) AND " + _UPTO.format("am.") + "),"
-    " scenes AS (SELECT s.id, s.level, s.first_turn, s.last_turn, (w.i + 1) * %(w)s - 1 AS window_last FROM summary s"
-    " JOIN w ON s.members = w.members"
-    " WHERE s.conversation_id = (SELECT id FROM c) AND s.generation = %(key)s AND s.level = 'scene' AND " + _AS_OF_S + ")"
+    " scenes AS (SELECT DISTINCT ON (w.i) s.id, s.level, s.first_turn, s.last_turn, (w.i + 1) * %(w)s - 1 AS window_last"
+    " FROM summary s JOIN w ON s.members = w.members JOIN projection_generation g ON g.key = s.generation"
+    " WHERE s.conversation_id = (SELECT id FROM c) AND " + _SERVES + " AND s.level = 'scene' AND " + _AS_OF_S
+    + " ORDER BY w.i, " + _PREFER + ", s.created_at DESC, s.id DESC)"
     " SELECT id::text, level, first_turn, last_turn, window_last, NULL::text AS text, NULL::jsonb AS coverage,"
-    " (SELECT t FROM f) AS before FROM scenes UNION ALL (SELECT s.id::text, s.level, s.first_turn, s.last_turn, NULL,"
-    " s.text, s.coverage, NULL FROM summary s"
-    " WHERE s.conversation_id = (SELECT id FROM c) AND s.generation = %(key)s AND s.level = 'story'"
+    " (SELECT t FROM f) AS before FROM scenes UNION ALL (SELECT t.id::text, t.level, t.first_turn, t.last_turn, NULL,"
+    " t.text, t.coverage, NULL FROM (SELECT DISTINCT ON (s.generation) s.*, g.activated_at AS served_by_at"
+    " FROM summary s JOIN projection_generation g ON g.key = s.generation"
+    " WHERE s.conversation_id = (SELECT id FROM c) AND " + _SERVES + " AND s.level = 'story'"
     " AND cardinality(s.members) > 0 AND s.members <@ ARRAY(SELECT id FROM scenes) AND " + _AS_OF_S
-    + " ORDER BY s.created_at DESC, s.id DESC LIMIT 1)")
+    + " ORDER BY s.generation, s.created_at DESC, s.id DESC) t"
+    " ORDER BY cardinality(t.members) DESC, t.generation = %(key)s DESC, t.served_by_at DESC LIMIT 1)")
 
 
 def packet_lines(conn: psycopg.Connection, head: UUID, key: str, secrets: list[dict[str, Any]], query: str,
@@ -308,7 +336,7 @@ def packet_lines(conn: psycopg.Connection, head: UUID, key: str, secrets: list[d
     from someone is never offered (PHASE-12 Q3). The same choice as `current`, made for the request path: one query
     finds the current summaries, and only what it would offer is checked against the secrets."""
     rows = conn.execute(_CURRENT, {"w": WINDOW, "lag": LAG, "head": head, "key": key, "at": known_at, "upto": upto,
-                                   "ctx": list(in_context)}).fetchall()
+                                   "ctx": list(in_context), "fallback": True}).fetchall()
     scenes = [x for x in rows if x["level"] == "scene"]
     story = next((x for x in rows if x["level"] == "story"), None)
     before_turn = scenes[0]["before"] if scenes else None
@@ -421,16 +449,36 @@ def schedule_stale(conn: psycopg.Connection, conv: UUID, key: str, priority: int
     return schedule_story(conn, conv, head, key, priority, secrets)
 
 
-def schedule_all(conn: psycopg.Connection, key: str, conv: UUID | None = None) -> int:
-    """Everything a generation is missing in every chat (or one), at background priority, newest chats first
-    (PHASE-12 Q7): backfill jobs are claimed in the order they are queued."""
+def schedule_all(conn: psycopg.Connection, key: str, conv: UUID | None = None, redo: int | None = None) -> int:
+    """Everything no generation has summarized in every chat (or one), at background priority, newest chats first
+    (PHASE-12 Q7): backfill jobs are claimed in the order they are queued. With `redo` (PHASE-57: a release's new
+    summarizer, or the owner's "redo the latest N turns"), also the windows of each chat's latest `redo` turns that
+    `key` has not summarized itself."""
     heads = conn.execute("SELECT id, head_commit_id FROM conversation WHERE head_commit_id IS NOT NULL"
                          " AND (%s::uuid IS NULL OR id = %s::uuid) ORDER BY created_at DESC, id DESC",
                          (conv, conv)).fetchall()
     with conn.transaction():
         conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'summarize'"
                      " AND status = 'queued' AND payload->>'generation' IS DISTINCT FROM %s", (key,))
-        return sum(schedule(conn, h["id"], h["head_commit_id"], key, priority=BACKFILL_PRIORITY) for h in heads)
+        return sum(schedule(conn, h["id"], h["head_commit_id"], key, priority=BACKFILL_PRIORITY)
+                   + (schedule_redo(conn, h["id"], h["head_commit_id"], key, redo) if redo else 0) for h in heads)
+
+
+def schedule_redo(conn: psycopg.Connection, conv: UUID, head: UUID, key: str, turns: int | None,
+                  priority: int = BACKFILL_PRIORITY) -> int:
+    """Queue the due windows `key` has not summarized itself, whatever earlier summarizer serves them: those that end
+    in the head's latest `turns` turns, or every one (`turns` None: the per-chat "extract all history", PHASE-57 A3).
+    The story follows once they are written."""
+    ws = windows(conn, head)
+    if turns is not None:
+        last = replied_turns(conn, head)
+        ws = [w for w in ws if w.last_turn >= last - turns]
+    own = _scenes(conn, conv, key, ws, fallback=False)
+    rows = [_scene_job(conv, key, w, priority) for w in ws if w.key not in own]
+    if rows:
+        with conn.cursor() as cur:
+            cur.executemany(_INSERT, rows)
+    return len(rows)
 
 
 def _speaker(meta: dict[str, Any]) -> str:
@@ -566,7 +614,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         if w is None:
             return "obsolete"  # the head changed inside the window; a newer job covers what it shows now
         secrets = head_secrets(conn, head)
-        old = _scenes(conn, conv, gen.key, [w]).get(w.key)
+        old = _scenes(conn, conv, gen.key, [w], fallback=False).get(w.key)  # its own, not an earlier model's
         if old is not None and not unlisted(old, secrets):
             return "done"
         rows = conn.execute(

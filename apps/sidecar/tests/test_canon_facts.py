@@ -662,7 +662,9 @@ def test_a_lock_on_canon_and_on_a_correction_survives_a_rebuild_and_a_new_canon_
         assert drain(migrated, model) > 0
         holds("sister")
     anew = NewWords()
-    with make_client(migrated, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+    with make_client(migrated, **LLM) as c:  # the owner asks for the canon to be read again (PHASE-57 A3)
+        assert c.put("/v1/config", json={"llm_model": "fake-2",
+                                         "on_model_change": {"mode": "continue", "canon": True}}).status_code == 200
         drain(migrated, anew)
         assert anew.canon_calls()  # the new canon generation read the canon again
         holds("elder sister")

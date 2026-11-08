@@ -164,29 +164,45 @@ WHERE e.key <> 'card:name'
 """
 # A read of one revision in one window: its parts so far, and how many it has (every part records the count).
 READ = """(SELECT count(*) AS calls, max((x.coverage->>'parts')::int) AS parts,
-                  max((x.coverage->>'unread_chars')::int) AS unread
+                  max((x.coverage->>'unread_chars')::int) AS unread,
+                  count(*) FILTER (WHERE x.coverage ? 'reused_from') AS reused
            FROM extraction x WHERE x.source_revision_id = f.rid AND x.extractor_key = %(gen)s
              AND x.discarded_at IS NULL AND split_part(x.window_hash, ':', 3) = f.wtag)"""
 # Those not read completely yet: no part, or some parts missing (a job stopped between parts).
 WANTED = ("SELECT f.* FROM (" + IN_FORCE + ") f CROSS JOIN LATERAL " + READ
           + " rd WHERE rd.parts IS NULL OR rd.calls < rd.parts")
 
+# Whether any canon generation has read the text whole (PHASE-57 A3): a model change carried on, a sync or a startup
+# reads only what none has. A read the active generation stopped between parts still goes on.
+READ_ANY = """(SELECT coalesce(bool_or(r.n >= r.parts), false) AS complete FROM (
+               SELECT count(*) AS n, max((x.coverage->>'parts')::int) AS parts
+               FROM extraction x JOIN projection_generation g ON g.key = x.extractor_key AND g.kind = 'canon'
+               WHERE x.source_revision_id = f.rid AND x.discarded_at IS NULL
+                 AND split_part(x.window_hash, ':', 3) = f.wtag GROUP BY x.extractor_key) r)"""
+WANTED_ANY = ("SELECT f.* FROM (" + IN_FORCE + ") f CROSS JOIN LATERAL " + READ + " rd CROSS JOIN LATERAL " + READ_ANY
+              + " ra WHERE (rd.parts IS NOT NULL AND rd.calls < rd.parts) OR NOT ra.complete")
+
+# A job wanted again is revived with its new payload: a rebuild's read is `fresh` (PHASE-57 A1).
 REQUEUE = """ON CONFLICT (dedupe_key) DO UPDATE SET status = 'queued', priority = EXCLUDED.priority, attempts = 0,
-    run_after = now(), locked_at = NULL, last_error = NULL, updated_at = now() WHERE job.status = 'obsolete'"""
+    run_after = now(), locked_at = NULL, last_error = NULL, updated_at = now(), payload = EXCLUDED.payload
+    WHERE job.status = 'obsolete'"""
 
 
-def schedule(conn: psycopg.Connection, key: str, conv: UUID | None = None) -> int:
+def schedule(conn: psycopg.Connection, key: str, conv: UUID | None = None, any_generation: bool = False,
+             fresh: bool = False) -> int:
     """Queue what the canon generation `key` has not read (Q3), for one chat or all. Idempotent; queued jobs of other
-    canon generations become obsolete."""
+    canon generations become obsolete. With `any_generation` (PHASE-57 A3), only what no canon generation has read
+    whole. With `fresh` (a rebuild, PHASE-57 A1), the reads skip the lookup for another chat's identical read."""
     with conn.transaction():
         conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'canon' AND status = 'queued'"
                      " AND payload->>'generation' IS DISTINCT FROM %s AND (%s::uuid IS NULL OR conversation_id = %s)",
                      (key, conv, conv))
+        payload = ("jsonb_build_object('revision_id', w.rid::text, 'generation', %(gen)s"
+                   + (", 'fresh', true)" if fresh else ")"))
         return conn.execute(
-            "WITH wanted AS (" + WANTED + ")"
+            "WITH wanted AS (" + (WANTED_ANY if any_generation else WANTED) + ")"
             " INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority)"
-            " SELECT 'canon', 'canon:' || w.rid || ':' || w.wtag || ':' || %(gen)s, w.conv,"
-            "        jsonb_build_object('revision_id', w.rid::text, 'generation', %(gen)s), %(priority)s"
+            " SELECT 'canon', 'canon:' || w.rid || ':' || w.wtag || ':' || %(gen)s, w.conv, " + payload + ", %(priority)s"
             " FROM wanted w ORDER BY w.conv, w.key " + REQUEUE,
             {"conv": conv, "gen": key, "priority": PRIORITY, "macro": MACRO_SQL}).rowcount
 
@@ -271,6 +287,30 @@ def _source(conn: psycopg.Connection, rid: UUID) -> dict[str, Any] | None:
             "wtag": names_tag(row["entries"]) if named_ else "plain"}
 
 
+def input_of(src: dict[str, Any], piece: str, part: int, count: int) -> str:
+    """The fingerprint of what a part's read sends the model besides the generation's own system prompt (PHASE-57 A1):
+    the source line, the part, its text with the macros replaced, and the names only when the text uses the macros
+    (`wtag`), as a chat already keeps a `plain` text's read when its persona is renamed (ADR 0047)."""
+    named_ = src["wtag"] != "plain"
+    fields = [describe(src["key"], src["metadata"]), str(part), str(count),
+              (src["character"] or "") if named_ else "", (src["user"] or "") if named_ else "", piece]
+    return generations.fingerprint("\x1f".join(fields))
+
+
+def reusable(conn: psycopg.Connection, key: str, fingerprint: str, rid: UUID) -> dict[str, Any] | None:
+    """The newest read of another revision by this canon generation that answered the same input, not discarded."""
+    return conn.execute(
+        "SELECT id, coverage FROM extraction WHERE extractor_key = %s AND coverage ? 'input'"
+        " AND coverage->>'input' = %s AND discarded_at IS NULL AND source_revision_id <> %s"
+        " ORDER BY created_at DESC, id DESC LIMIT 1", (key, fingerprint, rid)).fetchone()
+
+
+def _still_claimed(conn: psycopg.Connection, job: dict[str, Any]) -> bool:
+    return job.get("locked_at") is None or conn.execute(
+        "SELECT 1 FROM job WHERE id = %s AND status = 'running' AND locked_at = %s FOR UPDATE",
+        (job["id"], job["locked_at"])).fetchone() is not None
+
+
 def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[Any, ...]],
             gen: Generation) -> str:
     """Read one canon revision (every part not read yet) and store its facts. Returns the final job status."""
@@ -291,10 +331,38 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         " AND discarded_at IS NULL", (rid, gen.key)).fetchall()}
     count = len(pieces) or 1
     system = PROMPT.format(registry=registry_prompt(PREDICATES))
-    total = 0
+    total = reused = 0
+    fresh = bool(job["payload"].get("fresh"))  # a rebuild reads its own chat again (PHASE-57 A1)
+    hints = Jsonb({"canon": src["key"], "character": src["character"], "user": src["user"]})
     for i, piece in enumerate(pieces or [""]):
         window = f"canon:{i}:{src['wtag']}"
         if window in done:
+            continue
+        fingerprint = input_of(src, piece, i, len(pieces))
+        coverage = {"chars": len(text), "part": i, "parts": count, "part_chars": len(piece), "unread_chars": unread,
+                    "input": fingerprint}
+        match = None if fresh or len(piece) < MIN_CHARS else reusable(conn, gen.key, fingerprint, rid)
+        if match is not None:  # another chat's read of the same input: copied, not shared (PHASE-57 A1)
+            root = (match["coverage"] or {}).get("reused_from") or str(match["id"])
+            with conn.transaction():
+                if not _still_claimed(conn, job):
+                    return "obsolete"
+                xid = uuid7()
+                inserted = conn.execute(
+                    "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
+                    " raw, coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                    " ON CONFLICT DO NOTHING RETURNING id",
+                    (xid, rid, window, VERSION, gen.key, gen.model, Jsonb({"reused_from": root}),
+                     Jsonb({**coverage, "reused_from": root}), [rid], hints, Jsonb(NO_CALL))).fetchone()
+                if inserted is None:
+                    continue
+                columns = ", ".join(ASSERTION_COLUMNS)
+                copied = conn.execute(
+                    f"INSERT INTO assertion (extraction_id, source_revision_id, {columns})"
+                    f" SELECT %s, %s, {columns} FROM assertion WHERE extraction_id = %s ORDER BY id",
+                    (xid, rid, match["id"])).rowcount
+            total += copied
+            reused += 1
             continue
         if len(piece) < MIN_CHARS:
             parsed, raw, usage = {"assertions": []}, "", NO_CALL
@@ -308,11 +376,8 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         for a in rows:
             if a["status"] == "valid" and a["predicate"] not in PREDICATES:
                 a["status"], a["reason"] = "pending", "not a canon predicate"
-        coverage = {"chars": len(text), "part": i, "parts": count, "part_chars": len(piece), "unread_chars": unread}
         with conn.transaction():
-            if job.get("locked_at") is not None and conn.execute(
-                    "SELECT 1 FROM job WHERE id = %s AND status = 'running' AND locked_at = %s FOR UPDATE",
-                    (job["id"], job["locked_at"])).fetchone() is None:
+            if not _still_claimed(conn, job):
                 return "obsolete"
             xid = uuid7()
             inserted = conn.execute(
@@ -320,8 +385,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
                 " raw, coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
                 " ON CONFLICT DO NOTHING RETURNING id",
                 (xid, rid, window, VERSION, gen.key, gen.model, Jsonb({"reply": raw[:20000]}), Jsonb(coverage), [rid],
-                 Jsonb({"canon": src["key"], "character": src["character"], "user": src["user"]}),
-                 Jsonb(usage) if usage is not None else None)).fetchone()
+                 hints, Jsonb(usage) if usage is not None else None)).fetchone()
             if inserted is None:
                 continue
             values = [(xid, rid, *(Jsonb(a[c]) if c == "participants" and a[c] is not None else a[c]
@@ -332,8 +396,8 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
                         f"INSERT INTO assertion (extraction_id, source_revision_id, {', '.join(ASSERTION_COLUMNS)})"
                         f" VALUES ({', '.join(['%s'] * (2 + len(ASSERTION_COLUMNS)))})", values)
         total += len(rows)
-    log.info("canon read conversation=%s key=%s parts=%d assertions=%d unread_chars=%d", src["conversation_id"],
-             src["key"], len(pieces), total, unread)
+    log.info("canon read conversation=%s key=%s parts=%d reused=%d assertions=%d unread_chars=%d",
+             src["conversation_id"], src["key"], len(pieces), reused, total, unread)
     return "done"
 
 
@@ -507,7 +571,7 @@ def coverage(conn: psycopg.Connection, key: str | None, conv: UUID) -> dict[str,
     if not key:
         return {}
     rows_ = conn.execute(
-        "SELECT f.key, rd.calls, rd.parts, rd.unread,"
+        "SELECT f.key, rd.calls, rd.parts, rd.unread, rd.reused,"
         "  (SELECT j.status FROM job j WHERE j.dedupe_key = 'canon:' || f.rid || ':' || f.wtag || ':' || %(gen)s) AS job"
         " FROM (" + IN_FORCE + ") f CROSS JOIN LATERAL " + READ + " rd",
         {"conv": conv, "gen": key, "macro": MACRO_SQL}).fetchall()
@@ -515,4 +579,5 @@ def coverage(conn: psycopg.Connection, key: str | None, conv: UUID) -> dict[str,
             "pending": sum(1 for r in rows_ if r["job"] in ("queued", "running")),
             "failed": sum(1 for r in rows_ if r["job"] == "dead"),
             "calls": sum(r["calls"] for r in rows_), "unread_chars": sum(r["unread"] or 0 for r in rows_),
+            "reused": sum(r["reused"] for r in rows_),  # parts copied from another chat's read (PHASE-57 A1)
             "keys": {r["key"]: {"calls": r["calls"], "job": r["job"]} for r in rows_}}
