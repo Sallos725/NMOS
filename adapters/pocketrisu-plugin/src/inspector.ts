@@ -54,7 +54,40 @@ export interface EntityRow {
 /** A repair the inspector marks for the panel (ADR 0044): what to do, to which item, and a character or field. */
 export interface RepairAction { kind: string; item: string; extra: string | null }
 
-const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|undo_batch|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+
+/** A request a bulk action sends for one row (PHASE-57 B1): a repair, or a repair taken back. */
+export type BulkRequest = { kind: string; item: string; outcome?: string } | { undo: string };
+/** A row of "Needs attention" the panel can select (PHASE-57 B1): its kind, the kind's label, what Apply and Retract
+ * send for it. */
+export interface BulkMark { g: string; l: string; apply?: BulkRequest; retract?: BulkRequest }
+
+const BULK_KINDS = new Set(['thread_close', 'fact_retract', 'fact_lock', 'fact_restore', 'state_dismiss']);
+const ID = /^-?[0-9a-f-]{1,64}$/;
+
+function bulkRequest(raw: unknown): BulkRequest | undefined | null {
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if ('undo' in r) return typeof r.undo === 'string' && ID.test(r.undo) && Object.keys(r).length === 1 ? { undo: r.undo } : null;
+  if (typeof r.kind !== 'string' || !BULK_KINDS.has(r.kind) || typeof r.item !== 'string' || !ID.test(r.item)) return null;
+  if (r.outcome !== undefined && (typeof r.outcome !== 'string' || !/^[a-z_]{1,32}$/.test(r.outcome))) return null;
+  return { kind: r.kind, item: r.item, ...(typeof r.outcome === 'string' ? { outcome: r.outcome } : {}) };
+}
+
+/** Parse a `data-bulk` value (JSON the sidecar writes); null for anything else. Data only: request bodies and a label. */
+export function bulkMark(value: string | null): BulkMark | null {
+  if (!value || value.length > 2000) return null;
+  let raw: unknown;
+  try { raw = JSON.parse(value); } catch { return null; }
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.g !== 'string' || !/^[a-z_]{1,40}$/.test(r.g) || typeof r.l !== 'string' || r.l.length > 120) return null;
+  const apply = bulkRequest(r.apply);
+  const retract = bulkRequest(r.retract);
+  if (apply === null || retract === null || (!apply && !retract)) return null;
+  return { g: r.g, l: r.l, ...(apply ? { apply } : {}), ...(retract ? { retract } : {}) };
+}
 
 /** Parse a `data-repair` value (`kind:item[:extra]`, the extra percent-encoded, so a name is any text); null for
  * anything else. The extra is data only: a request body and a button's text. */
@@ -142,6 +175,7 @@ export function keepAttribute(name: string, value: string): boolean {
     case 'id': return SECTION.test(value);
     case 'href': return inspectorApiPath(value) !== null || sectionTarget(value) !== null;
     case 'data-repair': return repairAction(value) !== null;
+    case 'data-bulk': return bulkMark(value) !== null;
     case 'data-l': case 'data-w': return PERCENT.test(value);
     case 'data-span': return value === '' || value === 'recent';
     default: return MARK_TEXT.has(name) && value.length <= MARK_TEXT_MAX;
