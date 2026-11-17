@@ -96,6 +96,11 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
   requests after `0.5.0`, ship as `0.6.0`. Production left `0.5.0`'s build on 2026-11-02 to run them, which ended that
   count. The two weeks are counted on `0.6.0`'s build from the day production runs it; if they and the gate's other
   conditions hold for it, the same build is tagged `1.0.0`.
+- **Amended (owner, 2026-11-17): Phase 57 runs before `1.0.0`, and the count restarts on its build.** The owner put
+  Phase 57 (canon read once per input, a model change that carries on, Needs attention in bulk; migrations `0033` and
+  `0034`) on production on 2026-11-17, four days before the `0.6.0` count could end, knowing it restarts the count. The
+  two weeks are counted on that build (`main` at `c394033`) from that day; if they and the gate's other conditions hold,
+  the same build is tagged `1.0.0`.
 - **Amended (owner, 2026-10-25): `extract-v17` ships selectable, not the default.** Its copy measurements passed
   (PHASE-45 and PHASE-51 step 3, $75.08), but the full live gate it needs to become the default is a paid run the
   owner will not fund now; `extract-v16` stays the default in `0.5.0` and `1.0.0`, and making `extract-v17` the default
@@ -294,11 +299,12 @@ Done when:
   `irrelevant` (20 → 16, the budget fill). `packet-v19` (Phase 46) gives 319 with no category worse, and the owner made
   it the default on 2026-10-13: met.
 - upgrades: met; fixtures from `v0.1.0-beta.7`, `.16`, `.21`, `v0.2.0`, `v0.3.0`, `v0.4.0`, `v0.5.0` and `v0.6.0` pass to the
-  latest migration (0032; the `v0.4.0` fixture applies 0030–0032). The `v0.5.0` and `v0.6.0` fixtures apply nothing today
-  and are checked by the first migration after them.
-- two quiet weeks: **started 2026-11-07 17:09 KST** on production's published `0.6.0` image, earliest end 2026-11-21 (R8,
-  amended). A heavy change (a packet policy, an extraction generation, a migration) restarts the count. The earlier counts,
-  kept as records, follow.
+  latest migration (0034; the `v0.4.0` fixture applies 0030–0034, the `v0.5.0` and `v0.6.0` fixtures 0033–0034).
+- two quiet weeks: **started 2026-11-17 22:05 KST** on production's `:edge` image of `main` at `c394033` (Phase 57),
+  earliest end 2026-12-01 (R8, amended 2026-11-17). A heavy change (a packet policy, an extraction generation, a
+  migration) restarts the count. The earlier counts, kept as records, follow.
+- the `0.6.0` count: started 2026-11-07 17:09 KST on production's published `0.6.0` image; ended on 2026-11-17 by the
+  owner's choice to run Phase 57 (ten days quiet).
 - the first count: **started 2026-10-13 14:47 KST** on the 1.0 candidate `main` at `6d3f2f7`, earliest end
   2026-10-27. The owner counts them on the trial install (6113), where the owner has played every day since 2026-10-08;
   production (6003) had no request after 2026-10-02 (owner, 2026-10-13, option a). It runs with the build's defaults

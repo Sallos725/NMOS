@@ -1,5 +1,15 @@
 # NMOS Status
 
+## Phase 57 on production — 2026-11-17
+
+**Deployed to production 2026-11-17 22:05 KST (owner request: 6113 and 6003 at once, the quiet weeks restarted).** Phase 57
+(#333, #334) on `main` at `c394033`, the `:edge-c3940339…` image: `NMOS_VERSION` pinned to it (was `0.6.0`) after a
+fresh `pg_dump` and an `.env` backup. Migrations `0033` and `0034` applied; every generation key is unchanged, so
+nothing is re-extracted or re-read; no job queued, no log error. The sidecar expects plugin build `47b9fc37f004`; the
+owner updates the plugin and reloads. The trial install (6113) runs the same image since 22:04 KST. **The 1.0 gate's two
+quiet weeks restart at this deployment; earliest end 2026-12-01** (`ROADMAP-1.0.md`, R8 amended 2026-11-17). If they and
+the gate's other conditions hold, this build is tagged `1.0.0`.
+
 ## Release v0.6.0 — tagged 2026-11-07
 
 R8 as amended on 2026-11-07 (`ROADMAP-1.0.md`): Phases 53–56 (#323–#327), the owner's requests after `0.5.0`; the release
