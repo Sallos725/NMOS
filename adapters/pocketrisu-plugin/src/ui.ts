@@ -77,6 +77,7 @@ const LLM_PRESETS: Preset[] = [
   { label: 'preset.off', url: '' },
   { label: 'preset.ollama', url: OLLAMA_DOCKER },
   { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
+  { label: 'Demon Route', url: 'https://api.demonroute.com/v1' },
   { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   { label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
   { label: 'Google Vertex AI', url: VERTEX_URL, model: 'google/gemini-3.8-flash' },  // checked on real Vertex (ADR 0022)
