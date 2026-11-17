@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from uuid import UUID
 
-from conftest import make_client
+from conftest import make_client, switched_client
 from nmos_sidecar import canonfacts, extraction, inspector
 from nmos_sidecar.entities import resolve
 from nmos_sidecar.facts import PRIOR_STANDING, STANDING, _versions, earlier, prior, version_key
@@ -190,7 +190,7 @@ def test_a_request_recorded_under_an_earlier_generation_replays_as_it_was(migrat
         drain(migrated, tenancy_seen_as_a_place)
         before = recall(c, chat, query, budget=600)
         earlier_key = c.get(f"/v1/trace/{before['trace_id']}").json()["extractor_key"]
-    with make_client(migrated, llm_url="http://fake/v1", llm_model="later") as c:
+    with switched_client(migrated, "later", llm_url="http://fake/v1") as c:
         sync(c, chat)
         drain(migrated, tenancy)
         now = recall(c, chat, query, budget=600)

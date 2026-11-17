@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import os
 import re
 import uuid
@@ -74,6 +76,16 @@ def database_url_factory() -> Iterator:
 def migrated(database_url: str) -> str:
     apply_migrations(database_url)
     return database_url
+
+
+@contextmanager
+def switched_client(url: str, model: str, **overrides) -> Iterator[TestClient]:
+    """A client on another extraction model whose change redid the latest `extract_backfill` turns (PHASE-57 A3: a
+    model change found at startup carries on, so a test that wants the new model's reading asks for it)."""
+    with make_client(url, **overrides) as c:
+        res = c.put("/v1/config", json={"llm_model": model, "on_model_change": {"mode": "recent"}})
+        assert res.status_code == 200, res.text
+        yield c
 
 
 def make_client(url: str, embedder=None, **overrides) -> TestClient:

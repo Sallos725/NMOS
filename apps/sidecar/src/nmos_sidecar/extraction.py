@@ -1680,14 +1680,15 @@ REBUILD_PENDING = """(EXISTS (SELECT 1 FROM active_membership t
 
 
 def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv: UUID | None = None,
-                        history: bool = False) -> int:
+                        history: bool = False, uncovered: bool = False) -> int:
     """Queue what the active extractor generation is missing (#8). Idempotent.
 
     Policy (ADR 0014): the latest `backfill` complete turns of each chat. Older turns keep being served
     by the earlier generation that covered them, and move to this one only on request: `history` queues
     every older turn at background priority (per-chat "extract all history", D22). A rebuild's discarded
     turns are always queued. Queued jobs of other generations become obsolete; their extractions stay
-    for audit and for fallback.
+    for audit and for fallback. With `uncovered` (PHASE-57 A3: a model change carried on, a startup or a save
+    with no generation change), a turn an earlier generation serves is not queued: only what nothing serves.
     """
     with conn.transaction():
         conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'extract'"
@@ -1704,10 +1705,11 @@ def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv:
                                 AND x.window_hash = e.turn_hash AND x.extractor_key = %(key)s
                                 AND x.discarded_at IS NULL)
               AND (e.turn >= e.turns - %(n)s OR %(all)s OR """ + REBUILD_PENDING + """)
+              AND NOT (%(uncovered)s AND """ + OLDER_SERVES + """)
             ORDER BY e.conv, e.turn  -- claim() takes backfill in id order: oldest turns first
             """ + REQUEUE,
             {"conv": conv, "key": key, "n": backfill, "all": history, "recent": RECENT_PRIORITY,
-             "history": HISTORY_PRIORITY},
+             "history": HISTORY_PRIORITY, "uncovered": uncovered},
         ).rowcount
 
 

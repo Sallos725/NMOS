@@ -162,22 +162,48 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         rt.update(configuration(overrides))
 
     def activate(conn, before_extractor: str | None, before_projection: str | None,
-                 before_summarizer: str | None = None, before_canon: str | None = None) -> int:
+                 before_summarizer: str | None = None, before_canon: str | None = None,
+                 choice: dict[str, Any] | None = None, cfg: dict[str, Any] | None = None,
+                 counts: dict[str, int] | None = None, changes: dict[str, str] | None = None) -> int:
         """Make the configured generations active and queue what they are missing (D20, #8).
 
         Runs at startup (idempotent: only missing work is queued) and whenever a setting changed a
         generation key. An API-key-only change keeps the keys, so nothing is re-derived. A provider
         that is off gets no further jobs started, in the same transaction as the settings save (#18).
+
+        What the extraction model's generations queue follows what their activation is, next to the generation the
+        database records as active (PHASE-57 A3, `generations.classify`): unchanged or new, only what no generation
+        serves; a model change, the owner's `choice` (carry on unless it says `recent`; canon read again only with
+        `canon`); a release's new version or prompt, the latest `extract_backfill` turns and their summary windows,
+        and canon again (Q5). `cfg` is the configuration to activate (the live one by default; a preview passes its
+        own and rolls back), `counts` and `changes` collect what each kind queued and what its activation was.
         """
-        cur = rt["settings"]
+        t = rt if cfg is None else cfg
+        cur = t["settings"]
+        choice = choice or {}
+        counts = {} if counts is None else counts
+        changes = {} if changes is None else changes
+
+        def change_of(gen) -> str:
+            changes[gen.kind] = generations.classify(conn, generations.activate(conn, gen), gen)
+            return changes[gen.kind]
+
+        def redo(change: str, asked: bool) -> bool:
+            return change == "version" or (change == "model" and asked)
+
+        def note(kind: str, n: int) -> int:
+            counts[kind] = counts.get(kind, 0) + n
+            return n
+
         queued = 0
-        ex, pj = rt["extractor"], rt["projection"]
+        ex, pj = t["extractor"], t["projection"]
         if ex is None:
             if retired := extraction.retire(conn, "extract"):
                 log.info("LLM extraction is off: %d queued extract jobs made obsolete", retired)
         elif ex.key != before_extractor:
-            generations.activate(conn, ex)
-            queued += extraction.schedule_generation(conn, ex.key, cur.extract_backfill)
+            full = redo(change_of(ex), choice.get("mode") == "recent")
+            queued += note("extract", extraction.schedule_generation(conn, ex.key, cur.extract_backfill,
+                                                                     uncovered=not full))
         if pj is None:
             if retired := extraction.retire(conn, "embed"):
                 log.info("embeddings are off: %d queued embed jobs made obsolete", retired)
@@ -186,22 +212,25 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             # endpoint, so their space is unknown: they stay for audit and are never searched. The
             # revisions they covered are re-embedded at background priority (#17).
             generations.activate(conn, pj)
-            queued += vectors.schedule_projection(conn, pj.key, cur.embed_backfill)
-        sm = rt["summarizer"]
+            queued += note("embed", vectors.schedule_projection(conn, pj.key, cur.embed_backfill))
+        sm = t["summarizer"]
         if sm is None:
             if retired := extraction.retire(conn, "summarize"):
                 log.info("summaries are off: %d queued summarize jobs made obsolete", retired)
         elif sm.key != before_summarizer:
-            generations.activate(conn, sm)
-            queued += summaries.schedule_all(conn, sm.key)  # every chat's due windows, oldest first (PHASE-12 Q7)
-        cg = rt["canon"]
+            full = redo(change_of(sm), choice.get("mode") == "recent")
+            # every chat's due windows no summarizer wrote, newest chat first (PHASE-12 Q7); the latest turns' too
+            queued += note("summarize", summaries.schedule_all(conn, sm.key,
+                                                               redo=cur.extract_backfill if full else None))
+        cg = t["canon"]
         if cg is None:
             if retired := extraction.retire(conn, "canon"):
                 log.info("canon facts are off: %d queued canon jobs made obsolete", retired)
         elif cg.key != before_canon:
-            generations.activate(conn, cg)
-            queued += canonfacts.schedule(conn, cg.key)  # every chat's canon in force (ADR 0047)
-        rv = rt["reveal"]
+            full = redo(change_of(cg), bool(choice.get("canon")))
+            # every chat's canon in force (ADR 0047), or what no canon generation has read whole
+            queued += note("canon", canonfacts.schedule(conn, cg.key, any_generation=not full))
+        rv = t["reveal"]
         if rv is None:
             if retired := extraction.retire(conn, "reveal"):
                 log.info("LLM extraction is off: %d queued reveal checks made obsolete", retired)
@@ -209,12 +238,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             generations.activate(conn, rv)
             conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'reveal'"
                          " AND status = 'queued' AND payload->>'generation' IS DISTINCT FROM %s", (rv.key,))
-        rt["active_extractor"] = generations.active(conn, "extract")
-        rt["active_summarizer"] = generations.active(conn, "summarize")
+        t["active_extractor"] = generations.active(conn, "extract")
+        t["active_summarizer"] = generations.active(conn, "summarize")
         # Off means none read or made (the panel's switch), as for summaries.
-        rt["active_canon"] = generations.active(conn, "canon") if cg is not None else None
-        rt["recall"] = dataclasses.replace(rt["recall"], extractor_key=rt["active_extractor"],
-                                           canon_key=rt["active_canon"])
+        t["active_canon"] = generations.active(conn, "canon") if cg is not None else None
+        t["recall"] = dataclasses.replace(t["recall"], extractor_key=t["active_extractor"],
+                                          canon_key=t["active_canon"])
         return queued
 
     rebuild({})
@@ -232,7 +261,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return
         try:
             with app.state.pool.connection() as conn:
-                queued = canonfacts.schedule(conn, cg.key, conv_id)
+                queued = canonfacts.schedule(conn, cg.key, conv_id, any_generation=True)  # PHASE-57 A3
         except psycopg.Error as exc:
             log.warning("canon jobs not queued conversation=%s: %s", conv_id, exc)
             return
@@ -518,7 +547,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  len(body.entries), len(out["needed"]), out["stored"], out["applied"], out.get("stale"))
         if out["applied"] and rt["canon"] is not None:  # the canon in force changed: read what it has not (ADR 0047)
             with request.app.state.pool.connection() as conn:
-                if queued := canonfacts.schedule(conn, rt["canon"].key, conv.id):
+                if queued := canonfacts.schedule(conn, rt["canon"].key, conv.id, any_generation=True):
                     log.info("canon jobs queued conversation=%s jobs=%d", conv.id, queued)
         return out
 
@@ -1110,6 +1139,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 # after the extract jobs: a turn queued again is extracted with what is open by then, not checked
                 "reveal": reveals.schedule(conn, rt["reveal"].key, ex.key, conv_id) if ex and rt["reveal"] else 0,
             }
+            head = readmodel.conversation(conn, conv_id)["head_commit_id"]
+            if rt["summarizer"] and head is not None:  # the windows an earlier model summarized (PHASE-57 A3)
+                queued["summarize"] = summaries.schedule_redo(conn, conv_id, head, rt["summarizer"].key, None)
             log.info("extract history conversation=%s queued=%s", conv_id, queued)
             return {"queued": queued, "coverage": coverage_view(conn, conv_id)}
 
@@ -1190,7 +1222,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 discarded = extraction.discard(conn, conv_id)  # the canon's extractions too (ADR 0047)
                 queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, history=True)
                 canonfacts.requeue(conn, conv_id)
-            read = canonfacts.schedule(conn, rt["canon"].key, conv_id) if rt["canon"] else 0
+            read = canonfacts.schedule(conn, rt["canon"].key, conv_id, fresh=True) if rt["canon"] else 0
             log.info("rebuild conversation=%s discarded=%d queued=%d canon=%d", conv_id, discarded, queued, read)
             return {"discarded": discarded, "queued": {"extract": queued, "canon": read},
                     "coverage": coverage_view(conn, conv_id)}
@@ -1462,8 +1494,53 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             rt.update(prepared)
             return {"card": card, "pins": pins.get(card, [])}
 
+    MODEL_CHANGE_KEY = "on_model_change"
+
+    def model_choice(update: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """The settings and, apart, what a model change in them should queue (PHASE-57 A3): used for this save only,
+        never stored. None (an older plugin, a script) is carry on without the canon."""
+        update = dict(update)
+        choice = update.pop(MODEL_CHANGE_KEY, None)
+        if choice is None:
+            return update, None
+        if (not isinstance(choice, dict) or set(choice) - {"mode", "canon"}
+                or choice.get("mode", "continue") not in ("continue", "recent")
+                or not isinstance(choice.get("canon", False), bool)):
+            raise HTTPException(status_code=422, detail=[f"{MODEL_CHANGE_KEY}: "
+                                                         '{"mode": "continue" | "recent", "canon": bool}'])
+        return update, choice
+
+    def previous_keys() -> tuple[str | None, ...]:
+        return tuple(rt[k].key if rt[k] else None for k in ("extractor", "projection", "summarizer", "canon"))
+
+    @app.post("/v1/config/preview", dependencies=[Depends(auth)])
+    def preview_config(update: dict[str, Any], request: Request):
+        """What saving these settings would queue, for each choice a model change offers (PHASE-57 A3): carry on, the
+        latest `extract_backfill` turns again, and carry on with the canon read again. Nothing is saved or queued: each
+        is worked out in a transaction that is rolled back. `model_change` says whether the save changes the model."""
+        update, _ = model_choice(update)
+        clean, errors = runtime.validate_update(update)
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
+        choices = {"continue": {"mode": "continue"}, "recent": {"mode": "recent"},
+                   "canon": {"mode": "continue", "canon": True}}
+        out: dict[str, dict[str, int]] = {}
+        changes: dict[str, str] = {}
+        with config_lock, request.app.state.pool.connection() as conn:
+            before = previous_keys()
+            for name, choice in choices.items():
+                counts: dict[str, int] = {}
+                with conn.transaction(force_rollback=True):
+                    runtime.lock_config(conn)
+                    runtime.save(conn, runtime.keys_follow_hosts(settings, runtime.stored(conn), clean))
+                    prepared = configuration(runtime.stored(conn))
+                    activate(conn, *before, choice=choice, cfg=prepared, counts=counts, changes=changes)
+                out[name] = counts
+        return {"model_change": "model" in changes.values(), "changes": changes, "queued": out}
+
     @app.put("/v1/config", dependencies=[Depends(auth)])
     def put_config(update: dict[str, Any], request: Request):
+        update, choice = model_choice(update)
         clean, errors = runtime.validate_update(update)
         if errors:
             raise HTTPException(status_code=422, detail=errors)
@@ -1486,7 +1563,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     if set(clean) - {runtime.PARSERS_KEY, runtime.PRESETS_KEY}:
                         rt.update(prepared)
                         queued = activate(conn, before_ex.key if before_ex else None, before_pj.key if before_pj else None,
-                                          before_sm.key if before_sm else None, before_cg.key if before_cg else None)
+                                          before_sm.key if before_sm else None, before_cg.key if before_cg else None,
+                                          choice=choice)
                         ex = rt["extractor"]
                         if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
                             queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)

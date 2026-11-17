@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:11d481ba8f18".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:ba4c795ed108".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -932,6 +932,11 @@
     "save_and_close": ["\uC800\uC7A5\uD558\uACE0 \uB2EB\uAE30", "Save and close"],
     "discard_and_close": ["\uBC84\uB9AC\uACE0 \uB2EB\uAE30", "Discard and close"],
     "cancel": ["\uCDE8\uC18C", "Cancel"],
+    "mc.title": ["\uCD94\uCD9C \uBAA8\uB378\uC774 \uBC14\uB01D\uB2C8\uB2E4. \uC774\uBBF8 \uCC98\uB9AC\uD55C \uCC44\uD305\uC740 \uC5B4\uB5BB\uAC8C \uD560\uAE4C\uC694?", "The extraction model changes. What about the chats already processed?"],
+    "mc.continue": ["\uC774\uC5B4\uC4F0\uAE30: \uB2E4\uC2DC \uCC98\uB9AC\uD558\uC9C0 \uC54A\uACE0, \uC0C8 \uD134\uBD80\uD130 \uC0C8 \uBAA8\uB378\uC774 \uC77D\uC2B5\uB2C8\uB2E4 ({n}\uAC74)", "Carry on: nothing is redone; the new model reads from the next turn ({n} jobs)"],
+    "mc.recent": ["\uCD5C\uADFC {t}\uD134 \uB2E4\uC2DC: \uCC44\uD305\uB9C8\uB2E4 \uCD5C\uADFC \uD134\uACFC \uADF8 \uC694\uC57D\uC744 \uC0C8 \uBAA8\uB378\uB85C \uB2E4\uC2DC \uB9CC\uB4ED\uB2C8\uB2E4 ({n}\uAC74)", "Redo the latest {t} turns: each chat's latest turns and their summaries, with the new model ({n} jobs)"],
+    "mc.canon": ["\uC6D0\uC804(\uCE74\uB4DC\xB7\uB85C\uC5B4\uBD81)\uB3C4 \uC0C8 \uBAA8\uB378\uB85C \uB2E4\uC2DC \uC77D\uAE30 (+{n}\uAC74)", "Read the setting (card, lorebook) again with the new model (+{n} jobs)"],
+    "mc.cancelled": ["\uC800\uC7A5\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", "Not saved."],
     "lang_unsaved": ["\uC5B8\uC5B4\uB97C \uBC14\uAFB8\uAE30 \uC804\uC5D0 \uBCC0\uACBD\uC744 \uC800\uC7A5\uD558\uAC70\uB098 \uB418\uB3CC\uB9AC\uC138\uC694.", "Save or revert your changes before switching the language."],
     "conn_saved_server_failed": ["\uC5F0\uACB0 \uC124\uC815\uC740 \uC800\uC7A5\uD588\uC9C0\uB9CC \uC11C\uBC84 \uC124\uC815\uC740 \uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "Connection saved, but the server settings were not: {e}"],
     "conn_save_failed": [
@@ -2945,6 +2950,8 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp details.meta{font-size:13px;margin-top:2px;color:var(--c-text-muted)}.nmos .insp details.meta p{margin:4px 0}
 .nmos .bar{position:sticky;bottom:0;background:${alpha("surface", 0.95)};backdrop-filter:blur(12px);border-top:1px solid var(--c-line-strong);padding:12px max(16px,calc((100% - 760px) / 2 + 16px));display:flex;align-items:center;gap:10px;flex-wrap:wrap;z-index:10}
 .nmos .bar .text{flex:1;min-width:160px;font-size:14px}
+.nmos .bar .model-change{flex:1;display:flex;flex-direction:column;gap:2px;font-size:14px}.nmos .bar .model-change p{margin:0}
+.nmos .bar .model-change .btns{justify-content:flex-end;margin-top:8px}
 `;
   function el(tag, attrs = {}, ...children) {
     const node = document.createElement(tag);
@@ -4972,6 +4979,34 @@ html,body{margin:0;background:${PALETTE.bg}}
       }).catch(() => {
       });
     }
+    const jobsOf = (q) => Object.values(q ?? {}).reduce((a, b) => a + b, 0);
+    function askModelChange(p, turns) {
+      return new Promise((resolve) => {
+        const name = `nmos-model-change-${Date.now()}`;
+        const carry = el("input", { type: "radio", name, value: "continue" });
+        const redo = el("input", { type: "radio", name, value: "recent" });
+        const canon = el("input", { type: "checkbox" });
+        carry.checked = true;
+        const extra = Math.max(0, (p.queued.canon?.canon ?? 0) - (p.queued.continue?.canon ?? 0));
+        const go2 = el("button", { class: "primary", text: L("save") });
+        const back = el("button", { text: L("cancel") });
+        const done = (answer) => {
+          bar.replaceChildren(barText, revert, save);
+          resolve(answer);
+        };
+        go2.addEventListener("click", () => done({ mode: redo.checked ? "recent" : "continue", canon: canon.checked }));
+        back.addEventListener("click", () => done(null));
+        bar.replaceChildren(el(
+          "div",
+          { class: "model-change" },
+          el("p", { text: L("mc.title") }),
+          el("label", { class: "check" }, carry, el("span", { text: L("mc.continue", { n: jobsOf(p.queued.continue) }) })),
+          el("label", { class: "check" }, redo, el("span", { text: L("mc.recent", { t: turns, n: jobsOf(p.queued.recent) }) })),
+          el("label", { class: "check" }, canon, el("span", { text: L("mc.canon", { n: extra }) })),
+          el("div", { class: "btns" }, back, go2)
+        ));
+      });
+    }
     async function saveAll() {
       const d = dirty();
       if (!d.length) {
@@ -5006,6 +5041,18 @@ html,body{margin:0;background:${PALETTE.bg}}
           baseline = values();
           update({ text: L("saved") + tight, kind: tight ? "warn" : "ok" });
           return true;
+        }
+        const modelChanged = d.includes("llm") && (v.llm.url.trim() !== baseline.llm.url.trim() || v.llm.model.trim() !== baseline.llm.model.trim());
+        if (modelChanged) {
+          const p = await deps.api("POST", "/v1/config/preview", body, 1e4).catch(() => null);
+          if (p?.model_change) {
+            const answer = await askModelChange(p, v.tune.backfill.trim() || backfill.value);
+            if (!answer) {
+              update({ text: L("mc.cancelled"), kind: "muted" });
+              return false;
+            }
+            body.on_model_change = answer;
+          }
         }
         const r = await deps.api("PUT", "/v1/config", body);
         fillServer(r);

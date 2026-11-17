@@ -213,6 +213,8 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp details.meta{font-size:13px;margin-top:2px;color:var(--c-text-muted)}.nmos .insp details.meta p{margin:4px 0}
 .nmos .bar{position:sticky;bottom:0;background:${alpha('surface', 0.95)};backdrop-filter:blur(12px);border-top:1px solid var(--c-line-strong);padding:12px max(16px,calc((100% - 760px) / 2 + 16px));display:flex;align-items:center;gap:10px;flex-wrap:wrap;z-index:10}
 .nmos .bar .text{flex:1;min-width:160px;font-size:14px}
+.nmos .bar .model-change{flex:1;display:flex;flex-direction:column;gap:2px;font-size:14px}.nmos .bar .model-change p{margin:0}
+.nmos .bar .model-change .btns{justify-content:flex-end;margin-top:8px}
 `;
 
 type Attrs = Record<string, string | number | boolean | undefined>;
@@ -1914,6 +1916,37 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       }).catch(() => {});
   }
 
+  /** What a save that changes the extraction model would queue, per choice (PHASE-57 A3, `POST /v1/config/preview`). */
+  interface ModelPreview { model_change: boolean; queued: Partial<Record<'continue' | 'recent' | 'canon', Record<string, number>>> }
+  const jobsOf = (q: Record<string, number> | undefined): number => Object.values(q ?? {}).reduce((a, b) => a + b, 0);
+
+  /** Asks, in the save bar, what the chats already processed get from the new model: carry on (selected), the latest
+   * turns again, and the setting read again; null when the owner cancels. The sidecar counts, the panel only shows. */
+  function askModelChange(p: ModelPreview, turns: string): Promise<{ mode: 'continue' | 'recent'; canon: boolean } | null> {
+    return new Promise((resolve) => {
+      const name = `nmos-model-change-${Date.now()}`;
+      const carry = el('input', { type: 'radio', name, value: 'continue' });
+      const redo = el('input', { type: 'radio', name, value: 'recent' });
+      const canon = el('input', { type: 'checkbox' });
+      carry.checked = true;
+      const extra = Math.max(0, (p.queued.canon?.canon ?? 0) - (p.queued.continue?.canon ?? 0));
+      const go = el('button', { class: 'primary', text: L('save') });
+      const back = el('button', { text: L('cancel') });
+      const done = (answer: { mode: 'continue' | 'recent'; canon: boolean } | null) => {
+        bar.replaceChildren(barText, revert, save);
+        resolve(answer);
+      };
+      go.addEventListener('click', () => done({ mode: redo.checked ? 'recent' : 'continue', canon: canon.checked }));
+      back.addEventListener('click', () => done(null));
+      bar.replaceChildren(el('div', { class: 'model-change' },
+        el('p', { text: L('mc.title') }),
+        el('label', { class: 'check' }, carry, el('span', { text: L('mc.continue', { n: jobsOf(p.queued.continue) }) })),
+        el('label', { class: 'check' }, redo, el('span', { text: L('mc.recent', { t: turns, n: jobsOf(p.queued.recent) }) })),
+        el('label', { class: 'check' }, canon, el('span', { text: L('mc.canon', { n: extra }) })),
+        el('div', { class: 'btns' }, back, go)));
+    });
+  }
+
   async function saveAll(): Promise<boolean> {
     const d = dirty();
     if (!d.length) { update({ text: L('no_changes'), kind: 'muted' }); return true; }
@@ -1950,6 +1983,16 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         baseline = values();
         update({ text: L('saved') + tight, kind: tight ? 'warn' : 'ok' });
         return true;
+      }
+      const modelChanged = d.includes('llm') && (v.llm.url.trim() !== baseline.llm.url.trim()
+        || v.llm.model.trim() !== baseline.llm.model.trim());
+      if (modelChanged) {  // a sidecar older than PHASE-57 has no preview: it saves as before
+        const p = await deps.api<ModelPreview>('POST', '/v1/config/preview', body, 10000).catch(() => null);
+        if (p?.model_change) {
+          const answer = await askModelChange(p, v.tune.backfill.trim() || backfill.value);
+          if (!answer) { update({ text: L('mc.cancelled'), kind: 'muted' }); return false; }
+          body.on_model_change = answer;
+        }
       }
       const r = await deps.api<ServerConfig>('PUT', '/v1/config', body);
       fillServer(r);
