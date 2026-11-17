@@ -638,8 +638,9 @@ def exclusions(repairs: list[dict[str, Any]], r: Resolution | None) -> dict[str,
 def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None, new_object: str | None,
                new_value: str | None, turn: int | None, version_key: Callable[..., tuple] | None = None) -> tuple[dict, dict]:
     f = next((f for f in view["facts"] if str(f["id"]) == item), None)
-    if f is None and kind in ("fact_retract", "fact_lock"):
-        # a canon fact the story superseded: the owner keeps the story's (retract) or canon's (lock) (PHASE-14 Q4)
+    if f is None and kind in ("fact_retract", "fact_lock", "fact_correct"):
+        # a canon fact the story superseded: the owner keeps the story's (retract) or canon's (lock) (PHASE-14 Q4), or
+        # canon's as corrected (PHASE-57 B2: the correction is locked with it)
         f = next((a for a in view.get("assertions") or () if a.get("canon") and str(a["id"]) == item), None)
     if f is None:
         raise RepairError("no fact with that id in this chat now")

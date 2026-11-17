@@ -4,6 +4,7 @@ with `?lang=en`. `embed=True` returns only the body, without the language switch
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -325,6 +326,12 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     # PHASE-28 Q7: a role ending applied after its confirmation, or held by it (the model can be wrong both times)
     "at.role_auto": ("자동으로 끝난 역할 (철회하면 다시 현재 역할)",
                      "a role ended automatically (retract it to keep the role)"),
+    "rs.batch": ("일괄 처리 {n}건", "{n} repairs at once"),
+    "bk.stale": ("오래 열린 스레드", "Threads open a long time"), "bk.dropped": ("재추출에서 빠진 사실", "Facts a re-extraction dropped"),
+    "bk.role_auto": ("자동 적용된 역할 종료", "Role endings applied automatically"),
+    "bk.role_held": ("보류된 역할 종료", "Role endings held"), "bk.canon": ("원전과의 충돌", "Conflicts with the setting"),
+    "bk.disputed": ("이야기 안의 충돌", "Conflicts within the story"),
+    "bk.repair": ("아무것에도 맞지 않는 수정", "Repairs that match nothing"), "bk.state": ("상태 표시", "Status flags"),
     "at.role_held": ("확인되지 않아 보류된 역할 종료: {why} (복원하면 그 턴에 끝남)",
                      "a role ending held, not confirmed: {why} (restore it to end the role at its turn)"),
     # PHASE-29 Q5: an alias a confirmation held joins nothing; listed so a wrong hold (one person's two names apart) is seen
@@ -1197,6 +1204,21 @@ def _act(kind: str, item: Any, extra: str | None = None) -> str:
     return f"<span class=\"rp\" data-repair=\"{_v(value)}\"></span>"
 
 
+def _bulk(group: str, lang: str, apply: dict[str, Any] | None = None, retract: dict[str, Any] | None = None) -> str:
+    """Where the panel puts a row's checkbox for Apply / Retract selected (PHASE-57 B1): the request each would send
+    (a repair, or `{"undo": id}`), the row's kind and its label. Nothing shows in a browser tab (H15)."""
+    if not apply and not retract:
+        return ""
+    data = {"g": group, "l": _t(lang, "bk." + group), **({"apply": apply} if apply else {}),
+            **({"retract": retract} if retract else {})}
+    return f"<span class=\"rq\" data-bulk=\"{_v(json.dumps(data, ensure_ascii=False))}\"></span>"
+
+
+def _fix(fact_id: Any, fields: list[str], lock: bool = False) -> str:
+    """A conflict's correction buttons (PHASE-57 B2), one a field; canon's statement is kept, locked, as corrected."""
+    return "".join(_act("fact_correct", fact_id, field + (".lock" if lock else "")) for field in fields)
+
+
 def _undo(rep: dict[str, Any]) -> str:
     """An undo; a name split's is marked so the panel previews it like a join (PHASE-20 Q2)."""
     return _act("undo", rep["id"], rep["kind"] if rep.get("kind") in ("name_split", "entity_exclude") else None)
@@ -1233,21 +1255,26 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
     if last_turn is not None:
         for th in view.get("threads", []):
             if stale(th, last_turn):
-                rows.append([_v(_t(lang, "at.stale").format(n=stale_after(th) or STALE_TURNS)),
-                             _v(_who_to(th) + f": {th.get('text') or ''}"), _v(last_said(th)),
-                             _close(th)])
+                label = _t(lang, "at.stale").format(n=stale_after(th) or STALE_TURNS)
+                ends = offered(th["kind"])
+                rows.append([_v(label), _v(_who_to(th) + f": {th.get('text') or ''}"), _v(last_said(th)),
+                             _close(th) + _bulk("stale", lang, {"kind": "thread_close", "item": str(th["id"]),
+                                                                 **({"outcome": ends[0]} if ends else {})})])
     for u in view.get("unmatched", []):
         rows.append([_v(_t(lang, "at.unmatched")), _v(fact_line_text(u)), _turn(u), ""])
     for f in view.get("dropped", []):  # PHASE-22 Q6
-        rows.append([_v(_t(lang, "at.dropped")), _v(fact_line_text(f)), _v(f.get("turn")), _act("fact_restore", f["id"])])
+        rows.append([_v(_t(lang, "at.dropped")), _v(fact_line_text(f)), _v(f.get("turn")), _act("fact_restore", f["id"])
+                     + _bulk("dropped", lang, {"kind": "fact_restore", "item": str(f["id"])})])
     ends = view.get("endings") or {}  # PHASE-28 Q7: role endings, applied or held, each with the owner's one action
     for f in ends.get("automatic", []):
         rows.append([_v(_t(lang, "at.role_auto")), _v(fact_line_text(f)) + _quote(f.get("quote")), _v(f.get("turn")),
-                     _act("fact_retract", f["id"])])
+                     _act("fact_retract", f["id"])
+                     + _bulk("role_auto", lang, retract={"kind": "fact_retract", "item": str(f["id"])})])
     for f in ends.get("held", []):
         why = ((f.get("reason") or "").split(": ", 1) + [""])[1]
         rows.append([_v(_t(lang, "at.role_held").format(why=why)), _v(fact_line_text(f)) + _quote(f.get("evidence")),
-                     _v(f.get("turn")), _act("fact_restore", f["id"])])
+                     _v(f.get("turn")), _act("fact_restore", f["id"])
+                     + _bulk("role_held", lang, {"kind": "fact_restore", "item": str(f["id"])})])
     for f in ends.get("aliases_held", []):
         why = ((f.get("reason") or "").split(": ", 1) + [""])[1]
         rows.append([_v(_t(lang, "at.alias_held").format(why=why)), _v(f"{f.get('subject')} = {f.get('value')}")
@@ -1255,29 +1282,43 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
                      _act("alias_join", f["id"], f"{f.get('subject')}|{f.get('value')}")])
     owned = {f["id"]: f["repair"] for f in view.get("facts", []) if f.get("owner")}  # the owner's corrections
     for c in view.get("conflicts", []):
+        against = c.get("against") or {}
+        fields = _corrections(against) if against.get("predicate") else []  # one predicate: their version key
         if c.get("kind") == "canon":  # keep canon's (a lock) or the story's (canon's statement retracted), or leave it
+            other = str(against["id"])
             rows.append([_v(_t(lang, "at.canon")),
                          _v(f"{_t(lang, 'at.canon_says')}: {fact_line_text(c['against'])} · "
                             f"{_t(lang, 'at.story_says')}: {c['text']}"), _v(c.get("turn")),
-                         _act("fact_lock", c["against"]["id"]) + _act("fact_retract", c["against"]["id"])])
+                         _act("fact_lock", c["against"]["id"]) + _act("fact_retract", c["against"]["id"])
+                         + _fix(c["against"]["id"], fields, lock=True) + _fix(c["fact"], fields)
+                         + _bulk("canon", lang, {"kind": "fact_lock", "item": other},
+                                 {"kind": "fact_retract", "item": other})])
             continue
         if c.get("kind") == "locked":  # the owner chose: the Conflicts section lists it
             continue
-        act = _act("undo", owned[c["fact"]]) if c["fact"] in owned else _act("fact_retract", c["fact"])
-        rows.append([_v(_t(lang, "at.disputed")), _v(c["text"]), _v(c.get("turn")), act])
+        mine = c["fact"] in owned
+        act = _act("undo", owned[c["fact"]]) if mine else _act("fact_retract", c["fact"]) + _fix(c["fact"], fields)
+        rows.append([_v(_t(lang, "at.disputed")), _v(c["text"]), _v(c.get("turn")),
+                     act + (_fix(against["id"], fields) if against.get("id") is not None else "")
+                     + _bulk("disputed", lang, retract={"undo": str(owned[c["fact"]])} if mine
+                             else {"kind": "fact_retract", "item": str(c["fact"])})])
     for rep in repairs:
         if rep.get("removed_at") or rep.get("kind") == "state_dismiss":  # a dismissed flag that is gone is no problem
             continue
         if rep.get("via"):
             rows.append([_v(_t(lang, "at.split")), _repair_target(rep), "", _undo(rep)])
         elif not rep.get("applied"):
-            rows.append([_v(_t(lang, "at.repair")), _repair_target(rep), "", _undo(rep)])
+            rows.append([_v(_t(lang, "at.repair")), _repair_target(rep), "", _undo(rep)
+                         + ("" if rep.get("kind") in ("name_split", "entity_exclude")
+                            else _bulk("repair", lang, retract={"undo": str(rep["id"])}))])
     for a in view.get("ambiguous", []):
         rows.append([_v(_t(lang, "at.ambiguous")), _v(f"{a['name']}: " + ", ".join(a.get("candidates") or [])), "", ""])
     for f in view.get("state_flags", []):  # PHASE-39 Q4, each with its one action: dismiss
         what = f"{f['key']}: {f['old']} → {f['new']}" + (f" ({f['item']})" if f.get("item") else "")
-        rows.append([_v(_t(lang, f"at.state_{f['reason']}")), _v(what), turn_link(f["turn"]) if f.get("turn") is not None
-                     else "", _act("state_dismiss", f["id"])])
+        label = _t(lang, f"at.state_{f['reason']}")
+        rows.append([_v(label), _v(what), turn_link(f["turn"]) if f.get("turn") is not None
+                     else "", _act("state_dismiss", f["id"])
+                     + _bulk("state", lang, {"kind": "state_dismiss", "item": str(f["id"])})])
     return rows
 
 
@@ -1331,9 +1372,15 @@ def _repairs_table(repairs: list[dict[str, Any]], lang: str) -> str:
         return (chip(lang, "rs", "applied") if rep.get("applied")
                 else f"<span class=\"warn\">{_v(_t(lang, 'rs.unmatched'))}</span>") + undo
 
-    return (table([_t(lang, k) for k in ("h.repair", "h.target", "h.value", "h.made", "h.status")],
-                  [[chip(lang, "rk", rep["kind"]), _repair_target(rep), _repair_value(rep, lang), timestamp(rep["created_at"]),
-                    state(rep)] for rep in repairs[:200]])
+    batches: dict[str, list[dict[str, Any]]] = {}  # PHASE-57 B1: the repairs one bulk action wrote, still in force
+    for rep in repairs:
+        if rep.get("batch_id") and not rep.get("removed_at"):
+            batches.setdefault(str(rep["batch_id"]), []).append(rep)
+    lines = "".join(f"<p>{_v(_t(lang, 'rs.batch').format(n=len(reps)))} {timestamp(reps[-1]['created_at'])}"
+                    f"{_act('undo_batch', batch)}</p>" for batch, reps in batches.items())
+    return (lines + table([_t(lang, k) for k in ("h.repair", "h.target", "h.value", "h.made", "h.status")],
+                          [[chip(lang, "rk", rep["kind"]), _repair_target(rep), _repair_value(rep, lang),
+                            timestamp(rep["created_at"]), state(rep)] for rep in repairs[:200]])
             + f"<p class=\"muted\">{_v(_t(lang, 'or.note'))}</p>")
 
 

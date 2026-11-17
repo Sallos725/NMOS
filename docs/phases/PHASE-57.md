@@ -1,6 +1,6 @@
 # Phase 57 — Pay once: canon read once per input, a model change carries on, and the Inspector's queue in bulk
 
-Status: **approved**, 2026-11-08; PR A (steps 2–3) built 2026-11-08 (ADR 0078, ADR 0079, migration `0033`) (an owner request, not a roadmap stage; after `1.0.0`). The owner chose the shape in
+Status: **approved**, 2026-11-08; PR A (steps 2–3) built 2026-11-08 (ADR 0078, ADR 0079, migration `0033`); PR B (step 4) built 2026-11-08 (ADR 0080, migration `0034`, amendment 1) (an owner request, not a roadmap stage; after `1.0.0`). The owner chose the shape in
 the design conversation of 2026-11-08: canon read once for every chat that sends the model the same input, a rebuild
 re-reading only its own chat; ADR 0014's fallback for summaries too; canon's re-read on a model change made a choice;
 a "carry on" option when the model changes; and in the Inspector's **Needs attention**, a bulk apply and retract, and a
@@ -176,6 +176,17 @@ with the owner's version on its side.
   summaries the due windows those turns fall in (A2 serves the rest), canon unchanged (every chat's canon, since a new
   canon prompt is why a release changes it). (b) Everything as today, A2's fallback only serving while the backfill
   runs. (c) As a model change: the owner's choice, carry on by default.
+
+## Amendment 1 (2026-11-08, from the code, before PR B): what a batch leaves out, and canon's correction locks
+
+- **One at a time stays one at a time.** A held alias's join is an entity link (ADR 0025) that re-extracts the joined
+  turns and is made from its preview; a name split, a "not a character" and their undos are made from theirs too
+  (PHASE-20 Q4, PHASE-47 S4). B1's Apply does not join a held alias: such rows carry no checkbox, and the batch refuses
+  these kinds. Every other row kind of B1 is in.
+- **Correcting canon's statement keeps it.** A correction of a canon fact is an owner's version at the canon's turn;
+  the story's later statement would supersede it at once, and the row would leave while the two still disagree. B2's
+  correction of canon's side is therefore the correction and a lock on it, in one transaction (`lock: true`): canon's
+  statement, as corrected, stays current. Correcting the story's statement is an ordinary correction.
 
 ## Steps
 

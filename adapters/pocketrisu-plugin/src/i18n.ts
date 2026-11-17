@@ -274,6 +274,17 @@ const STRINGS = {
   'rp.fact_restore': ['복원', 'Restore'],  // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
   'rp.state_dismiss': ['괜찮음', 'Dismiss'],  // a status flag the owner looked at (PHASE-39 Q4)
   'rp.undo': ['되돌리기', 'Undo'],
+  'rp.undo_batch': ['전부 되돌리기', 'Undo all'],
+  'rp.fact_correct_lock': ['원전 정정({n})', 'Correct the setting {n}'],
+  'bk.select': ['일괄 처리에 넣기', 'Select'],
+  'bk.all': ['{k} 전부 선택 ({n})', 'Select all {k} ({n})'],
+  'bk.apply': ['선택 적용 ({n})', 'Apply selected ({n})'],
+  'bk.retract': ['선택 철회 ({n})', 'Retract selected ({n})'],
+  'bk.again': ['한 번 더 누르면 실행합니다', 'Click again to do it'],
+  'bk.none': ['고른 행에는 이 조치가 없습니다 ({n}건 건너뜀).', 'None of the selected rows has this action ({n} skipped).'],
+  'bk.confirm': ['{what} · 건너뜀 {n}건. 한 번 더 누르면 한꺼번에 저장합니다.', '{what} · {n} skipped. Click again to save them at once.'],
+  'bk.refused': ['{n}건은 처리할 수 없어 아무것도 저장하지 않았습니다: {e}', '{n} cannot be done, so nothing was saved: {e}'],
+  'bk.done': ['{n}건을 한꺼번에 처리했습니다. 수리 칸에서 전부 되돌릴 수 있습니다.', 'Done for {n} at once. The repairs section undoes them all.'],
   'rp.entity_exclude': ['{n}: 캐릭터 아님', '{n}: not a character'],
   'ro.title': ['AI 답장만 기억', 'Remember AI replies only'],
   'ro.sub': ['AI가 내 캐릭터의 말과 행동까지 쓰는 채팅(풀사칭)용이에요. 켜면 내가 보낸 메시지는 기억을 찾을 때 쓰이지 않아요. 지금은 회상에만 적용돼요.',

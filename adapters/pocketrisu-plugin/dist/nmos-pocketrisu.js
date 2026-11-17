@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:ba4c795ed108".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:47b9fc37f004".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -620,6 +620,17 @@
     "rp.state_dismiss": ["\uAD1C\uCC2E\uC74C", "Dismiss"],
     // a status flag the owner looked at (PHASE-39 Q4)
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
+    "rp.undo_batch": ["\uC804\uBD80 \uB418\uB3CC\uB9AC\uAE30", "Undo all"],
+    "rp.fact_correct_lock": ["\uC6D0\uC804 \uC815\uC815({n})", "Correct the setting {n}"],
+    "bk.select": ["\uC77C\uAD04 \uCC98\uB9AC\uC5D0 \uB123\uAE30", "Select"],
+    "bk.all": ["{k} \uC804\uBD80 \uC120\uD0DD ({n})", "Select all {k} ({n})"],
+    "bk.apply": ["\uC120\uD0DD \uC801\uC6A9 ({n})", "Apply selected ({n})"],
+    "bk.retract": ["\uC120\uD0DD \uCCA0\uD68C ({n})", "Retract selected ({n})"],
+    "bk.again": ["\uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC2E4\uD589\uD569\uB2C8\uB2E4", "Click again to do it"],
+    "bk.none": ["\uACE0\uB978 \uD589\uC5D0\uB294 \uC774 \uC870\uCE58\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 ({n}\uAC74 \uAC74\uB108\uB700).", "None of the selected rows has this action ({n} skipped)."],
+    "bk.confirm": ["{what} \xB7 \uAC74\uB108\uB700 {n}\uAC74. \uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uD55C\uAEBC\uBC88\uC5D0 \uC800\uC7A5\uD569\uB2C8\uB2E4.", "{what} \xB7 {n} skipped. Click again to save them at once."],
+    "bk.refused": ["{n}\uAC74\uC740 \uCC98\uB9AC\uD560 \uC218 \uC5C6\uC5B4 \uC544\uBB34\uAC83\uB3C4 \uC800\uC7A5\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4: {e}", "{n} cannot be done, so nothing was saved: {e}"],
+    "bk.done": ["{n}\uAC74\uC744 \uD55C\uAEBC\uBC88\uC5D0 \uCC98\uB9AC\uD588\uC2B5\uB2C8\uB2E4. \uC218\uB9AC \uCE78\uC5D0\uC11C \uC804\uBD80 \uB418\uB3CC\uB9B4 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", "Done for {n} at once. The repairs section undoes them all."],
     "rp.entity_exclude": ["{n}: \uCE90\uB9AD\uD130 \uC544\uB2D8", "{n}: not a character"],
     "ro.title": ["AI \uB2F5\uC7A5\uB9CC \uAE30\uC5B5", "Remember AI replies only"],
     "ro.sub": [
@@ -2274,7 +2285,34 @@ ${revisionHash}`;
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/person/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|undo_batch|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var BULK_KINDS = /* @__PURE__ */ new Set(["thread_close", "fact_retract", "fact_lock", "fact_restore", "state_dismiss"]);
+  var ID2 = /^-?[0-9a-f-]{1,64}$/;
+  function bulkRequest(raw) {
+    if (raw === void 0) return void 0;
+    if (!raw || typeof raw !== "object") return null;
+    const r = raw;
+    if ("undo" in r) return typeof r.undo === "string" && ID2.test(r.undo) && Object.keys(r).length === 1 ? { undo: r.undo } : null;
+    if (typeof r.kind !== "string" || !BULK_KINDS.has(r.kind) || typeof r.item !== "string" || !ID2.test(r.item)) return null;
+    if (r.outcome !== void 0 && (typeof r.outcome !== "string" || !/^[a-z_]{1,32}$/.test(r.outcome))) return null;
+    return { kind: r.kind, item: r.item, ...typeof r.outcome === "string" ? { outcome: r.outcome } : {} };
+  }
+  function bulkMark(value) {
+    if (!value || value.length > 2e3) return null;
+    let raw;
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      return null;
+    }
+    if (!raw || typeof raw !== "object") return null;
+    const r = raw;
+    if (typeof r.g !== "string" || !/^[a-z_]{1,40}$/.test(r.g) || typeof r.l !== "string" || r.l.length > 120) return null;
+    const apply = bulkRequest(r.apply);
+    const retract = bulkRequest(r.retract);
+    if (apply === null || retract === null || !apply && !retract) return null;
+    return { g: r.g, l: r.l, ...apply ? { apply } : {}, ...retract ? { retract } : {} };
+  }
   function repairAction(value) {
     const m = value ? REPAIR.exec(value) : null;
     if (!m?.[1] || !m[2]) return null;
@@ -2343,6 +2381,8 @@ ${revisionHash}`;
         return inspectorApiPath(value) !== null || sectionTarget(value) !== null;
       case "data-repair":
         return repairAction(value) !== null;
+      case "data-bulk":
+        return bulkMark(value) !== null;
       case "data-l":
       case "data-w":
         return PERCENT.test(value);
@@ -3320,7 +3360,18 @@ html,body{margin:0;background:${PALETTE.bg}}
     const chosen = /* @__PURE__ */ new Map();
     let closers = /* @__PURE__ */ new Map();
     const bulkClose = el("button");
-    const bulkBar = el("div", { class: "btns", style: "display:none" }, bulkClose);
+    const bulkPicked = /* @__PURE__ */ new Map();
+    let bulkGroups = /* @__PURE__ */ new Map();
+    let pendingBulk = null;
+    const bulkKinds = el("div", { class: "btns" });
+    const bulkApply = el("button");
+    const bulkRetract = el("button");
+    const bulkBar = el(
+      "div",
+      { style: "display:none" },
+      el("div", { class: "btns" }, bulkClose, bulkApply, bulkRetract),
+      bulkKinds
+    );
     inspectorView.append(
       el("div", { class: "btns inspbar" }, inspectorBack, inspectorRefresh),
       actions,
@@ -3334,9 +3385,58 @@ html,body{margin:0;background:${PALETTE.bg}}
       inspectorAddress
     );
     function updateBulk() {
-      bulkBar.style.display = picked.size ? "" : "none";
+      bulkBar.style.display = picked.size || bulkGroups.size ? "" : "none";
+      bulkClose.style.display = picked.size ? "" : "none";
       bulkClose.textContent = L("rp.bulk", { n: picked.size });
+      const marks = [...bulkPicked.values()];
+      for (const [button, side, key] of [[bulkApply, "apply", "bk.apply"], [bulkRetract, "retract", "bk.retract"]]) {
+        button.style.display = marks.length ? "" : "none";
+        button.textContent = pendingBulk === side ? L("bk.again") : L(key, { n: marks.filter((m) => m[side]).length });
+      }
+      bulkKinds.style.display = bulkGroups.size ? "" : "none";
     }
+    async function runBulk(side, button) {
+      const conversation = inspectorConversation(inspectorPath);
+      if (!conversation || !bulkPicked.size) return;
+      const marks = [...bulkPicked.values()];
+      const sent = marks.map((m) => m[side]).filter((r) => r !== void 0);
+      const skipped = marks.length - sent.length;
+      if (!sent.length) return void say(actionMsg, L("bk.none", { n: skipped }), "warn");
+      const body = { items: sent.filter((r) => "kind" in r), undo: sent.flatMap((r) => "undo" in r ? [r.undo] : []) };
+      const path = `/v1/conversations/${conversation}/repairs/batch`;
+      button.disabled = true;
+      try {
+        if (pendingBulk !== side) {
+          const plan = await deps.api(
+            "POST",
+            path,
+            { ...body, preview: true },
+            15e3
+          );
+          if (plan.errors) {
+            const first = plan.plan.find((p) => p.error)?.error ?? "";
+            return void say(actionMsg, L("bk.refused", { n: plan.errors, e: first }), "err");
+          }
+          const what = Object.entries(plan.counts).map(([k, n]) => `${L(`rp.${k}`)} ${n}`).join(", ");
+          pendingBulk = side;
+          say(actionMsg, L("bk.confirm", { what, n: skipped }), "warn");
+          return;
+        }
+        pendingBulk = null;
+        await deps.api("POST", path, body, 3e4);
+        bulkPicked.clear();
+        say(actionMsg, L("bk.done", { n: sent.length }), "ok");
+        await showInspector();
+      } catch (error) {
+        pendingBulk = null;
+        say(actionMsg, errorText(lang, error), "err");
+      } finally {
+        button.disabled = false;
+        updateBulk();
+      }
+    }
+    bulkApply.addEventListener("click", () => void runBulk("apply", bulkApply));
+    bulkRetract.addEventListener("click", () => void runBulk("retract", bulkRetract));
     function outcomeOf(item) {
       const c = closers.get(item);
       const outcome = c?.selects[0]?.value ?? c?.first;
@@ -3344,8 +3444,10 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     function repairControls(action) {
       if (action.kind === "thread_close") return closeControls(action);
-      const n = action.kind === "fact_correct" ? L(action.extra === "object" ? "rp.field_object" : "rp.field_value") : action.extra ?? "";
-      const button = el("button", { class: "mini", text: L(`rp.${action.kind}`, { n }) });
+      const field2 = (action.extra ?? "").split(".")[0];
+      const n = action.kind === "fact_correct" ? L(field2 === "object" ? "rp.field_object" : "rp.field_value") : action.extra ?? "";
+      const label = action.kind === "fact_correct" && action.extra?.endsWith(".lock") ? "rp.fact_correct_lock" : `rp.${action.kind}`;
+      const button = el("button", { class: "mini", text: L(label, { n }) });
       const spot = el("div");
       button.addEventListener("click", () => {
         if (action.kind === "fact_correct") correctForm(action, button);
@@ -3409,7 +3511,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     function correctForm(action, button) {
       const spot = button.parentElement;
       if (!spot) return;
-      const field2 = action.extra === "object" ? "object" : "value";
+      const field2 = (action.extra ?? "").split(".")[0] === "object" ? "object" : "value";
       const text2 = el("input", {
         type: "text",
         placeholder: L("rp.correct_prompt", { f: L(`rp.field_${field2}`) }),
@@ -3430,6 +3532,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         const next = text2.value.trim();
         if (!next) return void text2.focus();
         const body = { [field2 === "object" ? "new_object" : "new_value"]: next };
+        if (action.extra?.endsWith(".lock")) body.lock = true;
         const at = turn.value.trim();
         if (at) {
           const n = Number(at);
@@ -3516,6 +3619,9 @@ html,body{margin:0;background:${PALETTE.bg}}
       if (action.kind === "undo") {
         path = `${path}/${action.item}/remove`;
         body = {};
+      } else if (action.kind === "undo_batch") {
+        path = `${path}/batch/${action.item}/remove`;
+        body = {};
       } else if (action.kind === "secret_found_out" || action.kind === "secret_keep") {
         body.character = action.extra;
       }
@@ -3524,7 +3630,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         await deps.api("POST", path, body, 15e3);
         picked.delete(action.item);
         updateBulk();
-        say(actionMsg, L(action.kind === "undo" ? "rp.undone" : "rp.done"), "ok");
+        say(actionMsg, L(action.kind === "undo" || action.kind === "undo_batch" ? "rp.undone" : "rp.done"), "ok");
         await showInspector();
       } catch (error) {
         say(actionMsg, errorText(lang, error), "err");
@@ -3604,12 +3710,45 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (action) spot.replaceChildren(...repairControls(action));
       }
       for (const item of Array.from(picked)) if (!closers.has(item)) picked.delete(item);
+      bulkGroups = /* @__PURE__ */ new Map();
+      const shown2 = /* @__PURE__ */ new Set();
+      for (const spot of Array.from(page.querySelectorAll("span.rq[data-bulk]"))) {
+        const mark = bulkMark(spot.getAttribute("data-bulk"));
+        if (!mark) continue;
+        const key = JSON.stringify([mark.g, mark.apply ?? null, mark.retract ?? null]);
+        shown2.add(key);
+        const box = el("input", { type: "checkbox", "aria-label": L("bk.select") });
+        box.checked = bulkPicked.has(key);
+        box.addEventListener("change", () => {
+          if (box.checked) bulkPicked.set(key, mark);
+          else bulkPicked.delete(key);
+          pendingBulk = null;
+          updateBulk();
+        });
+        let group = bulkGroups.get(mark.g);
+        if (!group) bulkGroups.set(mark.g, group = { label: mark.l, boxes: [] });
+        group.boxes.push(box);
+        spot.replaceChildren(box);
+      }
+      for (const key of Array.from(bulkPicked.keys())) if (!shown2.has(key)) bulkPicked.delete(key);
+      pendingBulk = null;
+      bulkKinds.replaceChildren(...Array.from(bulkGroups.values(), (group) => {
+        const all = el("button", { class: "mini", text: L("bk.all", { k: group.label, n: group.boxes.length }) });
+        all.addEventListener("click", () => {
+          const on = !group.boxes.every((b) => b.checked);
+          for (const b of group.boxes) if (b.checked !== on) {
+            b.checked = on;
+            b.dispatchEvent(new Event("change"));
+          }
+        });
+        return all;
+      }));
       updateBulk();
       for (const span of Array.from(page.querySelectorAll("span.ts[title]"))) {
-        const shown2 = localTime(span.getAttribute("title") ?? "", lang);
-        if (!shown2) continue;
-        span.textContent = shown2.text;
-        span.setAttribute("title", shown2.title);
+        const shown3 = localTime(span.getAttribute("title") ?? "", lang);
+        if (!shown3) continue;
+        span.textContent = shown3.text;
+        span.setAttribute("title", shown3.title);
       }
       const who = page.querySelector("p.who");
       if (!who) return;

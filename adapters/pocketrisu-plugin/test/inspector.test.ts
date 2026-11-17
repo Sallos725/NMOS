@@ -217,3 +217,19 @@ describe('a held alias mark (PHASE-29 Q5)', () => {
     expect(t('en', 'rp.alias_join' as StringKey)).toBe('Link as one person');
   });
 });
+
+describe('bulk marks (PHASE-57 B1)', () => {
+  it('passes a row mark with known requests only', async () => {
+    const { bulkMark } = await import('../src/inspector');
+    const ok = { g: 'canon', l: 'Conflicts', apply: { kind: 'fact_lock', item: '81' }, retract: { undo: 'ab-12' } };
+    expect(bulkMark(JSON.stringify(ok))).toEqual(ok);
+    expect(bulkMark(JSON.stringify({ g: 'stale', l: 'x', apply: { kind: 'thread_close', item: '1', outcome: 'kept' } })))
+      .toEqual({ g: 'stale', l: 'x', apply: { kind: 'thread_close', item: '1', outcome: 'kept' } });
+    for (const bad of [{ g: 'canon', l: 'x' }, { g: 'canon', l: 'x', apply: { kind: 'name_split', item: '1' } },
+      { g: 'canon', l: 'x', apply: { kind: 'fact_lock', item: '1; drop' } }, { g: 'Bad!', l: 'x', apply: { undo: '1' } },
+      { g: 'canon', l: 'x', retract: { undo: '1', kind: 'fact_lock' } }]) {
+      expect(bulkMark(JSON.stringify(bad))).toBeNull();
+    }
+    expect(bulkMark('not json')).toBeNull();
+  });
+});

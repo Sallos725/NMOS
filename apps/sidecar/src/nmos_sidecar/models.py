@@ -201,6 +201,17 @@ class RepairRequest(BaseModel):
     entity_type: Literal["character", "place", "item", "group", "concept"] = "character"
     expect: str | None = Field(default=None, max_length=64)  # a split's preview fingerprint (PHASE-20 Q4)
     scope: Literal["cast", "memory"] = "cast"  # an exclusion's (PHASE-47 Q1): the cast only, or memory too
+    # a correction of a canon statement a story conflict lists (PHASE-57 B2): the corrected canon is kept, locked
+    lock: bool = False
+
+
+class BatchRepairRequest(BaseModel):
+    """Several repairs of one chat at once (PHASE-57 B1): every one is planned against the same read of its memory and
+    written in one transaction, or none is. `undo` takes repairs back in the same transaction. With `preview`, only
+    the plan: nothing is written."""
+    items: list[RepairRequest] = Field(default_factory=list, max_length=200)
+    undo: list[UUID] = Field(default_factory=list, max_length=200)
+    preview: bool = False
 
 
 class EntityLinkRequest(BaseModel):
