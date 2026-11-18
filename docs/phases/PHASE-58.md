@@ -5,7 +5,7 @@ Status: **approved**, 2026-11-18 (owner, in the design conversation of 2026-11-1
 and the 1.0 quiet weeks restart on its build). Steps 2 and 3 done 2026-11-18 on branch
 `Sallos725/track-affinity-scores-host` (step 3: `docs/perf/phase58-switch.md`, the switch queues nothing on a copy of
 production). Q5 answered as proposed and step 4 done (owner, 2026-11-18): on 6113 and production since 15:36 KST, the
-switch queued nothing on either; the quiet weeks restarted (earliest end 2026-12-02). Linear: to be filed.
+switch queued nothing on either; the quiet weeks restarted (earliest end 2026-12-02). Linear: AGE-93.
 
 **High risk** (`AGENTS.md §14`):
 - **a new extractor generation** (`extract-v18`): a prompt change, so a new generation key (D20) and a release's one
