@@ -25,8 +25,8 @@ from .retrieval import CAST_GOALS, cast_facts
 from .summaries import LAG, WINDOW
 
 STYLE = """
-:root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--chip:#efefec;--accent:#3b5bdb}
-@media (prefers-color-scheme:dark){:root{--bg:#18181a;--fg:#ececec;--muted:#9a9aa0;--line:#2c2c30;--chip:#26262a;--accent:#8ea2ff}}
+:root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--chip:#efefec;--accent:#3b5bdb;--pos:#2f9e5b;--neg:#d6453d;--mix:#c27c0e}
+@media (prefers-color-scheme:dark){:root{--bg:#18181a;--fg:#ececec;--muted:#9a9aa0;--line:#2c2c30;--chip:#26262a;--accent:#8ea2ff;--pos:#4fd18b;--neg:#f05d5e;--mix:#e8ac43}}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif}
 main{max-width:1100px;margin:0 auto;padding:24px 16px}
 h1{font-size:20px;margin:0 0 4px} h2{font-size:17px;margin:28px 0 8px}
@@ -40,6 +40,8 @@ pre.mono{white-space:pre-wrap;background:var(--chip);padding:8px 10px;border-rad
 table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-weight:600;color:var(--muted);font-size:13px}
 .chip{display:inline-block;padding:0 6px;border-radius:4px;background:var(--chip);font-size:13px;white-space:nowrap}
+.fd{display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 5px 1px 0;vertical-align:middle}
+.fd.pos{background:var(--pos)} .fd.neg{background:var(--neg)} .fd.mix{background:var(--mix)}
 .wrap{overflow-x:auto}
 .warn{color:#e8590c} .n{color:var(--muted);font-weight:400;font-size:13px}
 .toc,.who{font-size:13px;line-height:1.9;margin:8px 0}
@@ -128,6 +130,11 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.pair": ("두 인물", "Pair"), "h.relationship": ("관계", "Relationship"),
     "h.role": ("역할", "Role"), "h.feelings": ("감정", "Feelings"),
     "h.speech": ("말투·호칭", "Speech"), "before": ("이전", "before"), "first": ("처음", "first"),
+    # how a feeling feels (PHASE-58 S4)
+    "fe.faint": ("옅음", "faint"), "fe.clear": ("뚜렷함", "clear"), "fe.strong": ("강함", "strong"),
+    "fe.positive": ("긍정적", "positive"), "fe.negative": ("부정적", "negative"), "fe.under": ("밑에", "under"),
+    "fe.pos": ("긍정적인 감정", "a positive feeling"), "fe.neg": ("부정적인 감정", "a negative feeling"),
+    "fe.mix": ("긍정과 부정이 섞인 감정", "positive and negative mixed"),
     "summaries": ("요약 (장면·지금까지의 이야기)", "Summaries (scenes, story so far)"), "sm.older": ("이전 모델이 쓴 요약", "written by an earlier model"), "toc.summaries": ("요약", "Summaries"),
     "story": ("지금까지의 이야기", "Story so far"), "h.turns": ("턴", "Turns"), "h.summary": ("요약", "Summary"),
     "sm.current": ("있음", "current"), "sm.waiting": ("대기", "waiting"), "sm.held": ("보류: 비밀을 담음", "held back: repeats a secret"),
@@ -986,17 +993,53 @@ def _exclude_marks(p: dict[str, Any], persona: frozenset[str]) -> str:
                    if str(i) not in persona and _UUID.fullmatch(str(i)))
 
 
+SIGNS = {"positive": "pos", "negative": "neg"}
+
+
+def feeling_sign(f: dict[str, Any]) -> str | None:
+    """A feeling's colour class (PHASE-58 S4): `pos`, `neg`, `mix` when it and the feeling under it have opposite signs,
+    or None when neither has a sign or the row has no detail."""
+    d = f.get("feeling") or {}
+    signs = {SIGNS[x["valence"]] for x in (d, d.get("under") or {}) if x.get("valence") in SIGNS}
+    return "mix" if len(signs) > 1 else next(iter(signs), None)
+
+
+def feeling_dot(f: dict[str, Any], lang: str) -> str:
+    """The sign's dot before a feeling's value, its sign in words as the title; nothing without a sign."""
+    sign = feeling_sign(f)
+    return f'<span class="fd {sign}" title="{_v(_t(lang, "fe." + sign))}"></span>' if sign else ""
+
+
+def feeling_detail(f: dict[str, Any], lang: str) -> str:
+    """What follows a feeling's value (PHASE-58 S4), escaped: " (강함, 긍정적) · 밑에: 원망 (옅음, 부정적)"; "" for a row
+    without detail, which reads as before. The sign is in words too, so the colour is never the only cue."""
+    d = f.get("feeling")
+    if not d or d.get("intensity") not in ("faint", "clear", "strong"):
+        return ""
+
+    def weighed(x: dict[str, Any]) -> str:
+        words = [_t(lang, "fe." + x["intensity"])] + ([_t(lang, "fe." + x["valence"])] if x.get("valence") in SIGNS else [])
+        return " (" + ", ".join(words) + ")"
+
+    under = d.get("under") or {}
+    rest = (f" · {_t(lang, 'fe.under')}: {under['value']}{weighed(under)}"
+            if under.get("value") and under.get("intensity") in ("faint", "clear", "strong") else "")
+    return _v(weighed(d) + rest)
+
+
 def _pairs_table(entries: list[dict[str, Any]], lang: str, persona: frozenset[str] | None = None) -> str:
     def said(f: dict[str, Any], directed: bool) -> str:
         who = f"{_named(f, 'subject')} → {_named(f, 'object')}: " if directed else ""
-        text = _v(who + (f.get("value") or "")) + f" <span class=\"muted\">{_turn(f)}</span>"
+        text = (_v(who) + feeling_dot(f, lang) + _v(f.get("value") or "") + feeling_detail(f, lang)
+                + f" <span class=\"muted\">{_turn(f)}</span>")
         if f.get("polarity") == "negative":
             text += f" <span class=\"chip\">{_t(lang, 'negated')}</span>"
         if f.get("because"):
             text += f" <span class=\"muted\">· {_t(lang, 'because')}: {_v(f['because'])}</span>"
         for key, was in (("before", earlier(f)), ("first", first(f))):
             if was:
-                text += f" <span class=\"muted\">· {_t(lang, key)}: {_v(was.get('value'))} ({_turn(was)})</span>"
+                text += (f" <span class=\"muted\">· {_t(lang, key)}: {_v(was.get('value'))}{feeling_detail(was, lang)}"
+                         f" ({_turn(was)})</span>")
         return text
 
     def setting_only(p: dict[str, Any]) -> bool:

@@ -28,8 +28,8 @@ from psycopg.types.json import Jsonb
 from . import generations, normtext
 from .config import Settings
 from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY, TARGET_CHARS,
-                         build_prompt, coverage_of, earlier_assertions, load_context, normalize, revealed, secret_hints,
-                         shown_target)
+                         assertion_values, build_prompt, coverage_of, earlier_assertions, load_context, normalize,
+                         revealed, secret_hints, shown_target)
 from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
@@ -222,8 +222,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
              Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
              Jsonb({"checks": str(checked), "secrets": secrets, "read_at": read_at.isoformat()}),
              Jsonb(usage) if usage is not None else None))
-        rows = [(check_id, revision_id, *(Jsonb(a[c]) if c == "participants" and a[c] is not None else a[c]
-                                          for c in ASSERTION_COLUMNS))
+        rows = [(check_id, revision_id, *assertion_values(a))
                 for a in normalize(items, turn_text, None, shown_target(ctx))]
         if rows:
             with conn.cursor() as cur:

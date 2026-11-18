@@ -64,7 +64,7 @@ live AS (
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence, a.evidence,
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
-       a.participants::text AS participants, a.outcome, a.because,
+       a.participants::text AS participants, a.outcome, a.because, a.feeling::text AS feeling,
        -- a check's rows read as the extraction it checked
        l.position, l.turn, l.host_logical_id, l.chosen AS generation, l.chosen_compiler AS compiler,
        -- the turn's hash: a secret's (ADR 0033 amendment 2) and an owner repair's target (ADR 0044); and the hash a
@@ -116,6 +116,8 @@ def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, 
             r["participants"] = _parse_participants(r["participants"])
         if r["known_by"] or r["hidden_from"]:
             stored_knowledge(r)
+        if (detail := r.pop("feeling")) is not None:  # extract-v18 only (PHASE-58): other rows read as before
+            r["feeling"] = _parse_feeling(detail)
     return rows
 
 
@@ -124,6 +126,12 @@ def _parse_participants(text: str) -> tuple[dict[str, str], ...]:
     """A stored participant list (rows never change, so every read after the first hits the cache).
     Shared between reads: read-only."""
     return tuple(json.loads(text))
+
+
+@lru_cache(maxsize=16384)
+def _parse_feeling(text: str) -> dict[str, Any]:
+    """A stored feeling's detail (PHASE-58 S2), parsed once per text. Shared between reads: read-only."""
+    return json.loads(text)
 
 
 def _norm(value: str | None) -> str:
@@ -243,6 +251,8 @@ def _entry(h: dict[str, Any], outcome: dict[int, str], closer: dict[int, dict[st
            "value": h["value"], "object": h["object"], "polarity": h["polarity"],
            "outcome": outcome.get(id(h), "superseded"), "knowledge": h.get("knowledge"),
            "known_by": h.get("known_by"), "hidden_from": h.get("hidden_from")}
+    if h.get("feeling"):  # PHASE-58: how the feeling felt then
+        out["feeling"] = h["feeling"]
     if h.get("canon"):
         out["canon"] = h["canon"]
     by = (closer or {}).get(id(h))

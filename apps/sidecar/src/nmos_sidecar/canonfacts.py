@@ -314,7 +314,7 @@ def _still_claimed(conn: psycopg.Connection, job: dict[str, Any]) -> bool:
 def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[Any, ...]],
             gen: Generation) -> str:
     """Read one canon revision (every part not read yet) and store its facts. Returns the final job status."""
-    from .extraction import ASSERTION_COLUMNS, normalize  # the same normalizer as a turn's (ADR 0013, D6, D19)
+    from .extraction import ASSERTION_COLUMNS, assertion_values, normalize  # the same normalizer as a turn's (ADR 0013, D6, D19)
 
     if job["payload"].get("generation") != gen.key:
         raise ValueError(f"job generation {job['payload'].get('generation')} is not handler generation {gen.key}")
@@ -388,8 +388,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
                  hints, Jsonb(usage) if usage is not None else None)).fetchone()
             if inserted is None:
                 continue
-            values = [(xid, rid, *(Jsonb(a[c]) if c == "participants" and a[c] is not None else a[c]
-                                   for c in ASSERTION_COLUMNS)) for a in rows]
+            values = [(xid, rid, *assertion_values(a)) for a in rows]
             if values:
                 with conn.cursor() as cur:
                     cur.executemany(
