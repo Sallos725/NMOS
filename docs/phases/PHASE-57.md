@@ -1,6 +1,6 @@
 # Phase 57 — Pay once: canon read once per input, a model change carries on, and the Inspector's queue in bulk
 
-Status: **approved**, 2026-11-08; PR A (steps 2–3) built 2026-11-08 (ADR 0078, ADR 0079, migration `0033`); PR B (step 4) built 2026-11-08 (ADR 0080, migration `0034`, amendment 1); both merged (#333, #334) and on the test install and production since 2026-11-17 (owner request; the 1.0 quiet weeks restarted) (an owner request, not a roadmap stage; after `1.0.0`). The owner chose the shape in
+Status: **approved**, 2026-11-08; PR A (steps 2–3) built 2026-11-08 (ADR 0078, ADR 0079, migration `0033`); PR B (step 4) built 2026-11-08 (ADR 0080, migration `0034`, amendment 1); both merged (#333, #334) and on the test install and production since 2026-11-17 (owner request; the 1.0 quiet weeks restarted); it ships in `1.0.0`, with no release of its own (owner, 2026-11-18; an owner request, not a roadmap stage, first planned for after `1.0.0`). The owner chose the shape in
 the design conversation of 2026-11-08: canon read once for every chat that sends the model the same input, a rebuild
 re-reading only its own chat; ADR 0014's fallback for summaries too; canon's re-read on a model change made a choice;
 a "carry on" option when the model changes; and in the Inspector's **Needs attention**, a bulk apply and retract, and a
@@ -250,6 +250,13 @@ merged in that order.
 ## Risk and release
 
 High risk (see the top). The off paths stay as they are: a single repair, a config save that changes no model, a canon
-read with no match. Built on `main` after the spec's approval; the test install (6131/6113) first; the install the
-owner uses only after the `1.0.0` gate's quiet weeks end and `1.0.0` is tagged (a migration and a generation-serving
-change are the heavy changes the quiet weeks exclude); released in `1.1.0`.
+read with no match. Built on `main` after the spec's approval; the test install (6131/6113) first.
+
+First planned for after `1.0.0`: the install the owner uses only after the `1.0.0` gate's quiet weeks ended and
+`1.0.0` was tagged (a migration and a generation-serving change are the heavy changes the quiet weeks exclude),
+released in `1.1.0`. **Amended (owner):** on 2026-11-17 the owner put it on the test install and production at once,
+restarting the quiet weeks on its build (`ROADMAP-1.0.md`, R8 amended 2026-11-17); on 2026-11-18 the owner chose to
+ship it in `1.0.0` with no release of its own. It is feature work (migrations, ADRs, new UI), not an urgent fix, so
+`AGENTS.md §13` gives it no patch release, and a separate `0.7.0` would come days before `1.0.0` with a high-risk change
+only a day on production. Until `1.0.0`, an install on the `0.6.0` tag still re-reads summaries and canon on a model
+change and canon for each new chat.
