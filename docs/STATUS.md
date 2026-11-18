@@ -1,5 +1,18 @@
 # NMOS Status
 
+## Phase 58 on production — 2026-11-18
+
+**Deployed 2026-11-18 15:36 KST (owner request: 6113 and 6003 at once, the quiet weeks restarted).** Phase 58 (#339),
+the local image `trial-phase58-c357c4c` of its branch (later commits tests and docs only), with
+`NMOS_EXTRACT_COMPILER=extract-v18` (production's compose file passes it through since this deployment), after a fresh
+`pg_dump`, an `.env` and a compose-file backup. Migration `0035` applied; the extractor switched from `extract-v16` to
+`extract-v18` (`adds`): no job queued, row fingerprints identical before and after, no log error. The worker was held
+until the queue was checked. The plugin build is unchanged (`47b9fc37f004`), so nothing to re-import. The trial install
+(6113) runs the same image since 15:35 KST, also with nothing queued. **The 1.0 gate's two quiet weeks restart at this
+deployment; earliest end 2026-12-02** (`ROADMAP-1.0.md`). Q5 answered (owner): no paid gate; the owner's use is the
+live check. Rollback: the backups named in `~/nmos-eval/phase58/deploy-prod.sh`; switching back to `extract-v16`
+queues nothing.
+
 ## Phase 57 on production — 2026-11-17
 
 **Deployed to production 2026-11-17 22:05 KST (owner request: 6113 and 6003 at once, the quiet weeks restarted).** Phase 57
@@ -126,10 +139,10 @@ nothing).** `extract-v18` is `extract-v16` with a `feeling` on `feels_toward` (s
 positive/negative, a feeling beneath it), stored in `assertion.feeling` (ADR 0081); a switch between `extract-v16` and
 `extract-v18` re-extracts nothing (older turns keep their facts, "extract all history" fills a chat by hand); the
 panel and the Inspector show the strength in words and a dot in the sign's colour (mixed for opposite signs); the
-packet, the author's note and recall are byte-identical. Selectable, `extract-v16` stays the default. Built on its
-branch with zero-call tests; on a copy of production the switch and the switch back queued nothing and changed no row
-(`docs/perf/phase58-switch.md`); Q5 (no paid gate: the owner's use on 6113, then production, is the live check) and the
-deployment wait for the owner. It ships in `1.0.0`; production's deployment restarts the quiet weeks (Q4).
+packet, the author's note and recall are byte-identical. Selectable, `extract-v16` stays the default. Built on #339
+with zero-call tests; on a copy of production the switch and the switch back queued nothing and changed no row
+(`docs/perf/phase58-switch.md`). Q5 answered (owner, 2026-11-18): no paid gate, the owner's use is the live check. On
+6113 and production since 2026-11-18 15:36 KST (above); it ships in `1.0.0`.
 [Spec](phases/PHASE-58.md).
 
 **Phase 57 — pay once, and the Inspector's queue in bulk: approved 2026-11-08 (an owner request; Q1–Q5 answered as

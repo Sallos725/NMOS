@@ -4,7 +4,8 @@ Status: **approved**, 2026-11-18 (owner, in the design conversation of 2026-11-1
 및 6113에 올릴 준비"). An owner request, not a roadmap stage. Ships in `1.0.0` with Phase 57 (Q4: production gets it
 and the 1.0 quiet weeks restart on its build). Steps 2 and 3 done 2026-11-18 on branch
 `Sallos725/track-affinity-scores-host` (step 3: `docs/perf/phase58-switch.md`, the switch queues nothing on a copy of
-production). Linear: to be filed.
+production). Q5 answered as proposed and step 4 done (owner, 2026-11-18): on 6113 and production since 15:36 KST, the
+switch queued nothing on either; the quiet weeks restarted (earliest end 2026-12-02). Linear: to be filed.
 
 **High risk** (`AGENTS.md §14`):
 - **a new extractor generation** (`extract-v18`): a prompt change, so a new generation key (D20) and a release's one
@@ -94,8 +95,8 @@ ask for it in the packet; the packet is a later, separate decision).
   ("6003에 올리고 리셋하자").
 - **Q5 — the gate.** `AGENTS.md §7` item 6 asks a full live gate of an extraction change. The owner stopped paid runs
   (2026-10-25), and S3 queues nothing on the switch, so the checks below are zero-call and the owner's use on the test
-  install, then production, is the live check (as `extract-v17`'s default was deferred). **Proposed; the owner
-  confirms with the deployment.**
+  install, then production, is the live check (as `extract-v17`'s default was deferred). **Answered (owner,
+  2026-11-18): as proposed.**
 
 ## Steps
 

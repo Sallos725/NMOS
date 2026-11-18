@@ -299,10 +299,13 @@ Done when:
   `irrelevant` (20 → 16, the budget fill). `packet-v19` (Phase 46) gives 319 with no category worse, and the owner made
   it the default on 2026-10-13: met.
 - upgrades: met; fixtures from `v0.1.0-beta.7`, `.16`, `.21`, `v0.2.0`, `v0.3.0`, `v0.4.0`, `v0.5.0` and `v0.6.0` pass to the
-  latest migration (0034; the `v0.4.0` fixture applies 0030–0034, the `v0.5.0` and `v0.6.0` fixtures 0033–0034).
-- two quiet weeks: **started 2026-11-17 22:05 KST** on production's `:edge` image of `main` at `c394033` (Phase 57),
-  earliest end 2026-12-01 (R8, amended 2026-11-17). A heavy change (a packet policy, an extraction generation, a
-  migration) restarts the count. The earlier counts, kept as records, follow.
+  latest migration (0035; the `v0.4.0` fixture applies 0030–0035, the `v0.5.0` and `v0.6.0` fixtures 0033–0035).
+- two quiet weeks: **started 2026-11-18 15:36 KST** on production's Phase 58 build (`trial-phase58-c357c4c`, branch of
+  #339; `extract-v18` selected), earliest end 2026-12-02 (R8, owner 2026-11-18: Phase 58 in `1.0.0`, the count
+  restarted). A heavy change (a packet policy, an extraction generation, a migration) restarts the count. The earlier
+  counts, kept as records, follow.
+- the Phase 57 count: started 2026-11-17 22:05 KST on production's `:edge` image of `main` at `c394033`; ended on
+  2026-11-18 by the owner's choice to run Phase 58 (under a day).
 - the `0.6.0` count: started 2026-11-07 17:09 KST on production's published `0.6.0` image; ended on 2026-11-17 by the
   owner's choice to run Phase 57 (ten days quiet).
 - the first count: **started 2026-10-13 14:47 KST** on the 1.0 candidate `main` at `6d3f2f7`, earliest end
