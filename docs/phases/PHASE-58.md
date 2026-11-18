@@ -2,7 +2,9 @@
 
 Status: **approved**, 2026-11-18 (owner, in the design conversation of 2026-11-18: Q1–Q4 answered below; "완성되면 6003
 및 6113에 올릴 준비"). An owner request, not a roadmap stage. Ships in `1.0.0` with Phase 57 (Q4: production gets it
-and the 1.0 quiet weeks restart on its build). Linear: to be filed.
+and the 1.0 quiet weeks restart on its build). Steps 2 and 3 done 2026-11-18 on branch
+`Sallos725/track-affinity-scores-host` (step 3: `docs/perf/phase58-switch.md`, the switch queues nothing on a copy of
+production). Linear: to be filed.
 
 **High risk** (`AGENTS.md §14`):
 - **a new extractor generation** (`extract-v18`): a prompt change, so a new generation key (D20) and a release's one

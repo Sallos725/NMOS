@@ -127,7 +127,8 @@ positive/negative, a feeling beneath it), stored in `assertion.feeling` (ADR 008
 `extract-v18` re-extracts nothing (older turns keep their facts, "extract all history" fills a chat by hand); the
 panel and the Inspector show the strength in words and a dot in the sign's colour (mixed for opposite signs); the
 packet, the author's note and recall are byte-identical. Selectable, `extract-v16` stays the default. Built on its
-branch with zero-call tests; Q5 (no paid gate: the owner's use on 6113, then production, is the live check) and the
+branch with zero-call tests; on a copy of production the switch and the switch back queued nothing and changed no row
+(`docs/perf/phase58-switch.md`); Q5 (no paid gate: the owner's use on 6113, then production, is the live check) and the
 deployment wait for the owner. It ships in `1.0.0`; production's deployment restarts the quiet weeks (Q4).
 [Spec](phases/PHASE-58.md).
 
