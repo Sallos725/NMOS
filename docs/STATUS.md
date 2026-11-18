@@ -126,8 +126,9 @@ recommended), high risk.** Canon read once for every chat that sends the model t
 turns; a model change chosen in the panel, carrying on by default (nothing redone), the setting's re-read a checkbox;
 **Needs attention** applied or retracted in bulk after a preview, and a conflicting statement corrected from its row.
 Two pull requests: A (ADR 0078, ADR 0079, migration `0033`) and B (ADR 0080, migration `0034`, amendment 1: held alias
-joins and previewed repairs stay one at a time; canon's correction is locked) built 2026-11-08. The install the owner
-uses only after `1.0.0`. [Spec](phases/PHASE-57.md).
+joins and previewed repairs stay one at a time; canon's correction is locked) built 2026-11-08. On the test install
+and production since 2026-11-17; it ships in `1.0.0`, with no release of its own (owner, 2026-11-18).
+[Spec](phases/PHASE-57.md).
 
 **Phase 56 — the author's note gets a part the owner words (a custom prompt): approved 2026-11-05 (an owner request;
 Q1–Q4 as recommended), high risk (secrets; model text pasted into every prompt).** A fifth part of the note, **Custom**:
