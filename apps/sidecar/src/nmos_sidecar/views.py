@@ -18,7 +18,7 @@ from typing import Any
 
 from . import tokens
 from .facts import symmetric
-from .inspector import _act, _close, _v
+from .inspector import _act, _close, _v, feeling_detail, feeling_dot
 from .summaries import content
 
 # The hub's blocks are flex rows that always end flush: each block grows to fill what its row leaves (PHASE-52 D1).
@@ -65,6 +65,8 @@ STYLE = """
 .nmos .v-ev .v-x{color:var(--c-text-soft);min-width:0} .nmos .v-ev.major .v-x{color:var(--c-text-strong)}
 .nmos .v-ends{display:flex;justify-content:space-between;font-size:var(--t-caption,13px);color:var(--c-text-muted)}
 .nmos .v-warn{color:var(--c-warn)}
+.nmos .fd{display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 5px 1px 0;vertical-align:middle}
+.nmos .fd.pos{background:var(--c-ok)} .nmos .fd.neg{background:var(--c-err)} .nmos .fd.mix{background:var(--c-warn)}
 .nmos .v-filter input{width:100%;margin:0 0 8px}
 .nmos .v-foot{margin:28px 0 0;padding-top:10px;border-top:1px solid var(--c-line);font-size:var(--t-caption,13px);color:var(--c-text-muted)}
 .nmos .v-foot a{color:var(--c-text-soft)}
@@ -339,6 +341,18 @@ def section(key: str, lang: str, body: str, count: int | None = None) -> str:
     return f'<div class="v-sec" id="{key}"><h2 class="v-h2">{_v(t(lang, key))}{n}</h2>{body}</div>'
 
 
+def _pair_bits(p: dict[str, Any], lang: str) -> list[str]:
+    """A pair's roles, feelings and forms of address, each escaped: "A→B 감정 애정", a feeling with its sign's dot and its
+    strength (PHASE-58 S4); one without detail reads as before."""
+    bits = []
+    for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
+        for f in p[k]:
+            value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
+            bits.append(_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)} ") + feeling_dot(f, lang)
+                        + _v(f"{value}") + feeling_detail(f, lang))
+    return bits
+
+
 def line(main: str, meta: str = "", extra: str = "") -> str:
     """One item: its text (already escaped), a muted line under it, and what the panel adds (a repair marker)."""
     return f'<div class="v-line">{main}{f"<div class=\'v-meta\'>{meta}</div>" if meta else ""}{extra}</div>'
@@ -390,15 +404,11 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
         names = sorted(p["names"].values())
         rel = [f.get("value") for f in p["relationship"]]
         head = " ↔ ".join(nm(n) for n in names) + (f" · {_v(', '.join(str(r) for r in rel if r))}" if rel else "")
-        bits = []
-        for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
-            for f in p[k]:
-                value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
-                bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)} {value}")
+        bits = _pair_bits(p, lang)
         if len(p["relationship"]) > 1 or any(not symmetric(f.get("value")) for f in p["relationship"]):
-            bits = [f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, 'relationship')} {f.get('value')}"
+            bits = [_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, 'relationship')} {f.get('value')}")
                     for f in p["relationship"]] + bits
-        people.append(line(head, _v(" · ".join(bits))))
+        people.append(line(head, " · ".join(bits)))
     story, scenes = d.get("story"), d.get("scenes") or []
     sofar = (f'<p class="v-text">{_v(story["text"])}</p><div class="v-meta">{_v(t(lang, "story"))} · '
              f't{story["first_turn"]}–{story["last_turn"]}</div>') if story else ""
@@ -488,12 +498,7 @@ def person(d: dict[str, Any], lang: str) -> str:
     for p in d.get("pairs") or []:
         other = [n for i, n in p["names"].items() if str(i) != str(e["id"])]
         rel = [str(f.get("value")) for f in p["relationship"] if f.get("value")]
-        bits = []
-        for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
-            for f in p[k]:
-                value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
-                bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)} {value}")
-        rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), _v(" · ".join(bits))))
+        rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), " · ".join(_pair_bits(p, lang))))
     threads = [line(f"{_v(th['text'])}" + (f" → {nm(th['to'])}" if th.get("to") and th.get("by") == e.get("name") else ""),
                     _v(thread_meta(th, lang)),
                     _close(th)) for th in d.get("threads") or []]

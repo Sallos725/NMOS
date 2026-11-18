@@ -26,8 +26,8 @@ from .entities import PERSONA, UNNAMED, node, norm, resolve
 from .facts import _versions, fact_text, links_of, persona_of, served_assertions, version_key
 from . import canon
 from .repairs import repairs_of, splits_of
-from .predicates import (DERIVED, REGISTRY, alias_evidenced, because, fill_types, knowledge, outcome, participants,
-                         horizon, registry_prompt, salience, semantics, validate)
+from .predicates import (DERIVED, REGISTRY, alias_evidenced, because, feeling, fill_types, knowledge, outcome,
+                         participants, horizon, registry_prompt, salience, semantics, validate)
 from .secrets import fold as fold_secrets, reveal_value
 from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity
 from .reconcile import Entry, RevKey, turn_layout
@@ -60,7 +60,9 @@ COMPILER_VERSION = "extract-v15"  # v2: known_by / hidden_from; v3: knowledge sc
 # extract-v17 (PHASE-45 and PHASE-51, R8): extract-v16 with how long a thread is meant to last (`horizon`, stored in
 # `assertion.salience`) and who says each quoted line of the TARGET turn (`speakers`, stored in `extraction.speakers`).
 # Selectable, not the default until its live gate passes (PHASE-45 S5).
-COMPILERS = ("extract-v15", "extract-v16", "extract-v17")
+# extract-v18 (PHASE-58, ADR 0081): extract-v16 with how a feeling feels (`feeling`, stored in `assertion.feeling`).
+# Selectable; the default stays extract-v16 until the owner decides at the 1.0.0 tag.
+COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18")
 DEFAULT_COMPILER = "extract-v16"
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
@@ -369,15 +371,43 @@ def _v17(prompt: str) -> str:
 
 SYSTEM_V17 = _v17(SYSTEM_V16)
 SYSTEM_V17_ROLES = _v17(SYSTEM_V16_ROLES)
+# extract-v18 (PHASE-58, ADR 0081): extract-v16 with how a feeling feels, on `feels_toward` only: its strength, its sign
+# and a feeling the turn shows beneath it. One slot per direction stays (ADR 0038 item 3), so a change of strength is a
+# new statement of the whole feeling.
+FEELING_RULE = """- `feeling`, for `feels_toward` only: how the TARGET turn shows the feeling. `intensity`: "faint" for a
+  hint or a mild feeling, "clear" when it is plainly shown, "strong" when it overwhelms the character or drives the
+  scene. `valence`: "positive" for warmth, trust, love, attraction, gratitude, admiration or relief; "negative" for
+  anger, fear, resentment, contempt, jealousy, distrust, disgust, or guilt or shame toward them; null when it is
+  neither (curiosity, surprise). `under`: a second feeling toward the same person that the TARGET turn shows running
+  beneath the first (fond of him, with resentment still under it), as {{"value": "...", "intensity": "...",
+  "valence": "..."}}, `value` a short phrase in the chat's language; null otherwise. Never guess one.
+  Give `feels_toward` again, with the whole feeling, when the TARGET turn changes only how strong it is or a feeling
+  under it appears or fades; not when it shows the same feeling as strongly as before.
+"""
+_BECAUSE_ANSWER = '"because": "... or null",'
+_FEELING_ANSWER = (_BECAUSE_ANSWER + '\n"feeling": {{"intensity": "faint|clear|strong", "valence": "positive|negative|null",'
+                   ' "under": null}} or null (feels_toward only),')
+
+
+def _v18(prompt: str) -> str:
+    """extract-v16's prompt with the feeling rule and answer (PHASE-58 S1)."""
+    assert prompt.count(_BECAUSE_AT) == 1 and prompt.count(_BECAUSE_ANSWER) == 1, "a v16 rule's place moved"
+    return prompt.replace(_BECAUSE_AT, FEELING_RULE + _BECAUSE_AT, 1).replace(_BECAUSE_ANSWER, _FEELING_ANSWER, 1)
+
+
+SYSTEM_V18 = _v18(SYSTEM_V16)
+SYSTEM_V18_ROLES = _v18(SYSTEM_V16_ROLES)
 PROMPTS = {"extract-v15": SYSTEM_PROMPT, "extract-v16": SYSTEM_V16_ROLES,
-           "extract-v17": SYSTEM_V17_ROLES}  # the full form, which the generation names
+           "extract-v17": SYSTEM_V17_ROLES, "extract-v18": SYSTEM_V18_ROLES}  # the full form, which the generation names
 assert all(x in SYSTEM_V16_ROLES for x in (ROLE_ENDINGS, ALIAS_RULE, ANSWER_ROLES)), "a v16 rule's place moved"
 assert ROLE_ENDINGS not in SYSTEM_V16 and ALIAS_CHECK not in SYSTEM_V16_ROLES and PAIRS_RULE not in SYSTEM_V16_ROLES
 assert HORIZON_RULE not in SYSTEM_V16_ROLES and "speakers" not in SYSTEM_V16_ROLES
-ROLES = frozenset({"extract-v16", "extract-v17"})  # the compilers that list CURRENT ROLES
-PARTS_APART = frozenset({"extract-v16", "extract-v17"})  # the compilers whose alias of a name and its part needs the part on its own
+assert FEELING_RULE not in SYSTEM_V16_ROLES and FEELING_RULE not in SYSTEM_V17_ROLES
+ROLES = frozenset({"extract-v16", "extract-v17", "extract-v18"})  # the compilers that list CURRENT ROLES
+PARTS_APART = frozenset({"extract-v16", "extract-v17", "extract-v18"})  # the compilers whose alias of a name and its part needs the part on its own
 HORIZONS = frozenset({"extract-v17"})  # the compilers whose threads carry a horizon (PHASE-51)
 SPEAKERS = frozenset({"extract-v17"})  # the compilers that name each quoted line's speaker (PHASE-45)
+FEELINGS = frozenset({"extract-v18"})  # the compilers that weigh a feeling (PHASE-58); a switch: generations.ADDS
 # The same compilers' rule that a known name the turn does not write stands in only for a character the turn names
 # (`alias_evidenced`, ADR 0064 item 2): not in the prompt, so its own part of the generation names it.
 ALIASES_PRESENT = ("a known name stands in only for a ?-description or a character the turn writes by another name"
@@ -394,7 +424,7 @@ def prompt_of(compiler: str, roles: bool = True) -> str:
     upgrade by renaming it); the settings only select a compiler of PROMPTS (`Settings.__post_init__`). extract-v16's
     leaves the role-ending rules out when no CURRENT ROLE is listed (`roles` false)."""
     if compiler in ROLES and not roles:
-        return SYSTEM_V17 if compiler == "extract-v17" else SYSTEM_V16
+        return {"extract-v17": SYSTEM_V17, "extract-v18": SYSTEM_V18}.get(compiler, SYSTEM_V16)
     return PROMPTS.get(compiler, SYSTEM_PROMPT)
 
 
@@ -1178,7 +1208,7 @@ Match the listed role's place and counterpart to the arrangement the TARGET actu
 Packing, a stripped bed or farewell gifts are preparations, not checkout. If the person is still staying in the room at the TARGET's end and the move is later, the guest role is still held: answer no, not yes. For yes, quote the completed departure or termination itself, not luggage, an emptied shelf or a farewell.
 Return only JSON: {"ended":"yes" or "no","evidence":"one verbatim passage from TARGET, at most 160 characters"}.
 The evidence must support your answer. For yes, quote what happens in TARGET that ends this exact arrangement. A reason, arrangement or plan in CONTEXT is not ending evidence. Never quote CONTEXT or join separate passages with an ellipsis. Do not add explanations or other fields."""
-CONFIRMS = frozenset({"extract-v16", "extract-v17"})  # the compilers whose listed role endings are confirmed
+CONFIRMS = frozenset({"extract-v16", "extract-v17", "extract-v18"})  # the compilers whose listed role endings are confirmed
 CONFIRM_TURNS = 2  # preceding turns the confirmation shows, each as the TARGET is shown (TARGET_CHARS per message)
 HELD = "role ending not confirmed"  # the reason prefix of a held ending (a pending row: no fact)
 
@@ -1450,16 +1480,25 @@ def summed(*usages: dict[str, Any] | None) -> dict[str, Any] | None:
 
 ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic",
                      "confidence", "evidence", "status", "reason", "knowledge", "known_by", "hidden_from",
-                     "polarity", "modality", "source", "asserted_by", "salience", "participants", "outcome", "because")
+                     "polarity", "modality", "source", "asserted_by", "salience", "participants", "outcome", "because",
+                     "feeling")
+JSON_COLUMNS = frozenset({"participants", "feeling"})  # jsonb columns of ASSERTION_COLUMNS
+
+
+def assertion_values(a: dict[str, Any]) -> tuple[Any, ...]:
+    """A row's ASSERTION_COLUMNS for an INSERT, its jsonb columns wrapped."""
+    return tuple(Jsonb(a[c]) if c in JSON_COLUMNS and a.get(c) is not None else a.get(c) for c in ASSERTION_COLUMNS)
 
 
 def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
-              shown: str | None = None, apart: bool = False, horizons: bool = False) -> list[dict[str, Any]]:
+              shown: str | None = None, apart: bool = False, horizons: bool = False,
+              feelings: bool = False) -> list[dict[str, Any]]:
     """Model output → assertion rows (at most 40): missing entity types filled from the reply or the
     hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
     (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). `shown` (the turn worker, since extract-v14,
     ADR 0054: the target turn as the model saw it, `shown_target`): a quote of EVIDENCE_MIN_CHARS or more that is
-    not in it parks the row. Pure,
+    not in it parks the row. `feelings` (extract-v18, PHASE-58 S2) keeps a feeling's strength, sign and the feeling
+    under it. Pure,
     so the real-model evaluation (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
     out = []
     for item, inferred in fill_types(items[:40], hints):
@@ -1506,7 +1545,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
                     "modality": modality, "source": source, "asserted_by": asserted_by,
                     "salience": salience(item) or (horizon(item) if horizons else None),  # PHASE-51 S2
                     "participants": participants(item) if status == "valid" else None,
-                    "outcome": outcome(item), "because": because(item)})
+                    "outcome": outcome(item), "because": because(item),
+                    "feeling": feeling(item) if feelings else None})
     return out
 
 
@@ -1591,10 +1631,9 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         ).fetchone()
         if inserted is None:
             return "done"
-        rows = [(extraction_id, revision_id, *(Jsonb(a[c]) if c == "participants" and a[c] is not None else a[c]
-                                               for c in ASSERTION_COLUMNS))
+        rows = [(extraction_id, revision_id, *assertion_values(a))
                 for a in normalize(items, turn_text, hints, shown_target(ctx), compiler in PARTS_APART,
-                                  compiler in HORIZONS)]
+                                  compiler in HORIZONS, compiler in FEELINGS)]
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(

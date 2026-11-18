@@ -36,7 +36,8 @@ class Settings:
     # Known entity names shown to extraction (ADR 0012); 0 turns hints off. Part of the extractor generation.
     extract_hints: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_HINTS", "40")))
     # The extractor (PHASE-28 Q3): empty is `extraction.DEFAULT_COMPILER` (extract-v16 since 2026-10-04: it lists the roles
-    # in force and ends one as listed); "extract-v15" selects the earlier extractor. Part of the extractor generation: a change re-extracts every chat once.
+    # in force and ends one as listed); "extract-v15" selects the earlier extractor. Part of the extractor generation: a change re-extracts every chat once,
+    # but a switch between extract-v16 and extract-v18 (PHASE-58 S3) re-extracts nothing.
     extract_compiler: str = field(default_factory=lambda: os.environ.get("NMOS_EXTRACT_COMPILER", ""))
     # Scene summaries and the story so far (PHASE-12, ADR 0042, 0043), written by the extraction model; "0" or the
     # plugin's switch turns them off. Needs NMOS_LLM_URL.
@@ -100,8 +101,8 @@ class Settings:
 
     def __post_init__(self) -> None:
         # A misspelt extractor would be a generation of its own (a full re-extraction): refused at startup.
-        if self.extract_compiler not in ("", "extract-v15", "extract-v16", "extract-v17"):
-            raise ValueError("NMOS_EXTRACT_COMPILER must be empty, extract-v15, extract-v16 or extract-v17,"
+        if self.extract_compiler not in ("", "extract-v15", "extract-v16", "extract-v17", "extract-v18"):
+            raise ValueError("NMOS_EXTRACT_COMPILER must be empty, extract-v15, extract-v16, extract-v17 or extract-v18,"
                              f" not {self.extract_compiler!r}")
         # A cap under one would embed nothing and mark every embed job done (ADR 0062): refused at startup.
         if self.embed_max_chunks < 1:

@@ -310,6 +310,38 @@ def because(item: dict[str, Any]) -> str | None:
     return value[:200] if value and value.casefold() not in ("null", "none", "-") else None
 
 
+# extract-v18 (PHASE-58, ADR 0081): how strongly a `feels_toward` is shown, its sign, and a feeling beneath it.
+INTENSITIES = ("faint", "clear", "strong")
+VALENCES = ("positive", "negative")
+
+
+def _weighed(part: Any) -> dict[str, str | None] | None:
+    """One feeling's strength and sign: None without a valid intensity; an unknown sign is null, never guessed."""
+    if not isinstance(part, dict):
+        return None
+    intensity = str(part.get("intensity") or "").strip().lower()
+    if intensity not in INTENSITIES:
+        return None
+    valence = str(part.get("valence") or "").strip().lower()
+    return {"intensity": intensity, "valence": valence if valence in VALENCES else None}
+
+
+def feeling(item: dict[str, Any]) -> dict[str, Any] | None:
+    """The `feeling` of a `feels_toward` (PHASE-58 S2): {intensity, valence, under}, `under` a second feeling with its
+    own value (at most 80 characters), intensity and valence, or None. None for any other predicate and without a
+    valid intensity: the row's value stands as before."""
+    if item.get("predicate") != "feels_toward":
+        return None
+    raw = item.get("feeling")
+    out = _weighed(raw)
+    if out is None:
+        return None
+    under = raw.get("under")
+    value = str(under.get("value") or "").strip()[:80] if isinstance(under, dict) else ""
+    weighed = _weighed(under) if value and value.casefold() not in ("null", "none", "-") else None
+    return {**out, "under": {"value": value, **weighed} if weighed else None}
+
+
 SALIENCES = ("major", "minor")
 # How long a thread is meant to last (PHASE-51 S1), stored in `assertion.salience` for the predicates that open one
 # (S2): the scene or the day, a storyline over several scenes, or until the story ends it. Older rows have none.

@@ -75,12 +75,17 @@ def activate(conn: psycopg.Connection, gen: Generation) -> str | None:
 
 
 MODEL_FIELDS = ("model", "endpoint")
+# Extractor compilers a switch between re-extracts nothing for (PHASE-58 S3, ADR 0081 item 4): extract-v18 is extract-v16
+# with a field on rows both write the same way, so the facts older turns have stay as good as they were.
+ADDS = frozenset({"extract-v16", "extract-v18"})
+ADDS_FIELDS = ("compiler", "prompt")
 
 
 def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) -> str:
     """What making `gen` active is, next to the generation `previous` that was (PHASE-57 A3): "same", "new" (none
-    was), "model" (only the model or the endpoint differs: the owner changed the model) or "version" (anything
-    else: a release's version or prompt, or a setting the key hashes)."""
+    was), "model" (only the model or the endpoint differs: the owner changed the model), "adds" (only the compiler
+    and its prompt differ, between two compilers of ADDS: PHASE-58 S3; with the model too, "model") or "version"
+    (anything else: a release's version or prompt, or a setting the key hashes)."""
     if previous == gen.key:
         return "same"
     if previous is None:
@@ -89,10 +94,16 @@ def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) ->
     if row is None:
         return "version"
 
-    def rest(spec: dict[str, Any]) -> dict[str, Any]:
-        return {k: v for k, v in spec.items() if k not in MODEL_FIELDS}
+    def rest(spec: dict[str, Any], skip: tuple[str, ...] = ()) -> dict[str, Any]:
+        return {k: v for k, v in spec.items() if k not in MODEL_FIELDS + skip}
 
-    return "model" if rest(row["spec"]) == rest(json.loads(json.dumps(gen.spec))) else "version"
+    old, new = row["spec"], json.loads(json.dumps(gen.spec))
+    if rest(old) == rest(new):
+        return "model"
+    if (old.get("compiler") != new.get("compiler") and {old.get("compiler"), new.get("compiler")} <= ADDS
+            and rest(old, ADDS_FIELDS) == rest(new, ADDS_FIELDS)):
+        return "adds" if all(old.get(k) == new.get(k) for k in MODEL_FIELDS) else "model"
+    return "version"
 
 
 def describe(conn: psycopg.Connection, key: str | None) -> dict[str, Any] | None:
