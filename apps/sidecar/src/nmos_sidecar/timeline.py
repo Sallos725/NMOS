@@ -575,7 +575,7 @@ a.tl-row:hover{background:var(--chip);text-decoration:none}
 .tl-bar:hover{text-decoration:none;border-color:var(--muted)}
 .tl-bar.past{background:transparent;border-color:var(--line-strong,var(--muted));opacity:.8} .tl-bar.neg{border-style:dotted}
 .tl-bar.open{border-right-style:dashed} .tl-bar.canon{border-left:2px dotted var(--muted)}
-.tl-bar.owner{border-color:#e8590c}
+.tl-bar.owner{border-color:var(--mix,#e8ac43)}
 .tl [aria-pressed="true"]{background:var(--accent);color:var(--bg);border-color:var(--accent)}
 .tl-dot{position:absolute;top:2px;bottom:2px;width:9px;margin-left:-4px;background:transparent}
 .tl-dot::after{content:"";position:absolute;left:3.5px;bottom:2px;width:2px;height:10px;border-radius:1px;background:var(--muted)}
@@ -586,8 +586,9 @@ a.tl-row:hover{background:var(--chip);text-decoration:none}
 .tl-axis .tl-track{height:20px}
 .tl-axis .tl-track span{position:absolute;top:2px;font-size:13px;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
 .tl-axis .tl-track span.first{transform:none} .tl-axis .tl-track span.last{transform:translateX(-100%)}
-.tl-side{border-left:1px solid var(--line);padding-left:18px;font-size:13px;position:sticky;top:12px}
-.tl-side p{margin:3px 0} .tl-side .v{font-size:22px;font-weight:600;line-height:1.3;margin:6px 0;overflow-wrap:anywhere}
+.tl-side{border-left:1px solid var(--line);padding-left:18px;font-size:13px;position:sticky;top:72px}
+.tl-card{background:var(--sunken,var(--chip));border:1px solid var(--line-strong,var(--line));border-radius:12px;padding:12px 14px}
+.tl-side p{margin:3px 0} .tl-side .v{font-size:20px;font-weight:600;color:var(--fg-strong,var(--fg));line-height:1.35;margin:6px 0;overflow-wrap:anywhere}
 .tl-hist{margin:10px 0;padding-left:20px;color:var(--muted)} .tl-hist .cur{color:var(--fg)}
 .tl-x{display:none}
 .tl-more{font-size:13px;margin:2px 6px}
@@ -597,8 +598,8 @@ tr:target td{background:var(--chip)}
 @media (max-width:720px){.tl-grid{grid-template-columns:minmax(0,1fr)}
   /* the detail rises from the bottom where the tap was made, not under the whole timeline (owner, 2026-10-07) */
   .tl-side{position:fixed;left:0;right:0;top:auto;bottom:0;z-index:20;max-height:46vh;overflow:auto;border-left:0;
-    border-top:1px solid var(--line);border-radius:14px 14px 0 0;padding:12px 18px 20px;background:var(--bg);
-    box-shadow:0 -10px 28px rgba(0,0,0,.35)}
+    border-top:1px solid var(--line-strong,var(--line));border-radius:14px 14px 0 0;padding:12px 18px 20px;background:var(--surface,var(--bg));
+    box-shadow:0 -10px 28px rgba(0,0,0,.45)}
   .tl:not(.tapped) .tl-side,.tl-side:not(:has(.tl-card)){display:none}
   .tl-x{display:block;float:right;font:inherit;font-size:13px;color:var(--accent);background:none;border:0;padding:6px 0 6px 14px}
   .tl-row{grid-template-columns:118px minmax(0,1fr);gap:8px}

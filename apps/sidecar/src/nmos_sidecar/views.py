@@ -21,62 +21,99 @@ from .facts import symmetric
 from .inspector import _act, _close, _v, feeling_detail, feeling_dot
 from .summaries import content
 
-# The hub's blocks are flex rows that always end flush: each block grows to fill what its row leaves (PHASE-52 D1).
+# The hub's blocks are flex rows that always end flush: each block grows to fill what its row leaves (PHASE-52 D1, PHASE-59).
 STYLE = """
-.nmos .v{font-size:var(--t-body,16px);line-height:1.65;color:var(--c-text);max-width:980px}
+.nmos .v{font-size:var(--t-body,16px);line-height:1.65;color:var(--c-text);max-width:1060px}
 .nmos .v a{color:inherit;text-decoration:none}
-.nmos .v-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px;margin:0 0 14px}
-.nmos .v-h1{font-size:var(--t-h1,20px);font-weight:600;margin:0;color:var(--c-text-strong)}
-.nmos .v-cap{font-size:var(--t-caption,13px);color:var(--c-text-muted)}
-.nmos .v-blocks{display:flex;flex-wrap:wrap;gap:10px}
-.nmos .v-block{display:flex;flex-direction:column;gap:2px;background:var(--c-raised);border-radius:var(--r-block,12px);padding:14px 16px;min-height:84px;cursor:pointer;border:1px solid transparent;flex:1 1 140px;min-width:0;box-sizing:border-box}
-.nmos .v-block:hover{border-color:var(--c-line-hover)}
+.nmos .v-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 14px;margin:0 0 16px}
+.nmos .v-h1{font-size:var(--t-h1,20px);font-weight:600;margin:0;color:var(--c-text-strong);letter-spacing:-0.015em}
+.nmos .v-cap{font-size:var(--t-caption,13px);color:var(--c-text-muted);background:var(--c-raised);border:1px solid var(--c-line);padding:2px 10px;border-radius:99px}
+.nmos .v-cap:empty{display:none}
+.nmos .v-blocks{display:flex;flex-wrap:wrap;gap:12px}
+.nmos .v-block{display:flex;flex-direction:column;gap:4px;background:var(--c-surface);border-radius:14px;padding:16px 18px;min-height:94px;cursor:pointer;border:1px solid var(--c-line);flex:1 1 140px;min-width:0;box-sizing:border-box;transition:border-color .15s ease,background .15s ease,transform .15s ease}
+.nmos .v-block:hover{border-color:var(--c-line-hover);background:var(--c-raised)}
 .nmos .v-wide,.nmos .v-big{flex-basis:100%}
-.nmos .v-wide{min-height:0;border-left:3px solid var(--c-ok);border-radius:0 var(--r-block,12px) var(--r-block,12px) 0}
-.nmos .v-wide.warn{border-left-color:var(--c-warn)} .nmos .v-wide.err{border-left-color:var(--c-err)}
-.nmos .v-wide.off,.nmos .v-wide.idle{border-left-color:var(--c-text-ghost)}
-.nmos .v-bt{font-size:var(--t-body,16px);font-weight:600;color:var(--c-text-strong)}
+.nmos .v-wide{min-height:0;background:linear-gradient(135deg,rgba(79,209,139,0.08),var(--c-surface) 55%);border:1px solid rgba(79,209,139,0.26);border-left:4px solid var(--c-ok);border-radius:14px}
+.nmos .v-wide.warn{background:linear-gradient(135deg,rgba(232,172,67,0.09),var(--c-surface) 55%);border-color:rgba(232,172,67,0.3);border-left-color:var(--c-warn)}
+.nmos .v-wide.err{background:linear-gradient(135deg,rgba(240,93,94,0.10),var(--c-surface) 55%);border-color:rgba(240,93,94,0.32);border-left-color:var(--c-err)}
+.nmos .v-wide.off,.nmos .v-wide.idle{background:var(--c-surface);border-color:var(--c-line-strong);border-left-color:var(--c-text-ghost)}
+.nmos .v-big{background:linear-gradient(180deg,var(--c-raised),var(--c-surface));border-color:var(--c-line-strong)}
+.nmos .v-block.v-attn{flex-basis:100%;min-height:0;background:linear-gradient(135deg,rgba(232,172,67,0.12),var(--c-surface) 60%);border-color:rgba(232,172,67,0.34);flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;padding:13px 18px}
+.nmos .v-block.v-notes{background:linear-gradient(135deg,rgba(167,139,250,0.10),var(--c-surface) 65%);border-color:rgba(167,139,250,0.26)}
+.nmos .v-block.v-map-tile{background:linear-gradient(135deg,rgba(56,189,248,0.09),var(--c-surface) 65%);border-color:rgba(56,189,248,0.24)}
+.nmos .v-bt{font-size:var(--t-body,16px);font-weight:600;color:var(--c-text-strong);letter-spacing:-0.01em}
 .nmos .v-bs{font-size:var(--t-secondary,14px);color:var(--c-text-soft)}
 .nmos .v-attn .v-bt{color:var(--c-warn)}
-.nmos .v-now{display:block;font-size:var(--t-secondary,14px);color:var(--c-text-soft);margin-top:6px}
-.nmos .v-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
-.nmos .v-chips a{font-size:var(--t-caption,13px);padding:3px 10px;border-radius:var(--r-control,6px);background:var(--c-raised);color:var(--c-text-soft)}
-.nmos .v-sec{margin:22px 0 0}
-.nmos .v-h2{font-size:var(--t-h2,17px);font-weight:600;margin:0 0 6px;color:var(--c-text-strong)}
-.nmos .v-h2.v-small{font-size:var(--t-secondary,14px);margin-top:12px}
-.nmos .v-n{font-size:var(--t-caption,13px);font-weight:400;color:var(--c-text-muted);margin-left:6px}
-.nmos .v-line{padding:8px 0;border-top:1px solid var(--c-line)}
-.nmos .v-line .rp{display:none} .nmos .v-line.open .rp{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 0}
-.nmos .v-line .rp .rp-ask{font-size:var(--t-secondary,14px);color:var(--c-text-muted)}
-.nmos .v-meta{font-size:var(--t-caption,13px);color:var(--c-text-muted)}
-.nmos .v a.v-name{color:var(--c-link)}
+.nmos .v-attn .v-bs{font-weight:600;color:var(--c-warn);background:rgba(232,172,67,0.14);border:1px solid rgba(232,172,67,0.34);padding:2px 10px;border-radius:99px}
+.nmos .v-now-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.nmos .v-now{display:inline-flex;align-items:center;font-size:var(--t-caption,13px);color:var(--c-text-soft);background:var(--c-sunken);border:1px solid var(--c-line);padding:4px 10px;border-radius:8px;max-width:100%}
+.nmos .v-th-list{display:flex;flex-direction:column;gap:5px;margin-top:10px;padding-top:10px;border-top:1px solid var(--c-line)}
+.nmos .v-th-prev{display:flex;align-items:baseline;gap:8px;font-size:var(--t-caption,13px);color:var(--c-text-soft)}
+.nmos .v-prog-wrap{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.nmos .v-prog-row{display:flex;flex-direction:column;gap:4px}
+.nmos .v-prog-head{display:flex;justify-content:space-between;font-size:var(--t-caption,13px);color:var(--c-text-muted)}
+.nmos .v-prog{position:relative;height:6px;border-radius:99px;background:var(--c-sunken);border:1px solid var(--c-line);overflow:hidden;margin-top:6px}
+.nmos .v-prog-fill{position:absolute;top:0;bottom:0;left:0;border-radius:99px;background:var(--c-accent);min-width:2px}
+.nmos .v-prog-fill.ok{background:var(--c-ok)}
+.nmos .v-prog-fill.warn{background:var(--c-warn)}
+.nmos .v-doc-grid{display:block}
+.nmos .v-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.nmos .v-chips a{display:inline-flex;align-items:center;justify-content:space-between;gap:6px;font-size:var(--t-caption,13px);padding:6px 11px;border-radius:9px;background:var(--c-surface);border:1px solid var(--c-line);color:var(--c-text-soft);transition:background .15s ease,border-color .15s ease,color .15s ease}
+.nmos .v-chips a:hover{background:var(--c-raised);border-color:var(--c-line-hover);color:var(--c-text-strong)}
+.nmos .v-chip-n{font-size:12px;color:var(--c-text-muted);background:var(--c-sunken);padding:0 6px;border-radius:99px}
+.nmos .v-doc-main{min-width:0}
+.nmos .v-sec{margin:0 0 16px;padding:16px 18px;background:var(--c-surface);border:1px solid var(--c-line);border-radius:14px}
+.nmos .v-h2{font-size:var(--t-h2,17px);font-weight:600;margin:0 0 10px;color:var(--c-text-strong);display:flex;align-items:center;gap:8px;letter-spacing:-0.01em}
+.nmos .v-h2.v-small{font-size:var(--t-secondary,14px);margin:14px 0 6px;color:var(--c-text-soft)}
+.nmos .v-n{font-size:var(--t-caption,13px);font-weight:600;color:var(--c-text-muted);background:var(--c-raised);border:1px solid var(--c-line);padding:1px 8px;border-radius:99px;margin-left:2px}
+.nmos .v-line{padding:11px 0;border-top:1px solid var(--c-line);transition:background .12s ease}
+.nmos .v-line:first-of-type{border-top:0;padding-top:4px}
+.nmos .v-line .rp{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 0;opacity:.88}
+.nmos .v-line.open .rp,.nmos .v-line:hover .rp{opacity:1}
+.nmos .v-line .rp .rp-ask{font-size:var(--t-caption,13px);color:var(--c-text-muted);margin-right:2px}
+.nmos .v-meta{font-size:var(--t-caption,13px);color:var(--c-text-muted);margin-top:4px;line-height:1.5}
+.nmos .v-tag{display:inline-flex;align-items:center;font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;margin-right:6px;background:var(--c-raised);border:1px solid var(--c-line-strong);color:var(--c-text-soft);vertical-align:1px}
+.nmos .v-tag.k-promise{background:rgba(74,106,245,0.14);border-color:rgba(74,106,245,0.34);color:var(--c-link)}
+.nmos .v-tag.k-goal{background:rgba(79,209,139,0.12);border-color:rgba(79,209,139,0.32);color:var(--c-ok)}
+.nmos .v-tag.k-threat{background:rgba(240,93,94,0.14);border-color:rgba(240,93,94,0.34);color:var(--c-err)}
+.nmos .v-tag.k-question{background:rgba(167,139,250,0.14);border-color:rgba(167,139,250,0.34);color:var(--c-violet)}
+.nmos .v-tag.k-debt{background:rgba(232,172,67,0.14);border-color:rgba(232,172,67,0.34);color:var(--c-warn)}
+.nmos .v-tag.k-echo{background:rgba(79,209,139,0.12);border-color:rgba(79,209,139,0.3);color:var(--c-ok);margin-right:0}
+.nmos .v-diff{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
+.nmos .v-diff-old{background:rgba(240,93,94,0.10);color:var(--c-text-soft);padding:1px 7px;border-radius:6px;text-decoration:line-through}
+.nmos .v-diff-new{background:rgba(232,172,67,0.13);color:var(--c-warn);padding:1px 7px;border-radius:6px;font-weight:600}
+.nmos .v a.v-name{color:var(--c-link);font-weight:600}
+.nmos .v a.v-name:hover{text-decoration:underline}
 .nmos .v-text{color:var(--c-text-soft);margin:0}
-.nmos .v-note{font-size:var(--t-caption,13px);color:var(--c-text-muted);margin:6px 0 0}
-.nmos .v-more>summary{cursor:pointer;list-style:none;font-size:var(--t-secondary,14px);color:var(--c-text-muted);padding:6px 0}
+.nmos .v-note{font-size:var(--t-caption,13px);color:var(--c-text-muted);margin:8px 0 0}
+.nmos .v-more>summary{cursor:pointer;list-style:none;font-size:var(--t-secondary,14px);color:var(--c-link);padding:8px 0 2px;font-weight:500}
 .nmos .v-more>summary::-webkit-details-marker{display:none}
-.nmos .v-mini{position:relative;height:20px;margin:10px 7px 2px}
-.nmos .v-mini .v-axis{position:absolute;left:0;right:0;top:9px;border-top:2px solid var(--c-line-strong)}
-.nmos .v-pin{position:absolute;top:7px;width:6px;height:6px;margin-left:-3px;border-radius:50%;background:var(--c-text-faint)}
-.nmos .v-pin.major{top:3px;width:14px;height:14px;margin-left:-7px;box-sizing:border-box;border:2px solid var(--c-text-strong);background:var(--c-bg)}
-.nmos .v-ev{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--c-line)}
-.nmos .v-ev .v-t{flex:none;min-width:52px;font-size:var(--t-caption,13px);color:var(--c-text-muted);padding-top:3px}
+.nmos .v-mini{position:relative;height:24px;margin:10px 7px 4px}
+.nmos .v-mini .v-axis{position:absolute;left:0;right:0;top:11px;border-top:2px solid var(--c-line-strong)}
+.nmos .v-pin{position:absolute;top:9px;width:6px;height:6px;margin-left:-3px;border-radius:50%;background:var(--c-text-faint)}
+.nmos .v-pin.major{top:5px;width:14px;height:14px;margin-left:-7px;box-sizing:border-box;border:2px solid var(--c-link);background:var(--c-bg);box-shadow:0 0 8px rgba(74,106,245,0.45)}
+.nmos .v-ev{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--c-line)}
+.nmos .v-ev .v-t{flex:none;min-width:52px;font-size:var(--t-caption,13px);color:var(--c-text-muted);padding-top:3px;font-variant-numeric:tabular-nums}
 .nmos .v-ev .v-d{flex:none;width:8px;height:8px;margin:9px 2px 0;border-radius:50%;background:var(--c-text-faint)}
-.nmos .v-ev.major .v-d{width:12px;height:12px;margin:7px 0 0;box-sizing:border-box;border:2px solid var(--c-text-strong);background:transparent}
-.nmos .v-ev .v-x{color:var(--c-text-soft);min-width:0} .nmos .v-ev.major .v-x{color:var(--c-text-strong)}
+.nmos .v-ev.major .v-d{width:12px;height:12px;margin:7px 0 0;box-sizing:border-box;border:2px solid var(--c-link);background:transparent}
+.nmos .v-ev .v-x{color:var(--c-text-soft);min-width:0} .nmos .v-ev.major .v-x{color:var(--c-text-strong);font-weight:500}
 .nmos .v-ends{display:flex;justify-content:space-between;font-size:var(--t-caption,13px);color:var(--c-text-muted)}
 .nmos .v-warn{color:var(--c-warn)}
 .nmos .fd{display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 5px 1px 0;vertical-align:middle}
 .nmos .fd.pos{background:var(--c-ok)} .nmos .fd.neg{background:var(--c-err)} .nmos .fd.mix{background:var(--c-warn)}
-.nmos .v-filter input{width:100%;margin:0 0 8px}
-.nmos .v-foot{margin:28px 0 0;padding-top:10px;border-top:1px solid var(--c-line);font-size:var(--t-caption,13px);color:var(--c-text-muted)}
-.nmos .v-foot a{color:var(--c-text-soft)}
-.nmos .v-stack{position:relative;height:8px;margin:6px 0 2px;border-radius:4px;overflow:hidden;background:var(--c-raised)}
+.nmos .v-filter input{width:100%;margin:0 0 12px}
+.nmos .v-chat{padding:12px 14px;margin-bottom:8px;border:1px solid var(--c-line);border-radius:12px;background:var(--c-surface)}
+.nmos .v-chat:first-of-type{border-top:1px solid var(--c-line);padding-top:12px}
+.nmos .v-chat:hover{border-color:var(--c-line-hover);background:var(--c-raised)}
+.nmos .v-foot{margin:20px 0 0;padding-top:12px;border-top:1px solid var(--c-line);font-size:var(--t-caption,13px);color:var(--c-text-muted);display:flex;flex-wrap:wrap;gap:6px 12px}
+.nmos .v-foot a{color:var(--c-link)}
+.nmos .v-stack{position:relative;height:10px;margin:8px 0 4px;border-radius:99px;overflow:hidden;background:var(--c-sunken);border:1px solid var(--c-line)}
 .nmos .v-seg{position:absolute;top:0;bottom:0}
 .nmos .v-seg.setting{background:var(--c-text-ghost)} .nmos .v-seg.over{background:var(--c-warn)}
 .nmos .v-seg.story{background:var(--c-link)} .nmos .v-seg.owner{background:var(--c-ok)}
 .nmos .g-m{color:var(--c-text-muted)} .nmos .g-m.story{color:var(--c-link)}
 .nmos .g-m.changed,.nmos .g-m.over{color:var(--c-warn)} .nmos .g-m.owner{color:var(--c-ok)}
-.nmos .v-graph{margin:8px 0 4px}
+.nmos .v-graph{margin:10px 0 6px}
 .nmos .v-graph svg{display:block;margin:0 auto;max-width:100%;height:auto;max-height:90vh}
 .nmos .v-graph.one .g-t{font-size:20px}
 .nmos .g-e{stroke:var(--c-text-ghost);stroke-width:1.5;vector-effect:non-scaling-stroke} .nmos .g-e.story{stroke:var(--c-link)}
@@ -84,11 +121,12 @@ STYLE = """
 .nmos .g-n{fill:var(--c-text-faint)} .nmos .g-n.lead{fill:var(--c-text-strong)}
 .nmos .g-n.group,.nmos .g-n.place{fill:var(--c-bg);stroke:var(--c-text-muted);stroke-width:2}
 .nmos .g-t{fill:var(--c-text-soft);font-size:16px} .nmos .g-t.lead{fill:var(--c-text-strong);font-weight:600}
-.nmos svg.g-panel{display:block;width:100%;height:min(62vh,480px);touch-action:none;user-select:none;-webkit-user-select:none;background:var(--c-sunken);border-radius:var(--r-block,12px)}
+.nmos svg.g-panel{display:block;width:100%;height:min(62vh,480px);touch-action:none;user-select:none;-webkit-user-select:none;background:var(--c-sunken);border:1px solid var(--c-line);border-radius:14px}
 .nmos svg.g-panel .g-e.on{stroke-width:2.5}
 .nmos svg.g-panel.sel .g-e:not(.on){opacity:.12} .nmos svg.g-panel.sel .g-node:not(.on){opacity:.3}
-.nmos .v-graph-btns{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 0}
-@media (min-width:700px){.nmos .v-block:not(.v-wide):not(.v-big){flex-basis:240px}}
+.nmos .v-graph-btns{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 0}
+@media (min-width:700px){.nmos .v-block:not(.v-wide):not(.v-big):not(.v-attn){flex-basis:240px}}
+@media (min-width:860px){.nmos .v-doc-grid{display:grid;grid-template-columns:196px minmax(0,1fr);gap:18px;align-items:start}.nmos .v-doc-grid .v-chips{position:sticky;top:76px;flex-direction:column;flex-wrap:nowrap;margin:0;padding:10px;background:var(--c-surface);border:1px solid var(--c-line);border-radius:14px}.nmos .v-doc-grid .v-chips a{width:100%;padding:7px 10px;background:transparent;border-color:transparent}.nmos .v-doc-grid .v-chips a:hover{background:var(--c-raised);border-color:var(--c-line)}}
 @media (max-width:699px){.nmos .v-graph.whole{display:none}}
 """
 
@@ -239,14 +277,31 @@ PLACE = ("document.querySelectorAll('[data-l]').forEach(function(m){var l=Number
          "r.textContent.toLowerCase().indexOf(q)<0?'none':'';});});});")
 
 
-def full_page(title: str, body: str, lang: str = "ko") -> str:
-    """A screen as a page of its own, for the browser: the panel's root class, so the same stylesheet applies."""
-    root = ".nmos{" + tokens.css_vars() + ";background:var(--c-bg);color:var(--c-text);min-height:100vh;padding:20px 16px;" \
-        "font-family:system-ui,-apple-system,\"Apple SD Gothic Neo\",\"Malgun Gothic\",\"Noto Sans KR\",sans-serif}"
-    return (f"<!doctype html><html lang=\"{lang}\"><head><meta charset=\"utf-8\">"
-            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-            f"<title>{_v(title)}</title><style>body{{margin:0}}{root}{STYLE}</style></head>"
-            f"<body><div class=\"nmos\">{body}</div><script>{PLACE}</script></body></html>")
+def full_page(title: str, body: str, lang: str = "ko", active: str = "hub") -> str:
+    """A screen as a page of its own, for the browser: the panel's root class, favicon, and unified top chrome."""
+    from .inspector import FAVICON
+    root = (
+        "*{box-sizing:border-box}body{margin:0;background:var(--c-bg);color:var(--c-text);"
+        "font:15px/1.6 system-ui,-apple-system,\"Apple SD Gothic Neo\",\"Malgun Gothic\",\"Noto Sans KR\",sans-serif;"
+        "-webkit-font-smoothing:antialiased}"
+        ":root{color-scheme:dark;" + tokens.css_vars() + "}"
+        + tokens.BROWSER_BAR_STYLE
+        + ".nmos{" + tokens.css_vars() + ";min-height:100vh}"
+        ".nmos .vb-main{max-width:1120px;margin:0 auto;padding:20px 22px 48px}"
+        ".nmos .v{max-width:none}"
+        ".nmos .v-filter input{width:100%;background:var(--c-sunken);color:var(--c-text);"
+        "border:1px solid var(--c-line-strong);border-radius:8px;padding:9px 12px;font:inherit;font-size:14.5px}"
+        ".nmos .v-filter input:focus{border-color:rgba(74,106,245,0.7);outline:none;box-shadow:0 0 0 3px rgba(74,106,245,0.22)}"
+        "@media (max-width:720px){.nmos .vb-main{padding:14px 14px 40px}}"
+    )
+    return (
+        f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>{_v(title)}</title><link rel="icon" type="image/svg+xml" href="{_v(FAVICON)}">'
+        f'<style>{root}{STYLE}</style></head>'
+        f'<body><div class="nmos">{tokens.browser_bar(active, lang)}'
+        f'<main class="vb-main">{body}</main></div><script>{PLACE}</script></body></html>'
+    )
 
 
 def _block(title: str, sub: str, href: str | None = None, act: str | None = None, cls: str = "",
@@ -279,9 +334,25 @@ def _working_line(w: dict[str, Any], lang: str) -> tuple[str, str]:
     return t(lang, state), t(lang, "placed", s=f"{(reply.get('ms') or 0) / 1000:.1f}", n=reply["placed"])
 
 
+def _progress(done: int, due: int, warn: bool = False) -> str:
+    """A quiet progress bar placed by `placeMarks` (`data-l` / `data-w`, no inline style)."""
+    if due <= 0:
+        return ""
+    pct = round(min(max(done * 100 / due, 0), 100), 1)
+    cls = " warn" if warn else (" ok" if pct >= 100 else "")
+    return f'<div class="v-prog"><span class="v-prog-fill{cls}" data-l="0" data-w="{pct:g}"></span></div>'
+
+
+def _kind_tag(kind: str | None, lang: str) -> str:
+    k = str(kind or "")
+    label = t(lang, k) if k in T else k
+    safe_cls = f" k-{k}" if k in ("promise", "goal", "threat", "question", "debt") else ""
+    return f'<span class="v-tag{safe_cls}">{_v(label)}</span>' if label else ""
+
+
 def hub(data: dict[str, Any], lang: str, map_: bool = False) -> str:
-    """The panel's first screen (PHASE-52 D1): the working line, then a block per category. Without a chat NMOS knows,
-    only what does not need one. `map_`: the reader can open the memory map (PHASE-55), a block after memory's."""
+    """The panel's first screen (PHASE-52 D1, PHASE-59 D2): the working line, then a block per category. Without a chat
+    NMOS knows, only what does not need one. `map_`: the reader can open the memory map (PHASE-55), a block after memory's."""
     conv = data.get("conv")
     w = data.get("working") or {"state": "idle"}
     title, sub = _working(w, lang)
@@ -293,18 +364,38 @@ def hub(data: dict[str, Any], lang: str, map_: bool = False) -> str:
         detail = f"/inspector/c/{cid}"
         blocks.append(_block(title, sub, href=f"/views/c/{cid}/working", cls=f"v-wide {state}"))
         m = data.get("memory") or {}
-        now = "".join(f'<span class="v-now">{_v(x)}</span>' for x in (m.get("now") or [])[:2])
+        now_items = "".join(f'<span class="v-now">{_v(x)}</span>' for x in (m.get("now") or [])[:3])
+        extra = f'<div class="v-now-list">{now_items}</div>' if now_items else ""
+        th_prev = m.get("threads") or []
+        if th_prev:
+            rows = "".join(
+                f'<span class="v-th-prev">{_kind_tag(th.get("kind"), lang)}'
+                f'<span>{_v(str(th.get("text") or "")[:90])}</span></span>'
+                for th in th_prev[:2]
+            )
+            extra += f'<div class="v-th-list">{rows}</div>'
         blocks.append(_block(t(lang, "memory"), t(lang, "memory_sub", c=m.get("cast", 0), o=m.get("open", 0),
                                                   g=m.get("changed", 0)), href=f"/views/c/{cid}/memory", cls="v-big",
-                             extra=now))
+                             extra=extra))
         if map_:
-            blocks.append(_block(t(lang, "map"), t(lang, "map_sub"), href=f"/views/c/{cid}/map"))
+            blocks.append(_block(t(lang, "map"), t(lang, "map_sub"), href=f"/views/c/{cid}/map", cls="v-map-tile"))
         if data.get("attention"):
             blocks.append(_block(t(lang, "attention"), str(data["attention"]), href=f"{detail}#s-attention",
                                  cls="v-attn"))
-        blocks.append(_block(t(lang, "notes"), t(lang, "notes_sub"), act="notes"))
+        blocks.append(_block(t(lang, "notes"), t(lang, "notes_sub"), act="notes", cls="v-notes"))
+        work = data.get("work") or {}
+        work_bars = []
+        for k in ("extraction", "embeddings"):
+            item = work.get(k) or {}
+            if item.get("due"):
+                work_bars.append(
+                    f'<div class="v-prog-row"><div class="v-prog-head"><span>{_v(t(lang, "w_" + k))}</span>'
+                    f'<span>{item.get("done", 0)}/{item.get("due", 0)}</span></div>'
+                    f'{_progress(int(item.get("done", 0)), int(item.get("due", 0)), bool(w.get("failed")))}</div>'
+                )
+        usage_extra = f'<div class="v-prog-wrap">{"".join(work_bars)}</div>' if work_bars else ""
         blocks.append(_block(t(lang, "usage"), t(lang, "usage_sub", n=(data.get("usage") or {}).get("calls", 0)),
-                             href=f"/views/c/{cid}/working#s-usage"))
+                             href=f"/views/c/{cid}/working#s-usage", extra=usage_extra))
     else:
         blocks.append(_block(title, sub, href="/views/chats", cls=f"v-wide {state}"))
     blocks.append(_block(t(lang, "settings"), t(lang, "settings_sub"), act="settings"))
@@ -385,17 +476,15 @@ def _named(f: dict[str, Any], side: str) -> str:
 
 
 def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
-    """A chat's memory as one document (PHASE-52 D2): now, open threads, people, so far, secrets, changed from the
-    setting; at the foot, the way into everything else (with `map_`, the memory map, PHASE-55)."""
+    """A chat's memory as one document (PHASE-52 D2, PHASE-59 D3): now, open threads, people, so far, secrets, changed
+    from the setting; sticky desktop TOC + mobile jump pills; at the foot, the way into everything else."""
     conv, ents = d["conv"], d.get("entities") or {}
     cid = conv["id"]
     nm = lambda name: name_link(cid, ents, name)  # noqa: E731
-    keys = ["s-now", "s-open", "s-people", "s-sofar", "s-secrets", "s-changed"]
-    chips = '<div class="v-chips">' + "".join(f'<a href="#{k}">{_v(t(lang, k))}</a>' for k in keys) + "</div>"
     nothing = f'<p class="v-text">{_v(t(lang, "none_yet"))}</p>'
     now = [line(nm(x["name"]), " · ".join(_v(s) for s in x["said"])) for x in d.get("now") or []]
     threads = d.get("threads") or []
-    opened = [line(f"{nm(th['by'])}{' → ' + nm(th['to']) if th.get('to') else ''}: {_v(th['text'])}",
+    opened = [line(f"{_kind_tag(th.get('kind'), lang)}{nm(th['by'])}{' → ' + nm(th['to']) if th.get('to') else ''}: {_v(th['text'])}",
                    _v(thread_meta(th, lang)),
                    _close(th)) for th in threads]
     stale = f'<p class="v-note">{_v(t(lang, "stale", n=d["stale"]))}</p>' if d.get("stale") else ""
@@ -419,9 +508,18 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
         t(lang, "by", who=", ".join(s.get("holders") or [])) if s.get("holders") else "",
         t(lang, "kept", who=", ".join(s.get("open") or [])), f"t{s.get('turn')}") if x)))
         for s in d.get("secrets") or [] if s.get("open")]
-    changed = [line(f"{nm(_named(c['fact'], 'subject'))} {_v(t(lang, c['fact']['predicate']) if c['fact']['predicate'] in T else c['fact']['predicate'])}",
-                    _v(t(lang, "was", old=c["old"], new=c["new"]) + f" · t{c['fact'].get('turn')}"))
+    changed = [line(
+        f"{nm(_named(c['fact'], 'subject'))} {_v(t(lang, c['fact']['predicate']) if c['fact']['predicate'] in T else c['fact']['predicate'])}",
+        f'<span class="v-diff"><span class="v-diff-old">{_v(c["old"])}</span> → <span class="v-diff-new">{_v(c["new"])}</span>'
+        f'<span>· t{c["fact"].get("turn")}</span></span>')
                for c in d.get("changes") or []]
+    counts = {"s-now": len(now), "s-open": len(threads), "s-people": len(people),
+              "s-sofar": len(scenes) + (1 if story else 0), "s-secrets": len(secrets), "s-changed": len(changed)}
+    keys = ["s-now", "s-open", "s-people", "s-sofar", "s-secrets", "s-changed"]
+    chips = '<div class="v-chips">' + "".join(
+        f'<a href="#{k}"><span>{_v(t(lang, k))}</span>'
+        + (f'<span class="v-chip-n">{counts[k]}</span>' if counts[k] else "") + "</a>"
+        for k in keys) + "</div>"
     body = (section("s-now", lang, more(now, lang, 6) or nothing)
             + section("s-open", lang, (more(opened, lang) or nothing) + stale, len(threads))
             + section("s-people", lang, more(people, lang) or nothing, len(people))
@@ -435,7 +533,8 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
             + f' · <a href="{detail}">{_v(t(lang, "details"))}</a></div>')
     cap = " · ".join(str(x) for x in (conv.get("character"), f"t{conv['turns']}" if conv.get("turns") is not None else None) if x)
     return (f'<div class="v v-doc"><div class="v-head"><h1 class="v-h1">{_v(conv.get("name") or t(lang, "memory"))}</h1>'
-            f'<span class="v-cap">{_v(cap)}</span></div>{chips}{body}{foot}</div>')
+            f'<span class="v-cap">{_v(cap)}</span></div><div class="v-doc-grid">{chips}'
+            f'<div class="v-doc-main">{body}{foot}</div></div></div>')
 
 
 
@@ -561,7 +660,8 @@ def working(d: dict[str, Any], lang: str) -> str:
         reply = line(_v(head), _v(str(r.get("at") or "")[:16].replace("T", " ")))
         groups = []
         for kind in KIND_ORDER + tuple(sorted({x.get("kind") for x in placed} - set(KIND_ORDER) - {None})):
-            items = [line(_v(plain(x.get("text") or "", lang)), _v(t(lang, "echoed")) if x.get("echoed") else "")
+            items = [line(_v(plain(x.get("text") or "", lang)),
+                          f'<span class="v-tag k-echo">{_v(t(lang, "echoed"))}</span>' if x.get("echoed") else "")
                      for x in placed if x.get("kind") == kind]
             if items:
                 label = t(lang, f"k_{kind}") if f"k_{kind}" in T else kind
@@ -574,9 +674,11 @@ def working(d: dict[str, Any], lang: str) -> str:
     for key, done, due in (("extraction", "compiled", "eligible"), ("embeddings", "embedded", "eligible"),
                            ("summaries", None, None), ("canon", "read", "wanted")):
         x = w.get(key) or {}
-        failed += int(x.get("failed") or 0)
+        f_count = int(x.get("failed") or 0)
+        failed += f_count
         main = f"{t(lang, 'w_' + key)} · " + (f"{x.get(done, 0)}/{x.get(due, 0)}" if done else t(lang, "w_made", n=x.get("produced", 0)))
-        rows.append(line(_v(main), _v(t(lang, "w_counts", f=x.get("failed", 0), p=x.get("pending", 0)))))
+        bar = _progress(int(x.get(done, 0) or 0), int(x.get(due, 0) or 0), f_count > 0) if done else ""
+        rows.append(line(_v(main), _v(t(lang, "w_counts", f=f_count, p=x.get("pending", 0))), bar))
     retry = ""
     if failed:
         errs = "".join(f'<p class="v-note">{_v(str(e)[:200])}</p>' for e in (d.get("errors") or [])[:3])

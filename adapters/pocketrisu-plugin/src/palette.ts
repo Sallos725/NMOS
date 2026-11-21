@@ -2,30 +2,32 @@
 // accent and the three state colours only mark action, selection and status.
 
 export const PALETTE = {
-  // Surfaces, darkest to lightest.
-  bg: '#0a0b0e',
-  sunken: '#0d0e13',
-  surface: '#121318',
-  raised: '#1a1b22',
-  raisedHover: '#23242e',
+  // Surfaces, darkest to lightest (soft charcoal for long reading sessions).
+  bg: '#16181e',
+  sunken: '#12141a',
+  surface: '#1e212a',
+  raised: '#262a35',
+  raisedHover: '#303543',
   // Hairlines on any surface.
-  line: 'rgba(255,255,255,0.07)',
-  lineStrong: 'rgba(255,255,255,0.10)',
-  lineHover: 'rgba(255,255,255,0.16)',
+  line: 'rgba(255,255,255,0.08)',
+  lineStrong: 'rgba(255,255,255,0.13)',
+  lineHover: 'rgba(255,255,255,0.2)',
   // Text, strongest to faintest. `textFaint` still passes 4.5:1 on `surface`; `textGhost` is for marks only.
-  textStrong: '#f4f4f7',
-  text: '#e2e2e8',
-  textSoft: '#c0c3d0',
+  textStrong: '#eef1f7',
+  text: '#dce1ec',
+  textSoft: '#b6bece',
   textMuted: '#9294a0',
-  textFaint: '#7c7e8b',
-  textGhost: '#5c5e6b',
+  textFaint: '#878b99',
+  textGhost: '#676c7d',
   // White text on `accent` passes 4.5:1.
   accent: '#4a6af5',
   accentHover: '#3f5ee6',
-  link: '#7ca0ff',
+  link: '#85a6ff',
   ok: '#4fd18b',
   err: '#f05d5e',
   warn: '#e8ac43',
+  violet: '#a78bfa',
+  cyan: '#38bdf8',
 } as const;
 
 export type PaletteKey = keyof typeof PALETTE;

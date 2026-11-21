@@ -90,7 +90,9 @@ const graphData = {
   capped: false, words: { legend: 'Lines', fit: 'Fit', all: 'All', fewer: 'Fewer', tap: 'Tap', ties: '{n}', left: '' },
 };
 
-function deps(opts: { views?: boolean; map?: boolean; graph?: boolean; css?: string } = {}) {
+const id2 = '0190f3a4-1b2c-7d3e-8f40-123456789def';
+
+function deps(opts: { views?: boolean; map?: boolean; graph?: boolean; css?: string; meta?: unknown } = {}) {
   const calls: [string, string][] = [];
   const bodies: unknown[] = [];
   const d: PanelDeps = {
@@ -98,9 +100,16 @@ function deps(opts: { views?: boolean; map?: boolean; graph?: boolean; css?: str
       calls.push([method, path]);
       if (method !== 'GET') bodies.push(body);
       if (path === '/v1/views/style') return { css: opts.css ?? '.nmos .v{font-size:16px}' } as T;
-      if (path.startsWith('/v1/views/hub')) return { html: hub, conversation: id } as T;
-      if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: '<h1>Chat page</h1>' } as T;
+      if (path.startsWith('/v1/views/hub')) return { html: hub, conversation: id, ...(opts.meta ? { meta: opts.meta } : {}) } as T;
+      if (path.startsWith('/v1/conversations?')) {
+        return [
+          { id, host_character_name: 'Hana', title: 'Harbor', message_count: 14 },
+          { id: id2, host_character_name: 'Kaito', title: 'Mill', message_count: 8 },
+        ] as T;
+      }
+      if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: '<h1>Chat page</h1><details id="s-attention"><summary><h2>Needs attention</h2></summary><p>Item</p></details>' } as T;
       if (path.startsWith(`/v1/views/c/${id}/memory`)) return { html: memory } as T;
+      if (path.startsWith(`/v1/views/c/${id2}/memory`)) return { html: '<div class="v v-doc"><div class="v-line">Kaito memory</div></div>' } as T;
       if (path.startsWith(`/v1/views/c/${id}/map/graph`)) return graphData as T;
       if (path.startsWith(`/v1/views/c/${id}/map`)) return { html: mapPage } as T;
       if (path.includes('/person/')) return { html: person } as T;
@@ -297,8 +306,9 @@ describe('the hub (PHASE-52 D1)', () => {
     expect(panel().querySelector<HTMLElement>('nav.tabs')!.style.display).toBe('none');
     panel().querySelector<HTMLAnchorElement>('a[data-act="settings"]')!.click();
     await settle();
+    // PHASE-59 D5: This chat sits first in its own section, followed by Global settings.
     const groups = Array.from(panel().querySelectorAll<HTMLButtonElement>('.groups button')).map((b) => b.dataset.group);
-    expect(groups).toEqual(['connection', 'models', 'memory', 'chat', 'rules', 'display', 'backup']);
+    expect(groups).toEqual(['chat', 'connection', 'models', 'memory', 'rules', 'display', 'backup']);
     panel().querySelector<HTMLButtonElement>('.groups button[data-group="models"]')!.click();
     const shown = Array.from(panel().querySelectorAll<HTMLElement>('[data-group]'))
       .filter((c) => !c.closest('.groups') && c.style.display !== 'none').map((c) => c.querySelector('h2')?.textContent);
@@ -338,14 +348,94 @@ describe('the hub (PHASE-52 D1)', () => {
     expect(panel().textContent).toContain("recalls from the AI's replies only");
   });
 
-  it('goes home from settings', async () => {
+  it('goes home from settings via the persistent top navigation (PHASE-59)', async () => {
     const { d } = deps();
     await openPanel(d, 'status');
     await settle();
     panel().querySelector<HTMLAnchorElement>('a[data-act="settings"]')!.click();
     await settle();
-    Array.from(panel().querySelectorAll('button')).find((b) => b.textContent === '← NMOS')!.click();
+    panel().querySelector<HTMLButtonElement>('.nmos-nav button[data-nav="home"]')!.click();
     await settle();
     expect(panel().textContent).toContain('Memory doc');
+  });
+});
+
+describe('PHASE-59 unified shell, memory workspace, Author\'s Note studio, and chat switcher', () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+    document.head.replaceChildren();
+  });
+
+  it('hydrates the top bar chat label, status pill, and Needs-Attention badge from hub meta', async () => {
+    const { d } = deps({
+      map: true,
+      meta: {
+        conv: { id, name: 'Hana · Harbor', turns: 14 },
+        working: { state: 'ok', queued: 0, failed: 0 },
+        attention: 3,
+        chats: [{ id, name: 'Hana · Harbor', turns: 14 }, { id: id2, name: 'Kaito · Mill', turns: 8 }],
+      },
+    });
+    await openPanel(d, 'status');
+    await settle();
+    expect(panel().classList.contains('shell-on')).toBe(true);
+    expect(panel().querySelector('.chat-lbl')?.textContent).toBe('Hana · Harbor');
+    const badge = panel().querySelector<HTMLElement>('.nmos-nav button[data-nav="memory"] .nav-badge')!;
+    expect(badge.textContent).toBe('3');
+    expect(badge.style.display).toBe('');
+    expect(panel().querySelector('.home-quick .chat-strip')).not.toBeNull();
+  });
+
+  it('switches between Memory sub-tabs and opens #s-attention on Needs attention', async () => {
+    const { d, calls } = deps({ map: true });
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLButtonElement>('.nmos-nav button[data-nav="memory"]')!.click();
+    await settle();
+    expect(calls.some(([, p]) => p.startsWith(`/v1/views/c/${id}/memory`))).toBe(true);
+    expect(panel().querySelector('.mem-subtabs button[data-memsub="story"]')?.classList.contains('on')).toBe(true);
+    panel().querySelector<HTMLButtonElement>('.mem-subtabs button[data-memsub="map"]')!.click();
+    await settle();
+    expect(calls.some(([, p]) => p.startsWith(`/v1/views/c/${id}/map`))).toBe(true);
+    panel().querySelector<HTMLButtonElement>('.mem-subtabs button[data-memsub="attention"]')!.click();
+    await settle();
+    const attn = panel().querySelector<HTMLDetailsElement>('#s-attention')!;
+    expect(attn.open).toBe(true);
+    panel().querySelector<HTMLButtonElement>('.mem-subtabs button[data-memsub="diag"]')!.click();
+    await settle();
+    expect(calls.some(([, p]) => p.startsWith(`/v1/views/c/${id}/working`))).toBe(true);
+  });
+
+  it('switches the active chat from the top chat picker while inside Memory', async () => {
+    const { d } = deps({
+      meta: {
+        conv: { id, name: 'Hana · Harbor', turns: 14 },
+        chats: [{ id, name: 'Hana · Harbor', turns: 14 }, { id: id2, name: 'Kaito · Mill', turns: 8 }],
+      },
+    });
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLButtonElement>('.nmos-nav button[data-nav="memory"]')!.click();
+    await settle();
+    panel().querySelector<HTMLButtonElement>('.chat-btn')!.click();
+    await settle();
+    panel().querySelector<HTMLButtonElement>(`.chat-opt[data-chat-id="${id2}"]`)!.click();
+    await settle();
+    expect(panel().querySelector('.chat-lbl')?.textContent).toBe('Kaito · Mill');
+    expect(panel().textContent).toContain('Kaito memory');
+  });
+
+  it('opens the 2-column Author\'s Note studio from the top tab and updates the model call estimate', async () => {
+    const { d } = deps();
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLButtonElement>('.nmos-nav button[data-nav="notes"]')!.click();
+    await settle();
+    expect(panel().querySelector('.notes-studio')).not.toBeNull();
+    expect(panel().querySelector('.notes-est')?.textContent).toContain('1');
+    const chron = panel().querySelector<HTMLInputElement>('.notes-studio input[value="chronicle"]')!;
+    chron.checked = true;
+    chron.dispatchEvent(new Event('change'));
+    expect(panel().querySelector('.notes-est')?.textContent).toContain('2');
   });
 });
