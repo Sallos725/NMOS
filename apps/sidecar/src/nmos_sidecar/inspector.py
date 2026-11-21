@@ -18,38 +18,64 @@ from .entities import USER_NAMES, norm
 from .predicates import REGISTRY
 from .repairs import offered
 from .facts import STANDING, earlier, first, participant_entities, symmetric
-from . import scene, timeline
+from . import scene, timeline, tokens
 from .packet import TURN_POLICIES
 from .readmodel import TURN_TRACES
 from .retrieval import CAST_GOALS, cast_facts
 from .summaries import LAG, WINDOW
 
-STYLE = """
-:root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--chip:#efefec;--accent:#3b5bdb;--pos:#2f9e5b;--neg:#d6453d;--mix:#c27c0e}
-@media (prefers-color-scheme:dark){:root{--bg:#18181a;--fg:#ececec;--muted:#9a9aa0;--line:#2c2c30;--chip:#26262a;--accent:#8ea2ff;--pos:#4fd18b;--neg:#f05d5e;--mix:#e8ac43}}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif}
-main{max-width:1100px;margin:0 auto;padding:24px 16px}
-h1{font-size:20px;margin:0 0 4px} h2{font-size:17px;margin:28px 0 8px}
+STYLE = (
+    ":root{color-scheme:dark;" + tokens.css_vars() + ";"
+    "--bg:var(--c-bg);--sunken:var(--c-sunken);--surface:var(--c-surface);--raised:var(--c-raised);"
+    "--raised-hover:var(--c-raised-hover);--fg:var(--c-text);--fg-strong:var(--c-text-strong);"
+    "--fg-soft:var(--c-text-soft);--muted:var(--c-text-muted);--line:var(--c-line);"
+    "--line-strong:var(--c-line-strong);--line-hover:var(--c-line-hover);--chip:var(--c-raised);"
+    "--accent:var(--c-link);--pos:var(--c-ok);--neg:var(--c-err);--mix:var(--c-warn)}\n"
+    + tokens.BROWSER_BAR_STYLE
+    + """
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:1120px;margin:0 auto;padding:20px 22px 48px}
+h1{font-size:21px;font-weight:650;letter-spacing:-0.015em;color:var(--fg-strong);margin:0 0 6px}
+h2{font-size:16.5px;font-weight:650;letter-spacing:-0.01em;color:var(--fg-strong);margin:24px 0 10px}
 a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
 .muted{color:var(--muted)} .mono{font-family:ui-monospace,monospace;font-size:13px}
-pre.mono{white-space:pre-wrap;background:var(--chip);padding:8px 10px;border-radius:6px;margin:4px 0 0}
-.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:12px}
-.refresh{margin:0} .refresh button{font:inherit;color:var(--fg);background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer}
-.lang{font-size:13px;white-space:nowrap}
-.ref{display:block;font-family:ui-monospace,monospace;font-size:13px;color:var(--muted)}
-table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-th{font-weight:600;color:var(--muted);font-size:13px}
-.chip{display:inline-block;padding:0 6px;border-radius:4px;background:var(--chip);font-size:13px;white-space:nowrap}
+pre.mono{white-space:pre-wrap;background:var(--sunken);border:1px solid var(--line);padding:12px 14px;border-radius:10px;margin:6px 0 0;color:var(--fg-soft);line-height:1.6}
+.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px}
+.refresh{margin:0} .refresh button{font:inherit;font-size:13.5px;font-weight:500;color:var(--fg);background:var(--raised);border:1px solid var(--line-strong);border-radius:8px;padding:6px 12px;cursor:pointer;transition:background .15s ease,border-color .15s ease}
+.refresh button:hover{background:var(--raised-hover);border-color:var(--line-hover);color:var(--fg-strong)}
+.lang{font-size:13px;white-space:nowrap;color:var(--muted)}
+.ref{display:block;font-family:ui-monospace,monospace;font-size:12.5px;color:var(--muted);margin-top:2px}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface);margin:8px 0}
+main>details .wrap{background:var(--sunken);border-radius:10px}
+table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:rgba(255,255,255,0.025)}
+th{font-weight:600;color:var(--muted);font-size:12.5px;background:rgba(0,0,0,0.14);white-space:nowrap}
+.chip{display:inline-flex;align-items:center;padding:2px 9px;border-radius:99px;background:var(--chip);border:1px solid var(--line-strong);font-size:12.5px;color:var(--fg-soft);white-space:nowrap}
 .fd{display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 5px 1px 0;vertical-align:middle}
 .fd.pos{background:var(--pos)} .fd.neg{background:var(--neg)} .fd.mix{background:var(--mix)}
-.wrap{overflow-x:auto}
-.warn{color:#e8590c} .n{color:var(--muted);font-weight:400;font-size:13px}
-.toc,.who{font-size:13px;line-height:1.9;margin:8px 0}
+.warn{color:var(--mix)} .n{display:inline-flex;align-items:center;justify-content:center;color:var(--muted);background:var(--raised);border:1px solid var(--line);border-radius:99px;padding:0 7px;font-weight:600;font-size:12px;margin-left:4px;vertical-align:1px}
+.toc{margin:14px 0 12px;font-size:0;line-height:1}
+.toc a{display:inline-flex;align-items:center;gap:4px;font-size:13px;padding:6px 11px;margin:0 6px 6px 0;border-radius:9px;background:var(--surface);border:1px solid var(--line);color:var(--fg-soft);transition:background .15s ease,border-color .15s ease,color .15s ease}
+.toc a:hover{background:var(--raised);border-color:var(--line-hover);color:var(--fg-strong);text-decoration:none}
+.toc a.warn{color:var(--mix);border-color:rgba(232,172,67,0.38);background:rgba(232,172,67,0.10)}
+.who{margin:10px 0 6px;font-size:0;line-height:1}
+.who a,.who b{display:inline-flex;align-items:center;padding:4px 11px;margin:0 6px 6px 0;border-radius:99px;background:var(--surface);border:1px solid var(--line);color:var(--fg-soft);font-size:13px;font-weight:500}
+.who b{background:rgba(74,106,245,0.16);border-color:rgba(74,106,245,0.42);color:var(--fg-strong);font-weight:600}
+.who a:hover{background:var(--raised);border-color:var(--line-hover);color:var(--fg-strong);text-decoration:none}
+main>details{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin:14px 0}
+main>details>summary{cursor:pointer;list-style:none} main>details>summary::-webkit-details-marker{display:none}
+main>details>summary h2{display:inline-block;margin:0}
 details>summary{cursor:pointer;list-style:none} details>summary::-webkit-details-marker{display:none}
 details>summary h2{display:inline-block} details>summary h2::before{content:"\\25B8  ";color:var(--muted)}
-details[open]>summary h2::before{content:"\\25BE  "}
-details.meta{margin:4px 0 0;font-size:13px} details.meta p{margin:4px 0}
-""" + timeline.STYLE
+details[open]>summary h2::before{content:"\\25BE  ";color:var(--accent)}
+main>details[open]>summary{margin-bottom:12px}
+details.meta{margin:6px 0 0;font-size:13px;background:var(--sunken);border:1px solid var(--line);border-radius:8px;padding:6px 10px} details.meta p{margin:4px 0}
+@media (max-width:720px){main{padding:14px 14px 40px}main>details{padding:12px 14px}}
+"""
+    + timeline.STYLE
+)
 
 LANGS = ("ko", "en")
 
@@ -555,11 +581,11 @@ FAVICON = ("data:image/svg+xml," + quote(
     safe=" :/=\"'<>;(),.-{}*@"))  # '#' encoded: in a data URI it would start a fragment
 
 
-def page(title: str, body: str, lang: str = "ko") -> str:
+def page(title: str, body: str, lang: str = "ko", token: str | None = None) -> str:
     return (f"<!doctype html><html lang=\"{lang}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" "
             f"content=\"width=device-width,initial-scale=1\"><title>{escape(title)}</title>"
             f"<link rel=\"icon\" type=\"image/svg+xml\" href=\"{escape(FAVICON)}\"><style>{STYLE}</style>"
-            f"</head><body><main>{body}</main></body></html>")
+            f"</head><body>{tokens.browser_bar('inspector', lang, token)}<main>{body}</main></body></html>")
 
 
 def _v(value: Any) -> str:
@@ -722,7 +748,7 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
             + "</p>"
             + _plugin_status(plugin or {}, q, lang, embed) + listing
             + (_errors(errors, lang) if errors is not None else ""))
-    return body if embed else page(_t(lang, "title"), body, lang)
+    return body if embed else page(_t(lang, "title"), body, lang, token)
 
 
 def _plugin_status(plugin: dict[str, Any], q: str, lang: str, embed: bool) -> str:
@@ -1672,7 +1698,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
           _v(m["disabled"] or ""), _processed(m, lang), _v(m["preview"]) + ("…" if m["length"] > 240 else "")]
          for m in members]), False))
     body = head + sections(lang, parts)
-    return body if embed else page(f"NMOS · {name}", body, lang)
+    return body if embed else page(f"NMOS · {name}", body, lang, token)
 
 
 def _placed(trace: dict[str, Any], lang: str) -> str:
@@ -1769,7 +1795,7 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
             f"<h1>{_v(title)}</h1>" + _who(conv["id"], view["entities"], entity_id, q, lang))
     if entity is None:
         body = head + f"<p class=\"muted\">{t('who.gone')}</p>"
-        return body if embed else page(f"NMOS · {title}", body, lang)
+        return body if embed else page(f"NMOS · {title}", body, lang, token)
 
     names = {norm(n) for n in entity["names"]}
 
@@ -1853,7 +1879,7 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
     body = head + sections(lang, parts)
     if len(parts) == 1:
         body += f"<p class=\"muted\">{t('who.empty')}</p>"
-    return body if embed else page(f"NMOS · {title}", body, lang)
+    return body if embed else page(f"NMOS · {title}", body, lang, token)
 
 
 def _marked(text: str, spans: list[str]) -> str:
@@ -1902,7 +1928,7 @@ def source_turn(conv: dict[str, Any], turn: int, messages: list[dict[str, Any]],
                 f"<h1>{_v(title)}</h1>" + (f"<p>{' · '.join(nav)}</p>" if nav else ""))
         if not messages:
             body = head + f"<p class=\"muted\">{t('turn.none')}</p>"
-            return body if embed else page(f"NMOS · {title}", body, lang)
+            return body if embed else page(f"NMOS · {title}", body, lang, token)
         evidence = [a.get("evidence") or "" for a in made]
         source = "".join(
             f"<p><span class=\"chip\">{_v(m.get('name') or m.get('role') or '?')}</span> "
@@ -1929,4 +1955,4 @@ def source_turn(conv: dict[str, Any], turn: int, messages: list[dict[str, Any]],
                                 ("made", t("toc.made"), len(made), facts_body, True),
                                 ("used", t("toc.used"), len(uses), used, True)]
         body = head + sections(lang, parts)
-    return body if embed else page(f"NMOS · {title}", body, lang)
+    return body if embed else page(f"NMOS · {title}", body, lang, token)

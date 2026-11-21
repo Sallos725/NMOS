@@ -397,3 +397,57 @@ def test_a_persons_changes_read_in_the_panels_words_and_rings_never_touch():
     spans = timeline.circles([(t, True, "x") for t in range(30)], 0, 29)  # every span major
     ringed = [i for i, b in enumerate(spans) if b["major"]]
     assert len(ringed) == 5 and all(b - a > 1 for a, b in zip(ringed, ringed[1:]))
+
+
+def test_phase59_hub_progress_and_memory_doc_enhancements():
+    """PHASE-59: hub shows thread previews and progress bars; memory renders sticky TOC, kind badges, and diff pills."""
+    hub_html = views.hub(
+        hub_data(
+            work={"extraction": {"done": 4, "due": 5}, "embeddings": {"done": 2, "due": 5}},
+            memory={"cast": 2, "open": 2, "stale": 0, "changed": 1, "now": ["Hana: at the harbor"],
+                    "threads": [{"kind": "goal", "text": "Find the bell"}]},
+        ),
+        "ko",
+    )
+    assert "v-prog" in hub_html and 'data-w="80"' in hub_html and "Find the bell" in hub_html
+    mem_html = views.memory(memory_data(), "ko")
+    assert "v-doc-grid" in mem_html and "v-chips" in mem_html and "v-chip-n" in mem_html
+    assert "v-tag k-goal" in mem_html
+    assert "v-diff-old" in mem_html and "v-diff-new" in mem_html
+    assert ".nmos .v-line .rp{display:none}" not in views.STYLE
+
+
+def test_phase59_hub_endpoint_returns_additive_meta(migrated):
+    """PHASE-59: GET /v1/views/hub returns additive meta for zero-extra-request top shell hydration."""
+    chat = SimChat("views-hub-meta")
+    chat.user("Hello.")
+    chat.reply("Hana waits at the harbor.")
+    with make_client(migrated) as c:
+        sync(c, chat)
+        res = c.get("/v1/views/hub", params={"chat": chat.id, "lang": "ko"})
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["conversation"]
+        assert body["meta"]["conv"]["id"] == body["conversation"]
+        assert isinstance(body["meta"]["attention"], int)
+        assert body["meta"]["working"]["state"] in ("ok", "idle", "warn", "off")
+        assert body["meta"]["chats"] >= 1
+
+
+def test_browser_pages_share_unified_chrome_and_palette():
+    """Standalone browser pages (/views/* and /inspector/*) share the official NMOS mark, top bar, and soft-charcoal tokens."""
+    from nmos_sidecar import inspector
+
+    v_page = views.full_page("NMOS", views.hub(hub_data(), "ko"), "ko", active="hub")
+    i_page = inspector.page("NMOS 인스펙터", "<p>body</p>", "ko", token="tok123")
+    for html in (v_page, i_page):
+        assert 'class="nm-bar"' in html
+        assert 'd="M6 19V5l12 14V9.5"' in html
+        assert "--c-bg:#16181e" in html
+        assert 'rel="icon" type="image/svg+xml"' in html
+    assert 'href="/views/hub?token=tok123"' in i_page
+    assert 'href="/inspector?token=tok123" class="on"' in i_page
+    assert 'href="/views/hub" class="on"' in v_page
+
+
+

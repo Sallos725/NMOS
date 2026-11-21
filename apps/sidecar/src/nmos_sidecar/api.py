@@ -1825,22 +1825,32 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         cast = [str(n) for n in lat.get("scene_cast") or []]
         threads = [th for th in view["threads"] if th["status"] == "open"]
         people = scene_now(view, cast)
+        active_threads = [th for th in threads if not inspector.stale(th, last)]
+        ex = cov.get("extraction") or {}
+        em = cov.get("embeddings") or {}
+        sm = cov.get("summaries") or {}
         return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
                          "turns": last},
                 "working": {"state": state, "all_off": all_off, "reply": reply,
                             "no_extraction": not (cur.llm_url and cur.llm_model),
                             "failed": sum(int(p.get("failed") or 0) for p in parts),
                             "pending": sum(int(p.get("pending") or 0) for p in parts)},
-                "memory": {"cast": len(people), "open": sum(1 for th in threads if not inspector.stale(th, last)),
-                           "stale": sum(1 for th in threads if inspector.stale(th, last)),
+                "memory": {"cast": len(people), "open": len(active_threads),
+                           "stale": len(threads) - len(active_threads),
                            "changed": len(notes.changed_lines(view["facts"], secrets=True)),
-                           "now": [" · ".join([x["name"], *x["said"]]) for x in people if x["said"]]},
+                           "now": [" · ".join([x["name"], *x["said"]]) for x in people if x["said"]],
+                           "threads": [{"kind": th.get("kind"), "text": th.get("text"), "by": th.get("by"),
+                                        "to": th.get("to"), "turn": th.get("turn")} for th in active_threads[:2]]},
+                "work": {"extraction": {"done": int(ex.get("compiled") or 0), "due": int(ex.get("eligible") or 0)},
+                         "embeddings": {"done": int(em.get("embedded") or 0), "due": int(em.get("eligible") or 0)},
+                         "summaries": int((cov.get("produced") or {}).get("summaries") or 0),
+                         "pending": int(sm.get("pending") or 0)},
                 "attention": len(queue),
                 "usage": {"calls": int((((cov.get("usage") or {}).get("total") or {}).get("calls")) or 0)},
                 "chats": chats}
 
     def hub_html(request: Request, chat: str | None, conversation: UUID | None, lang: str | None, off: bool,
-                 all_off: bool, map_: bool = False) -> tuple[str, str | None]:
+                 all_off: bool, map_: bool = False) -> tuple[str, str | None, dict[str, Any]]:
         with request.app.state.pool.connection() as conn:
             conv = None
             if conversation is not None:
@@ -1849,7 +1859,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 found = readmodel.list_conversations(conn, host_chat_ref=chat)
                 conv = readmodel.conversation(conn, found[0]["id"]) if found else None
             data = hub_data(conn, conv, off, all_off)
-        return views.hub(data, inspector.lang_of(lang), map_), (data["conv"] or {}).get("id")
+        meta = {"conv": data.get("conv"), "working": data.get("working"),
+                "attention": data.get("attention", 0), "chats": data.get("chats", 0), "usage": data.get("usage")}
+        return views.hub(data, inspector.lang_of(lang), map_), (data["conv"] or {}).get("id"), meta
 
     def memory_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """What the panel's memory screen holds (PHASE-52 D2), from what the Inspector's chat page reads."""
@@ -2002,7 +2014,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     @app.get("/views/chats", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def views_chats_page(request: Request, lang: str | None = None):
-        return views.full_page("NMOS", chats_html(request, lang), inspector.lang_of(lang))
+        return views.full_page("NMOS", chats_html(request, lang), inspector.lang_of(lang), active="chats")
 
     @app.get("/v1/views/c/{conv_id}/working", dependencies=[Depends(auth)])
     def views_working(conv_id: UUID, request: Request, lang: str | None = None):
@@ -2075,8 +2087,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def views_hub(request: Request, chat: str | None = None, conversation: UUID | None = None, lang: str | None = None,
                   off: bool = False, all_off: bool = False, map: bool = False):  # noqa: A002
         # `map`: the plugin can open the memory map (PHASE-55); without it, the hub is as before
-        html, cid = hub_html(request, chat, conversation, lang, off, all_off, map)
-        return {"html": html, "conversation": cid}
+        html, cid, meta = hub_html(request, chat, conversation, lang, off, all_off, map)
+        return {"html": html, "conversation": cid, "meta": meta}
 
     @app.get("/views/hub", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def views_hub_page(request: Request, chat: str | None = None, conversation: UUID | None = None,
