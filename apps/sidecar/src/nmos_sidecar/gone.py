@@ -46,14 +46,39 @@ RECOVERED_EN: tuple[str, ...] = (
     "revived",
 )
 
+# Alive or returned in words outside the brief's recovered list ("살아 있음", "found after going missing", "back
+# from the dead"). "발견되지" (not found) and "found dead" / "never found" / "not found" are no return.
+ALIVE_KO: tuple[str, ...] = (
+    "살아",
+    "발견",
+)
+
+ALIVE_EN: tuple[str, ...] = (
+    "living",
+    "found",
+    "back from",
+)
+
 NEAR_MISS: tuple[str, ...] = (
     "죽지 않",
     "죽을 뻔",
     "죽은 척",
     "죽은 줄 알았",
+    "직전",
+    "위기",
+    "추정",
+    "알려",
+    "소문",
+    "생각",
+    "처리",
     "not dead",
     "nearly died",
     "presumed",
+    "rumored",
+    "rumoured",
+    "believed",
+    "thought",
+    "reportedly",
 )
 
 NOT_PLACES: frozenset[str] = frozenset({
@@ -108,8 +133,50 @@ _NEAR_MISS_KO = tuple(p for p in NEAR_MISS if not p.isascii())
 _NEAR_MISS_EN_RE = _en_pattern(tuple(p for p in NEAR_MISS if p.isascii()))
 
 _EN_PRE_NEG = re.compile(r"(?:\b(?:not|no longer|never|presumed|nearly|almost)|n't)\s+$")
-_KO_POST_NEG = re.compile(r"^[^.,;!?]{0,3}\s*(?:않|아니|뻔|척|줄\s*알)")
+# A negation, a near miss, or hearsay ("죽었다고", "사망했다는", "실종이라는") right after the word.
+_KO_POST_NEG = re.compile(r"^[^.,;!?]{0,3}\s*(?:않|아니|뻔|척|줄\s*알|다고|다는|라고|라는)")
 _KO_PRE_NEG = re.compile(r"(?:^|\s)안\s+$")
+
+_ALIVE_KO_RE = re.compile(r"살아|발견(?!되지)")
+_ALIVE_EN_RE = re.compile(r"\bliving\b|\bback from\b|(?<!not )(?<!never )\bfound\b(?!\s+dead)")
+
+# Someone else's fate inside the subject's status: a noun with a subject or topic particle before the word
+# ("동생이 실종됨", "아버지가 사망함"), or an English determiner before it ("her brother was killed").
+_KO_OTHER_SUBJECT = re.compile(r"[가-힣](?:이|가|은|는|께서)(?=\s)")
+_EN_OTHER_SUBJECT = re.compile(r"\b(?:her|his|their|my|your|our|its|the|a|an)\s+\w")
+# The word modifies the noun after it ("실종된 동생", "사망한 아버지", "추방된 왕자"): not the subject's state, except
+# a state noun ("사망한 상태", "실종된 지 3년").
+_KO_MODIFIES_NOUN = re.compile(r"^(?:한|된|당한)\s+(?!상태|채|것|지(?:\s|$))\S")
+# "전사" alone is also "warrior": it counts inflected ("전사함", "전사했다") or after "중" / "에서" ("전투 중 전사").
+_JEONSA_DIED = re.compile(r"^(?:함|했|하|한)")
+_JEONSA_CONTEXT = re.compile(r"(?:중|에서)\s+$")
+# "떠남" counts alone or for good; leaving a place ("마을을 떠남") or a softened leave ("잠시", "출장") does not.
+_LEAVE_FOR_GOOD = re.compile(r"영영|영원히|다시는")
+_LEAVE_SOFT = re.compile(r"잠시|잠깐|출장|여행|외출")
+_LEAVE_PLACE = re.compile(r"[을를]\s+$")
+# English "missing" is the status itself only at the start or after a status verb, never after a noun it modifies.
+_MISSING_STATUS = re.compile(r"(?:^|\b(?:is|was|went|gone|still|been|now|reported|declared)\s+)$")
+
+
+def _ko_counts(text: str, m: re.Match[str]) -> bool:
+    before, after = text[:m.start()], text[m.end():]
+    if _KO_OTHER_SUBJECT.search(before) or _KO_MODIFIES_NOUN.match(after):
+        return False
+    word = m.group(0)
+    if word == "전사":
+        return bool(_JEONSA_DIED.match(after) or _JEONSA_CONTEXT.search(before))
+    if word == "떠남":
+        if _LEAVE_SOFT.search(text):
+            return False
+        return bool(_LEAVE_FOR_GOOD.search(text) or not _LEAVE_PLACE.search(before))
+    return True
+
+
+def _en_counts(text: str, m: re.Match[str]) -> bool:
+    before = text[:m.start()]
+    if _EN_OTHER_SUBJECT.search(before):
+        return False
+    return m.group(0) != "missing" or bool(_MISSING_STATUS.search(before))
 
 
 def _normalize(value: str | None) -> str:
@@ -119,25 +186,30 @@ def _normalize(value: str | None) -> str:
 
 
 def is_gone_status(value: str | None) -> bool:
-    """Whether a `has_status` value says a character is gone without recovery, negation, or near miss."""
+    """Whether a `has_status` value plainly says the character itself is dead, missing or gone for good, now.
+
+    Not when it also says recovered, alive or found, a negation, a near miss or hearsay; nor when the word is
+    someone else's fate, a warrior, a missing object, or a leave that is not plainly for good."""
     text = _normalize(value)
     if not text:
         return False
     if any(w in text for w in RECOVERED_KO) or _RECOVERED_EN_RE.search(text):
+        return False
+    if _ALIVE_KO_RE.search(text) or _ALIVE_EN_RE.search(text):
         return False
     if any(p in text for p in _NEAR_MISS_KO) or _NEAR_MISS_EN_RE.search(text):
         return False
 
     matched = False
     for m in _GONE_KO_RE.finditer(text):
-        matched = True
         if _KO_POST_NEG.match(text[m.end():]) or _KO_PRE_NEG.search(text[:m.start()]):
             return False
+        matched = matched or _ko_counts(text, m)
 
     for m in _GONE_EN_RE.finditer(text):
-        matched = True
         if _EN_PRE_NEG.search(text[:m.start()]):
             return False
+        matched = matched or _en_counts(text, m)
 
     return matched
 

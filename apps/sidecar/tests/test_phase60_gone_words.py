@@ -9,6 +9,8 @@ import pytest
 from nmos_sidecar.gone import (
     GONE_EN,
     GONE_KO,
+    ALIVE_EN,
+    ALIVE_KO,
     NEAR_MISS,
     NOT_PLACES,
     RECOVERED_EN,
@@ -36,7 +38,6 @@ def test_packet_v20_constants_are_defined():
         "죽었다",
         "행방불명 상태",
         "실종됨",
-        "마을을 떠남",
         "왕국에서 추방됨",
         "dead",
         "killed in the fire",
@@ -207,3 +208,148 @@ def test_gone_whole_words_in_state_still_match(status: str):
 )
 def test_gone_topics_compounds_and_idioms_are_false(status: str):
     assert is_gone_status(status) is False
+
+
+def test_alive_words_outside_the_recovered_list_are_defined():
+    assert set(ALIVE_KO) == {"살아", "발견"}
+    assert set(ALIVE_EN) == {"living", "found", "back from"}
+    assert {"직전", "위기", "추정", "알려", "소문", "생각", "처리"} <= set(NEAR_MISS)
+    assert {"rumored", "rumoured", "believed", "thought", "reportedly"} <= set(NEAR_MISS)
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "사망",
+        "사망함",
+        "사망한",
+        "사망한 상태",
+        "사망한 것으로 확인됨",
+        "실종된 채로 발견되지 않음",
+        "죽음",
+        "죽었다",
+        "전사함",
+        "전사했다",
+        "전장에서 전사",
+        "실종",
+        "실종됨",
+        "실종된 지 3년",
+        "행방불명",
+        "떠남",
+        "영영 떠남",
+        "영원히 마을을 떠남",
+        "추방됨",
+        "dead",
+        "killed",
+        "deceased",
+        "missing",
+        "is missing",
+        "went missing",
+        "still missing",
+        "has been missing since the storm",
+        "vanished",
+        "exiled",
+        "departed for good",
+        "found dead in the river",
+    ],
+)
+def test_plain_gone_statuses_stay_true(status: str):
+    """The subject itself is plainly dead, missing or gone for good, now."""
+    assert is_gone_status(status) is True
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "죽음 직전",
+        "죽음 직전까지 갔다",
+        "사망 직전",
+        "사망 추정",
+        "실종 위기",
+        "죽었다고 알려짐",
+        "죽었다는 소문이 돎",
+        "죽었다고 생각했지만 살아 있음",
+        "사망 처리됨 (실제로는 살아 있음)",
+        "사망했다고 함",
+        "실종 상태로 알려짐",
+        "사망 소문이 돎",
+        "사망한 것으로 생각됨",
+        "사망 처리됨",
+        "rumored dead",
+        "rumoured to be dead",
+        "believed killed",
+        "thought dead",
+        "reportedly killed",
+    ],
+)
+def test_near_death_presumed_rumoured_and_believed_are_false(status: str):
+    assert is_gone_status(status) is False
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "동생이 실종됨",
+        "아버지가 사망함",
+        "아버지가 전사한 뒤 슬픔에 잠김",
+        "동생은 실종됨",
+        "어머니께서 돌아가신 뒤 사망 소식에 충격",
+        "실종된 동생을 찾는 중",
+        "사망한 아버지를 그리워함",
+        "추방된 왕자를 따름",
+        "her brother was killed",
+        "mourning her father, who is dead",
+        "grieving because her brother is missing",
+        "searching for her sister, missing since the storm",
+        "the village elder is dead",
+    ],
+)
+def test_someone_elses_fate_in_the_subjects_status_is_false(status: str):
+    assert is_gone_status(status) is False
+
+
+@pytest.mark.parametrize("status", ["전사", "숙련된 전사", "용맹한 전사", "전사 계급", "전사다", "전사의 길을 걸음"])
+def test_jeonsa_as_warrior_is_false(status: str):
+    assert is_gone_status(status) is False
+
+
+@pytest.mark.parametrize("status", ["left arm missing", "one eye missing", "wallet missing", "missing an arm"])
+def test_a_missing_object_or_body_part_is_false(status: str):
+    assert is_gone_status(status) is False
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "마을을 떠남",
+        "잠시 마을을 떠남",
+        "출장으로 마을을 떠남",
+        "집을 떠남",
+        "잠깐 떠남",
+        "여행을 떠남",
+        "exiled from the court but living in the capital",
+    ],
+)
+def test_a_leave_that_is_not_plainly_for_good_is_false(status: str):
+    assert is_gone_status(status) is False
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "살아 있음, 한때 실종됨",
+        "살아 돌아옴",
+        "실종됐다가 발견됨",
+        "실종 후 발견됨",
+        "found after going missing",
+        "missing, found in the woods",
+        "back from the dead",
+    ],
+)
+def test_returned_in_words_outside_the_recovered_list_is_false(status: str):
+    assert is_gone_status(status) is False
+
+
+@pytest.mark.parametrize("status", ["실종 후 발견되지 않음", "missing, never found", "missing, not found"])
+def test_not_found_is_no_return(status: str):
+    assert is_gone_status(status) is True
