@@ -51,11 +51,13 @@ export interface CarryRequestBody {
   expect?: string;
 }
 
-const SIZE_REFUSAL = /the reading holds (\d+) rows; a link carries at most (\d+)/;
+const REFUSAL_MARKER = /^(?:\/v1\/\S+ -> HTTP 422:\s*)?too_many_rows:\s*rows=(\d+)\s+max=(\d+)\b/;
+// Interim fallback for sidecars before Track 4's settled `too_many_rows:` marker (remove once rebased onto Track 4).
+const INTERIM_SIZE_REFUSAL = /the reading holds (\d+) rows; a link carries at most (\d+)/;
 
-/** Parse the sidecar's size-limit 422 sentence into `{ rows, max }`, or null for any other error text. */
+/** Parse the sidecar's size-limit 422 detail into `{ rows, max }`, or null for any other error text. */
 export function carryRefusal(message: string): { rows: number; max: number } | null {
-  const m = SIZE_REFUSAL.exec(message);
+  const m = REFUSAL_MARKER.exec(message.trim()) ?? INTERIM_SIZE_REFUSAL.exec(message);
   if (!m) return null;
   return { rows: Number(m[1]), max: Number(m[2]) };
 }

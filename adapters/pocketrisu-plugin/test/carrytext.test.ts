@@ -12,9 +12,19 @@ function uiErrorText(lang: Lang, error: unknown): string {
 
 describe('carryRefusal (PHASE-60 S6)', () => {
   const cases: [string, { rows: number; max: number } | null][] = [
+    ['too_many_rows: rows=2400 max=2000 (the reading holds 2400 rows; a link carries at most 2000)', { rows: 2400, max: 2000 }],
+    ['/v1/conversations/c1/carry/preview -> HTTP 422: too_many_rows: rows=2400 max=2000 (the reading holds 2400 rows; a link carries at most 2000)', { rows: 2400, max: 2000 }],
+    ['/v1/conversations/c1/carry -> HTTP 422: too_many_rows: rows=2001 max=2000 (too large)', { rows: 2001, max: 2000 }],
+    ['too_many_rows: rows=501 max=500', { rows: 501, max: 500 }],
+    // Interim English-sentence fallback (to be removed when rebased onto Track 4)
     ['the reading holds 2345 rows; a link carries at most 2000', { rows: 2345, max: 2000 }],
     ['/v1/conversations/c1/carry/preview -> HTTP 422: the reading holds 2001 rows; a link carries at most 2000', { rows: 2001, max: 2000 }],
     ['/v1/conversations/c1/carry -> HTTP 422: the reading holds 12000 rows; a link carries at most 500', { rows: 12000, max: 500 }],
+    // JSON form is not accepted
+    ['{"code":"too_many_rows","rows":2400,"max":2000}', null],
+    ['/v1/conversations/c1/carry/preview -> HTTP 422: {"code":"too_many_rows","rows":2400,"max":2000}', null],
+    // Non-leading marker or other errors
+    ['note: too_many_rows: rows=2400 max=2000', null],
     ['/v1/conversations/c1/carry/preview -> HTTP 422: the source has no messages', null],
     ['/v1/conversations/c1/carry/preview -> HTTP 422: a chat never carries itself', null],
     ['/v1/conversations/c1/carry/preview -> HTTP 422: regression mode needs 1 to 8 character names', null],
@@ -22,7 +32,7 @@ describe('carryRefusal (PHASE-60 S6)', () => {
     ['', null],
   ];
 
-  it('matches the size-limit refusal sentence and returns null otherwise', () => {
+  it('matches the settled too_many_rows marker and interim fallback, and returns null otherwise', () => {
     for (const [input, expected] of cases) {
       expect(carryRefusal(input), input).toEqual(expected);
     }
@@ -74,13 +84,18 @@ describe('carry status classifiers and parsers (PHASE-60 S6)', () => {
 
 describe('carryErrorText (PHASE-60 S6)', () => {
   it('formats the size-limit 422 as a plain sentence in both languages with no status code', () => {
-    const err = new Error('/v1/conversations/c1/carry/preview -> HTTP 422: the reading holds 2400 rows; a link carries at most 2000');
-    const ko = carryErrorText('ko', err, uiErrorText);
-    const en = carryErrorText('en', err, uiErrorText);
-    expect(ko).toBe('이 채팅의 기억이 너무 많아 이어받을 수 없습니다 (2400줄, 최대 2000줄). 더 이른 턴에서 끊어 보세요.');
-    expect(en).toBe('This chat has too much memory to carry (2400 lines, maximum 2000). Try cutting off at an earlier turn.');
-    expect(ko).not.toMatch(/\b422\b|HTTP/);
-    expect(en).not.toMatch(/\b422\b|HTTP/);
+    for (const detail of [
+      'too_many_rows: rows=2400 max=2000 (the reading holds 2400 rows; a link carries at most 2000)',
+      'the reading holds 2400 rows; a link carries at most 2000',
+    ]) {
+      const err = new Error(`/v1/conversations/c1/carry/preview -> HTTP 422: ${detail}`);
+      const ko = carryErrorText('ko', err, uiErrorText);
+      const en = carryErrorText('en', err, uiErrorText);
+      expect(ko).toBe('이 채팅의 기억이 너무 많아 이어받을 수 없습니다 (2400줄, 최대 2000줄). 더 이른 턴에서 끊어 보세요.');
+      expect(en).toBe('This chat has too much memory to carry (2400 lines, maximum 2000). Try cutting off at an earlier turn.');
+      expect(ko).not.toMatch(/\b422\b|HTTP|too_many_rows/);
+      expect(en).not.toMatch(/\b422\b|HTTP|too_many_rows/);
+    }
   });
 
   it('shows other 422 details through errorText with no status code', () => {
