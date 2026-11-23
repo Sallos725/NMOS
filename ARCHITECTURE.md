@@ -841,6 +841,34 @@ trace, a log or an archive (an archive holding it is refused, D60); `/v1/health`
 Only the `standard` format exists (`NMOS_RERANK_FORMAT`: `{model, query, documents, top_n}`, answered by `results[]` or
 `data[]` of `{index, relevance_score}`); no other is built. It derives nothing stored and is part of no generation key.
 
+**D89 — A chat that carries another chat's memory (`conversation_carry`; ADR 0085; PHASE-60 S6).** Owner input
+(migration `0036`): one link in force per target (a partial unique index), never a chat to itself, a source's own link
+not followed. *The frozen reading:* at link time the source is read once, as of its head and a cutoff position (the
+head's end, or the last message of a turn the owner chose on the current head), with the readers a request uses, and
+the rows are stored with the link as `snapshot`: names and types, never entity ids (the source's persona written as
+the persona), no verbatim text (no `evidence`), each row's provenance in `from` (source conversation, assertion,
+revision, generation, repair, source turn). Nothing is re-read; the owner links again for a newer reading (the old link
+gets `removed_at`). More than 2,000 rows (`carry.MAX_ROWS`) is refused with 422 `too_many_rows: rows=<N> max=<M> (…)`;
+`POST …/carry` with the preview's fingerprint (`expect`) answers 409 with a fresh preview when the source's reading
+changed since. *Only `packet-v20` reads a link* (`CARRY_POLICIES`), resolving carried rows by name in the target (D26).
+`continue`: facts, aliases, open threads and the story so far fold after the target's canon and before turn 0
+(`CARRY_BASE`, turn -1, negative ids), resolved after the target's own rows, and the target's story supersedes them as
+it does canon (D57); lines say `source="carried"` and the earlier story is a `<Summary scope="earlier chat">`; they
+take no part in the scene cast, gone pins, the return gap, settled lines, told lines, pins or secrets. `regression`:
+rows are listed apart, never in current facts, cast, gone pins or open threads, and at most 6 (`REGRESSION_MAX`) are
+offered as `timeline="previous"` lines in a `<Regression remembered_by="…">` group, private, through strict and narrator
+modes (D44, D45); a row's rememberers are all the named for a public row, the named in `known_by` for a limited one,
+otherwise only the named the row involves, always minus `hidden_from`, and a row with none is not carried. A request
+records the link it read as `recall_options.carry` (link, source, commit, position, mode, names); its replay reads that
+link, removed since or not. Both foreign keys are `ON DELETE CASCADE` and deleting either chat counts the links
+(`carry_links`); an archive holds a link only when both chats are in it (`carry_left_out` in the manifest). The
+read-only lists and screens show carried rows (`view_of(carried=True)`: `/facts`, `/entities`, `/threads`, `/secrets`,
+the panel's memory document and person sheet, which also get the link's `carry` block); previews, repairs, the
+author's note, dropped facts, endings, the Inspector's pages, the hub and the map read the chat alone. Known limits: a
+source's very last reply may not be in a reading, since it is extracted only once the user continues from it (D5).
+Closed regression threads are stored but never offered. A restore that renumbers assertions moves the snapshot's
+`from.assertion` but not a recorded trace line's `ref.source_assertion`.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
