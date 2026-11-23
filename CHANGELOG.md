@@ -28,10 +28,31 @@ switch.
   has brought back since); a character back after at least 40 extracted turns away is marked `back_after` for its
   first 5 turns back; and up to 3 threads the story closed in the last 15 turns, broken ones first, follow the open
   ones.
-- **A character the owner pins** (Phase 60 S8, migration `0038`). The repair route takes `entity_pin` (a name, as
-  "not a character" names one; an excluded name is not pinned); a chat's entities and a person's sheet say who is
-  pinned, the repairs list names the pin, and it is kept by rebuilds, archived and deleted with the chat. The
-  packet does not read pins yet, and nothing acts on the `@name` setting (`NMOS_PIN_AT_MENTIONS`, off) yet.
+- **A character the owner pins** (Phase 60 S8, migration `0038`, ADR 0087). The repair route takes `entity_pin` (a
+  name, as "not a character" names one; an excluded name is not pinned); a chat's entities and a person's sheet say who
+  is pinned, the repairs list names the pin, and it is kept by rebuilds, archived and deleted with the chat. Under
+  `packet-v20`, pinned characters — first `@name` mentions in the user's message when `NMOS_PIN_AT_MENTIONS` (off by
+  default) is on, then the owner's pins newest first, never the persona or an excluded character — join the scene's
+  cast, get a `<Cast>` group (at most 3 beyond the cast's 4, from their own chat's rows only, with a pinned gone
+  character keeping its `gone="true"` line first), and have their own chat's now and standing facts marked `required`.
+  Each live request with pins records the resolved names and sources (`at` / `owner`) as `recall_options.pins`, and its
+  replay reads that record.
+- **`extract-v19`, selectable, not the default** (Phase 60 S7, S8, migration `0037`, ADR 0086;
+  `NMOS_EXTRACT_COMPILER=extract-v19`). Built on `extract-v18`, records `when_happened` (1–80 characters, resolved
+  against the story clock when shown) on `event` and `promised` placed at another time than the turn, records the
+  target turn's status-window `story_clock` on the extraction (never part of validity), and adds `told` (character →
+  character with a required quote) as a per-compiler extension outside `REGISTRY`, hashed into the prompt fingerprint so
+  earlier keys do not move. Switching among `extract-v16`, `extract-v18` and `extract-v19` queues nothing; older turns
+  keep their facts. Served `told` rows are readable via `served_told`; `packet-v20` does not emit `happened` or `told`
+  lines yet. Known limits: a `told` row kept from someone is not tracked as a secret (no reveal check ends it), and
+  `fact_restore` does not carry `when_happened`.
+- **Reranker settings, off by default** (Phase 60 S5, ADR 0084). `NMOS_RERANK_URL`, `NMOS_RERANK_MODEL`,
+  `NMOS_RERANK_API_KEY`, `NMOS_RERANK_TIMEOUT_MS` (default `600`, 50–5000 ms) and `NMOS_RERANK_FORMAT` (`standard`
+  only), editable at runtime and passed through both compose files. Off unless both URL and model are set; when on, the
+  user's message and up to 30 recalled candidates' text go to that endpoint (noted in `/v1/config`). `/v1/health`
+  reports `rerank.configured` without exposing the URL or key, the key is bound to its endpoint's host and refused in
+  archives (D60), and an unusable saved format or timeout is ignored at startup so the sidecar still starts. Nothing on
+  the request path calls the reranker yet.
 - **`/v1/retrieve` answers with `coverage`** (`recorded_through_turn`: the latest turn an extraction serves;
   `covered_through_turn`: the last turn up to which every turn has an extraction and a scene summary) and, when the
   request asked for trimming, `trim`. Older plugins ignore both.
