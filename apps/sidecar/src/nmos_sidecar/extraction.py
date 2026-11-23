@@ -61,8 +61,10 @@ COMPILER_VERSION = "extract-v15"  # v2: known_by / hidden_from; v3: knowledge sc
 # `assertion.salience`) and who says each quoted line of the TARGET turn (`speakers`, stored in `extraction.speakers`).
 # Selectable, not the default until its live gate passes (PHASE-45 S5).
 # extract-v18 (PHASE-58, ADR 0081): extract-v16 with how a feeling feels (`feeling`, stored in `assertion.feeling`).
+# extract-v19 (PHASE-60 S7, S8, ADR 0086): extract-v18 with when it happened (`when_happened`, `story_clock`) and
+# `told` (a per-compiler extension outside REGISTRY, `predicates.EXTENSIONS`).
 # Selectable; the default stays extract-v16 until the owner decides at the 1.0.0 tag.
-COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18")
+COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19")
 DEFAULT_COMPILER = "extract-v16"
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
@@ -397,17 +399,48 @@ def _v18(prompt: str) -> str:
 
 SYSTEM_V18 = _v18(SYSTEM_V16)
 SYSTEM_V18_ROLES = _v18(SYSTEM_V16_ROLES)
+# extract-v19 (PHASE-60 S7, S8, ADR 0086): extract-v18 with when it happened, the story clock, and `told`.
+HAPPENED_RULE = """- `when_happened`, for `event` and `promised` only: when the TARGET turn places it at another time than the turn
+  itself (a past event told now, a flashback or memory, a day set for later), that time as a short phrase of at
+  most 80 characters in the story's own words ("3년 전 겨울", "다음 보름날"). When a STORY CLOCK is shown,
+  resolve a relative phrase against it ("어제" with the clock at 4월 12일 → "4월 11일"); otherwise keep it as
+  written. null when it happens in the TARGET turn itself or the turn gives no time. Never guess one.
+"""
+TOLD_RULE = """- `told` when a character passes on to another something that matters later and that the TARGET turn shows the
+  hearer did not have: a secret, news of an event, a fact about a third person, a warning or a rumour. Subject:
+  who tells; object: who hears; `value`: what was passed on, in the chat's language; `with`: whom it is about,
+  when that is someone else. `evidence` quotes the telling itself. Ordinary conversation, greetings, small talk
+  and what the hearer already knew are not `told`.
+"""
+_HAPPENED_ANSWER = _FEELING_ANSWER + '\n"when_happened": "... or null (event and promised only)",'
+HAPPENED_MAX = 80
+CLOCK_MAX = 80
+CLOCK_LINE = "STORY CLOCK at the TARGET turn (the chat's status window): {clock}"
+
+
+def _v19(prompt: str) -> str:
+    """extract-v18's prompt with the when_happened and told rules and answer (PHASE-60 S7, S8)."""
+    assert prompt.count(_BECAUSE_AT) == 1 and prompt.count(_FEELING_ANSWER) == 1, "a v18 rule's place moved"
+    return (prompt.replace(_BECAUSE_AT, HAPPENED_RULE + TOLD_RULE + _BECAUSE_AT, 1)
+            .replace(_FEELING_ANSWER, _HAPPENED_ANSWER, 1))
+
+
+SYSTEM_V19 = _v19(SYSTEM_V18)
+SYSTEM_V19_ROLES = _v19(SYSTEM_V18_ROLES)
 PROMPTS = {"extract-v15": SYSTEM_PROMPT, "extract-v16": SYSTEM_V16_ROLES,
-           "extract-v17": SYSTEM_V17_ROLES, "extract-v18": SYSTEM_V18_ROLES}  # the full form, which the generation names
+           "extract-v17": SYSTEM_V17_ROLES, "extract-v18": SYSTEM_V18_ROLES,
+           "extract-v19": SYSTEM_V19_ROLES}  # the full form, which the generation names
 assert all(x in SYSTEM_V16_ROLES for x in (ROLE_ENDINGS, ALIAS_RULE, ANSWER_ROLES)), "a v16 rule's place moved"
 assert ROLE_ENDINGS not in SYSTEM_V16 and ALIAS_CHECK not in SYSTEM_V16_ROLES and PAIRS_RULE not in SYSTEM_V16_ROLES
 assert HORIZON_RULE not in SYSTEM_V16_ROLES and "speakers" not in SYSTEM_V16_ROLES
 assert FEELING_RULE not in SYSTEM_V16_ROLES and FEELING_RULE not in SYSTEM_V17_ROLES
-ROLES = frozenset({"extract-v16", "extract-v17", "extract-v18"})  # the compilers that list CURRENT ROLES
-PARTS_APART = frozenset({"extract-v16", "extract-v17", "extract-v18"})  # the compilers whose alias of a name and its part needs the part on its own
+assert HAPPENED_RULE not in SYSTEM_V18_ROLES and TOLD_RULE not in SYSTEM_V18_ROLES
+ROLES = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19"})  # the compilers that list CURRENT ROLES
+PARTS_APART = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19"})  # the compilers whose alias of a name and its part needs the part on its own
 HORIZONS = frozenset({"extract-v17"})  # the compilers whose threads carry a horizon (PHASE-51)
 SPEAKERS = frozenset({"extract-v17"})  # the compilers that name each quoted line's speaker (PHASE-45)
-FEELINGS = frozenset({"extract-v18"})  # the compilers that weigh a feeling (PHASE-58); a switch: generations.ADDS
+FEELINGS = frozenset({"extract-v18", "extract-v19"})  # the compilers that weigh a feeling (PHASE-58); a switch: generations.ADDS
+HAPPENED = frozenset({"extract-v19"})  # the compilers that place an event in time and read the story clock (PHASE-60 S7)
 # The same compilers' rule that a known name the turn does not write stands in only for a character the turn names
 # (`alias_evidenced`, ADR 0064 item 2): not in the prompt, so its own part of the generation names it.
 ALIASES_PRESENT = ("a known name stands in only for a ?-description or a character the turn writes by another name"
@@ -424,7 +457,7 @@ def prompt_of(compiler: str, roles: bool = True) -> str:
     upgrade by renaming it); the settings only select a compiler of PROMPTS (`Settings.__post_init__`). extract-v16's
     leaves the role-ending rules out when no CURRENT ROLE is listed (`roles` false)."""
     if compiler in ROLES and not roles:
-        return {"extract-v17": SYSTEM_V17, "extract-v18": SYSTEM_V18}.get(compiler, SYSTEM_V16)
+        return {"extract-v17": SYSTEM_V17, "extract-v18": SYSTEM_V18, "extract-v19": SYSTEM_V19}.get(compiler, SYSTEM_V16)
     return PROMPTS.get(compiler, SYSTEM_PROMPT)
 
 
@@ -1208,7 +1241,7 @@ Match the listed role's place and counterpart to the arrangement the TARGET actu
 Packing, a stripped bed or farewell gifts are preparations, not checkout. If the person is still staying in the room at the TARGET's end and the move is later, the guest role is still held: answer no, not yes. For yes, quote the completed departure or termination itself, not luggage, an emptied shelf or a farewell.
 Return only JSON: {"ended":"yes" or "no","evidence":"one verbatim passage from TARGET, at most 160 characters"}.
 The evidence must support your answer. For yes, quote what happens in TARGET that ends this exact arrangement. A reason, arrangement or plan in CONTEXT is not ending evidence. Never quote CONTEXT or join separate passages with an ellipsis. Do not add explanations or other fields."""
-CONFIRMS = frozenset({"extract-v16", "extract-v17", "extract-v18"})  # the compilers whose listed role endings are confirmed
+CONFIRMS = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19"})  # the compilers whose listed role endings are confirmed
 CONFIRM_TURNS = 2  # preceding turns the confirmation shows, each as the TARGET is shown (TARGET_CHARS per message)
 HELD = "role ending not confirmed"  # the reason prefix of a held ending (a pending row: no fact)
 

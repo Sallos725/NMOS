@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 
-from nmos_sidecar import predicates as P
+from nmos_sidecar import entities, extraction as X, predicates as P
 
 REGISTRY_PROMPT_SHA256 = "9cd57478151107025e53b7f29a38f5d7154ee57c66a5a92b8b3cfeb2e894084b"
 REGISTRY_PROMPT_ONLY_SHA256 = "4eac87e6574ab18970f8c236a774a47c8eb9749c2699ef1a7f210c76a3d72c63"
@@ -52,3 +52,21 @@ def test_validate_and_participants_accept_told_only_with_extension():
     assert P.validate(item, registry=P.registry_for("extract-v19")) == ("valid", None)
     assert P.participants(item) is None
     assert P.participants(item, also=frozenset({"told"})) == [{"name": "하나", "type": "character"}]
+
+
+def test_v19_prompt_extends_v18_and_joins_only_v18_compiler_sets():
+    assert X.DEFAULT_COMPILER == "extract-v16" and "extract-v19" in X.COMPILERS
+    assert X.HAPPENED == {"extract-v19"}
+    assert X.HAPPENED_MAX == 80 and X.CLOCK_MAX == 80
+    assert X.CLOCK_LINE == "STORY CLOCK at the TARGET turn (the chat's status window): {clock}"
+    v18, v19 = X.prompt_of("extract-v18"), X.prompt_of("extract-v19")
+    assert X.HAPPENED_RULE not in v18 and X.TOLD_RULE not in v18 and '"when_happened"' not in v18
+    assert v19 == X._v19(v18) and X.HAPPENED_RULE in v19 and X.TOLD_RULE in v19
+    assert '"when_happened": "... or null (event and promised only)",' in v19
+    assert v19.replace(X.HAPPENED_RULE + X.TOLD_RULE, "").replace(X._HAPPENED_ANSWER, X._FEELING_ANSWER) == v18
+    assert X.FEELING_RULE + X.HAPPENED_RULE + X.TOLD_RULE + X._BECAUSE_AT in v19
+    assert X.prompt_of("extract-v19", roles=False) == X.SYSTEM_V19 and X.ROLE_ENDINGS not in X.SYSTEM_V19
+    assert X.SYSTEM_V19 == X._v19(X.SYSTEM_V18) and X.PROMPTS["extract-v19"] == X.SYSTEM_V19_ROLES
+    assert v19.format(registry=P.registry_prompt(compiler="extract-v19"))
+    assert "extract-v19" in X.ROLES & X.PARTS_APART & X.CONFIRMS & X.FEELINGS & entities.PART_EDGES
+    assert "extract-v19" not in X.HORIZONS | X.SPEAKERS
