@@ -146,7 +146,8 @@ fact does (D44, D45).
 - **`systemone` format.** The brief names a second wire format by an example model id. Its request and response
   shape is not established here; the implementer builds it only from the provider's published documentation, with a
   recorded fixture of that documentation's example. If the shape cannot be established, `standard` ships alone and the
-  report says so. Nothing is guessed.
+  report says so. Nothing is guessed. **Outcome:** `standard` ships alone in this phase; `systemone` is not built (no
+  published request and response shape was established).
 
 ### S6 — A chat that carries another chat's memory (migration `0036`; ADR 0085)
 
@@ -215,7 +216,8 @@ fact does (D44, D45).
   needs its quote like every row (invariant 10). Only `extract-v19` asks for it and only its rows are read; canon
   never states it. It changes no knowledge mark by itself: nothing is inferred from it.
   - **Shown.** The Inspector's entity page and the memory map list chains (who heard what from whom, oldest first).
-    `packet-v20` offers at most 2 `told` lines **(proposal)**, as `<Fact predicate="told">`, only when the message or
+    `packet-v20` offers at most 2 `told` lines **(proposal)**, as `<Fact kind="told">` (the packet's fact lines name
+    their predicate with `kind=`), only when the message or
     the scene names the teller or the hearer, ranked as facts are; a line whose content says a secret still kept from
     someone in the scene is left out as an excerpt would be (D62), and strict and narrator modes apply.
 - **A pin is an owner repair.** `owner_repair` kind `entity_pin` (migration `0038` widens the kind check): a name and
@@ -299,7 +301,8 @@ Packet
 - A11. Coverage sentence present exactly when a replied turn is newer than the last served turn.
 - A12. `told`, `happened`, pins and `@name`: lines as specified; `@` inside a word and unknown names do nothing; a
   told line that says a kept secret is withheld; every new line shape is dropped by `clean-v3` when a reply echoes it
-  (K27), checked on each shape.
+  (K27), checked on each shape, except `<Summary>`: `clean-v3` does not drop a `<Summary>` line's text when a reply
+  echoes it, today's story summaries included (accepted by the coordinator, 2026-11-23).
 - A13. Carry: `continue` facts fold before turn 0 and are superseded by the target's story; `regression` lines never
   enter current facts, cast, gone pins or open threads, appear only for the named, and are withheld under strict and
   from a narrator who is not one of them; an edit of the source after the link changes nothing in the target; a
