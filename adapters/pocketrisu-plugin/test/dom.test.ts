@@ -511,8 +511,8 @@ describe('panel', () => {
   describe('optional reranker settings (PHASE-60 S5)', () => {
     const titles = { ko: '재정렬 모델 (선택)', en: 'Reranker (optional)' } as const;
     const sentences = {
-      ko: '주소와 모델을 모두 넣으면, 매 요청마다 사용자 메시지와 찾은 기억 후보 최대 30개의 글을 그 주소로 보내 더 알맞은 순서로 다시 매깁니다(임베딩 모델에 대화 글을 보내는 것과 같습니다). 유료 서비스는 요청마다 비용이 들 수 있습니다. 응답이 늦거나 오류가 나면 기억은 원래 순서 그대로 들어갑니다. 끄려면 주소나 모델을 비워 두세요.',
-      en: 'With both an address and a model set, each request sends your message and the text of up to 30 recalled memory candidates to that address to put them in a better order, just as chat text goes to the embedder. Paid services may charge for each request. If it is slow or fails, memory goes out in its usual order. Leave the address or model empty to turn it off.',
+      ko: '주소와 모델을 모두 넣으면, 매 요청마다 사용자 메시지와 찾은 기억 후보 최대 30개의 글을 그 주소로 보내 더 알맞은 순서로 다시 매깁니다(임베딩 모델에 대화 글을 보내는 것과 같습니다). 유료 서비스는 요청마다 비용이 들 수 있습니다. 응답이 늦거나 오류가 나면 기억은 원래 순서 그대로 들어갑니다. 임베딩 대기와 재정렬 대기를 합쳐 플러그인의 요청 제한 시간(기본 3초)보다 넉넉히 짧게 두세요. 끄려면 주소나 모델을 비워 두세요.',
+      en: 'With both an address and a model set, each request sends your message and the text of up to 30 recalled memory candidates to that address to put them in a better order, just as chat text goes to the embedder. Paid services may charge for each request. If it is slow or fails, memory goes out in its usual order. Keep the embedding wait plus the reranker wait well under the plugin request deadline (3 s by default). Leave the address or model empty to turn it off.',
     } as const;
     const states = {
       on: { ko: '켜짐: 요청마다 순서를 다시 매깁니다', en: 'On: reorders memory candidates on every request' },
