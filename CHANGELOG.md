@@ -53,8 +53,25 @@ switch.
   apply as to any fact.
 - **A short message asks with the reply before it** (Phase 60 S5, ADR 0084; `packet-v20` only). A message shorter
   than 40 characters is embedded with the last 400 characters of the reply before it; lexical and keyword recall still
-  read the message alone. The sync-time prefetch builds the same text, recorded as `recall_options.sem_query`; a
-  replay embeds what was recorded.
+  read the message alone. The sync-time prefetch builds the same text. The text is recorded as
+  `recall_options.sem_query`, and a replay embeds what was recorded.
+- **A chat that carries another chat's memory** (Phase 60 S6, migration `0036`, ADR 0085). The owner links a chat to an
+  earlier one, `continue` (the story goes on) or `regression` (the story began again and only the named characters
+  remember). At link time the earlier chat is read once and the reading is stored with the link, so later edits of it
+  change nothing here; link again for a newer reading. `GET`, `POST …/carry/preview`, `POST` and `DELETE
+  /v1/conversations/{id}/carry`; a link answers 409 when the source changed since its preview and 422 above 2,000 rows.
+  Only `packet-v20` reads a link: `continue` memory comes before the chat's own story and gives way to it
+  (`source="carried"`, the earlier story as a summary); `regression` memory is at most 6 lines only its rememberers
+  know. The panel's Settings → This chat has the card (preview, link, remove, read again), and the memory document and
+  the person sheet show carried lines. Deleting either chat deletes its links; an archive holds a link only when both
+  chats are in it. Known limits: an earlier chat's very last reply may not be in its reading (it is extracted once the
+  story continues from it), and closed threads of a regression link are never offered.
+- **Panel and Inspector** (Phase 60). Settings has a "Leave out old dialogue" card for the trimming switch and the
+  Status tab says how far memory is recorded ("recorded through turn N"); the recall tuning card has `pin_at_mentions`,
+  a character's page and person sheet have a pin switch, and Settings → This chat lists the chat's pins; model settings
+  have an optional reranker card (the key write-only, hidden when the sidecar has no reranker settings). Facts, history,
+  threads, the memory document, the person sheet and the timeline mark `[happened: …; told tN]`; the person sheet, the
+  memory map and the Inspector's character page list who told whom, oldest first.
 - **An optional reranker, off by default** (Phase 60 S5, ADR 0084). `NMOS_RERANK_URL`, `NMOS_RERANK_MODEL`,
   `NMOS_RERANK_API_KEY`, `NMOS_RERANK_TIMEOUT_MS` (default `600`, 50–5000 ms) and `NMOS_RERANK_FORMAT` (`standard`
   only), editable at runtime and passed through both compose files. Off unless both URL and model are set; when on, the
