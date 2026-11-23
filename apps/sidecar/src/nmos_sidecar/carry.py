@@ -25,7 +25,7 @@ from .ids import uuid7
 from .entities import PERSONA, Resolution
 from .facts import fact_text, memory_view
 
-SHAPE = 2
+SHAPE = 3
 MAX_ROWS = 2000
 MAX_NAMES = 8
 FIRST_LINES = 8
@@ -93,6 +93,13 @@ def _plain(value: Any) -> Any:
 
 def _positive_int(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def _non_negative_int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+_UNSET: Any = object()
 
 
 def _is_persona(r: Resolution | None, entity_type: str | None, name: str | None) -> bool:
@@ -285,17 +292,21 @@ def _provenance(
     revisions: Mapping[int, UUID | str],
     *,
     generation: str | None = None,
+    turn: Any = _UNSET,
 ) -> dict[str, Any]:
     aid = _positive_int(row.get("id"))
     rev = revisions.get(aid) if aid is not None else None
     repair = row.get("repair")
     gen = generation if generation is not None else row.get("generation")
+    raw_turn = row.get("turn") if turn is _UNSET else turn
+    src_turn = _non_negative_int(raw_turn) if aid is not None else None
     return {
         "conversation": str(source_id),
         "assertion": aid,
         "revision": str(rev) if rev is not None else None,
         "generation": str(gen) if gen is not None else None,
         "repair": str(repair) if repair is not None else None,
+        "turn": src_turn,
     }
 
 
@@ -407,7 +418,8 @@ def snapshot_of(
                 _apply_regression_marks(opening_row, list(rems))
         mapped["opening"] = opening_row
         gen = opening.get("generation") if opening is not None else t.get("generation")
-        mapped["from"] = _provenance(source_id, t, rev_map, generation=gen)
+        src_turn = opening.get("turn") if opening is not None else t.get("turn")
+        mapped["from"] = _provenance(source_id, t, rev_map, generation=gen, turn=src_turn)
         thread_rows.append(mapped)
 
     # Story (continue only): held if it repeats or omits a kept secret.
@@ -427,6 +439,7 @@ def snapshot_of(
                         "conversation": str(source_id),
                         "summary": str(s["id"]),
                         "generation": s.get("generation"),
+                        "turn": None,
                     },
                 })
 

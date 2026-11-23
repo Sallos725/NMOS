@@ -136,7 +136,7 @@ def test_take_reading_and_preview_with_provenance_and_story(migrated: str) -> No
             assert len(reading["fingerprint"]) == 64
 
             snap = reading["snapshot"]
-            assert snap["shape"] == carry.SHAPE == 2
+            assert snap["shape"] == carry.SHAPE == 3
             # No verbatim message text: the stub extractor's quotes are nowhere in the stored rows.
             for bucket in ("facts", "aliases", "threads"):
                 for row in snap[bucket]:

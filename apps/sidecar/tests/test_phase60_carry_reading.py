@@ -211,6 +211,7 @@ def test_canon_rows_and_canon_aliases_are_left_out_and_fact_keys_stripped() -> N
         "revision": str(REV_1),
         "generation": "extract:gen-1",
         "repair": None,
+        "turn": 2,
     }
     assert len(snap["aliases"]) == 1
     assert snap["aliases"][0]["alias"] == "세라 언니"
@@ -235,6 +236,7 @@ def test_owner_repair_row_with_negative_id_records_null_assertion_and_repair_id(
         "revision": None,
         "generation": None,
         "repair": str(REP_ID),
+        "turn": None,
     }
     assert snap["facts"][1]["from"]["assertion"] == 20
     assert snap["facts"][1]["from"]["revision"] == str(REV_1)
@@ -286,7 +288,7 @@ def test_story_carried_held_or_omitted_by_mode() -> None:
         "text": "세라와 카이토는 항구에 머물렀다.",
         "first_turn": 0,
         "last_turn": 7,
-        "from": {"conversation": str(SRC_ID), "summary": str(SUM_ID), "generation": "summarize:s1"},
+        "from": {"conversation": str(SRC_ID), "summary": str(SUM_ID), "generation": "summarize:s1", "turn": None},
     }
     assert kept["story_left_out"] is None
 
@@ -651,14 +653,14 @@ def test_a_snapshot_keeps_no_verbatim_message_text_and_has_shape_2() -> None:
             "resolution": r, "entities": r.entities()}
 
     cont = carry.snapshot_of(view, None, "continue", [], SRC_ID, {40: REV_1, 41: REV_2, 43: REV_3})
-    assert cont["shape"] == carry.SHAPE == 2
+    assert cont["shape"] == carry.SHAPE == 3
     assert cont["facts"] and cont["aliases"] and cont["threads"]
     assert all(t["opening"] is not None for t in cont["threads"])
     assert any(f["from"]["repair"] == str(REP_ID) for f in cont["facts"])
     assert _evidence_keys(cont) == []
 
     reg = carry.snapshot_of(view, None, "regression", ["세라"], SRC_ID, {40: REV_1, 41: REV_2})
-    assert reg["shape"] == 2
+    assert reg["shape"] == 3
     assert reg["facts"] and reg["threads"]
     assert any(f["from"]["repair"] == str(REP_ID) for f in reg["facts"])
     assert _evidence_keys(reg) == []
