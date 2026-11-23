@@ -739,7 +739,10 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         if used + cost > min(limit, story_cap):
             entry["why"] = "story_cap" if used + cost <= limit else "budget"
             continue
-        kept_story.append(line.xml)
+        if line.ref.get("carried"):  # packet-v20: an earlier chat's story so far comes first (PHASE-60 S6)
+            kept_story.insert(0, line.xml)
+        else:
+            kept_story.append(line.xml)
         extras.extend(needed)
         used += cost
         entry["placed"], entry["why"] = True, "placed"

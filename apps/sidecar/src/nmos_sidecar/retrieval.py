@@ -49,6 +49,7 @@ from .keywords import keywords, particle_lookup
 from . import carry
 from .carry import Carried
 from .packet import CARRY_POLICIES
+from xml.sax.saxutils import escape as xml_escape
 
 CANDIDATE_LIMIT = 50
 # packet-v17 (PHASE-39 Q3b): a message that asks how a status value changed: the past (HISTORY_CUE), when, how much,
@@ -1221,6 +1222,10 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                      if '<Summary kind="story"' in line.xml or overuse.key(line.kind, line.ref) not in rest]
             g.rested += len(g.story) - len(awake)
             g.story = awake
+        if options.policy in CARRY_POLICIES and view and (line := carried_story(
+                view, view["secrets"], scene.names(g.cast, r, aliases) if r is not None else frozenset(),
+                g.hidden_entries if options.policy in LABEL_POLICIES else None)) is not None:
+            g.story.append(line)  # offered last: the first one left out when STORY_SHARE is full; emitted first
     if pending is not None:
         t0 = time.perf_counter()
         try:
@@ -2119,6 +2124,25 @@ def _head_last(conn: psycopg.Connection, head: UUID, upto: int | None) -> str | 
         " JOIN source_object so ON so.id = sr.source_object_id WHERE am.commit_id = %s AND am.position <= %s"
         " ORDER BY am.position DESC LIMIT 1", (head, 2**31 - 1 if upto is None else upto)).fetchone()
     return row["host_logical_id"] if row else None
+
+
+def carried_story(view: Mapping[str, Any], secrets: list[dict[str, Any]], present: frozenset[str],
+                  hidden_entries: list[dict[str, Any]] | None = None) -> Line | None:
+    """packet-v20 (PHASE-60 S6, ADR 0085 item 4): the story so far of the earlier chat a `continue` link carries, as one
+    <Summary scope="earlier chat"> line (its provenance the link and the source's summary). Like this chat's own
+    summaries, none when it repeats a secret this chat still keeps from someone (`summaries.leaks`, PHASE-12 Q3)."""
+    held = (view.get("carried") or {})
+    story = held.get("story")
+    if not story or not story.get("text"):
+        return None
+    text = str(story["text"])
+    ref = {"carried": held["link"], "summary": (story.get("from") or {}).get("summary")}
+    if summaries.leaks(text, secrets, present):
+        if hidden_entries is not None:
+            hidden_entries.append(hidden_entry("summary", ref, None, "secret_gate"))
+        return None
+    return Line("summary", f'    <Summary scope="earlier chat">{xml_escape(text)}</Summary>', ref, None,
+                f"earlier chat: {text}", text)
 
 
 def carry_record(link: Mapping[str, Any]) -> dict[str, Any]:
