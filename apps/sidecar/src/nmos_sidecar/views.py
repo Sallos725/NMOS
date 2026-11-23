@@ -540,15 +540,20 @@ def carry_href(row: dict[str, Any]) -> str | None:
 def _is_thread(row: dict[str, Any]) -> bool:
     if row.get("line") in ("fact", "thread"):
         return row["line"] == "thread"
+    if row.get("kind") in ("fact", "thread"):  # the carry line's own mark (`d['carry']['lines']`)
+        return row["kind"] == "thread"
     return "predicate" not in row and ("by" in row or "text" in row)
 
 
 def carry_text(row: dict[str, Any], lang: str) -> str:
     """A carried line as plain text (not escaped): "세라 위치 등대", "세라 → 카이토 관계 소꿉친구", or a thread's
     "세라 → 카이토: 등대에서 만나기"."""
-    if _is_thread(row):
-        who = " → ".join(str(x) for x in (row.get("by"), row.get("to")) if x)
-        return f"{who}: {row.get('text') or ''}" if who else str(row.get("text") or "")
+    if _is_thread(row):  # a thread row's by / to / text, or a carry line's subject / object / value
+        by = row.get("by") if "by" in row else _named(row, "subject")
+        to = row.get("to") if "by" in row else _named(row, "object")
+        text = row.get("text") if "text" in row else row.get("value")
+        who = " → ".join(str(x) for x in (by, to) if x)
+        return f"{who}: {text or ''}" if who else str(text or "")
     pred = str(row.get("predicate") or "")
     said = t(lang, CARRY_WORDS[pred]) if pred in CARRY_WORDS else word(pred, lang)
     subject, obj, value = _named(row, "subject"), _named(row, "object"), row.get("value")

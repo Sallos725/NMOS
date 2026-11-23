@@ -102,6 +102,13 @@ def test_carry_text_reads_facts_and_threads_in_plain_words():
     # a regression row says which it is; a thread without "line" is told apart by by/text without a predicate
     assert views.carry_text({**cthread("goal", "세라", "종 찾기"), "line": "thread"}, "ko") == "세라: 종 찾기"
     assert views.carry_text({**cfact("세라", "located_in", "등대"), "line": "fact"}, "ko") == "세라 위치 등대"
+    # the carry branch's own line shape (Track 4): `kind` "thread", the opening's predicate kept, and the maker, the
+    # recipient and the text in subject / object / value
+    track4 = {"kind": "thread", "predicate": "promised", "subject": "세라", "object": "카이토",
+              "value": "등대에서 만나기", "carried": "link-1", "carried_from": {"conversation": "c", "turn": 4}}
+    assert views.carry_text(track4, "ko") == "세라 → 카이토: 등대에서 만나기"
+    assert views.carry_text({**track4, "object": None}, "en") == "세라: 등대에서 만나기"
+    assert views.carry_text({**cfact("세라", "located_in", "등대"), "kind": "fact"}, "ko") == "세라 위치 등대"
 
 
 def test_carry_head_says_where_from_in_words():
