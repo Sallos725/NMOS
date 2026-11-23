@@ -17,8 +17,10 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 from . import summaries
+from .ids import uuid7
 from .entities import PERSONA, Resolution
 from .facts import fact_text, memory_view
 
@@ -635,3 +637,114 @@ def preview(
     ).fetchone()
     replaces = current["id"] if current is not None else None
     return preview_of(reading, labels, replaces)
+
+
+# --- the link store ---------------------------------------------------------------------------------------------
+# A link is owner input. A stored link is never changed except for `removed_at`; at most one link per target is in
+# force (removed_at IS NULL, the partial unique index). Nothing here reads the source again after the link is made,
+# and nothing reads the source's own link: a reading never follows a chain.
+
+LINK_COLUMNS: tuple[str, ...] = (
+    "id", "target_conversation_id", "source_conversation_id", "mode", "entity_names",
+    "cutoff_commit_id", "cutoff_position", "cutoff_turn", "generations", "created_at", "removed_at",
+)
+
+
+def _columns(snapshot: bool) -> str:
+    return ", ".join((*LINK_COLUMNS, "snapshot") if snapshot else LINK_COLUMNS)
+
+
+def link(
+    conn: psycopg.Connection,
+    target_id: UUID | str,
+    source_id: UUID | str,
+    mode: str,
+    names: Sequence[str] | None,
+    keys: Keys,
+    cutoff_turn: int | None = None,
+    expect: str | None = None,
+) -> dict[str, Any]:
+    """Link the target to carry the source's frozen reading, replacing the target's link in force, in one transaction.
+
+    `expect` is the fingerprint of the preview the owner saw; when the source's reading no longer matches it, nothing
+    is written and `CarryChanged` carries the fresh preview. Returns {"link": <the new link without its snapshot>,
+    "replaced": <the id of the link it replaced, or None>}."""
+    tgt, src = _as_uuid(target_id), _as_uuid(source_id)
+    with conn.transaction():
+        labels = _validate_pair(conn, tgt, src, lock=True)
+        reading = take_reading(conn, src, mode, names, keys, cutoff_turn=cutoff_turn)
+        current = conn.execute(
+            "SELECT id FROM conversation_carry WHERE target_conversation_id = %s AND removed_at IS NULL",
+            (tgt,),
+        ).fetchone()
+        replaced: UUID | None = current["id"] if current is not None else None
+        if expect is not None and expect != reading["fingerprint"]:
+            raise CarryChanged(preview_of(reading, labels, replaced))
+        if replaced is not None:  # before the insert: the partial unique index allows one link in force
+            conn.execute("UPDATE conversation_carry SET removed_at = now() WHERE id = %s", (replaced,))
+        cutoff = reading["cutoff"]
+        row = conn.execute(
+            "INSERT INTO conversation_carry (id, target_conversation_id, source_conversation_id, mode, entity_names,"
+            " cutoff_commit_id, cutoff_position, cutoff_turn, generations, snapshot)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            f" RETURNING {_columns(False)}",
+            (
+                uuid7(), tgt, src, reading["mode"], Jsonb(reading["names"]),
+                _as_uuid(cutoff["commit"]), cutoff["position"], cutoff["turn"],
+                Jsonb(reading["generations"]), Jsonb(reading["snapshot"]),
+            ),
+        ).fetchone()
+    return {"link": dict(row), "replaced": replaced}
+
+
+def unlink(conn: psycopg.Connection, target_id: UUID | str) -> dict[str, Any] | None:
+    """Remove the target's link in force (kept for the record with `removed_at`); None when there is none."""
+    row = conn.execute(
+        "UPDATE conversation_carry SET removed_at = now()"
+        " WHERE target_conversation_id = %s AND removed_at IS NULL"
+        f" RETURNING {_columns(False)}",
+        (_as_uuid(target_id),),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def in_force(conn: psycopg.Connection, target_id: UUID | str, snapshot: bool = True) -> dict[str, Any] | None:
+    """The target's link in force now, or None."""
+    row = conn.execute(
+        f"SELECT {_columns(snapshot)} FROM conversation_carry"
+        " WHERE target_conversation_id = %s AND removed_at IS NULL",
+        (_as_uuid(target_id),),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def as_of(conn: psycopg.Connection, target_id: UUID | str, at: datetime) -> dict[str, Any] | None:
+    """The target's link that was in force at `at` (for a replay), or None. A replacement's `created_at` equals the
+    replaced link's `removed_at`, so exactly one link answers at every instant a link was in force."""
+    row = conn.execute(
+        f"SELECT {_columns(True)} FROM conversation_carry"
+        " WHERE target_conversation_id = %s AND created_at <= %s AND (removed_at IS NULL OR removed_at > %s)"
+        " ORDER BY created_at DESC LIMIT 1",
+        (_as_uuid(target_id), at, at),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def by_id(conn: psycopg.Connection, link_id: UUID | str) -> dict[str, Any] | None:
+    """A recorded link with its snapshot, removed since or not (a replay reads the link its request had)."""
+    row = conn.execute(
+        f"SELECT {_columns(True)} FROM conversation_carry WHERE id = %s",
+        (_as_uuid(link_id),),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def history(conn: psycopg.Connection, target_id: UUID | str, snapshot: bool = False) -> dict[str, Any]:
+    """The target's link in force and its removed links, newest first."""
+    rows = conn.execute(
+        f"SELECT {_columns(snapshot)} FROM conversation_carry WHERE target_conversation_id = %s"
+        " ORDER BY created_at DESC, id DESC",
+        (_as_uuid(target_id),),
+    ).fetchall()
+    current = next((dict(r) for r in rows if r["removed_at"] is None), None)
+    return {"in_force": current, "removed": [dict(r) for r in rows if r["removed_at"] is not None]}
