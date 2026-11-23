@@ -100,12 +100,13 @@ positive, undisputed `has_status` says so — dead, killed, deceased, missing, v
 사망, 죽음, 죽었, 전사, 실종, 행방불명, 떠남, 추방 **(brief's list)** — and does not also say recovered, returned,
 alive, revived; 회복, 생존, 귀환, 부활, nor a negation or a near miss ("죽지 않", "죽을 뻔", "죽은 척", "not dead",
 "nearly died", "presumed"). **Amended 2026-11-23 (integrator's decision, review of the read side):** a word counts
-only when the status plainly says the character *itself* is dead, missing or gone for good, now. Hearsay and near
-death (직전, 위기, 추정, 알려, 소문; rumoured, believed, reportedly), alive in other words (살아, 발견; living, found,
-back from), someone else's fate in the status (a noun with 이/가/은/는 before the word; "실종된 동생"; "her brother
-was killed"), 전사 as "warrior" (it counts inflected or after 중 / 에서), a missing object ("wallet missing") and
-leaving a place without a for-good word ("마을을 떠남"; bare "떠남" and "영영 떠남" still count) are not gone; the
-owner may widen 떠남 again. `located_in` counts only when the place's whole name is one of a short list that is no
+only when the status plainly says the character *itself* is dead, missing or gone for good, now: at the start of
+the value or right after a word saying how or when ("전투 중", "병으로", "결국"; "is", "went", "still"). Hearsay and
+near death (직전, 위기, 추정, 알려, 소문, 처리; rumoured, believed, reportedly), alive in other words (살아, 발견;
+living, found, back from), someone else's fate ("동생 실종", "아버지가 사망함", "실종된 동생", "her brother was
+killed"), 전사 as "warrior" (it counts inflected or after 중 / 에서), a missing object ("wallet missing") and a leave
+not plainly for good ("마을을 떠남", "잠시 떠남"; "떠남" alone and "영영 떠남" still count) are not gone; the owner
+may widen 떠남 again. `located_in` counts only when the place's whole name is one of a short list that is no
 place (행방불명, 실종, 저승, 사후세계; "missing", "the afterlife"): a place whose name merely contains a word of the
 list ("죽음의 숲") never makes anyone gone. A gone character who is in the scene by rows of a turn after the status's
 turn is not pinned (the story brought them back).

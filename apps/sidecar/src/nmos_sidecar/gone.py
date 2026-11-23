@@ -147,15 +147,16 @@ _EN_OTHER_SUBJECT = re.compile(r"\b(?:her|his|their|my|your|our|its|the|a|an)\s+
 # The word modifies the noun after it ("실종된 동생", "사망한 아버지", "추방된 왕자"): not the subject's state, except
 # a state noun ("사망한 상태", "실종된 지 3년").
 _KO_MODIFIES_NOUN = re.compile(r"^(?:한|된|당한)\s+(?!상태|채|것|지(?:\s|$))\S")
+# The word is the subject's own state only at the start of the value or right after a word that says how or when
+# ("전투 중", "왕국에서", "병으로", "결국"; "is", "went", "still", "found"). After any other word it may be someone
+# else's ("동생 실종", "아버지 사망", "brother killed", "left arm missing").
+_KO_OWN = re.compile(r"(?:^|(?:에서|중|에|로|결국|끝내|이미|마침내)\s+)$")
+_EN_OWN = re.compile(r"(?:^|\b(?:is|was|were|went|gone|got|still|been|now|reported|found)\s+)$")
 # "전사" alone is also "warrior": it counts inflected ("전사함", "전사했다") or after "중" / "에서" ("전투 중 전사").
 _JEONSA_DIED = re.compile(r"^(?:함|했|하|한)")
 _JEONSA_CONTEXT = re.compile(r"(?:중|에서)\s+$")
-# "떠남" counts alone or for good; leaving a place ("마을을 떠남") or a softened leave ("잠시", "출장") does not.
+# "떠남" counts as the whole status or with a for-good word ("영영 떠남"); "마을을 떠남", "잠시 떠남" do not.
 _LEAVE_FOR_GOOD = re.compile(r"영영|영원히|다시는")
-_LEAVE_SOFT = re.compile(r"잠시|잠깐|출장|여행|외출")
-_LEAVE_PLACE = re.compile(r"[을를]\s+$")
-# English "missing" is the status itself only at the start or after a status verb, never after a noun it modifies.
-_MISSING_STATUS = re.compile(r"(?:^|\b(?:is|was|went|gone|still|been|now|reported|declared)\s+)$")
 
 
 def _ko_counts(text: str, m: re.Match[str]) -> bool:
@@ -163,20 +164,18 @@ def _ko_counts(text: str, m: re.Match[str]) -> bool:
     if _KO_OTHER_SUBJECT.search(before) or _KO_MODIFIES_NOUN.match(after):
         return False
     word = m.group(0)
+    if word == "떠남":
+        return bool(_LEAVE_FOR_GOOD.search(text)) or (not before and not re.search(r"\w", after))
+    if not _KO_OWN.search(before):
+        return False
     if word == "전사":
         return bool(_JEONSA_DIED.match(after) or _JEONSA_CONTEXT.search(before))
-    if word == "떠남":
-        if _LEAVE_SOFT.search(text):
-            return False
-        return bool(_LEAVE_FOR_GOOD.search(text) or not _LEAVE_PLACE.search(before))
     return True
 
 
 def _en_counts(text: str, m: re.Match[str]) -> bool:
     before = text[:m.start()]
-    if _EN_OTHER_SUBJECT.search(before):
-        return False
-    return m.group(0) != "missing" or bool(_MISSING_STATUS.search(before))
+    return not _EN_OTHER_SUBJECT.search(before) and bool(_EN_OWN.search(before))
 
 
 def _normalize(value: str | None) -> str:

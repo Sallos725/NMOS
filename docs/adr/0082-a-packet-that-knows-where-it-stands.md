@@ -17,7 +17,7 @@ says how far extraction has got, so a reply may trust memory over a newer messag
 2. **Gone is read from the current status, narrowly.** A character's current, narrated, positive, undisputed
    `has_status` matched against a closed word list, minus a recovered list, minus negations and near misses, and
    only when the status is the character's own (amended 2026-11-23: not someone else's fate, a warrior, a missing
-   object, hearsay, or leaving a place without a for-good word; PHASE-60 S3).
+   object, hearsay, or a leave not plainly for good; PHASE-60 S3).
    `located_in` counts only for a whole place name on a short list of non-places. A word inside a longer place name
    never counts. A character present in the scene by rows of a later turn is not pinned: the story's later word wins
    over the list. The rule errs toward not pinning; a missed pin is today's behaviour, a wrong pin silences a living
