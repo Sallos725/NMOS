@@ -250,6 +250,31 @@ describe('trimPrompt (Phase 60 S1 / A15)', () => {
     expect(resMarker.prompt).toBe(markerPrompt);
   });
 
+  it('refuses with format when a message to drop carries anything beyond role and content', () => {
+    const { host, prompt } = baseFixture();
+    const sideFields: Array<[number, string, unknown]> = [
+      [1, 'multimodals', [{ type: 'image', base64: 'data:image/png;base64,AAAA' }]],
+      [2, 'tool_calls', [{ id: 'call-1', function: { name: 'lookup', arguments: '{}' } }]],
+      [1, 'name', '세라'],
+      [2, 'extra', undefined],
+    ];
+    for (const [idx, key, value] of sideFields) {
+      const withField: PromptMessage[] = prompt.map((m, i) => (i === idx ? { ...m, [key]: value } : { ...m }));
+      const res = runTrim(withField, host, 'u1');
+      expect(res, key).toEqual({ prompt: withField, dropped: 0, savedTokens: 0, reason: 'format' });
+      expect(res.prompt, key).toBe(withField);
+    }
+
+    // A kept message (the boundary and after) may carry other keys: only dropped messages are checked.
+    const keptField: PromptMessage[] = prompt.map((m, i) => (i === 3
+      ? { ...m, multimodals: [{ type: 'image', base64: 'data:image/png;base64,AAAA' }] }
+      : { ...m }));
+    const resKept = runTrim(keptField, host, 'u1');
+    expect(resKept.reason).toBeNull();
+    expect(resKept.dropped).toBe(2);
+    expect(resKept.prompt[1]).toBe(keptField[3]);
+  });
+
   it('refuses with format when keep_from_id is unknown or inactive', () => {
     const { host, prompt } = baseFixture();
 

@@ -16,6 +16,13 @@ export interface TrimResult {
   reason: TrimReason | null;
 }
 
+/**
+ * The only keys a dropped prompt message may carry: a plain text turn. Nothing in HOST-FACTS, ARCHITECTURE §4
+ * or the recorded host fixtures documents another key the host puts on chat messages in `beforeRequest`, so any
+ * other key (images, tool calls, names, …) means the message is more than its text and nothing is dropped.
+ */
+const DROPPABLE_KEYS: ReadonlySet<string> = new Set(['role', 'content']);
+
 function sameText(prompt: PromptMessage[], hostMessages: HostMessage[], p: number, i: number): boolean {
   const m = prompt[p];
   if (!m || typeof m.content !== 'string') return false;
@@ -119,6 +126,7 @@ export function trimPrompt(
       const m = prompt[k];
       if (!m || (m.role !== 'user' && m.role !== 'assistant')) return refuse();
       if (typeof m.content !== 'string') return refuse();
+      if (Object.keys(m).some((key) => !DROPPABLE_KEYS.has(key))) return refuse();
       if (m.content.includes(MEMORY_MARKER)) return refuse();
       if (k >= K || k >= turn) return refuse();
       const sent = cleanText(m.content).length;
