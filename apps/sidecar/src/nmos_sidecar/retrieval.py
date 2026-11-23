@@ -1084,7 +1084,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                       len(view["threads"]) if rest else options.threads_limit, persona,
                                       about=options.policy in ABOUT_POLICIES, aliases=aliases, named=g.named)
             picked = _rested(picked, "thread", rest, g)[:options.threads_limit]
-            g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r)) for t in picked],
+            g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r), options.policy in HAPPENED_POLICIES)
+                                for t in picked],
                                view["threads"], g, r, options)
         if options.facts_limit > 0:
             causes = options.policy in CAUSE_POLICIES
@@ -1584,7 +1585,7 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
                  and scene.key(r, t["by"]) == k and shown(t)]
         goals.sort(key=lambda t: (similarity(query, t.get("text")) if query else 0.0, t["position"]), reverse=True)
         return [fact_entry(f, False, before, cause, options.history_marks, happened=happened) for f in pick] + [
-            thread_entry(t) for t in goals[:CAST_GOALS]]
+            thread_entry(t, happened=happened) for t in goals[:CAST_GOALS]]
 
     extra = 0
     for k in [*order, *(k for k in pins if k not in order)]:
@@ -1772,7 +1773,8 @@ def settled_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, now: in
 
     own = [t for t in view["threads"] if not t.get("carried")]
     picked = absence.settled(own, now, lambda t: involved(t) and bool(_rested([t], "thread", rest, g)))
-    return _moded([settled_entry(t, scene.private(t, g.cast, r)) for t in picked], view["threads"], g, r, options)
+    return _moded([settled_entry(t, scene.private(t, g.cast, r), options.policy in HAPPENED_POLICIES) for t in picked],
+                  view["threads"], g, r, options)
 
 
 def told_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_ai: str, in_context: set[str],

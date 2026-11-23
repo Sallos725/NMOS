@@ -15,9 +15,10 @@ import psycopg
 from psycopg.rows import dict_row
 
 from conftest import active_generation, make_client
-from nmos_sidecar import packet, retrieval, scene
+from nmos_sidecar import facts as F, packet, retrieval, scene, threads
 from nmos_sidecar.entities import resolve
-from nmos_sidecar.facts import _annotate, fact_entry, fact_line, memory_view, served_assertions, told_entry
+from nmos_sidecar.facts import (_annotate, fact_entry, fact_line, memory_view, served_assertions, settled_entry,
+                                settled_line, thread_entry, thread_line, told_entry)
 from nmos_sidecar.packet import (HAPPENED_MARK, HAPPENED_NOTE, HAPPENED_POLICIES, TOLD_MARK, TOLD_NOTE, TOLD_POLICIES,
                                  compile_lines)
 from nmos_sidecar.retrieval import TOLD_MAX, Gathered, RecallOptions, cast_groups
@@ -112,6 +113,51 @@ def test_an_echoed_happened_line_is_dropped_by_the_normalizer():
     xml = fact_line(event(8, "유나", "성을 떠났다", when_happened="어제"), happened=True).strip()
     cleaned = packet.clean_text(f"카이토가 고개를 숙였다. {xml} 바람이 분다.")
     assert cleaned == "카이토가 고개를 숙였다. 바람이 분다."
+
+
+# --- happened on a promise's thread (pure) -------------------------------------------------------------------------------
+
+
+PROMISE = "다시 돌아오겠다"
+
+
+def promised(pos: int, **kw) -> dict:
+    return row(pos, "세라", "promised", "카이토", PROMISE, subject_type="character", object_type="character", **kw)
+
+
+def test_fold_carries_when_happened_from_the_opening_assertion():
+    [t], _, _ = threads.fold([promised(3, when_happened="다음 보름날"), promised(5, when_happened="내일")])
+    assert t["when_happened"] == "다음 보름날" and t["restated"] == [{"turn": 5, "position": 5}]
+    [t], _, _ = threads.fold([promised(3), promised(5, when_happened="내일")])
+    assert t["when_happened"] is None  # the opening one has none; a restatement adds nothing
+
+
+def test_a_promise_thread_line_carries_happened_after_its_turn_only_when_asked():
+    [t], _, _ = threads.fold([promised(8, when_happened="다음 보름날")])
+    assert thread_line(t) == '    <Thread kind="promise" by="세라" to="카이토" turn="8">다시 돌아오겠다</Thread>'
+    assert thread_line(t, happened=True) == (
+        '    <Thread kind="promise" by="세라" to="카이토" turn="8" happened="다음 보름날">다시 돌아오겠다</Thread>')
+    [kept], _, _ = threads.fold([promised(8, when_happened="다음 보름날"),
+                                 row(12, "세라", "fulfilled", None, PROMISE, subject_type="character")])
+    assert settled_line(kept, happened=True) == (
+        '    <Thread status="kept" kind="promise" by="세라" to="카이토" turn="8" happened="다음 보름날" closed_turn="12">'
+        '다시 돌아오겠다</Thread>')
+    assert thread_entry(t, happened=True).text == thread_entry(t).text
+    assert settled_entry(kept, happened=True).text == settled_entry(kept).text
+    [plain], _, _ = threads.fold([promised(8)])
+    assert thread_line(plain, happened=True) == thread_line(plain)
+
+
+def test_the_thread_note_and_happened_note_both_under_v20():
+    [t], _, _ = threads.fold([promised(8, when_happened="다음 보름날")])
+    out = compile_lines([], 2000, threads=[thread_entry(t, happened=True)], policy="packet-v20")
+    assert 'turn="8" happened="다음 보름날">' in out.text and HAPPENED_NOTE in out.text
+
+
+def test_an_echoed_happened_thread_line_is_dropped_by_the_normalizer():
+    [t], _, _ = threads.fold([promised(8, when_happened="다음 보름날")])
+    cleaned = packet.clean_text(f"카이토가 웃었다. {thread_line(t, happened=True).strip()} 바람이 분다.")
+    assert cleaned == "카이토가 웃었다. 바람이 분다."
 
 
 # --- told: selection, gate and modes (pure) ----------------------------------------------------------------------------
@@ -278,13 +324,14 @@ def complete(system, user):
 
 
 @contextmanager
-def extracted(url: str, **settings: Any) -> Iterator[tuple[Any, SimChat]]:
-    """SCENE told at turn 8, then 8 more turns, so its message is out of the prompt's window; extract-v19 by the stub."""
-    chat = chat_of(*[f"평범한 하루 {i}." for i in range(8)], SCENE)
+def extracted(url: str, story: str = SCENE, stub: Any = None, **settings: Any) -> Iterator[tuple[Any, SimChat]]:
+    """`story` told at turn 8, then 8 more turns, so its message is out of the prompt's window; extract-v19 by the
+    stub (`complete` by default)."""
+    chat = chat_of(*[f"평범한 하루 {i}." for i in range(8)], story)
     filler(chat, 8)
     with make_client(url, **LLM, extract_compiler="extract-v19", **settings) as client:
         sync(client, chat)
-        drain(url, complete)
+        drain(url, stub or complete)
         yield client, chat
 
 
@@ -362,3 +409,73 @@ def test_memory_view_reads_told_only_when_asked_and_its_facts_do_not_change(migr
     assert all(e["name"] != "세라" for e in plain["entities"])
     assert {k: v for k, v in asked.items() if k not in ("told", "resolution")} == {
         k: v for k, v in plain.items() if k != "resolution"}
+
+
+PROMISE_SCENE = "세라는 카이토에게 다음 보름날 다시 돌아오겠다고 약속했다. 하나는 웃었다."
+PROMISE_QUOTE = "다시 돌아오겠다고 약속했다"
+WHEN_QUESTION = "세라는 언제 돌아온다고 했지?"
+THREAD_V20 = '<Thread kind="promise" by="세라" to="카이토" turn="8" happened="다음 보름날">다시 돌아오겠다</Thread>'
+THREAD_PLAIN = '<Thread kind="promise" by="세라" to="카이토" turn="8">다시 돌아오겠다</Thread>'
+
+
+def promise_stub(system, user):
+    """The model: for PROMISE_SCENE (turn 8), 세라's promise to 카이토, set for 다음 보름날, and 하나 at the scene."""
+    target = user.split("TARGET turn", 1)[1] if "TARGET turn" in user else ""
+    if PROMISE_SCENE in target:
+        actual = {"polarity": "positive", "modality": "actual", "source": "narration"}
+        return {"assertions": [
+            {"subject": "세라", "subject_type": "character", "predicate": "promised", "object": "카이토",
+             "object_type": "character", "value": PROMISE, "when_happened": "다음 보름날", **actual,
+             "evidence": PROMISE_QUOTE},
+            {"subject": "하나", "subject_type": "character", "predicate": "event", "value": "웃었다", **actual,
+             "evidence": "하나는 웃었다"}]}, "{}", USED
+    return {"assertions": []}, "{}", USED
+
+
+def test_v20_shows_when_a_promise_is_for_on_its_thread(migrated):
+    with extracted(migrated, PROMISE_SCENE, promise_stub, packet_policy="packet-v20") as (client, chat):
+        out = retrieve(client, chat, WHEN_QUESTION)
+        forget_when(migrated)
+        plain = retrieve(client, chat, WHEN_QUESTION)
+    assert THREAD_V20 in out["text"] and HAPPENED_NOTE in out["text"]
+    assert THREAD_PLAIN in plain["text"] and HAPPENED_MARK not in plain["text"] and HAPPENED_NOTE not in plain["text"]
+
+
+def test_v19_threads_are_byte_identical_with_or_without_when_happened(migrated):
+    with extracted(migrated, PROMISE_SCENE, promise_stub) as (client, chat):
+        out = retrieve(client, chat, WHEN_QUESTION)
+        forget_when(migrated)
+        plain = retrieve(client, chat, WHEN_QUESTION)
+    assert THREAD_PLAIN in out["text"] and HAPPENED_MARK not in out["text"]
+    assert out["text"] == plain["text"]
+
+
+def test_the_new_thread_key_changes_no_page_of_a_chat_without_when_happened(migrated, monkeypatch):
+    """The Inspector's chat and person pages and the panel's memory, person and map screens are the same whether
+    `threads.fold` adds `when_happened` or not (as before it did), for a chat with none."""
+    with extracted(migrated, PROMISE_SCENE, promise_stub) as (client, chat):
+        forget_when(migrated)
+        conv = conv_id(client, chat)
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (conv,)).fetchone()[
+                "head_commit_id"]
+            view = memory_view(conn, head, active_generation(conn, "extract").key)
+        [t] = view["threads"]
+        assert "when_happened" in t and t["when_happened"] is None
+        sera = next(e["id"] for e in view["entities"] if e["name"] == "세라")
+        urls = [f"/v1/inspector/c/{conv}", f"/v1/inspector/c/{conv}/e/{sera}", f"/v1/views/c/{conv}/memory",
+                f"/v1/views/c/{conv}/person/{sera}", f"/v1/views/c/{conv}/map", f"/v1/views/c/{conv}/map/graph"]
+        now = [client.get(u) for u in urls]
+        fold = F.fold_threads
+
+        def before(*args, **kw):  # threads.fold as it was: no when_happened key
+            out, unmatched, used = fold(*args, **kw)
+            for th in out:
+                th.pop("when_happened", None)
+            return out, unmatched, used
+
+        monkeypatch.setattr(F, "fold_threads", before)
+        then = [client.get(u) for u in urls]
+    for u, a, b in zip(urls, now, then):
+        assert a.status_code == b.status_code == 200, u
+        assert a.content == b.content, u

@@ -216,6 +216,8 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
                      "revealed": a.get("revealed"), "repair": a.get("repair"),
                      "names": a.get("names") or [a["subject"], *([a["object"]] if a.get("object") else [])],
                      "status": "open", "closed_by": None, "restated": [], "horizon": horizon_of(a),
+                     # PHASE-60 S7: when the opening assertion says it happens (a promise's appointed day), else None
+                     "when_happened": a.get("when_happened"),
                      "_maker": _maker(a, r), "_recipient": _recipient(a, r), "_norm": norm(a.get("value"))}
                 threads.append(t)
                 open_by_maker.setdefault(t["_maker"], []).append(t)
