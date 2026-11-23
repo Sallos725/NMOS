@@ -289,18 +289,21 @@ def test_continue_folds_carried_rows_before_the_story_and_the_story_supersedes_t
             ("등대", -1, "superseded"), ("항구", 2, "current")]
         assert place[0]["history"][0]["position"] < 0
 
-        # A carried alias joins: the target's 세짱 is the carried 세라.
+        # A carried alias joins: the target's 세짱 and 세라 become one entity (kept under the target's earlier root).
         sera = next(f for f in facts if f["subject"] == "세라")
         sejjang = next(f for f in view["facts"] if f["subject"] == "세짱")
-        assert _entity_id(sera) is not None and _entity_id(sejjang) == _entity_id(sera)
-        assert _entity_id(next(f for f in before["facts"] if f["subject"] == "세짱")) != _entity_id(sera)
+        before_sejjang = next(f for f in before["facts"] if f["subject"] == "세짱")
+        before_sera = next(f for f in before["facts"] if f["subject"] == "세라")
+        assert _entity_id(before_sejjang) != _entity_id(before_sera)
+        assert _entity_id(sera) is not None and _entity_id(sejjang) == _entity_id(sera) == _entity_id(before_sejjang)
 
         # The source's persona is the target's: a carried {{user}} row is 유찬's entity, so 유찬's own status of turn 1
-        # supersedes the carried one.
+        # supersedes the carried one, and the entity keeps the target's persona spelling (never {{user}}).
         tired = next(a for a in view["assertions"] if a.get("carried") and a["subject"] == PERSONA)
         sleepy = next(f for f in view["facts"] if f["subject"] == "유찬")
         assert _entity_id(tired) == _entity_id(sleepy)
-        assert next(e for e in view["entities"] if e["id"] == _entity_id(tired))["persona"] is True
+        persona_entity = next(e for e in view["entities"] if e["id"] == _entity_id(tired))
+        assert persona_entity["persona"] is True and persona_entity["name"] == "유찬"
         assert [(h["value"], h["turn"], h["outcome"]) for h in sleepy["history"]] == [
             ("지침", -1, "superseded"), ("졸림", 1, "current")]
 
@@ -367,6 +370,61 @@ def test_an_owner_exclusion_in_the_target_leaves_carried_facts_out(migrated: str
         assert said == {("유나", "has_status")}
         assert not [a for a in view["assertions"] if a.get("carried") and a["subject"] == "세라"]
         assert not [t for t in view["threads"] if t.get("carried")]  # 세라's promise left out with her
+
+
+def test_target_rows_name_their_own_entities_before_carried_rows(migrated: str) -> None:
+    """Target rows enter the resolution first: every target entity keeps its id and display name (the persona
+    keeps the target's spelling, never {{user}}), carried-only names become entities of their own, and carried
+    aliases still join."""
+    with make_client(migrated, **CANON_ON) as c:
+        src_sim = _chat("src-names", SOURCE_TURNS)
+        sync(c, src_sim, character_name="세라", chat_name="항구의 밤", persona_name="도현")
+        tgt_a = _chat("tgt-names-a", (TARGET_TURNS[1],))  # mentions 세짱 and persona 유찬 only
+        sync(c, tgt_a, character_name="하나", chat_name="새 이야기 A", persona_name="유찬")
+        tgt_b = _chat("tgt-names-b", (TARGET_TURNS[2], TARGET_TURNS[1]))  # mentions 세라, 항구, then 세짱, 유찬
+        sync(c, tgt_b, character_name="하나", chat_name="새 이야기 B", persona_name="유찬")
+        drain_extract(migrated, _stub_extract)
+        src_id = UUID(conv_id(c, src_sim))
+        tgt_a_id, tgt_b_id = UUID(conv_id(c, tgt_a)), UUID(conv_id(c, tgt_b))
+
+        with _connect(migrated) as conn:
+            key = _key(conn)
+            head_a, head_b = _head(conn, tgt_a_id), _head(conn, tgt_b_id)
+            before_a = memory_view(conn, head_a, key)
+            carried_a = _link_continue(conn, tgt_a_id, src_id)
+            after_a = memory_view(conn, head_a, key, carried=carried_a)
+
+            before_b = memory_view(conn, head_b, key)
+            carried_b = _link_continue(conn, tgt_b_id, src_id)
+            after_b = memory_view(conn, head_b, key, carried=carried_b)
+
+    # Every entity the target's own rows name keeps the exact same id and display name as without the link.
+    assert before_a["entities"]
+    for ent in before_a["entities"]:
+        got = after_a["resolution"].entity(ent["type"], ent["name"])
+        assert got is not None and got["id"] == ent["id"] and got["name"] == ent["name"]
+
+    # The persona entity keeps the target's spelling, never {{user}}.
+    persona_a = after_a["resolution"].entity("character", PERSONA)
+    assert persona_a is not None and persona_a["persona"] is True and persona_a["name"] == "유찬"
+
+    # Names mentioned only by carried rows are entities of their own.
+    for etype, name in (("character", "유나"), ("character", "카이토"), ("place", "등대")):
+        assert before_a["resolution"].entity(etype, name) is None
+        only_carried = after_a["resolution"].entity(etype, name)
+        assert only_carried is not None and only_carried["name"] == name
+
+    # A carried alias still joins: 세라 also_called 세짱 links the two names in both targets.
+    assert after_a["resolution"].entity("character", "세라")["id"] == after_a["resolution"].entity("character", "세짱")["id"]
+    sera_before_b = before_b["resolution"].entity("character", "세라")
+    sejjang_after_b = after_b["resolution"].entity("character", "세짱")
+    assert sera_before_b is not None and sejjang_after_b is not None
+    assert sejjang_after_b["id"] == sera_before_b["id"] and sejjang_after_b["name"] == "세라"
+    assert after_b["resolution"].entity("character", PERSONA)["name"] == "유찬"
+    harbor_before = before_b["resolution"].entity("place", "항구")
+    harbor_after = after_b["resolution"].entity("place", "항구")
+    assert harbor_before is not None and harbor_after is not None
+    assert harbor_after["id"] == harbor_before["id"] and harbor_after["name"] == "항구"
 
 
 # --- regression: memory apart, never in a fold ------------------------------------------------------------------

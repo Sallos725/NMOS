@@ -451,7 +451,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     view and never shapes its resolution, so nothing else in the view changes; without `told` the key is absent.
 
     With `carried` (PHASE-60 S6, ADR 0085: what the target's link carries, `carry.target_rows`), a `continue` link's
-    rows are mentions from before the story in the resolution and facts from before turn 0, after the canon facts: the
+    rows enter the resolution after the target's own rows (so the target's story names its entities) and fold as facts
+    from before turn 0, after the canon facts: the
     story supersedes them, the owner's repairs and exclusions apply to them, a carried opening opens its thread (marked
     `carried`) and the story can close it by text; they take no part in secrets and keep their stored marks. A
     `regression` link's rows are listed apart (`regression`), annotated with the target's resolution, and enter
@@ -490,7 +491,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     carried_all = [{**x, "known_by": list(x["known_by"]) if x.get("known_by") else None,
                     "hidden_from": list(x["hidden_from"]) if x.get("hidden_from") else None}
                    for x in carried.rows] if carried is not None and carried.mode == "continue" else []
-    r = resolve(conv["conversation_id"], carried_all + rows if carried_all else rows,
+    r = resolve(conv["conversation_id"], rows + carried_all if carried_all else rows,
                 persona_of(conv["host_persona_name"]), links, splits_of(in_force), canon_names)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
