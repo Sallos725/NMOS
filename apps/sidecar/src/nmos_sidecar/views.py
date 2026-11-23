@@ -624,7 +624,7 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     opened = [line(f"{_kind_tag(th.get('kind'), lang)}{nm(th['by'])}{' → ' + nm(th['to']) if th.get('to') else ''}: {_v(th['text'])}",
                    _thread_meta(th, lang),
                    _close(th)) for th in threads]
-    stale =f'<p class="v-note">{_v(t(lang, "stale", n=d["stale"]))}</p>' if d.get("stale") else ""
+    stale = f'<p class="v-note">{_v(t(lang, "stale", n=d["stale"]))}</p>' if d.get("stale") else ""
     people = []
     for p in d.get("pairs") or []:
         names = sorted(p["names"].values())

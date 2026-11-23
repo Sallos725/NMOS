@@ -13,7 +13,7 @@ from typing import Any
 
 from nmos_sidecar import views
 from test_inspector_timeline import PANEL_TAGS
-from test_phase60_views_unchanged import CID, ENTITIES, KAITO, SERA, memory_input, person_input
+from test_phase60_views_unchanged import SERA, memory_input, person_input
 
 SRC = "0190f3a4-1b2c-7d3e-8f40-70000000beef"
 LINK = "0190f3a4-1b2c-7d3e-8f40-7000000011a0"
