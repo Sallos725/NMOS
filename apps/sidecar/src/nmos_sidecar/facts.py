@@ -612,6 +612,27 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     return view
 
 
+TOLD_SHOWN = ("id", "turn", "position", "subject", "object", "value", "knowledge", "known_by", "hidden_from",
+              "subject_entity", "object_entity", "evidence")
+
+
+def told_chain(rows: list[dict[str, Any]], entity_id: str | None = None) -> list[dict[str, Any]]:
+    """What the pages that draw chains get of `view["told"]` (PHASE-60 S8), oldest first: each row's teller, hearer,
+    what, turn, participants and knowledge marks (and `when_happened` when it has one). With `entity_id`, only the rows
+    whose teller or hearer is that entity. The view already left out what the pages leave out (`told_view`)."""
+    out = []
+    for t in rows:
+        if entity_id is not None and entity_id not in {
+                str((t.get(f"{side}_entity") or {}).get("id")) for side in ("subject", "object")}:
+            continue
+        shown = {k: t.get(k) for k in TOLD_SHOWN}
+        shown["participants"] = [dict(p) for p in t.get("participants") or ()]
+        if t.get("when_happened"):
+            shown["when_happened"] = t["when_happened"]
+        out.append(shown)
+    return out
+
+
 def told_view(rows: list[dict[str, Any]], r: Resolution, excluded: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Who told whom (PHASE-60 S8), oldest first: the served told rows (`told_rows`) taken as facts are (narrated,
     actual, positive), each annotated with the view's entities (`_annotate`). A tie between two characters, as a pair

@@ -479,3 +479,108 @@ def test_the_new_thread_key_changes_no_page_of_a_chat_without_when_happened(migr
     for u, a, b in zip(urls, now, then):
         assert a.status_code == b.status_code == 200, u
         assert a.content == b.content, u
+
+
+# --- told on the pages' data (api.py; the renderers are another track's) ----------------------------------------------
+
+
+def chain_stub(system, user):
+    """`complete` plus rows that make 세라 and 카이토 entities of the chat (a told row never resolves anyone)."""
+    out, raw, used = complete(system, user)
+    target = user.split("TARGET turn", 1)[1] if "TARGET turn" in user else ""
+    if SCENE in target:
+        actual = {"polarity": "positive", "modality": "actual", "source": "narration"}
+        out["assertions"] += [
+            {"subject": "세라", "subject_type": "character", "predicate": "event", "value": "비밀을 털어놓았다",
+             **actual, "evidence": "유나가 왕녀라는 사실을 조용히 털어놓았다"},
+            {"subject": "하나", "subject_type": "character", "predicate": "feels_toward", "object": "카이토",
+             "object_type": "character", "value": "고마움", **actual, "evidence": "고마운 마음이 가득했지만"}]
+    return out, raw, used
+
+
+def page_data(client, monkeypatch, conv: str, who: dict[str, str]) -> dict[str, Any]:
+    """What api.py hands the renderers: the person sheet and the Inspector person page of each of `who`
+    ({name: entity id}), and the memory map; each renderer captured, not drawn."""
+    from nmos_sidecar import inspector, views
+    got: dict[str, Any] = {}
+    monkeypatch.setattr(views, "person", lambda data, *a, **k: got.__setitem__(("person", data["entity"]["id"]), data)
+                        or "")
+    monkeypatch.setattr(views, "memory_map", lambda data, *a, **k: got.__setitem__("map", data) or "")
+    monkeypatch.setattr(inspector, "character", lambda conv_, eid, view, *a, **k: got.__setitem__(("page", eid), view)
+                        or "")
+    for eid in who.values():
+        assert client.get(f"/v1/views/c/{conv}/person/{eid}").status_code == 200
+        assert client.get(f"/v1/inspector/c/{conv}/e/{eid}").status_code == 200
+    assert client.get(f"/v1/views/c/{conv}/map").status_code == 200
+    monkeypatch.undo()
+    return got
+
+
+def chain_chat(url: str, client, chat: SimChat) -> tuple[str, dict[str, str]]:
+    conv = str(conv_id(client, chat))
+    with psycopg.connect(url, row_factory=dict_row) as conn:
+        head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (conv,)).fetchone()["head_commit_id"]
+        view = memory_view(conn, head, active_generation(conn, "extract").key)
+    ids = {e["name"]: str(e["id"]) for e in view["entities"] if e["type"] == "character"}
+    return conv, {n: ids[n] for n in ("세라", "카이토", "하나")}
+
+
+TOLD_ROW_KEYS = {"id", "turn", "position", "subject", "object", "value", "participants", "knowledge", "known_by",
+                 "hidden_from", "subject_entity", "object_entity", "evidence"}
+
+
+def test_the_pages_get_the_told_rows_of_the_person_and_the_map_all_of_them(migrated, monkeypatch):
+    with extracted(migrated, stub=chain_stub) as (client, chat):
+        conv, who = chain_chat(migrated, client, chat)
+        got = page_data(client, monkeypatch, conv, who)
+    for name in ("세라", "카이토"):  # teller and hearer
+        [t] = got[("person", who[name])]["told"]
+        assert set(t) == TOLD_ROW_KEYS
+        assert (t["subject"], t["object"], t["value"], t["turn"]) == ("세라", "카이토", "유나가 왕녀라는 사실", 8)
+        assert t["participants"] == [{"name": "유나", "type": "character"}]
+        assert (t["knowledge"], t["known_by"], t["hidden_from"]) == ("limited", ["세라", "카이토"], ["하나"])
+        assert t["subject_entity"]["id"] == who["세라"] and t["object_entity"]["id"] == who["카이토"]
+        assert [x["id"] for x in got[("page", who[name])]["told"]] == [t["id"]]
+    assert "told" not in got[("person", who["하나"])] and "told" not in got[("page", who["하나"])]  # neither end
+    assert [x["subject"] for x in got["map"]["told"]] == ["세라"]
+
+
+def test_without_told_rows_the_pages_and_their_data_are_as_before(migrated, monkeypatch):
+    with extracted(migrated, stub=chain_stub) as (client, chat):
+        conv, who = chain_chat(migrated, client, chat)
+        urls = [f"/v1/views/c/{conv}/person/{who['세라']}", f"/v1/inspector/c/{conv}/e/{who['세라']}",
+                f"/v1/views/c/{conv}/map", f"/v1/views/c/{conv}/map/graph", f"/v1/views/c/{conv}/memory"]
+        with_rows = [client.get(u).content for u in urls]
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            assert conn.execute("DELETE FROM assertion WHERE predicate = 'told'").rowcount == 1
+        without = [client.get(u).content for u in urls]
+        got = page_data(client, monkeypatch, conv, who)
+    assert with_rows == without  # nothing drawn from them yet, and nothing else moved
+    assert all("told" not in data for data in got.values())
+
+
+def test_a_told_row_whose_teller_or_hearer_is_left_out_is_dropped_as_a_pair_is(migrated, monkeypatch):
+    with extracted(migrated, stub=chain_stub) as (client, chat):
+        conv, who = chain_chat(migrated, client, chat)
+        preview = client.post(f"/v1/conversations/{conv}/repairs/preview",
+                              json={"kind": "entity_exclude", "item": "카이토"}).json()
+        done = client.post(f"/v1/conversations/{conv}/repairs", json={
+            "kind": "entity_exclude", "item": "카이토", "scope": "cast", "expect": preview["fingerprint"]})
+        assert done.status_code == 200, done.text
+        got = page_data(client, monkeypatch, conv, who)
+    assert "told" not in got[("person", who["세라"])] and "told" not in got["map"]
+
+
+def test_strict_and_narrator_change_the_told_data_no_more_than_the_facts(migrated, monkeypatch):
+    """The pages are the owner's view: the memory modes are the packet's (ADR 0035), for facts and told rows alike."""
+    with extracted(migrated, stub=chain_stub) as (client, chat):
+        conv, who = chain_chat(migrated, client, chat)
+        plain = page_data(client, monkeypatch, conv, who)
+        modes = []
+        for mode in ({"strict": True}, {"strict": False, "narrator": "하나"}):
+            assert client.put(f"/v1/conversations/{conv}/memory-mode", json=mode).status_code == 200
+            modes.append(page_data(client, monkeypatch, conv, who))
+    for data in modes:
+        for k in plain:
+            assert data[k].get("told") == plain[k].get("told"), k
+    assert plain[("person", who["세라"])]["told"]

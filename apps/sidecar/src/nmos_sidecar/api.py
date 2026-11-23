@@ -38,7 +38,7 @@ from .config import Settings
 from .db import make_pool
 from .entities import norm
 from .extraction import enqueue_after_apply, job_counts, recent_errors
-from .facts import STANDING, excluded_ids, links_of as facts_links_of, memory_view, version_key
+from .facts import STANDING, excluded_ids, links_of as facts_links_of, memory_view, told_chain, version_key
 from .ids import uuid7
 from .models import (
     ArchiveUploadChunk,
@@ -250,9 +250,17 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     rebuild({})
 
-    def view_of(conn, head: UUID) -> dict[str, Any]:
-        """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047)."""
-        return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"))
+    def view_of(conn, head: UUID, told: bool = False) -> dict[str, Any]:
+        """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047). `told`: with who told
+        whom (`view["told"]`, PHASE-60 S8), for the pages that draw chains."""
+        return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told)
+
+    def with_told(out: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+        """A page's data with `told` (PHASE-60 S8) only when there is some: a chat without told rows keeps its data as
+        it was. The pages are the owner's view: no memory mode filters them, for facts and told rows alike (ADR 0035)."""
+        if rows:
+            out["told"] = rows
+        return out
 
     held_seen: dict[tuple[UUID, str | None], frozenset[str]] = {}  # canon keys a prompt held, already scheduled
 
@@ -1946,14 +1954,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def map_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """The memory map (PHASE-55), from the read every request makes, and the newest request's scene."""
         cid, head = conv["id"], conv["head_commit_id"]
-        view = inspector.with_participants(view_of(conn, head))
+        view = inspector.with_participants(view_of(conn, head, told=True))
         trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
                              " ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
         cast = [str(n) for n in ((trace or {}).get("latency_ms") or {}).get("scene_cast") or []]
         last = head_turn(conn, head)
-        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
-                         "turns": last},
-                "map": memorymap.build(view, last, cast), "entities": character_ids(view)}
+        return with_told({"conv": {"id": str(cid), "name": conv.get("host_chat_name"),
+                                   "character": conv.get("host_character_name"), "turns": last},
+                          "map": memorymap.build(view, last, cast), "entities": character_ids(view)},
+                         told_chain(view["told"]))  # PHASE-60 S8: every chain of the chat
 
     def scene_now(view: dict[str, Any], cast: list[str]) -> list[dict[str, Any]]:
         """Each character of the scene once, with where and how they are now (PHASE-52): the scene's cast may name
@@ -1986,7 +1995,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def person_data(conn, conv: dict[str, Any], entity_id: UUID) -> dict[str, Any]:
         """A person's sheet (PHASE-52 D3, D4), from the view the Inspector's character page reads."""
         cid, head = conv["id"], conv["head_commit_id"]
-        view = inspector.with_participants(view_of(conn, head))
+        view = inspector.with_participants(view_of(conn, head, told=True))
         e = next((x for x in view["entities"] if str(x["id"]) == str(entity_id)), None)
         if e is None:
             raise HTTPException(status_code=404, detail="person not found")
@@ -2012,7 +2021,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     marks.append((turn, event_major or changed, text, f["predicate"]))
         open_ = [th for th in view["threads"] if th["status"] == "open" and not inspector.stale(th, last)
                  and (norm(th.get("by")) in names or norm(th.get("to")) in names)]
-        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
+        data = {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
                          "turns": last},
                 "entity": {"id": eid, "name": e.get("name"), "names": list(e.get("names") or []),
                            "persona": bool(e.get("persona")), "excluded": e.get("excluded"),
@@ -2025,6 +2034,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "knows": [s for s in view["secrets"] if s.get("open") and names & {norm(n) for n in s.get("holders") or []}],
                 "kept": [s for s in view["secrets"] if names & {norm(n) for n in s.get("open") or []}],
                 "marks": marks, "first": 0, "last": last, "entities": character_ids(view)}
+        return with_told(data, told_chain(view["told"], eid))  # PHASE-60 S8: the chains this person tells or hears
 
     def working_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """The panel's working screen (PHASE-52 D5): the newest request's ledger, processing and usage."""
@@ -2192,7 +2202,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            view = inspector.with_participants(view_of(conn, conv["head_commit_id"]))
+            view = inspector.with_participants(view_of(conn, conv["head_commit_id"], told=True))
+            # PHASE-60 S8: the chains this entity tells or hears, in the page's data only when there are some
+            told = told_chain(view.pop("told"), str(entity_id))
+            with_told(view, told)
             with inspector.turn_links(conv_id, token, inspector.lang_of(lang)):
                 if part:  # the timeline alone, for the panel (PHASE-32 step 3)
                     return inspector.character_timeline(conv, str(entity_id), view, inspector.lang_of(lang),
