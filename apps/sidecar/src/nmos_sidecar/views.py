@@ -591,8 +591,11 @@ def carry_line(row: dict[str, Any], lang: str) -> str:
     text = _v(carry_text(row, lang))
     href = carry_href(row)
     main = f'<a class="v-src" href="{_v(href)}">{text}</a>' if href else text
-    if _is_thread(row):  # a carry line's kind is the mark "thread": its opening's predicate names the kind
-        kind = THREAD_KINDS.get(str(row.get("predicate"))) if row.get("kind") == "thread" else row.get("kind")
+    if _is_thread(row):  # a carry line's kind is the mark "thread": its opening's predicate names the kind, and
+        # without an opening the data side sends the thread's kind itself in its place ("promise")
+        p = str(row.get("predicate"))
+        kind = (THREAD_KINDS.get(p, p if p in THREAD_KINDS.values() else None) if row.get("kind") == "thread"
+                else row.get("kind"))
         main = _kind_tag(kind, lang) + main
     h = happened_mark({k: v for k, v in row.items() if k != "turn"}, lang)
     src = row.get("carried_from")

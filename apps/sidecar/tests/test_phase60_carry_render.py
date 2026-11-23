@@ -187,6 +187,17 @@ def test_a_carry_line_marked_thread_shows_its_kind_by_its_predicate():
     assert "v-tag" not in views.carry_line({**line, "predicate": "unknown"}, "ko")  # no word: no tag
 
 
+def test_a_carry_thread_line_without_an_opening_shows_its_kind():
+    """Without an opening the data side sends the thread's kind as the predicate (carry._panel_line): "promise",
+    "debt"… read as the kind they are."""
+    line = {"kind": "thread", "predicate": "promise", "subject": "세라", "object": "카이토", "value": "부두에서 만나기",
+            "carried": "link-1", "carried_from": {"conversation": SRC, "turn": 14}}
+    assert '<span class="v-tag k-promise">약속</span>' in views.carry_line(line, "ko")
+    assert '<span class="v-tag k-debt">' in views.carry_line({**line, "predicate": "debt"}, "ko")
+    assert views.carry_line({**line, "predicate": "promise"}, "en") == views.carry_line(
+        {**line, "predicate": "promised"}, "en")
+
+
 def test_memory_document_with_carry_only_adds_its_section_and_chip():
     for lang in ("ko", "en"):
         base = views.memory(memory_input(), lang)
