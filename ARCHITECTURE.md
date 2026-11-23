@@ -872,6 +872,18 @@ is no rememberer, and a line left with none is dropped); a carried persona marke
 name (ADR 0023) in every line, screen and link preview, the stored snapshot unchanged; a replaced link's `removed_at`
 is its successor's `created_at`, read under the locks.
 
+**D90 — What the model request carries (`llm_extra_body`, `llm_no_temperature`; ADR 0088; PHASE-61).** One JSON object
+the owner writes is merged at the top level into every chat-completions request made with the extraction model
+(extraction and its confirmations, reveal checks, summaries, canon facts, the author's-note calls, the settings test); a
+switch sends the request without a `temperature`, the only alternative to 0. The body may not name the request's own
+fields, hold a credential-like or non-ASCII key name or one of the install's own credentials, exceed 2,048 bytes, or
+hold a number PostgreSQL would store in another form. A generation's spec gains `request` (the body, keys sorted) only
+when the body is not empty and says `temperature: null` only when none is sent, so with both at their defaults every key
+is the key before; `request` and `temperature` are model fields of `generations.classify`, so a change of either alone
+is a `model` change (the owner's choice, carry on by default, PHASE-57 A3). A provider that rejects the body fails the
+job; it is never sent again without it. An image from before this decision reads such a spec as a version change, so a
+rollback clears both settings first.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

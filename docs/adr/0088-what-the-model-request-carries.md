@@ -30,7 +30,10 @@ and a generation change must re-derive nothing by accident (ADR 0078, 0081): a s
 
 ## Consequences
 
-- The Inspector's generation page can say which body wrote a row: the spec holds it.
+- The spec holds the body, so which body wrote a row is on record; the Inspector does not show it yet.
 - The panel's reasoning-effort dropdown is a view of the JSON text; there is one stored setting.
 - A body is archived like any other setting; the credential scan is unchanged because a credential-like key is never
   accepted into it.
+- Amended 2026-11-24 (review): beside credential-like key names, a body holding one of the install's own credentials
+  in a value is refused, since the body is stored in every generation it makes and the archive's scan would then
+  refuse every archive.

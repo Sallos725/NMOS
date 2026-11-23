@@ -3,7 +3,8 @@
 Status: **approved**, 2026-11-23 (owner request of 2026-11-23, during the Phase 60 trial: "for OpenRouter, a place to
 enter a custom JSON body and the reasoning effort; a dropdown for the effort that goes straight into the JSON"; the
 questions answered the same evening: Q4 "fixed at 0, or not sent at all", Q7 "build now and deploy", the rest as
-recommended). An owner request, not a roadmap stage.
+recommended). An owner request, not a roadmap stage. Built 2026-11-23/24 and on production since 2026-11-24 02:41 KST
+(`exp-phase61-dd36134`): the switch made no generation and queued nothing; C1 and C2 held on a fresh copy.
 
 Parameters marked **(owner)** are the owner's; those marked **(proposal)** are this draft's choice and the owner may
 amend them. Nothing here changes a default: with the new setting empty, every request and every generation key is
@@ -180,6 +181,9 @@ Each small logical change is one commit.
   `extract_backfill` turns; the preview's counts match what the save queues. The generation row's spec holds the body.
 - A4. Refused with 422 and nothing saved: not an object; over the size; a reserved name; a credential-like key at any
   depth. A saved value that would be refused is ignored with a warning; an invalid environment value refuses startup.
+  **Amended 2026-11-24 (review):** also refused: a key name that is not plain ASCII; a value or key name holding one
+  of the install's own credentials (and a key cannot be saved while the body holds it); a float PostgreSQL would
+  store in another form (1e16 and above in size, negative zero).
 - A5. An archive holds the setting and a restore brings it back; the archive's credential scan is unchanged.
 - A6. The settings test sends the body under test and shows a provider's rejection.
 - A7. Plugin: reading and writing the effort round-trip and keep every other key; a text that is not a JSON object

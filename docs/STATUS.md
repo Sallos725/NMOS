@@ -1,5 +1,18 @@
 # NMOS Status
 
+## Phase 61 on production — 2026-11-24
+
+**Deployed 2026-11-24 02:41 KST (owner: "build now and deploy").** Phase 61, the local image `exp-phase61-dd36134` built
+from its branch at `dd36134` (later commits docs only), over Phase 60's image; no migration and no setting changed.
+After a fresh `pg_dump` and an `.env` backup, with the worker held: the extractor generation is the one that was active
+(the owner had moved the extraction model to another endpoint and model the evening before), no generation was made, the
+whole job table (5,444 rows) and the row fingerprints are identical before and after, no log error. The plugin build
+changed (`5a803b19475d`): the owner re-imports the plugin from the sidecar and reloads the page (H13). The new settings
+are at their defaults (`llm_extra_body` empty, a temperature of 0 sent); what a body does live is the owner's
+experiment. **The 1.0 gate's two quiet weeks restart at this deployment; earliest end 2026-12-08** (`ROADMAP-1.0.md`).
+Rollback: `rollback61.sh` beside the backups in `~/nmos-eval/phase61-backup-20261124-0221/`; it refuses while a body or
+the no-temperature switch is set (clear both in the panel first, carry on), then changes the image only.
+
 ## Phase 60 on production — 2026-11-23
 
 **Deployed 2026-11-23 22:34 KST (owner request: a trial on production, the quiet weeks knowingly restarted).** Phase 60,
@@ -192,8 +205,24 @@ answered the same evening).** One setting, a JSON object added to every request 
 (`llm_extra_body`, empty by default: requests and generation keys byte-identical to today's); in the generation only
 when set, and a change of it handled as a model change (carry on by default, PHASE-57 A3); in the panel a JSON box and
 a reasoning-effort dropdown that writes `reasoning.effort` into it; a switch that sends no `temperature` (Q4). High
-risk (generation keys, rollback across the new spec fields, credentials kept out of the body). **State: spec and ADR
-0088 written (step 1); implementation next.** [Spec](phases/PHASE-61.md).
+risk (generation keys, rollback across the new spec fields, credentials kept out of the body). **State: built and on production since 2026-11-24 02:41 KST.** [Spec](phases/PHASE-61.md).
+
+Phase 61's checks, on `dd36134` (all zero-call): the sidecar suite 2,806 passed and 1 failed in the four-shard run, the
+failure a reranker test of Phase 60 that compares the fused order of two requests (code this phase does not touch; its
+file passed alone three times of three); the plugin's 442 tests, typecheck and build (`5a803b19475d`). With both
+settings at their defaults every generation key, every spec and every request byte equals the code before the phase (the
+pins, and a reviewer's comparison of 192 settings cases against the earlier tree). On a fresh copy of production the
+image switch made no generation and queued nothing (C1); saving `{"reasoning": {"effort": "low"}}` with the temperature
+switch on and "carry on" queued nothing, and the four generations' specs differ from the earlier ones in `request` and
+`temperature` alone (the preview said "recent" would have queued 641 extractions); the rollback refused while they were
+set and, after they were cleared, left the job table as it was before the deployment (C2). The scoped self-review (high
+risk, `AGENTS.md §14`) found no defect in keys, classification, what activation queues or rollback; three findings were
+fixed before the deployment: key names in the body are plain ASCII and a wider set of credential-like names is refused;
+a body holding one of the install's own credentials in a value is refused (and a key the body already holds cannot be
+saved); a number PostgreSQL would store in another form is refused. Not built: the Inspector does not show a
+generation's body yet (the spec holds it). Known limits: the plugin reads the body through the browser's JSON, so an
+integer beyond 2^53 loses precision if the owner edits the text; `NMOS_LLM_NO_TEMPERATURE` reads any value but empty and
+`0` as on, as the other switches do; a provider's rejection of a body fails the job (shown in Status), by design.
 
 **Phase 58 — how a feeling feels: its strength, its sign and a feeling under it: approved 2026-11-18 (an owner request;
 Q1–Q4 answered by the owner), high risk (a new extractor generation, migration `0035`, a generation switch that queues
@@ -1408,7 +1437,7 @@ live request with Voyage, the settings panel on a real host.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H23, D1–D89, O1/O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H23, D1–D90, O1/O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
 | Schema | `migrations/0001`–`0035` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock, model-call usage, reveal checks and dropped-fact restore, status-flag dismissal, quote speakers and thread horizons, entity exclusion, replies-only flag, canon input lookup, repair batch, feeling detail |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |

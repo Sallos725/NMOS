@@ -83,6 +83,16 @@ switch.
   keep `NMOS_EMBED_TIMEOUT_MS` plus `NMOS_RERANK_TIMEOUT_MS` well under that deadline (3 s by default). The trace
   records the scores and a replay reapplies them, never calling the reranker. Only the `standard` format is built;
   `systemone` is not.
+- **What the model request carries** (Phase 61, ADR 0088; `llm_extra_body`, `llm_no_temperature`; `NMOS_LLM_EXTRA_BODY`,
+  `NMOS_LLM_NO_TEMPERATURE`; both empty or off by default). Settings has a box for extra request values: a JSON object
+  added to every request made with the extraction model (extraction, reveal checks, summaries, canon facts, the
+  author's-note calls and the settings test). It may not set the request's own fields or hold anything that looks like a
+  credential, a value equal to one of the install's own keys included. For an OpenRouter address a "Reasoning effort"
+  dropdown writes `reasoning.effort` into that JSON. A switch sends no `temperature` for a model that will not take one;
+  otherwise 0 is sent as before. A body or the switch is part of the generation that used it, and changing either is
+  treated as a model change: the same preview appears and the default is to carry on, so nothing is extracted again.
+  With both left alone nothing changes, generation keys included. Going back to an older image: clear the body and the
+  switch first.
 - **From the phase's review, before its first use** (Phase 60). A character is marked gone only when the status plainly
   says the character itself is dead, missing or gone for good now: near death, a rumour, someone else's fate, 전사 as
   "warrior", a missing object and a leave not plainly for good no longer count (S3 amended). A regression link's lines

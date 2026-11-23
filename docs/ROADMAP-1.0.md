@@ -301,11 +301,13 @@ Done when:
 - upgrades: met; fixtures from `v0.1.0-beta.7`, `.16`, `.21`, `v0.2.0`, `v0.3.0`, `v0.4.0`, `v0.5.0` and `v0.6.0` pass to the
   latest migration (0038 since Phase 60; the `v0.4.0` fixture applies 0030–0038, the `v0.5.0` and `v0.6.0` fixtures
   0033–0038).
-- two quiet weeks: **started 2026-11-23 22:34 KST** on production's Phase 60 build (`exp-phase60-4a8cac1`, the phase
-  branch at `4a8cac1`; `extract-v19` and `packet-v20` selected), earliest end 2026-12-07 (owner, 2026-11-23: the quiet
-  weeks knowingly broken for a trial of Phase 60 on production; whether any of it is in `1.0.0` is decided after the
-  trial). A heavy change (a packet policy, an extraction generation, a migration) restarts the count. The earlier
-  counts, kept as records, follow.
+- two quiet weeks: **started 2026-11-24 02:41 KST** on production's Phase 61 build (`exp-phase61-dd36134`; Phase 60's
+  `extract-v19` and `packet-v20` still selected), earliest end 2026-12-08 (owner, 2026-11-23: Phase 61 built and
+  deployed during the Phase 60 trial; whether any of it is in `1.0.0` is decided after the trial). A heavy change (a
+  packet policy, an extraction generation, a migration) restarts the count. The earlier counts, kept as records,
+  follow.
+- the Phase 60 count: started 2026-11-23 22:34 KST on production's Phase 60 build (`exp-phase60-4a8cac1`); ended on
+  2026-11-24 by the owner's choice to deploy Phase 61 (four hours).
 - the Phase 58 count: started 2026-11-18 15:36 KST on production's Phase 58 build (`trial-phase58-c357c4c`, branch of
   #339; `extract-v18` selected; R8, owner 2026-11-18: Phase 58 in `1.0.0`); ended on 2026-11-23 by the owner's choice
   to try Phase 60 on production (five days quiet).
