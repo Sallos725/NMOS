@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import logging
 
+import psycopg
 import pytest
+from psycopg.types.json import Jsonb
 
 from conftest import make_client
 from nmos_sidecar import canonfacts, extraction, rerank, reveals, summaries, vectors
@@ -319,3 +321,23 @@ def test_health_says_whether_a_reranker_is_configured(client):
     assert res.json()["rerank"] == {"configured": True} and SAVED_KEY not in res.text
     client.put("/v1/config", json={"rerank_url": None})
     assert client.get("/v1/health").json()["rerank"] == {"configured": False}
+
+
+# --- a saved value the startup check would refuse (a restored row, a downgrade) is ignored; the sidecar starts --------
+
+@pytest.mark.parametrize("key, value", [("rerank_format", "systemone"), ("rerank_timeout_ms", 9),
+                                        ("rerank_timeout_ms", "700")])
+def test_a_saved_value_the_startup_would_refuse_is_ignored(migrated, monkeypatch, caplog, key, value):
+    with psycopg.connect(migrated, autocommit=True) as conn:  # as a restore writes app_config: unvalidated
+        conn.execute("INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now())", (key, Jsonb(value)))
+    seen = captured_options(monkeypatch)
+    caplog.set_level(logging.WARNING, logger="nmos.runtime")
+    with make_client(migrated, rerank_url=URL, rerank_model=MODEL, rerank_timeout_ms=750) as c:
+        view = view_of(c)
+        assert (view["format"], view["timeout_ms"], view["configured"]) == ("standard", 750, True)
+        one_recall(c)
+        assert (seen[-1].reranker.format, seen[-1].reranker.timeout_ms) == ("standard", 750)
+        assert c.put("/v1/config", json={key: value}).status_code == 422  # the panel still refuses it
+        assert c.put("/v1/config", json={"rerank_model": "rerank-b"}).status_code == 200  # other saves work
+    warned = [r for r in caplog.records if r.name == "nmos.runtime" and key in r.getMessage()]
+    assert warned and not [r for r in warned if str(value) in r.getMessage().replace(key, "")]

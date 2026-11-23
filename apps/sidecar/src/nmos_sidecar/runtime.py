@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,9 @@ RANGES = {"recall_threshold": (0.05, 1.0), "vector_min_sim": (0.0, 1.0), "recall
 CHOICES = {"rerank_format": rerank.FORMATS}  # a value outside these would refuse the next startup (`Settings`)
 RERANK_NOTE = ("When a URL and a model are set, each request sends the user's message and the text of up to "
                f"{rerank.MAX_CANDIDATES} recalled candidates to this endpoint, as the embedder is sent chat text.")
+# Saved settings `Settings` checks at startup (PHASE-60 S5): a saved value it would refuse (a restored row, a downgrade)
+# is ignored, so the environment's value applies and the sidecar still starts. The panel refuses such a value (422).
+STARTUP_CHECKED = ("rerank_format", "rerank_timeout_ms")
 PARSERS_KEY = "parsers"
 PRESETS_KEY = "parser_presets"
 STATUS_PINS_KEY = "status_pins"  # PHASE-43: {card: [status keys told every time]}
@@ -119,8 +123,30 @@ def stored(conn: psycopg.Connection) -> dict[str, Any]:
     return {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM app_config").fetchall()}
 
 
+log = logging.getLogger("nmos.runtime")
+_ignored: set[tuple[str, str]] = set()  # (key, saved value) already warned about in this process; held, never logged
+
+
+def _refused(key: str, value: Any) -> bool:
+    """A saved value of a STARTUP_CHECKED key that `Settings` would refuse."""
+    coerced = _typed(EDITABLE[key], value)
+    return (coerced is None or (key in RANGES and not RANGES[key][0] <= coerced <= RANGES[key][1])
+            or (key in CHOICES and coerced not in CHOICES[key]))
+
+
 def effective(base: Settings, overrides: dict[str, Any]) -> Settings:
-    changes = {k: v for k, v in overrides.items() if k in EDITABLE}
+    changes = {}
+    for key, value in overrides.items():
+        if key not in EDITABLE:
+            continue
+        if key in STARTUP_CHECKED and _refused(key, value):
+            seen = (key, json.dumps(value, sort_keys=True))
+            if seen not in _ignored:  # once per saved value; the message names the key only
+                _ignored.add(seen)
+                log.warning("saved setting %s would be refused at startup and is ignored; the environment's value"
+                            " applies", key)
+            continue
+        changes[key] = value
     return dataclasses.replace(base, **changes)
 
 
