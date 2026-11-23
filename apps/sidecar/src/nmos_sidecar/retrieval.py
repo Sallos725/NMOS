@@ -280,6 +280,8 @@ class RecallOptions:
     first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
     name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
+    # PHASE-60 S8: `@name` pins a character for the request (packet-v20). Not recorded: a request records its pins.
+    pin_at_mentions: bool = False
     # packet-v11's tie-break anchor for the excerpt's best sentence (PHASE-27 Q1b, ADR 0063): "keywords", the question's
     # keywords alone — the question itself when it has none — (the prototype's; the default since step 3, measured: with
     # "focus" the forbidden total rose 93 → 96 over twelve sets, with "keywords" it fell to 87), or "focus", the question

@@ -31,6 +31,7 @@ EDITABLE: dict[str, type] = {
     "recall_threshold": float, "vector_min_sim": float, "recall_top_k": int, "facts_limit": int,
     "events_limit": int, "threads_limit": int,
     "extract_backfill": int, "summaries": bool, "canon_facts": bool,
+    "pin_at_mentions": bool,  # PHASE-60 S8: `@name` pins a character for the request
 }
 SECRET = {"llm_api_key", "embed_api_key"}
 KEY_HOSTS = {"llm_api_key": "llm_url", "embed_api_key": "embed_url"}  # each key belongs to its endpoint's host
@@ -266,7 +267,7 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
                    "embed_timeout_ms": settings.embed_timeout_ms,
                    "top_k": settings.recall_top_k, "facts_limit": settings.facts_limit,
                    "events_limit": settings.events_limit,
-                   "threads_limit": settings.threads_limit},
+                   "threads_limit": settings.threads_limit, "pin_at_mentions": settings.pin_at_mentions},
         "extraction": {"backfill": settings.extract_backfill, "summaries": settings.summaries,
                        "canon_facts": settings.canon_facts},
         "parsers": {"rules": overrides.get(PARSERS_KEY) if PARSERS_KEY in overrides else None,

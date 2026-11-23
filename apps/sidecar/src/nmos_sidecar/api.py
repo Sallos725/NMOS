@@ -156,7 +156,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             vector_min_sim=cur.vector_min_sim, query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),
             policy=cur.packet_policy if cur.packet_policy in POLICIES else DEFAULT_POLICY,
             summarize_key=sm.key if sm else None, canon_key=rt.get("active_canon") if cur.canon_facts else None,
-            pins_by_card=runtime.pins_by_card(overrides),
+            pins_by_card=runtime.pins_by_card(overrides), pin_at_mentions=cur.pin_at_mentions,
         ))
 
     def rebuild(overrides: dict[str, Any]) -> None:

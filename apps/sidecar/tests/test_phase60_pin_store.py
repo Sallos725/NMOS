@@ -16,7 +16,7 @@ from conftest import make_client
 from nmos_sidecar import inspector, repairs
 from nmos_sidecar.ids import uuid7
 from nmos_sidecar.migrate import apply_migrations, migrations_dir
-from test_entity_exclude import complete, exclude, setup, view
+from test_entity_exclude import TURN, complete, exclude, setup, view
 from test_extraction import drain
 from test_generations import LLM
 from test_upgrade import FIXTURES, restore
@@ -242,3 +242,68 @@ def test_a_pin_in_a_batch_and_a_pin_ages_a_preview_as_any_repair_does(migrated):
                       json={"kind": "entity_exclude", "item": "Gloomfang"}).json()["fingerprint"]
         assert pin(c, cid, "Kaito").status_code == 200
         assert exclude(c, cid, "Gloomfang", expect=seen).status_code == 409
+
+
+# The setting (step 4): `pin_at_mentions`, off by default, editable like every runtime switch; nothing reads it yet.
+
+@pytest.mark.parametrize("env, on", [(None, False), ("", False), ("0", False), ("1", True)])
+def test_pin_at_mentions_is_off_unless_the_environment_says_1(env, on, monkeypatch):
+    from nmos_sidecar.config import Settings
+    monkeypatch.delenv("NMOS_PIN_AT_MENTIONS", raising=False)
+    if env is not None:
+        monkeypatch.setenv("NMOS_PIN_AT_MENTIONS", env)
+    assert Settings().pin_at_mentions is on
+
+
+def test_the_switch_is_a_runtime_setting_that_queues_nothing(migrated):
+    from nmos_sidecar.retrieval import RECORDED, RecallOptions
+    assert RecallOptions().pin_at_mentions is False and "pin_at_mentions" not in RECORDED  # the pins are recorded
+    with make_client(migrated, **LLM) as c:
+        setup(c, migrated)
+
+        def generations():
+            with psycopg.connect(migrated) as conn:
+                return (conn.execute("SELECT count(*) FROM job").fetchone()[0],
+                        conn.execute("SELECT key, activated_at FROM projection_generation ORDER BY key").fetchall())
+
+        assert c.get("/v1/config").json()["recall"]["pin_at_mentions"] is False
+        before = generations()
+        on = c.put("/v1/config", json={"pin_at_mentions": True})
+        assert on.status_code == 200 and on.json()["recall"]["pin_at_mentions"] is True, on.text
+        assert c.get("/v1/config").json()["recall"]["pin_at_mentions"] is True
+        assert "pin_at_mentions" in c.get("/v1/config").json()["overridden"]
+        assert generations() == before  # no generation key moves, no job is queued
+        assert c.put("/v1/config", json={"pin_at_mentions": "true"}).status_code == 422
+        assert c.put("/v1/config", json={"pin_at_mentions": None}).json()["recall"]["pin_at_mentions"] is False
+    with make_client(migrated, **LLM) as c:  # saved: a restart keeps it
+        c.put("/v1/config", json={"pin_at_mentions": True})
+    with make_client(migrated, **LLM) as c:
+        assert c.get("/v1/config").json()["recall"]["pin_at_mentions"] is True
+
+
+def test_every_policy_compiles_the_same_packet_with_the_switch_on(migrated):
+    """Nothing reads the switch yet: under every policy a packet is byte for byte the one it is with the switch off.
+    Resting (packet-v14) is set far off, so the repeated requests are alike."""
+    from nmos_sidecar.packet import POLICIES
+    from simchat import SimChat
+    from test_sidecar_integration import recall, sync
+    sim = SimChat()
+    sim.user("We set out.")
+    sim.reply(TURN)
+    sim.user("Where is @Kaito and what does Hana feel about Gloomfang?")
+    query = "Where is @Kaito and what does Hana feel about Gloomfang?"
+    with make_client(migrated, **LLM) as c:
+        sync(c, sim, character_name="Hana", persona_name="Rowan")
+        drain(migrated, complete)
+    for policy in POLICIES:
+        with make_client(migrated, **LLM, packet_policy=policy, rest_after=10**6) as c:
+            off = recall(c, sim, query, budget=2000)
+            assert c.put("/v1/config", json={"pin_at_mentions": True}).status_code == 200
+            on = recall(c, sim, query, budget=2000)
+            assert c.put("/v1/config", json={"pin_at_mentions": None}).status_code == 200
+        assert off["packet"]["text"] == on["packet"]["text"], policy
+    with psycopg.connect(migrated) as conn:
+        used = {r[0] for r in conn.execute("SELECT policy FROM retrieval_trace").fetchall()}
+        assert used == set(POLICIES)
+        assert not conn.execute("SELECT count(*) FROM retrieval_trace WHERE recall_options ? 'pin_at_mentions'"
+                                ).fetchone()[0]
