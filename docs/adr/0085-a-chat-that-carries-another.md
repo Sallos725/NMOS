@@ -11,14 +11,23 @@ break provenance (a row's revision belongs to the other chat) and rebuildability
 
 ## Decision
 
-1. **A link, not a copy.** `conversation_carry` records that a target chat carries a source chat's memory. It is
-   owner input like `entity_link`: archived, kept by rebuilds, deleted with either chat. Nothing derived is written
-   for it; the target's read asks the source's read.
-2. **Frozen at a commit and a position.** The source is read as of `(cutoff_commit_id, cutoff_position)`: a commit id
-   alone is not a cutoff, because an append extends the head commit in place (D4). What the source says later, or an
-   edit of it, does not reach the target; the owner links again to move the cutoff. This is a deliberate reading of
-   invariant 7: within a conversation an inactive revision never influences a packet; across the link, the owner
-   froze a point of another chat, and that point's own membership decides what is active.
+1. **A link with a frozen reading.** `conversation_carry` records that a target chat carries a source chat's memory.
+   It is owner input like `entity_link`: archived, kept by rebuilds, deleted with either chat. At link time the
+   source is read once, with the readers a request uses, and the rows to carry are stored with the link as plain data
+   (`snapshot`): each row with what the target's read needs (names and types, predicate, value, polarity, knowledge
+   marks, participants, `because`, `feeling`, `when_happened` when present, a thread's kind and status, the turn it
+   came from) and its provenance (the source conversation, the assertion, its source revision, the generation that
+   served it); the story so far with its summary id. Nothing is re-read later. (Amended 2026-11-23, architect's
+   decision: this replaces "the target's read asks the source's read".)
+2. **Taken at the source's head and a position.** At link time the source's head is the cutoff: the reading is taken
+   as of `(head, cutoff_position)`, the head's end or the last message of a turn the owner chose on the current head.
+   `cutoff_commit_id`, `cutoff_position`, `cutoff_turn` and the generation keys read are kept on the link as its
+   record. What the source says later, an edit, a rebuild or a new extraction of it does not reach the target; the
+   owner links again (a new link; the old one gets `removed_at`) to take a newer reading. Not a pointer to the
+   cutoff: only a head commit keeps `active_membership` rows (a divergence deletes the old head's, a rebuild every
+   commit's), and keeping a non-head commit's membership would change reconciliation and every membership query.
+   This is a deliberate reading of invariant 7: within a conversation an inactive revision never influences a packet;
+   across the link, the owner froze a reading of another chat, taken from that chat's active membership at the time.
 3. **Carried by name.** Entity ids are per conversation (D26). Carried rows enter the target's resolution as
    mentions, so the target's own aliases, links and splits apply; the source's persona maps to the target's.
 4. **`continue` folds like canon.** Carried current facts are from before turn 0 and the target's story supersedes
@@ -36,7 +45,10 @@ break provenance (a row's revision belongs to the other chat) and rebuildability
 
 ## Consequences
 
-- Provenance holds: a carried line's evidence is a revision of the source chat, reached through the link.
+- Provenance holds: each carried row records the source conversation, assertion, source revision and generation it
+  was read from.
+- The reading is not re-derived: a better extraction of the source, or a correction of it, reaches the target only
+  when the owner links again. It is rebuildable from the ledger only while the source's head still holds the cutoff.
 - Deleting the source removes what the target carried (the owner's delete, D23); the delete's answer counts links.
 - A carried open thread is not listed to the target's extractor, so its closing depends on the text match alone.
 - Raw excerpts of the source are not recalled in the target.

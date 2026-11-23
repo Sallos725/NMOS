@@ -156,11 +156,15 @@ fact does (D44, D45).
   `cutoff_commit_id`, `cutoff_position`, `cutoff_turn` (the source's head and its end at link time, or the last
   message of the turn the owner chose: frozen, because an append extends a head commit in place, D4), `created_at`,
   `removed_at`. One link in force per target; a chat never carries itself; a source's own link is not followed (one
-  level) **(proposal)**. A link in force keeps its cutoff commit's membership from any pruning.
-- **What is carried is read, never copied.** The source is read as of its cutoff with the machinery an as-of replay
-  uses (its facts folded with its canon and repairs, its threads, its story so far), by whatever generation serves it.
-  Carried rows enter the target's read by **name**, resolved again in the target (entity ids are per conversation,
-  D26); the source's persona is the target's persona.
+  level) **(proposal)**.
+- **What is carried is a frozen reading** (amended 2026-11-23, architect's decision, ADR 0085 items 1–2). At link
+  time the source's head is the cutoff; the source is read once, as of `(head, cutoff_position)`, with the readers a
+  request uses (its facts folded with its canon and repairs, its threads, its story so far), by whatever generation
+  serves it, and the rows to carry are stored with the link (`snapshot jsonb`), each with its provenance (source
+  conversation, assertion, source revision, generation). Nothing is re-read later: an edit, a rebuild or a new
+  extraction of the source changes nothing in the target; the owner links again to take a newer reading. A chosen
+  cutoff turn must be on the source's current head. Carried rows enter the target's read by **name**, resolved again
+  in the target (entity ids are per conversation, D26); the source's persona is the target's persona.
   - `continue`: the source's current facts, aliases, open threads and story so far are from before turn 0, after the
     target's canon, and the target's own story supersedes them from the turn it says something new (as canon facts
     fold, D57). They carry `source="carried"` and no turn; the story so far is a `<Summary scope="earlier chat">`.
@@ -173,7 +177,8 @@ fact does (D44, D45).
     may not hold now. They are limited knowledge and follow strict and narrator modes as private lines do (D45). No
     summary is carried.
 - **Not in this phase:** carried excerpts (raw recall stays per chat), carried memory shown to the target's
-  extraction (its prompts and hints read the target only), chains of links.
+  extraction (its prompts and hints read the target only), chains of links. Known limit: the source's last turn is
+  extracted only once the user continued from it (D5), so a chat's final reply may not be in the reading.
 - **Recorded.** A request records the link it read (`recall_options.carry`: link id, source, commit, position, mode,
   names) and its replay reads that one, removed since or not.
 - **API.** `GET /v1/conversations/{id}/carry` (the link in force and removed ones), `POST …/carry/preview` (what
