@@ -285,3 +285,53 @@ def test_a_saved_value_the_startup_would_refuse_is_ignored_with_one_warning(migr
     warned = [r for r in caplog.records if r.name == "nmos.runtime" and key in r.getMessage()]
     assert len(warned) == 1
     assert CREDENTIAL not in caplog.text
+
+
+# --- a number keeps its form in JSONB (review F3) --------------------------------------------------------------------
+# PostgreSQL stores a JSON number as `numeric` and writes it back without an exponent and without a sign on zero: a
+# float of 1e16 or more comes back as a (possibly much longer) integer, -0.0 as 0.0. Those are refused; every other
+# number comes back as it was sent.
+
+KEPT_NUMBERS = [0, 1, -1, 0.0, 1.0, 0.1, -2.5, 1e15, 9999999999999998.0, -9999999999999998.0, 1e-7, 2.5e-05, 5e-324,
+                123456789012345.6, 2**53, 10**30, -(10**30)]
+CHANGED_NUMBERS = [1e16, -1e16, 1.5e16, 1e17, 1e300, 1.7976931348623157e308, -0.0]
+
+
+@pytest.mark.parametrize("number", CHANGED_NUMBERS)
+def test_a_number_the_database_would_store_in_another_form_is_refused(number):
+    for body in ({"a": number}, {"provider": {"a": [number]}}):
+        reason = extra_body_error(body)
+        assert reason is not None and "another form" in reason, body
+
+
+@pytest.mark.parametrize("number", KEPT_NUMBERS)
+def test_other_numbers_are_accepted(number):
+    assert extra_body_error({"a": number, "b": [{"c": number}]}) is None
+
+
+def test_an_accepted_body_comes_back_from_the_database_as_it_was_sent(migrated, caplog):
+    body = {f"k{i}": n for i, n in enumerate(KEPT_NUMBERS)} | {"provider": {"order": ["a"], "max_price": {"x": 1e15}}}
+    runtime._ignored.clear()
+    caplog.set_level(logging.WARNING, logger="nmos.runtime")
+    with make_client(migrated) as c:
+        res = c.put("/v1/config", json={"llm_extra_body": body})
+        assert res.status_code == 200, res.text
+        assert config.canonical_body(res.json()["llm"]["extra_body"]) == config.canonical_body(body)
+        assert config.canonical_body(llm_view(c)["extra_body"]) == config.canonical_body(body)
+    with psycopg.connect(migrated) as conn:
+        (stored,) = conn.execute("SELECT value FROM app_config WHERE key = 'llm_extra_body'").fetchone()
+    assert config.canonical_body(stored) == config.canonical_body(body)
+    with make_client(migrated) as c:  # a restart reads it back and keeps it, without a warning
+        assert config.canonical_body(llm_view(c)["extra_body"]) == config.canonical_body(body)
+    assert not [r for r in caplog.records if r.name == "nmos.runtime"]
+
+
+@pytest.mark.parametrize("route", ["/v1/config", "/v1/config/preview"])
+def test_a_body_whose_number_would_change_form_is_a_422_and_nothing_is_saved(client, route):
+    body = {k: 1e300 for k in "abcdefg"}  # each comes back as a 301-digit integer: over the size limit, then ignored
+    send = client.put if route == "/v1/config" else client.post
+    res = send(route, json={"llm_extra_body": body})
+    assert res.status_code == 422, res.text
+    (detail,) = res.json()["detail"]
+    assert detail.startswith("llm_extra_body: ") and "another form" in detail
+    assert client.get("/v1/config").json()["overridden"] == []

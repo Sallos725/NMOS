@@ -16,6 +16,8 @@ RERANK_TIMEOUT_MS = (50, 5000)  # PHASE-60 S5: the reranker's own wait, in milli
 # PHASE-61 S1 (ADR 0088 item 1): the extra request body merged into every chat-completions body of the extraction model.
 EXTRA_BODY_MAX_BYTES = 2048  # as canonical JSON (`canonical_body`), UTF-8
 EXTRA_BODY_MAX_DEPTH = 16  # nesting of objects and lists; deeper is refused before anything recurses into it
+# From here on a float's shortest text has an exponent (`1e+16`), which JSONB stores and returns as an integer.
+FLOAT_EXPONENT_FROM = 1e16
 # The request's own fields: JSON mode owns `response_format`, `llm_no_temperature` owns `temperature` (S1b).
 RESERVED_BODY_KEYS = frozenset({"model", "messages", "stream", "response_format", "temperature", "n", "tools",
                                 "tool_choice", "functions", "function_call"})
@@ -81,6 +83,11 @@ def extra_body_error(body: Any) -> str | None:
         elif isinstance(value, float):
             if not math.isfinite(value):
                 return f"holds a number JSON cannot carry at {path}"
+            # PostgreSQL's JSONB writes a number back without an exponent or a signed zero: such a float would come
+            # back in another form (1e300 as a 301-digit integer), so the stored body would not be the one checked.
+            if abs(value) >= FLOAT_EXPONENT_FROM or (value == 0 and math.copysign(1.0, value) < 0):
+                return (f"holds a number at {path} the database would store in another form (a decimal or exponent"
+                        " number of 1e16 or more, or -0.0): write it as an integer")
         elif isinstance(value, str):
             if _unstorable(value):
                 return f"holds text with a NUL or an unpaired surrogate at {path}"
