@@ -994,13 +994,16 @@ def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
 def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                  promises: list[dict[str, Any]] | None = None, secrets: list[dict[str, Any]] | None = None,
                  threads: list[dict[str, Any]] | None = None, roles: list[dict[str, Any]] | None = None,
-                 pairs: list[dict[str, Any]] | None = None, *, compiler: str = COMPILER_VERSION) -> str:
+                 pairs: list[dict[str, Any]] | None = None, *, compiler: str = COMPILER_VERSION,
+                 clock: str | None = None) -> str:
     lines = (hints_block(hints or []) + pairs_block(pairs or []) + promises_block(promises or [])
              + threads_block(threads or []) + roles_block(roles or []) + secrets_block(secrets or []) + ["CONTEXT:"])
     for row in ctx["context"]:
         lines.append(f"[turn {row['turn']}] {_speaker(row['metadata'])}: {row['content'][:CONTEXT_CHARS]}")
     if len(lines) == 1:
         lines.append("(none)")
+    if clock is not None:  # the story clock as of the TARGET turn (PHASE-60 S7); none: the prompt as before
+        lines += ["", CLOCK_LINE.format(clock=clock)]
     lines += ["", f"TARGET turn {ctx['target']['turn']}:"]
     lines += [f"{_speaker(row['metadata'])}: {row['content'][:TARGET_CHARS]}" for row in ctx["members"]]
     if nameless := [h["name"] for h in hints or [] if unnamed(h)]:

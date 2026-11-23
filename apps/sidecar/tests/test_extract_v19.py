@@ -393,6 +393,21 @@ def test_story_clock_reads_the_latest_unambiguous_field_as_of_the_target(migrate
         assert X.story_clock(conn, at(head, 5)) == "날짜: 4월 12일"
 
 
+def test_the_clock_line_goes_between_context_and_the_target_only_when_given():
+    ctx = {"target": {"turn": 2},
+           "context": [{"turn": 1, "metadata": {"name": "세라"}, "content": "세라는 문을 열었다."}],
+           "members": [{"metadata": {"name": "카이토"}, "content": "카이토는 창가에 앉았다."}]}
+    plain = X.build_prompt(ctx, compiler="extract-v19")
+    assert X.build_prompt(ctx, compiler="extract-v19", clock=None) == plain and "STORY CLOCK" not in plain
+    shown = X.build_prompt(ctx, compiler="extract-v19", clock="날짜: 4월 12일")
+    line = X.CLOCK_LINE.format(clock="날짜: 4월 12일")
+    head, tail = plain.split("\n\nTARGET turn 2:\n")
+    assert shown == head + "\n\n" + line + "\n\nTARGET turn 2:\n" + tail
+    empty = dict(ctx, context=[])
+    assert X.build_prompt(empty, clock="시간: 밤") == "CONTEXT:\n(none)\n\n" + X.CLOCK_LINE.format(clock="시간: 밤") + (
+        "\n\nTARGET turn 2:\n카이토: 카이토는 창가에 앉았다.")
+
+
 def test_settings_accept_v19_and_refuse_a_later_name():
     assert Settings(database_url="", extract_compiler="extract-v19").extract_compiler == "extract-v19"
     with pytest.raises(ValueError, match="extract-v19"):
