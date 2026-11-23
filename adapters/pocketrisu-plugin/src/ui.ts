@@ -1167,6 +1167,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } else {
       shownPath = null;
       inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('insp.loading') }));
+      pinCard.style.display = 'none';  // another page's switch never acts on the page that is loading
     }
     // Only a sidecar the browser reaches itself can be opened in a tab; a server-routed one (Docker
     // name, LAN address behind HTTPS) is reachable from the PocketRisu server only.
@@ -1210,6 +1211,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (load !== loads) return;
       shownPath = null;
       retryButton.style.display = 'none';
+      pinCard.style.display = 'none';
       inspectorBody.replaceChildren(el('div', { class: 'card err', text: errorText(lang, error) }));
     } finally {
       if (load === loads) inspectorBody.classList.remove('busy');

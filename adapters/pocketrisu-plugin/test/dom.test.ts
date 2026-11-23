@@ -1312,6 +1312,27 @@ describe('owner repairs in the panel (ADR 0044)', () => {
       expect(card.querySelector('.msg')!.textContent).toBe('Invalid: 하나 is not mentioned in this chat');
     });
 
+    it("hides one character's switch while another page loads, and when that page fails", async () => {
+      const h = deps([hanaRow()]);
+      const api = h.d.api;
+      let release!: () => void;
+      const held = new Promise<void>((r) => { release = r; });
+      h.d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeout?: number) => {
+        if (path.startsWith(`/v1/inspector/c/${id}/e/${t2}`)) { await held; throw new Error(`${path} -> HTTP 503`); }
+        if (path.startsWith(`/v1/inspector/c/${id}/e/${who}`)) return { html: `<a href="/inspector/c/${id}/e/${t2}">카이토</a>` } as T;
+        return api<T>(method, path, body, timeout);
+      };
+      await openChat(h.d, pages.inspector);
+      expect(cardOf('en')).toBeDefined();
+      panel().querySelector<HTMLAnchorElement>(`a[href="/inspector/c/${id}/e/${t2}"]`)!.click();
+      await settle();
+      expect(cardOf('en')).toBeUndefined();  // loading
+      release();
+      await settle();
+      expect(panel().textContent).toContain('HTTP 503');
+      expect(cardOf('en')).toBeUndefined();
+    });
+
     it("leaves the sidecar's page as it sent it: the card sits beside it", async () => {
       for (const page of ['inspector', 'sheet'] as const) {
         await open([hanaRow()], page);
