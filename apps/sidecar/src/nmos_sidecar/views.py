@@ -144,7 +144,7 @@ T: dict[str, tuple[str, str]] = {
     "carry_left": ("외 {n}줄", "{n} more"),
     "carry_forgot": ("이 채팅은 이전 타임라인을 이어받았지만, 이 인물은 그것을 기억하지 않습니다",
                      "This chat carries an earlier timeline, which this person does not remember"),
-    "carry_aka": ("다른 이름", "also called"),
+    "carry_aka": ("다른 이름", "also called"), "carry_has": ("가진 것", "has"), "carry_told": ("말해 줌", "told"),
     "carry_not": ("(아님)", "(not)"),
     "carried": ("이어받음", "carried"),
     "ok": ("작동 중", "Working"),
@@ -513,6 +513,9 @@ def _named(f: dict[str, Any], side: str) -> str:
 
 # A chat that carries another chat's memory (PHASE-60 S6, ADR 0085): `d["carry"]` is there only while a link is in force.
 CARRY_MAX = 50  # carried lines shown in one section; the rest are counted
+# A carried line reads subject, word, object/value; where the panel's word reads the other way ("held by") or has none
+# in Korean, its own word.
+CARRY_WORDS = {"also_called": "carry_aka", "possesses": "carry_has", "told": "carry_told"}
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
 
 
@@ -547,9 +550,11 @@ def carry_text(row: dict[str, Any], lang: str) -> str:
         who = " → ".join(str(x) for x in (row.get("by"), row.get("to")) if x)
         return f"{who}: {row.get('text') or ''}" if who else str(row.get("text") or "")
     pred = str(row.get("predicate") or "")
-    said = t(lang, "carry_aka") if pred == "also_called" else word(pred, lang)
+    said = t(lang, CARRY_WORDS[pred]) if pred in CARRY_WORDS else word(pred, lang)
     subject, obj, value = _named(row, "subject"), _named(row, "object"), row.get("value")
-    if obj and value not in (None, ""):
+    if pred == "event" and value not in (None, ""):  # what happened, as the timeline shows an event
+        text = f"{subject}: {value}" if subject else str(value)
+    elif obj and value not in (None, ""):
         text = f"{subject} → {obj} {said} {value}"
     else:
         text = " ".join(str(x) for x in (subject, said, obj or value) if x not in (None, ""))

@@ -85,6 +85,13 @@ def test_carry_text_reads_facts_and_threads_in_plain_words():
     assert views.carry_text(cfact("세라", "member_of", "등대지기회"), "ko") == "세라 소속 등대지기회"
     assert views.carry_text(cfact("세라", "also_called", None, "세라짱"), "ko") == "세라 다른 이름 세라짱"
     assert views.carry_text(cfact("세라", "also_called", None, "세라짱"), "en") == "세라 also called 세라짱"
+    # read in the line's own direction (the subject holds it), in Korean too, and an event as what happened
+    assert views.carry_text(cfact("세라", "possesses", None, "열쇠"), "ko") == "세라 가진 것 열쇠"
+    assert views.carry_text(cfact("세라", "possesses", None, "열쇠"), "en") == "세라 has 열쇠"
+    assert views.carry_text(cfact("세라", "told", "카이토", "지도는 가짜다"), "ko") == "세라 → 카이토 말해 줌 지도는 가짜다"
+    assert views.carry_text(cfact("세라", "told", "카이토", "지도는 가짜다"), "en") == "세라 → 카이토 told 지도는 가짜다"
+    assert views.carry_text(cfact("세라", "event", None, "종이 울렸다"), "ko") == "세라: 종이 울렸다"
+    assert views.carry_text(cfact("세라", "event", None, "종이 울렸다"), "en") == "세라: 종이 울렸다"
     assert views.carry_text(cfact("세라", "located_in", "등대", polarity="negative"), "ko") == "세라 위치 등대 (아님)"
     assert views.carry_text(cfact("세라", "located_in", "등대", polarity="negative"), "en") == "세라 location 등대 (not)"
     # the resolved name when the row has one
