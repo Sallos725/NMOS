@@ -1538,7 +1538,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
   });
 
   it('drops a preview answer that arrives after the owner picked another name', async () => {
-    const rows = [...joinable(), { id: 'c3', type: 'character', name: '소라', names: ['소라'], mentions: 2, links: [] }];
+    const rows = [...joinable(), { id: 'c3', type: 'character', name: '유현', names: ['유현'], mentions: 2, links: [] }];
     const { d, state } = deps(rows);
     await openChat(d, `/inspector/c/${id}/e/${who}`);
     let release!: () => void;
@@ -1546,7 +1546,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     button('Join').click();
     await settle();
     const pick = panel().querySelector<HTMLSelectElement>('select[aria-label="Same as"]')!;
-    pick.value = '소라';
+    pick.value = '유현';
     pick.dispatchEvent(new Event('change', { bubbles: true }));
     state.hold = null;
     release();

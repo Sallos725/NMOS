@@ -129,7 +129,7 @@ def test_one_line_per_character_and_their_own_gone_rows_do_not_bring_them_back()
 
 
 def test_at_most_eight_the_newest_first():
-    names = ["세라", "카이토", "하나", "유나", "레오", "미오", "소라", "리쿠", "아오이", "나기"]
+    names = ["세라", "카이토", "하나", "유나", "레오", "미오", "유현", "리쿠", "아오이", "나기"]
     rows = [status(i + 1, n, "사망") for i, n in enumerate(names)]
     assert GONE_MAX == 8
     assert chosen(rows, now=40) == list(reversed(names))[:8]
@@ -196,7 +196,7 @@ def test_older_policies_ignore_gone_lines():
 
 
 def test_gone_lines_take_at_most_a_tenth_of_the_budget_newest_kept():
-    lines = [gone_line(i + 1, n) for i, n in enumerate(["세라", "카이토", "하나", "유나", "레오", "미오", "소라", "리쿠"])]
+    lines = [gone_line(i + 1, n) for i, n in enumerate(["세라", "카이토", "하나", "유나", "레오", "미오", "유현", "리쿠"])]
     budget = 900
     out = compile_lines([], budget, facts=[plain(30)], gone=lines, policy="packet-v20")
     frame = packet.estimate_tokens("\n".join([packet.PACKET_OPEN, packet.PACKET_NOTE, packet.PACKET_CLOSE]),
