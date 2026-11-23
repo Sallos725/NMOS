@@ -21,7 +21,7 @@ import { drawGraph, parseGraph } from './graph';
 import type { BulkMark, BulkRequest, EntityRow, ExcludePreview, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
-import { trimStatusLine } from './trimtext';
+import { coverageLine, trimStatusLine } from './trimtext';
 import { uploadArchive, waitFor, type ArchiveSummary, type Method } from './restore';
 import { usageText, type UsageTotal } from './usage';
 
@@ -504,6 +504,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       // Old-dialogue trimming (PHASE-60 S1 "Shown"): what was left out, or why nothing was. Never mono (Korean text).
       const trimmed = trimStatusLine(lang, s.last.trim);
       if (trimmed !== null) lastCard.append(el('div', { class: 'muted', text: trimmed }));
+      // How far memory has got (PHASE-60 S1): only when the sidecar said so; never mono (Korean text).
+      const recorded = coverageLine(lang, s.last.coverage);
+      if (recorded !== null) lastCard.append(el('div', { class: 'muted', text: recorded }));
       if (s.last.packet) lastCard.append(el('details', { class: 'help' },
         el('summary', { text: L('status.packet') }), el('pre', { class: 'packet', text: s.last.packet })));
       if (s.last.error) lastCard.append(el('div', { class: 'mono muted', text: s.last.error }));

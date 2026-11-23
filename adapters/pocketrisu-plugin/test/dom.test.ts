@@ -354,6 +354,36 @@ describe('panel', () => {
         expect(plain.children.length).toBe(4); // title, outcome, "ago · ms", packet
       }
     });
+
+    const coverage = { recordedThroughTurn: 48, coveredThroughTurn: 40 };
+    const recorded = { ko: '기억은 48턴까지 기록되어 있습니다', en: 'Memory is recorded through turn 48' } as const;
+
+    it('says the turn memory is recorded through, as a muted line after the trimming line', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const card = await render({ last: { ...last, trim: dropped, coverage } }, language);
+        const line = lineOf(card, recorded[language])!;
+        expect(line).toBeDefined();
+        expect(line.className).toBe('muted');
+        expect(line.classList.contains('mono')).toBe(false);
+        expect(line.previousElementSibling!.textContent).toContain(language === 'en' ? 'Left out 12' : '오래된 대화 12개');
+        expect(line.nextElementSibling!.tagName).toBe('DETAILS');
+        const alone = await render({ last: { ...last, coverage } }, language);  // trimming off: the line still shows
+        expect(lineOf(alone, recorded[language])!.previousElementSibling!.textContent).toContain('900ms');
+      }
+    });
+
+    it('adds nothing without a recorded turn', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const plain = await render({ last }, language);
+        for (const without of [null, { recordedThroughTurn: null, coveredThroughTurn: 40 }]) {
+          const card = await render({ last: { ...last, coverage: without } }, language);
+          expect(card.innerHTML).toBe(plain.innerHTML);
+        }
+        const shown = await render({ last: { ...last, coverage } }, language);
+        lineOf(shown, recorded[language])!.remove();
+        expect(shown.innerHTML).toBe(plain.innerHTML);
+      }
+    });
   });
 
   it('says when no chat is open', async () => {
