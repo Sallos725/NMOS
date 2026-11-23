@@ -12,12 +12,13 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from nmos_sidecar import entities, extraction as X, generations, predicates as P
+from nmos_sidecar import entities, extraction as X, generations, predicates as P, secrets as S
 from nmos_sidecar.config import Settings
-from conftest import make_client
+from nmos_sidecar.facts import served_assertions
+from conftest import active_generation, make_client
 from test_extract_v18 import FEELING, USED, WARM, chat_of, feels
 from test_extraction import drain
-from test_generations import LLM
+from test_generations import LLM, conv_id
 from test_phase60_pins import BASE, PINNED_EXTRACT_SPEC_FIELDS
 from test_sidecar_integration import sync
 
@@ -282,6 +283,51 @@ def test_the_worker_stores_told_and_when_happened_under_v19_only(migrated, compi
     else:
         assert (told["status"], told["reason"]) == ("pending", "unknown predicate")
         assert all(r["when_happened"] is None for r in rows.values())
+
+
+def test_a_told_row_is_never_a_stored_secret():
+    """PHASE-60 S8 (owner decision 2026-11-23): a told row keeps its marks, but no reveal check tracks it."""
+    [told] = X.normalize([told_row()], SCENE, compiler="extract-v19")
+    [knows] = X.normalize([told_row(predicate="knows")], SCENE, compiler="extract-v19")
+    assert told["status"] == knows["status"] == "valid" and told["hidden_from"] == knows["hidden_from"] == ["하나"]
+    assert not S.is_secret(told) and S.is_secret(knows)
+
+
+def reveal_checks(url: str, predicate: str) -> tuple[int, int, list[dict], list[dict]]:
+    """The v19 chat plus two more turns, the stub writing the secret as `predicate`. A reveal check is queued only by
+    "Extract all history" (`reveals.schedule`), and only for a later turn extracted before the secret's turn could be
+    listed: so the later turns are extracted first, as a first connection before Phase 30 did (`first_import`).
+    (reveal jobs the POST queued, reveal jobs in the table, the served rows, `secrets.fold`'s secrets)."""
+    chat = chat_of(SCENE, "세라는 창밖을 오래 바라보며 말이 없었다.", "카이토는 식은 차를 천천히 마셨다.")
+    with make_client(url, **LLM, extract_compiler="extract-v19") as c:
+        sync(c, chat)
+        with psycopg.connect(url, autocommit=True) as conn:
+            conn.execute("UPDATE job SET priority = 200 WHERE kind = 'extract' AND priority = %s", (X.FIRST_PRIORITY,))
+        drain(url, stub(predicate))
+        conv = conv_id(c, chat)
+        queued = c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["reveal"]
+        with psycopg.connect(url, row_factory=dict_row) as conn:
+            assert conn.execute("SELECT count(*) AS n FROM job WHERE kind = 'extract' AND status <> 'done'"
+                                ).fetchone()["n"] == 0
+            jobs = conn.execute("SELECT count(*) AS n FROM job WHERE kind = 'reveal'").fetchone()["n"]
+            head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (conv,)).fetchone()
+            rows = served_assertions(conn, head["head_commit_id"], active_generation(conn, "extract").key)
+    return queued, jobs, rows, S.fold(rows)[0]
+
+
+def test_no_reveal_check_is_queued_for_a_told_secret(migrated):
+    queued, jobs, rows, secrets = reveal_checks(migrated, "told")
+    assert queued == jobs == 0
+    [told] = [r for r in rows if r["predicate"] == "told"]
+    assert told["hidden_from"] == ["하나"] and told["knowledge"] == "limited"
+    assert [s for s in secrets if s["predicate"] == "told"] == []
+
+
+def test_the_control_written_as_knows_queues_a_reveal_check(migrated):
+    queued, jobs, rows, secrets = reveal_checks(migrated, "knows")
+    assert queued >= 1 and jobs == queued
+    [knows] = [r for r in rows if r["predicate"] == "knows"]
+    assert [s["id"] for s in secrets if s["predicate"] == "knows"] == [knows["id"]]
 
 
 def test_settings_accept_v19_and_refuse_a_later_name():
