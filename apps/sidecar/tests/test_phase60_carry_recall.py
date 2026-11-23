@@ -92,7 +92,7 @@ def test_a_replay_reads_the_recorded_link_removed_and_replaced_since(migrated: s
             second = _link(conn, tgt, src, "regression", ["세라"])  # replaces the first (removed_at set)
             assert carry.by_id(conn, first["id"])["removed_at"] is not None
         now, _ = _ask(c, tgt_sim)
-        assert CARRIED not in now  # the link in force now carries no continue rows
+        assert 'source="carried"' not in now and '<Regression remembered_by=' in now  # no continue line; now in <Regression>
         again = _replay(migrated, trace)
         assert again["text"] == text and again["reproduced"] is True and again["notes"] == []
         # A v20 request that had no link replays with none, whatever is in force now.
