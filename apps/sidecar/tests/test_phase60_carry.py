@@ -82,7 +82,10 @@ def test_nothing_done_to_the_source_after_the_link_changes_what_the_target_carri
                 ans = {**ans, "assertions": [r for r in ans["assertions"] if r.get("predicate") != "also_called"]}
             return ans, raw, used
 
+        # The edit of turn 0 left turn 1's alias in the source; only the new extraction below drops it.
         assert before["snapshot"]["aliases"]
+        with _connect(migrated) as conn:
+            assert carry.take_reading(conn, src, "continue", [], keys)["snapshot"]["aliases"]
         res = c.post(f"/v1/conversations/{src}/rebuild")
         assert res.status_code == 200, res.text
         drain_extract(migrated, other_stub)
