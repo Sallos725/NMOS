@@ -45,8 +45,8 @@ class Settings:
     # Canon facts (PHASE-14 Q3, ADR 0047): the extraction model reads the card, the persona, the author's note and each
     # lorebook entry a prompt held; "0" or the plugin's switch turns it off. Needs NMOS_LLM_URL.
     canon_facts: bool = field(default_factory=lambda: os.environ.get("NMOS_CANON_FACTS", "1") != "0")
-    # PHASE-60 S8 (ADR 0087 item 3): `@name` in the user's message pins that character for the request. Off unless "1"
-    # (an empty value, as the compose files pass an unset variable, is off); the plugin's switch sets it too.
+    # PHASE-60 S8 (ADR 0087 item 3): `@name` in the user's message pins that character for the request. Off when unset,
+    # empty (as the compose files pass an unset variable) or "0"; the plugin's switch sets it too.
     pin_at_mentions: bool = field(default_factory=lambda: os.environ.get("NMOS_PIN_AT_MENTIONS", "0") not in ("", "0"))
     # Turns extracted when NMOS first sees a chat (ADR 0008: turns, not messages).
     extract_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_BACKFILL", "100")))
