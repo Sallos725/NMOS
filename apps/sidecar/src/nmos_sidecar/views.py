@@ -133,6 +133,18 @@ STYLE = """
 T: dict[str, tuple[str, str]] = {
     "s-told": ("누가 누구에게 들었나", "Who told whom"),
     "told_about": ("{who}에 대해", "about {who}"),
+    # a chat that carries another chat's memory (PHASE-60 S6)
+    "s-carry": ("이전 채팅에서 이어받은 기억", "Carried from an earlier chat"),
+    "carry_from": ("{source}에서 이어받음 · 이 채팅의 턴이 아님", "Carried from {source} · not this chat's own turns"),
+    "carry_regress": ("이전 타임라인 · {names}만 기억", "Earlier timeline · remembered only by {names}"),
+    "carry_upto": ("t{t}까지", "up to t{t}"),
+    "carry_turn": ("이전 채팅 t{t}", "earlier chat t{t}"),
+    "carry_left": ("외 {n}줄", "{n} more"),
+    "carry_forgot": ("이 채팅은 이전 타임라인을 이어받았지만, 이 인물은 그것을 기억하지 않습니다",
+                     "This chat carries an earlier timeline, which this person does not remember"),
+    "carry_aka": ("다른 이름", "also called"),
+    "carry_not": ("(아님)", "(not)"),
+    "carried": ("이어받음", "carried"),
     "ok": ("작동 중", "Working"),
     "warn": ("확인이 필요해요", "Needs a look"),
     "err": ("작동하지 않아요", "Not working"),
@@ -476,6 +488,63 @@ def name_link(cid: str, entities: dict[str, str], name: str | None) -> str:
 def _named(f: dict[str, Any], side: str) -> str:
     e = f.get(f"{side}_entity") or {}
     return str(e.get("name") or f.get(side) or "")
+
+
+# A chat that carries another chat's memory (PHASE-60 S6, ADR 0085): `d["carry"]` is there only while a link is in force.
+CARRY_MAX = 50  # carried lines shown in one section; the rest are counted
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
+
+
+def _turn_of(value: Any) -> int | None:
+    """A turn the panel's sanitizer keeps in a link (`/t/` and at most seven digits), or None."""
+    if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 10_000_000:
+        return value
+    return None
+
+
+def carry_href(row: dict[str, Any]) -> str | None:
+    """Where a carried line came from, in the only two shapes the panel keeps: the source chat's turn
+    (`/inspector/c/<id>/t/<turn>`) or, without one, the source chat (`/inspector/c/<id>`); None without a source id."""
+    src = row.get("carried_from")
+    conv = str(src.get("conversation") or "") if isinstance(src, dict) else ""
+    if not _UUID.fullmatch(conv):
+        return None
+    turn = _turn_of(src.get("turn"))
+    return f"/inspector/c/{conv}" + (f"/t/{turn}" if turn is not None else "")
+
+
+def _is_thread(row: dict[str, Any]) -> bool:
+    if row.get("line") in ("fact", "thread"):
+        return row["line"] == "thread"
+    return "predicate" not in row and ("by" in row or "text" in row)
+
+
+def carry_text(row: dict[str, Any], lang: str) -> str:
+    """A carried line as plain text (not escaped): "세라 위치 등대", "세라 → 카이토 관계 소꿉친구", or a thread's
+    "세라 → 카이토: 등대에서 만나기"."""
+    if _is_thread(row):
+        who = " → ".join(str(x) for x in (row.get("by"), row.get("to")) if x)
+        return f"{who}: {row.get('text') or ''}" if who else str(row.get("text") or "")
+    pred = str(row.get("predicate") or "")
+    said = t(lang, "carry_aka") if pred == "also_called" else word(pred, lang)
+    subject, obj, value = _named(row, "subject"), _named(row, "object"), row.get("value")
+    if obj and value not in (None, ""):
+        text = f"{subject} → {obj} {said} {value}"
+    else:
+        text = " ".join(str(x) for x in (subject, said, obj or value) if x not in (None, ""))
+    return text + (" " + t(lang, "carry_not") if row.get("polarity") == "negative" else "")
+
+
+def carry_head(c: dict[str, Any], lang: str) -> str:
+    """Where the carried lines come from, in words (plain text, not escaped)."""
+    if c.get("mode") == "regression":
+        head = t(lang, "carry_regress", names=", ".join(str(n) for n in c.get("names") or []))
+    else:
+        src = c.get("source") or {}
+        label = " · ".join(str(x) for x in (src.get("character"), src.get("chat")) if x)
+        head = t(lang, "carry_from", source=label or str(src.get("id") or "")[:8])
+    cut = _turn_of(c.get("cutoff_turn"))
+    return head + (" · " + t(lang, "carry_upto", t=cut) if cut is not None else "")
 
 
 def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
