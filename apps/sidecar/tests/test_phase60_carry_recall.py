@@ -10,9 +10,11 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
+from psycopg.rows import dict_row
 
 from conftest import make_client
-from nmos_sidecar import carry
+from nmos_sidecar import audit, carry
+from nmos_sidecar.retrieval import RecallOptions
 from test_generations import LLM
 from test_phase60_carry_fold import _connect, _key, _world
 from test_sidecar_integration import recall
@@ -45,6 +47,13 @@ def _record(link: dict[str, Any]) -> dict[str, Any]:
             "names": list(link["entity_names"])}
 
 
+def _replay(migrated: str, trace: dict[str, Any], policy: str | None = None) -> dict[str, Any]:
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        out = audit.replay(conn, UUID(trace["id"]), RecallOptions(), policy=policy)
+    assert out is not None and out["status"] == "ok", out
+    return out
+
+
 def test_a_v20_request_records_the_link_it_read_and_v19_reads_none(migrated: str) -> None:
     with _client(migrated, "packet-v20") as c:
         src, tgt_sim, tgt = _world(c, migrated)
@@ -69,3 +78,57 @@ def test_a_v20_request_on_a_chat_without_a_link_records_none(migrated: str) -> N
         _, tgt_sim, _ = _world(c, migrated)
         _, trace = _ask(c, tgt_sim)
     assert "carry" not in trace["recall_options"]
+
+
+def test_a_replay_reads_the_recorded_link_removed_and_replaced_since(migrated: str) -> None:
+    with _client(migrated, "packet-v20") as c:
+        src, tgt_sim, tgt = _world(c, migrated)
+        _, none_trace = _ask(c, tgt_sim)  # a v20 request before any link: it had none
+        with _connect(migrated) as conn:
+            first = _link(conn, tgt, src)
+        text, trace = _ask(c, tgt_sim)
+        assert CARRIED in text and trace["recall_options"]["carry"]["link"] == str(first["id"])
+        with _connect(migrated) as conn:
+            second = _link(conn, tgt, src, "regression", ["세라"])  # replaces the first (removed_at set)
+            assert carry.by_id(conn, first["id"])["removed_at"] is not None
+        now, _ = _ask(c, tgt_sim)
+        assert CARRIED not in now  # the link in force now carries no continue rows
+        again = _replay(migrated, trace)
+        assert again["text"] == text and again["reproduced"] is True and again["notes"] == []
+        # A v20 request that had no link replays with none, whatever is in force now.
+        assert CARRIED not in _replay(migrated, none_trace)["text"]
+        with _connect(migrated) as conn:
+            carry.unlink(conn, tgt)
+            assert carry.by_id(conn, second["id"])["removed_at"] is not None
+        assert _replay(migrated, trace)["text"] == text  # removed since: still the recorded link
+
+
+def test_a_replay_whose_link_was_deleted_with_its_chat_reads_none_and_says_so(migrated: str) -> None:
+    with _client(migrated, "packet-v20") as c:
+        src, tgt_sim, tgt = _world(c, migrated)
+        with _connect(migrated) as conn:
+            _link(conn, tgt, src)
+        text, trace = _ask(c, tgt_sim)
+        assert CARRIED in text
+        res = c.post(f"/v1/conversations/{src}/delete")  # deletes the link with its source (D23)
+        assert res.status_code == 200 and res.json()["deleted"]["carry_links"] == 1
+        again = _replay(migrated, trace)
+    assert "carry link gone" in again["notes"] and "reproduced" not in again
+    assert CARRIED not in again["text"]
+
+
+def test_an_older_trace_replayed_under_v20_reads_the_link_in_force_at_its_time(migrated: str) -> None:
+    with _client(migrated, "packet-v19") as c:
+        src, tgt_sim, tgt = _world(c, migrated)
+        _, unlinked = _ask(c, tgt_sim)
+        with _connect(migrated) as conn:
+            _link(conn, tgt, src)
+        plain, linked = _ask(c, tgt_sim)
+        with _connect(migrated) as conn:
+            _link(conn, tgt, src, "regression", ["세라"])  # in force now: no continue rows
+    assert CARRIED not in plain
+    # packet-v19 replays read no link, fresh trace or not
+    assert _replay(migrated, linked)["text"] == plain
+    # under packet-v20 each reads the link that was in force when it was answered
+    assert CARRIED not in _replay(migrated, unlinked, "packet-v20")["text"]
+    assert CARRIED in _replay(migrated, linked, "packet-v20")["text"]
