@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { trimHudSuffix, trimReason, trimStatusLine, type TrimShown } from '../src/trimtext';
+import { coverageLine, trimHudSuffix, trimReason, trimStatusLine, type TrimShown } from '../src/trimtext';
 
 const KNOWN_REASONS: [string, string, string][] = [
   ['format', '프리셋이 대화를 메시지별로 보내지 않아 안전하게 뺄 수 없음', 'the preset does not send the chat one message at a time'],
@@ -61,6 +61,24 @@ describe('trimStatusLine (PHASE-60 S1)', () => {
       .toBe('오래된 대화를 빼지 않았습니다: 기타 (custom_stop)');
     expect(trimStatusLine('en', { dropped: 0, savedTokens: 0, reason: 'custom_stop' }))
       .toBe('No old messages left out: other (custom_stop)');
+  });
+});
+
+describe('coverageLine (PHASE-60 S1)', () => {
+  it('says the turn memory is recorded through, in both languages', () => {
+    const coverage = { recordedThroughTurn: 48, coveredThroughTurn: 40 };
+    expect(coverageLine('ko', coverage)).toBe('기억은 48턴까지 기록되어 있습니다');
+    expect(coverageLine('en', coverage)).toBe('Memory is recorded through turn 48');
+    expect(coverageLine('en', { recordedThroughTurn: 1234, coveredThroughTurn: null }))
+      .toBe('Memory is recorded through turn 1,234');
+    expect(coverageLine('ko', { recordedThroughTurn: 0, coveredThroughTurn: null })).toBe('기억은 0턴까지 기록되어 있습니다');
+  });
+
+  it('returns null without coverage or a recorded turn', () => {
+    expect(coverageLine('ko', null)).toBeNull();
+    expect(coverageLine('en', undefined)).toBeNull();
+    expect(coverageLine('ko', { recordedThroughTurn: null, coveredThroughTurn: 40 })).toBeNull();
+    expect(coverageLine('en', { recordedThroughTurn: null, coveredThroughTurn: null })).toBeNull();
   });
 });
 

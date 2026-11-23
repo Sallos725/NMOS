@@ -644,6 +644,7 @@ const STRINGS = {
   // trimming old dialogue (PHASE-60 S1)
   'trim.left_out': ['오래된 대화 {n}개를 빼고 보냈습니다 (약 {t}토큰 절약)', 'Left out {n} old messages (about {t} tokens saved)'],
   'trim.kept': ['오래된 대화를 빼지 않았습니다: {r}', 'No old messages left out: {r}'],
+  'trim.recorded_through': ['기억은 {n}턴까지 기록되어 있습니다', 'Memory is recorded through turn {n}'],
   'hud.trim.left_out': [' · 오래된 대화 {n}개 뺌 (약 {t}토큰)', ' · {n} old messages left out (~{t} tokens)'],
   'hud.trim.kept': [' · 대화 그대로: {r}', ' · dialogue kept: {r}'],
   'trim.reason.format': ['프리셋이 대화를 메시지별로 보내지 않아 안전하게 뺄 수 없음', 'the preset does not send the chat one message at a time'],

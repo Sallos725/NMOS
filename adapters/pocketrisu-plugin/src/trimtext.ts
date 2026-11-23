@@ -37,6 +37,14 @@ export function trimStatusLine(lang: Lang, trim: TrimShown | null | undefined): 
   return null;
 }
 
+/** The latest turn memory is recorded through, for the Status view's last-request card; null when the sidecar sent
+ *  no coverage (an older one) or no recorded turn, so the card adds no line. */
+export function coverageLine(lang: Lang, coverage: { recordedThroughTurn: number | null } | null | undefined): string | null {
+  const n = coverage?.recordedThroughTurn;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+  return t(lang, 'trim.recorded_through', { n: n.toLocaleString(lang === 'en' ? 'en-US' : 'ko-KR') });
+}
+
 export function trimHudSuffix(lang: Lang, trim: TrimShown | null | undefined): string {
   if (!trim) return '';
   if (trim.dropped > 0) {
