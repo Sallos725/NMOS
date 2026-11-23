@@ -947,7 +947,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
 
     `pinned` (packet-v20, PHASE-60 S8, ADR 0087 item 2): the normalized names of the characters pinned for the request.
     A fact of theirs about how they stand now or with another (NOW, STANDING) is mentioned and named as if the message
-    held the name; their other facts are ranked as before. `pin_named` collects the facts only a pin named.
+    held the name; their other facts are ranked as before. A row carried from another chat (`carried`) is never one.
+    `pin_named` collects the facts only a pin named.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
@@ -995,7 +996,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
         if _question_facts and str(f["id"]) in _question_facts:
             mention = max(mention, 1.5)
-        pin = bool(pinned) and f["predicate"] in NOW | STANDING and any(n in pinned for n in names)
+        pin = (bool(pinned) and f["predicate"] in NOW | STANDING and not f.get("carried")  # another chat's: never
+               and any(n in pinned for n in names))
         if pin:  # a pinned character's now and standing facts, as a name in the message brings them
             mention = max(mention, 2.0)
         hidden = [n for n in _widened(f.get("hidden_from") or [], aliases) if len(n) >= 2 and n not in user]

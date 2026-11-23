@@ -130,6 +130,30 @@ def test_a_pinned_gone_character_keeps_its_gone_mark_first_in_the_group_the_pin_
     assert out.text.count("세라 has status: 사망") == 1 and marked(out.text) == 1 and GONE_NOTE in out.text
 
 
+def test_a_carried_row_is_never_required_by_a_pin_nor_fills_a_group_a_pin_brings():
+    """Item 7: rows carried from another chat (flagged `carried`, the carry track) never satisfy a pin."""
+    from nmos_sidecar import scene
+    from nmos_sidecar.facts import relevant_facts
+    from nmos_sidecar.retrieval import cast_groups
+    own, carried = place(5, "세라"), {**place(6, "세라", "숲"), "carried": True}
+    pair = row(7, "세라", "relationship", "카이토", "rivals", **{**C, "object_type": "character", "carried": True})
+    rows = [own, carried, pair]
+    r = resolve(uuid.uuid4(), rows)
+    for f in rows:
+        f["names"] = [f["subject"]] + ([f["object"]] if f.get("object_type") == "character" else [])
+    named, only = set(), set()
+    picked = relevant_facts(rows, "", "", set(), 8, pinned=frozenset({"세라"}), named=named, named_by_words=True,
+                            pin_named=only)
+    assert [f["id"] for f in picked] == [5] and named == only == {"5"}
+    sera = r.key("character", "세라")
+    view = {"facts": [own, carried], "threads": [], "excluded": {}}
+    cast = {**scene.cast([], r), sera: "세라"}
+    lines, _ = cast_groups(view, cast, r, "", V20, pins=[sera], added={sera})
+    assert [line.ref for line in dict(lines)["세라"]] == [{"assertion": 5}]
+    alone, _ = cast_groups({**view, "facts": [carried]}, cast, r, "", V20, pins=[sera], added={sera})
+    assert alone == []  # nothing of its own: no group
+
+
 # --- in the packet (stub model, test database) -------------------------------------------------------------------------
 
 PAIR = re.compile(r"(?P<a>\w+) and (?P<b>\w+) are (?P<what>\w+)\.")

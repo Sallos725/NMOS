@@ -1493,7 +1493,8 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
 
     `pins` (packet-v20, PHASE-60 S8, ADR 0087 item 2): the request's pinned characters' keys, in pin order; `added`,
     those in `cast` only because they are pinned. The cast's own groups are chosen as before without them; then each
-    pinned character without one of those gets a group of the same shape, at most PIN_EXTRA, in pin order."""
+    pinned character without one of those gets a group of the same shape, at most PIN_EXTRA, in pin order, from its
+    own chat's rows only (a row carried from another chat never fills one)."""
     persona = scene.key(r, scene.PERSONA)
     said = norm(query)
     left_out = frozenset(view.get("excluded") or ())  # PHASE-47: not a character, so no <Cast> group
@@ -1517,7 +1518,10 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
     used: set[Any] = set()
 
     def lines_of(k: str) -> list[Line]:
-        pick = cast_facts(mine.get(k, []), lambda f: scene.key(r, f["object"]) == persona)
+        own = mine.get(k, [])
+        if k not in order:  # a group only a pin brings: never from rows carried from another chat (PHASE-60 S8)
+            own = [f for f in own if not f.get("carried")]
+        pick = cast_facts(own, lambda f: scene.key(r, f["object"]) == persona)
         named = any(n in said for n in scene.names({k: cast[k]}, r, aliases))
         goals = [t for t in view["threads"] if named and t.get("kind") == "goal" and t["status"] == "open"
                  and scene.key(r, t["by"]) == k and shown(t)]
