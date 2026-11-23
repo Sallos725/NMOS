@@ -489,7 +489,10 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if what_if:
         links = [x for x in links if str(x["id"]) not in what_if.get("drop_links", ())] + list(
             what_if.get("add_links", ()))
-    # Carried rows (ADR 0085), copied: a read annotates and folds its rows in place, and the link's rows are reused.
+    # Carried rows (ADR 0085), copied: a read annotates and folds its rows in place, and the link's rows are reused. The
+    # source's persona is this chat's (S6): its stored marker reads as the persona name the host reports here.
+    if carried is not None:
+        carried = carried.for_persona(conv["host_persona_name"])
     carried_all = [{**x, "known_by": list(x["known_by"]) if x.get("known_by") else None,
                     "hidden_from": list(x["hidden_from"]) if x.get("hidden_from") else None}
                    for x in carried.rows] if carried is not None and carried.mode == "continue" else []

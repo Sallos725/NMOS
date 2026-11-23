@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -531,6 +531,44 @@ class Carried:
     rows: tuple[dict[str, Any], ...]  # continue: assertion-like rows for the fold and the target's Resolution
     regression: tuple[dict[str, Any], ...]  # regression: the stored rows, each with "line": "fact" | "thread"
     story: dict[str, Any] | None  # continue: the snapshot's story, else None
+
+    def for_persona(self, name: str | None) -> Carried:
+        """These rows as a target whose persona the host names `name` (`conversation.host_persona_name`) reads them:
+        the stored marker {{user}} in a character name field is spelled `name`, so a carried line names the target's
+        persona as the host does (S6: the source's persona is the target's persona). The target's resolution reads
+        `name` as its persona (ADR 0023), so every row keeps its entity; without a name the rows are as stored. Pure:
+        the link's rows and its stored snapshot are left unchanged."""
+        if not name or name == PERSONA:
+            return self
+        return replace(self, rows=tuple(_persona_named(x, name) for x in self.rows),
+                       regression=tuple(_persona_named(x, name) for x in self.regression))
+
+
+def _persona_named(row: Mapping[str, Any], name: str) -> dict[str, Any]:
+    """A copy of a carried row with the persona marker in each character name field (those `persona_mapped` writes,
+    and a regression thread's opening) spelled `name`; a non-character name and every free text stay as stored."""
+    def char(value: Any) -> Any:
+        return name if value == PERSONA else value
+
+    def names(values: Any) -> Any:
+        return list(dict.fromkeys(char(v) for v in values)) if isinstance(values, (list, tuple)) else values
+
+    out = dict(row)
+    for field, kind in (("subject", "subject_type"), ("object", "object_type")):
+        if out.get(kind) == "character":
+            out[field] = char(out.get(field))
+    if out.get("participants"):
+        out["participants"] = type(out["participants"])(
+            {**p, "name": char(p.get("name"))} if p.get("type") == "character" else p for p in out["participants"])
+    for field in ("asserted_by", "by", "to"):
+        if field in out:
+            out[field] = char(out[field])
+    for field in ("known_by", "hidden_from", "names"):
+        if out.get(field) is not None:
+            out[field] = names(out[field])
+    if isinstance(out.get("opening"), Mapping):
+        out["opening"] = _persona_named(out["opening"], name)
+    return out
 
 
 def _carried_id(link_id: str, kind: str, index: int) -> int:

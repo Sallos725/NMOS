@@ -299,7 +299,8 @@ def test_continue_folds_carried_rows_before_the_story_and_the_story_supersedes_t
 
         # The source's persona is the target's: a carried {{user}} row is 유찬's entity, so 유찬's own status of turn 1
         # supersedes the carried one, and the entity keeps the target's persona spelling (never {{user}}).
-        tired = next(a for a in view["assertions"] if a.get("carried") and a["subject"] == PERSONA)
+        tired = next(a for a in view["assertions"]
+                     if a.get("carried") and a["predicate"] == "has_status" and a["value"] == "지침")
         sleepy = next(f for f in view["facts"] if f["subject"] == "유찬")
         assert _entity_id(tired) == _entity_id(sleepy)
         persona_entity = next(e for e in view["entities"] if e["id"] == _entity_id(tired))
