@@ -1280,10 +1280,13 @@ def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, mark
 
 
 def _from_attr(f: dict[str, Any]) -> str:
-    """Where a fact or thread line comes from, as its attribute: its turn, canon (ADR 0047), or a chat this one
-    continues (`carried`, packet-v20 only: the only policy whose read carries rows, PHASE-60 S6, ADR 0085 item 4)."""
+    """Where a fact or thread line comes from, as its attribute: its turn, canon (ADR 0047), a previous timeline (a
+    regression line, ADR 0085 item 5), or a chat this one continues (`carried`, item 4). Only packet-v20 reads rows
+    carried by a link (PHASE-60 S6)."""
     if f.get("canon"):
         return ' source="canon"'
+    if f.get("timeline"):  # a regression line (ADR 0085 item 5): a previous timeline's, which nobody here knows
+        return f" timeline={quoteattr(f['timeline'])}"
     if f.get("carried"):
         return ' source="carried"'
     return f" turn=\"{f['turn'] if f.get('turn') is not None else f['position']}\""

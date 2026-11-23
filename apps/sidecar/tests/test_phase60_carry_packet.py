@@ -2,7 +2,9 @@
 
 `continue`: carried facts and open threads are offered as the target's own, marked source="carried" in place of a turn,
 their ledger entries naming the link and the source assertion; they never change the target's scene cast, <Cast>,
-gone pins, return-gap marks or settled lines. Stub extractor only; the worlds of `test_phase60_carry_fold`; synthetic
+gone pins, return-gap marks or settled lines; the earlier chat's story so far opens <Story>. `regression`: what the named
+characters remember of the previous timeline, only inside a <Regression> group, private, under the memory modes.
+Stub extractor only; the worlds of `test_phase60_carry_fold`; synthetic
 names only."""
 
 from __future__ import annotations
@@ -15,8 +17,9 @@ import psycopg
 
 from conftest import make_client
 from nmos_sidecar import carry, retrieval
-from nmos_sidecar.packet import CARRIED_MARK, CARRIED_NOTE, STORY_SHARE, Compiled, Line, compile_lines
-from nmos_sidecar.retrieval import Gathered, RecallOptions
+from nmos_sidecar.packet import (CARRIED_MARK, CARRIED_NOTE, PRIVATE_NOTE, REGRESSION_MARK, REGRESSION_NOTE, STORY_SHARE,
+                                 Compiled, Excerpt, Line, compile_lines)
+from nmos_sidecar.retrieval import REGRESSION_MAX, Gathered, RecallOptions
 from test_phase60_carry_fold import CANON_ON, PROMISE, _connect, _head, _key, _world
 
 BUDGET = 3000
@@ -193,3 +196,165 @@ def test_an_earlier_chats_story_that_repeats_a_secret_kept_here_is_left_out() ->
                        "tok": 0, "placed": False, "why": "secret_gate", "label": "hidden"}]
     assert retrieval.carried_story(view, [], frozenset()) is not None
     assert retrieval.carried_story({"carried": {"link": "L", "story": None}}, [], frozenset()) is None
+
+
+# --- regression: memory of a previous timeline, apart -------------------------------------------------------------
+
+ASK = "세라는 카이토를 기억해?"
+GROUP = re.compile(r"  <Regression remembered_by=\"(?P<names>[^\"]*)\">\n(?P<body>.*?)\n  </Regression>", re.DOTALL)
+
+
+def _group(text: str) -> tuple[str, str] | None:
+    found = GROUP.search(text)
+    return (found["names"], found["body"]) if found else None
+
+
+def _outside(text: str) -> str:
+    return GROUP.sub("", text)
+
+
+def test_regression_lines_are_only_inside_their_group_for_the_named(migrated: str) -> None:
+    with make_client(migrated, **CANON_ON) as c:
+        src, _, tgt = _world(c, migrated)
+        with _connect(migrated) as conn:
+            carried = _link(conn, tgt, src, "regression", ["세라"])
+            out, g = _packet(conn, tgt, ASK, carried)
+            plain, _ = _packet(conn, tgt, ASK, None)
+    group = _group(out.text)
+    assert group is not None and group[0] == "세라"
+    lines = group[1].split("\n")
+    assert 1 <= len(lines) <= REGRESSION_MAX
+    for line in lines:
+        assert line.startswith(("    <Fact ", "    <Thread ")) and ' timeline="previous"' in line
+        assert ' known_by="세라"' in line and " turn=" not in line and 'source="carried"' not in line
+    assert '    <Fact kind="relationship" timeline="previous" known_by="세라">세라 relationship 카이토: 오랜 동료</Fact>' in lines
+    assert any(x.startswith(f'    <Thread kind="promise" by="세라" to="카이토" timeline="previous" known_by="세라">{PROMISE}')
+               for x in lines)
+    assert REGRESSION_NOTE in out.text and REGRESSION_MARK not in plain.text and REGRESSION_NOTE not in plain.text
+    assert PRIVATE_NOTE not in out.text  # private only as limited knowledge: no line went to <Private>
+    # Rows that involve no one named are never carried: the source's 유나 and its persona's tiredness.
+    assert "사망" not in out.text and "지침" not in out.text
+    # Nothing carried anywhere else: not facts, cast, threads, gone pins, settled lines or return marks.
+    outside = _outside(out.text)
+    assert 'timeline="previous"' not in outside and "오랜 동료" not in outside and PROMISE not in outside
+    assert 'source="carried"' not in out.text
+    assert not g.gone and not g.cast_marks and not [x for x in g.settled if x.ref.get("carried")]
+    assert not [x for x in g.lead + g.facts + g.threads + [y for _, ys in g.cast_lines for y in ys] if x.ref.get("carried")]
+    # Each line's ledger entry: in its section, private, with the link, the source assertion and who remembers it.
+    entries = [e for e in out.ledger if e.get("section") == "regression"]
+    assert len(entries) == len(g.regression) and all(e["placed"] for e in entries)
+    for e in entries:
+        assert e["ref"]["carried"] == carried.link and e["ref"]["source_assertion"] > 0 and e["ref"]["assertion"] < 0
+        assert e["marks"]["remembered_by"] == ["세라"] and e["turn"] is None and e["label"] == "required"
+
+
+def _many(src: UUID, n: int = 8) -> carry.Carried:
+    values = ("피곤함", "배고픔", "졸림", "슬픔", "기쁨", "분노", "두려움", "놀람")[:n]
+    facts = [{"predicate": "has_status", "subject": "세라", "subject_type": "character", "value": v,
+              "object": None, "object_type": None, "polarity": "positive", "modality": "actual", "source": "narration",
+              "turn": i, "position": 2 * i, "knowledge": "limited", "known_by": ["세라"], "hidden_from": None,
+              "from": {"conversation": str(src), "assertion": 100 + i, "revision": None, "generation": "g", "repair": None}}
+             for i, v in enumerate(values)]
+    return carry.target_rows({"id": UUID("00000000-0000-7000-8000-000000000001"), "source_conversation_id": src,
+                              "mode": "regression", "entity_names": ["세라"],
+                              "snapshot": {"mode": "regression", "names": ["세라"], "facts": facts[::-1], "threads": []}})
+
+
+def test_at_most_six_regression_lines_the_newest_first_on_a_tie(migrated: str) -> None:
+    with make_client(migrated, **CANON_ON) as c:
+        src, _, tgt = _world(c, migrated)
+        with _connect(migrated) as conn:
+            carried = _many(src)
+            assert len({r["id"] for r in carried.regression}) == 8 and all(r["id"] < 0 for r in carried.regression)
+            out, g = _packet(conn, tgt, "세라는 그때를 기억해?", carried)
+    assert REGRESSION_MAX == 6 and len(g.regression) == 6
+    assert [x.ref["source_assertion"] for x in g.regression] == [107, 106, 105, 104, 103, 102]
+    assert _group(out.text)[1].count("<Fact ") == 6
+
+
+def test_no_regression_line_for_a_message_about_no_one_who_remembers(migrated: str) -> None:
+    with make_client(migrated, **CANON_ON) as c:
+        src, _, tgt = _world(c, migrated)
+        with _connect(migrated) as conn:
+            carried = _link(conn, tgt, src, "regression", ["세라"])
+            out, g = _packet(conn, tgt, "오늘은 날씨가 맑네.", carried)
+    assert g.regression == [] and "<Regression" not in out.text and REGRESSION_NOTE not in out.text
+
+
+def test_strict_mode_withholds_regression_lines_as_secrets(migrated: str) -> None:
+    with make_client(migrated, **CANON_ON) as c:
+        src, _, tgt = _world(c, migrated)
+        with _connect(migrated) as conn:
+            carried = _link(conn, tgt, src, "regression", ["세라"])
+            out, g = _packet(conn, tgt, ASK, carried, strict=True)
+    group = _group(out.text)
+    assert group is not None and group[0] == "세라"
+    assert group[1].startswith("    <Secret holders=\"세라\"") and "<Fact " not in group[1] and "<Thread " not in group[1]
+    assert "오랜 동료" not in out.text and PROMISE not in out.text and 'timeline="previous"' not in out.text
+    assert g.withheld >= 3
+
+
+def test_a_narrator_who_does_not_remember_never_sees_regression_lines(migrated: str) -> None:
+    with make_client(migrated, **CANON_ON) as c:
+        src, _, tgt = _world(c, migrated)
+        with _connect(migrated) as conn:
+            carried = _link(conn, tgt, src, "regression", ["세라"])
+            kaito, _ = _packet(conn, tgt, ASK, carried, narrator="카이토")
+            sera, _ = _packet(conn, tgt, ASK, carried, narrator="세라")
+    assert "<Regression" not in kaito.text and "오랜 동료" not in kaito.text and PROMISE not in kaito.text
+    group = _group(sera.text)
+    assert group is not None and "오랜 동료" in group[1] and PROMISE in group[1]
+
+
+def _line(text: str, remembered: list[str], ref: int) -> Line:
+    xml = f'    <Fact kind="has_status" timeline="previous" known_by="{", ".join(remembered)}">{text}</Fact>'
+    return Line("fact", xml, {"assertion": -ref, "carried": "L", "source_assertion": ref}, None, text, text,
+                {"remembered_by": remembered}, True)
+
+
+def test_the_regression_group_follows_private_lines_and_precedes_excerpts() -> None:
+    private = Line("fact", '    <Fact kind="knows" turn="3" known_by="하나">하나 knows: 비밀</Fact>', {"assertion": 1}, 3,
+                   "하나 knows: 비밀", "비밀", {}, True)
+    excerpt = Excerpt(turn=2, speaker="하나", text="하나가 문을 열고 들어와 조용히 인사했다.", score=1.0, revision_id="r1")
+    regression = [_line("하나 has status: 슬픔", ["하나"], 7), _line("세라 has status: 기쁨", ["세라"], 8)]
+    out = compile_lines([excerpt], 3000, facts=[private], policy="packet-v20", regression=regression,
+                        regression_names=("세라", "하나"))
+    text = out.text
+    assert text.index("</Private>") < text.index('<Regression remembered_by="세라, 하나">') < text.index("<Excerpt ")
+    assert REGRESSION_NOTE in text
+    entries = [e for e in out.ledger if e.get("section") == "regression"]
+    assert [e["ref"]["source_assertion"] for e in entries] == [7, 8] and all(e["placed"] for e in entries)
+    # only the placed lines' rememberers name the group
+    one = compile_lines([], 3000, policy="packet-v20", regression=regression[:1], regression_names=("세라", "하나"))
+    assert '<Regression remembered_by="하나">' in one.text
+    # nothing placed, no group and no Note sentence
+    none = compile_lines([], 3000, policy="packet-v20", regression=[], regression_names=("세라",))
+    assert "<Regression" not in none.text and REGRESSION_NOTE not in none.text
+    # a regression line alone is a packet
+    assert one.text and "</Regression>" in one.text
+    # every other policy ignores them
+    for policy in ("packet-v19", "packet-v14", "packet-v8"):
+        with_lines = compile_lines([excerpt], 3000, facts=[private], policy=policy, regression=regression,
+                                   regression_names=("세라", "하나"))
+        assert with_lines.text == compile_lines([excerpt], 3000, facts=[private], policy=policy).text
+        assert with_lines.ledger == compile_lines([excerpt], 3000, facts=[private], policy=policy).ledger
+
+
+# --- packet-v19 never reads a link (A3) ---------------------------------------------------------------------------
+
+def test_v19_packets_are_byte_identical_with_a_link_in_force_fresh_and_replayed(migrated: str) -> None:
+    from test_phase60_carry_recall import _ask, _client, _replay
+    with _client(migrated, "packet-v19") as c:
+        src, tgt_sim, tgt = _world(c, migrated)
+        before, first = _ask(c, tgt_sim)
+        for mode, names in (("continue", []), ("regression", ["세라"])):
+            with _connect(migrated) as conn:
+                _link(conn, tgt, src, mode, names)
+            text, trace = _ask(c, tgt_sim)
+            assert text == before and "carry" not in trace["recall_options"]
+            again = _replay(migrated, trace)
+            assert again["text"] == before and again["reproduced"] is True
+            assert _replay(migrated, first)["text"] == before
+    with _client(migrated, "packet-v20") as c:  # the same request under packet-v20 reads the regression link
+        text, _ = _ask(c, tgt_sim)
+    assert "<Regression" in text and "<Regression" not in before

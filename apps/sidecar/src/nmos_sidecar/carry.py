@@ -541,7 +541,8 @@ def target_rows(link: Mapping[str, Any]) -> Carried:
 
     `continue`: the snapshot's facts oldest first, then each open thread's opening, then the aliases as `also_called`
     rows, each a new row before turn 0 (position CARRY_BASE + i, turn -1) with a negative id and `carried` set to the
-    link id. `regression`: no rows; copies of the stored facts and threads, kept apart. Pure."""
+    link id. `regression`: no rows; copies of the stored facts and threads, kept apart, each with a stable negative id
+    and the link's `host_logical_id`. Pure."""
     link_id, source = str(link["id"]), str(link["source_conversation_id"])
     snap: Mapping[str, Any] = link.get("snapshot") or {}
     mode = str(link.get("mode") or snap.get("mode"))
@@ -549,8 +550,11 @@ def target_rows(link: Mapping[str, Any]) -> Carried:
     if mode == "regression":
         kept = [{**_plain(dict(f)), "line": "fact"} for f in snap.get("facts") or ()]
         kept += [{**_plain(dict(t)), "line": "thread"} for t in snap.get("threads") or ()]
-        for row in kept:
+        for i, row in enumerate(kept):
             row["carried"], row["carried_from"] = link_id, row.get("from")
+            # A line's identity (its ledger ref, a memory mode's lookup), never an assertion's or a continue row's.
+            row["id"] = _carried_id(link_id, f"regression:{row['line']}", i)
+            row["host_logical_id"] = f"carried:{link_id}"
         return Carried(link_id, source, mode, names, (), tuple(kept), None)
     rows: list[dict[str, Any]] = []
     for i, f in enumerate(reversed(list(snap.get("facts") or ()))):  # stored newest first

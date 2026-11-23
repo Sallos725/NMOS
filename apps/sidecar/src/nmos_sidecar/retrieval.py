@@ -310,6 +310,7 @@ CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
 GONE_MAX = 8  # packet-v20: gone characters pinned at most (PHASE-60 S3)
 TOLD_MAX = 2  # packet-v20: lines of who told whom at most (PHASE-60 S8, proposal)
 PIN_EXTRA = 3  # packet-v20: <Cast> groups for pinned characters beyond the cast's own CAST_MAX (PHASE-60 S8)
+REGRESSION_MAX = 6  # packet-v20: lines of a previous timeline in one packet at most (PHASE-60 S6, ADR 0085 item 5)
 
 
 def recorded_options(options: RecallOptions) -> dict[str, Any]:
@@ -954,6 +955,8 @@ class Gathered:
     pin_named: set[str] = field(default_factory=set)
     sem_query: str | None = None  # packet-v20 (PHASE-60 S5, ADR 0084): reply tail + short message for embedding only
     rerank_used: bool = False  # PHASE-60 S5 (ADR 0084): whether reranking reordered eligible candidates
+    regression: list[Line] = field(default_factory=list)  # a previous timeline the named remember (packet-v20, PHASE-60 S6)
+    regression_names: tuple[str, ...] = ()  # the characters a regression link names, in its order
 
 
 def persona_question_names(r: Any) -> frozenset[str]:
@@ -1199,6 +1202,10 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         if options.policy in SETTLED_POLICIES and options.threads_limit > 0:
             # packet-v20 (PHASE-60 S4): threads the story closed lately, outside threads_limit
             g.settled = settled_lines(g, view, r, query, now, rest, options, aliases)
+        if options.policy in CARRY_POLICIES and view.get("regression") and r is not None:
+            # packet-v20 (PHASE-60 S6): what the named remember of a previous timeline, apart from everything above
+            g.regression = regression_lines(g, view, r, query, previous_ai, in_context, options, aliases)
+            g.regression_names = tuple(view["carried"]["names"])
     if options.policy in COVERAGE_POLICIES and coverage_info is not None:
         g.note += coverage_note(coverage_info.get("recorded_through_turn"), coverage_info.get("latest_replied_turn"))
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
@@ -1843,11 +1850,58 @@ def told_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_a
     return _moded([told_entry(t, scene.private(t, g.cast, r), happened) for t in picked], picked, g, r, options)
 
 
+def regression_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_ai: str, in_context: set[str],
+                     options: RecallOptions, aliases: dict[str, frozenset[str]] | None = None) -> list[Line]:
+    """packet-v20 (PHASE-60 S6, ADR 0085 item 5): what the characters a regression link names remember of the previous
+    timeline (`view["regression"]`), as the lines of its own <Regression> group. Facts are ranked as facts are
+    (`relevant_facts`), threads as threads are (`relevant_threads`: open and mentioned); the two are merged by how the
+    message names them (in the user's message, then in the previous reply, then by its words only), then each list's own
+    order, the newer source position first on a tie; at most REGRESSION_MAX. Each line says timeline="previous" and its
+    rememberers as known_by, and no turn (none of this chat's); private (limited knowledge), through this chat's memory
+    mode (`_moded`: strict mode withholds it as a Secret line, a narrator who does not remember it never sees it). Its
+    marks name its rememberers (`remembered_by`), a Secret line's too. None of them is a fact, a <Cast> line, a gone pin,
+    a thread, a settled line or a return mark. Every other policy: none."""
+    if options.policy not in CARRY_POLICIES or r is None or not view.get("regression"):
+        return []
+    rows = [{**x, "timeline": "previous"} for x in view["regression"]]
+    persona = r.persona_names
+    facts = relevant_facts([x for x in rows if x["line"] == "fact"], query, previous_ai, in_context, len(rows),
+                           options.events_limit, persona, scene.names(g.cast, r, aliases),
+                           causes=options.policy in CAUSE_POLICIES, aliases=aliases)
+    threads = relevant_threads([x for x in rows if x["line"] == "thread"], query, previous_ai, in_context, len(rows),
+                               persona, about=options.policy in ABOUT_POLICIES, aliases=aliases)
+    said, before = norm(query), norm(previous_ai)
+
+    def mention(x: dict[str, Any]) -> int:
+        names = {n for n in variants.widened(x.get("names") or [], aliases) if len(n) >= 2} - persona
+        return 2 if any(n in said for n in names) else (1 if any(n in before for n in names) else 0)
+
+    ranked = [(x, i) for i, x in enumerate(facts)] + [(x, i) for i, x in enumerate(threads)]
+    ranked.sort(key=lambda p: (-mention(p[0]), p[1], -(p[0].get("position") or 0)))
+    picked = [x for x, _ in ranked[:REGRESSION_MAX]]
+    cause = options.policy in CAUSE_POLICIES
+    lines = []
+    for x in picked:
+        line = (fact_entry(x, True, False, cause, options.history_marks) if x["line"] == "fact"
+                else thread_entry(x, True))
+        lines.append(dataclasses.replace(line, turn=None, marks={**line.marks,
+                                                                 "remembered_by": list(x.get("known_by") or ())}))
+    by_id = {x["id"]: x for x in picked}
+    out: list[Line] = []
+    for line in _moded(lines, picked, g, r, options):
+        row = by_id.get(line.ref.get("assertion"))
+        if row is not None and "remembered_by" not in line.marks:  # a strict Secret line still says who remembers
+            line = dataclasses.replace(line, marks={**line.marks, "remembered_by": list(row.get("known_by") or ())})
+        out.append(line)
+    return out
+
+
 def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
     """One request's packet from what `gather` offered (the request and its replay compile alike)."""
     compiled = compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
                              note=g.note, story=g.story, cast=g.cast_lines, named=frozenset(g.named),
-                             risky=frozenset(g.risky), gone=g.gone, cast_marks=g.cast_marks, settled=g.settled)
+                             risky=frozenset(g.risky), gone=g.gone, cast_marks=g.cast_marks, settled=g.settled,
+                             regression=g.regression, regression_names=g.regression_names)
     compiled = source_time.supplement(compiled, g.ranked, g.source_clocks, budget, policy)
     if policy in LABEL_POLICIES:
         # Diagnostics never take part in selection, token fitting or the rest/echo calculation.
