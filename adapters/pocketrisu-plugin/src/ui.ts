@@ -1988,9 +1988,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('p', { class: 'sub', text: L('extra.body_sub') }), effortRow,
     el('div', { class: 'check' }, noTemp, el('span', { text: L('extra.no_temp') })),
     el('p', { class: 'sub', text: L('extra.no_temp_sub') }));
-  effort.addEventListener('change', () => {
+  // On `input` too: a browser fires it before `change`, and the settings view's own `input` listener runs `update`,
+  // whose `syncExtra` would set the dropdown back from the text before `change` ever saw the choice.
+  const writeEffort = (): void => {
     if (effort.value !== 'custom') extraText.value = withEffort(extraText.value, effort.value || null);
-  });
+  };
+  effort.addEventListener('input', writeEffort);
+  effort.addEventListener('change', writeEffort);
   /** The dropdown follows the text and the address; called from `update`, since loads and presets set them without an event. */
   function syncExtra(): void {
     extraBox.style.display = extraKnown ? '' : 'none';

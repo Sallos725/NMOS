@@ -756,8 +756,10 @@ describe('panel', () => {
       input.value = value;
       input.dispatchEvent(new Event('input', { bubbles: true }));
     };
+    // As a browser does it: picking an option fires `input`, then `change`, both bubbling to the settings view.
     const choose = (select: HTMLSelectElement, value: string) => {
       select.value = value;
+      select.dispatchEvent(new Event('input', { bubbles: true }));
       select.dispatchEvent(new Event('change', { bubbles: true }));
     };
     const puts = (calls: [string, string, unknown][]) => calls.filter(([m, p]) => m === 'PUT' && p === '/v1/config').map(([, , b]) => b);
