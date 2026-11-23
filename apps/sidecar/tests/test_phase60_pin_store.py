@@ -63,7 +63,8 @@ def state(url: str) -> dict[str, tuple[int, str | None]]:
 
 @pytest.mark.parametrize("dump", FIXTURES, ids=[p.stem for p in FIXTURES])
 def test_every_upgrade_fixture_applies_0038_and_keeps_its_rows(dump, database_url, tmp_path):
-    """A4: each earlier release's database, migrated up to the migration before 0038, then 0038 alone."""
+    """A4: each earlier release's database, migrated up to the migration before 0038, then 0038 alone. The fixtures
+    hold no repair, so one of each earlier kind is written first: the check added again must accept every one."""
     before_dir = tmp_path / "migrations"
     before_dir.mkdir()
     for path in migrations_dir().glob("[0-9][0-9][0-9][0-9]_*.sql"):
@@ -72,9 +73,16 @@ def test_every_upgrade_fixture_applies_0038_and_keeps_its_rows(dump, database_ur
     restore(database_url, dump)
     apply_migrations(database_url, directory=before_dir)
     assert "entity_pin" not in kinds_of(database_url)
+    with psycopg.connect(database_url) as conn:
+        cid = conn.execute("SELECT id FROM conversation ORDER BY id LIMIT 1").fetchone()[0]
+        for kind in sorted(KINDS - {"entity_pin"}):
+            conn.execute("INSERT INTO owner_repair (id, conversation_id, kind, target) VALUES (%s, %s, %s, '{}')",
+                         (uuid7(), cid, kind))
     before = state(database_url)
     assert before["conversation"][0] > 0 and before["assertion"][0] > 0
-    assert apply_migrations(database_url) == [PIN]
+    assert before["owner_repair"][0] == len(KINDS) - 1
+    shutil.copy(migrations_dir() / PIN, before_dir / PIN)  # 0038 alone, whatever later migrations come
+    assert apply_migrations(database_url, directory=before_dir) == [PIN]
     assert state(database_url) == before
     assert kinds_of(database_url) == KINDS
 
@@ -302,6 +310,8 @@ def test_every_policy_compiles_the_same_packet_with_the_switch_on(migrated):
             on = recall(c, sim, query, budget=2000)
             assert c.put("/v1/config", json={"pin_at_mentions": None}).status_code == 200
         assert off["packet"]["text"] == on["packet"]["text"], policy
+        if policy in ("packet-v19", "packet-v20"):
+            assert "Kaito" in off["packet"]["text"], policy  # a packet with something in it
     with psycopg.connect(migrated) as conn:
         used = {r[0] for r in conn.execute("SELECT policy FROM retrieval_trace").fetchall()}
         assert used == set(POLICIES)
@@ -324,6 +334,7 @@ def test_an_archive_round_trips_a_pin(whole, migrated, database_url_factory, tmp
     with make_client(migrated, **LLM) as c:
         cid = setup(c, migrated)
         assert pin(c, cid, "Kaito", note="every scene").status_code == 200
+        assert c.put("/v1/config", json={"pin_at_mentions": True}).status_code == 200
         taken = pin(c, cid, "Hana").json()["repair"]["id"]
         assert c.post(f"/v1/conversations/{cid}/repairs/{taken}/remove").status_code == 200  # kept for audit
     source = export_to(tmp_path, migrated, "pins", **({} if whole else {"conversations": [cid]}))
@@ -332,3 +343,6 @@ def test_an_archive_round_trips_a_pin(whole, migrated, database_url_factory, tmp
     assert [str(x["id"]) for x in done.conversations] == [cid]
     assert len(pin_rows(migrated)) == 2 and pin_rows(target) == pin_rows(migrated)
     assert [p["name"] for p in view(target, cid)["pins"]] == ["Kaito"]
+    with psycopg.connect(target) as conn:  # a plain setting: with the install only, never with one chat
+        setting = conn.execute("SELECT value FROM app_config WHERE key = 'pin_at_mentions'").fetchone()
+    assert setting == ((True,) if whole else None)
