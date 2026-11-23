@@ -31,6 +31,7 @@ from nmos_sidecar.packet import clean_text
 from nmos_sidecar.retrieval import RecallOptions
 from rerank_stub import RerankStub, rerank_server  # noqa: F401  (the fixture)
 from simchat import SimChat
+from test_archive import export, read
 from test_sidecar_integration import recall, sync
 
 N = 45  # messages the query's words find: 42 eligible once the last three are in the prompt
@@ -274,3 +275,23 @@ def test_the_key_is_in_no_trace_and_no_log_record(migrated, rerank_server, caplo
         assert KEY not in record.getMessage()
         assert KEY not in repr(record.args)
     assert KEY not in caplog.text
+
+
+def test_the_key_is_never_archived_and_an_archive_holding_it_is_refused(migrated, rerank_server):
+    """A8 / D60: after a reranked retrieve, the archive omits the key everywhere and refuses if a message holds it."""
+    rerank_server.score = score_of
+    with make_client(migrated, **settings()) as client:
+        chat = build(client)
+        configure(client, reranker(rerank_server))
+        ok = ask(client, chat)
+        assert ok["recall_options"]["rerank_used"] is True
+        data = export(client)
+        _, tables, raw = read(data)
+        assert KEY.encode() not in data and not any(KEY.encode() in body for body in raw.values())
+        assert "rerank_api_key" not in {r["key"] for r in tables["app_config"]}
+        chat.user(f"세라가 적은 암호는 {KEY}였다.")
+        chat.reply("알겠어.")
+        sync(client, chat)
+        res = client.get("/v1/archive")
+    assert res.status_code == 409 and "credential" in res.json()["detail"]
+    assert KEY not in res.text
