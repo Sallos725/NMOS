@@ -14,6 +14,7 @@ import pytest
 from nmos_sidecar import carry
 from nmos_sidecar.entities import PERSONA, resolve
 from nmos_sidecar.facts import _annotate, fact_text
+from nmos_sidecar.threads import KINDS, opens
 from nmos_sidecar.threads import fold as fold_threads
 
 SRC_ID = UUID("01960000-0000-7000-8000-000000000001")
@@ -569,3 +570,60 @@ def test_preview_of_counts_and_first_lines() -> None:
     assert prev["replaces"] == str(REP_ID)
     assert prev["fingerprint"] == reading["fingerprint"]
     assert prev["characters"] == ["세라", "카이토"]
+
+
+# --- a thread's opening assertion -------------------------------------------------------------------------------
+
+def _thread_view() -> dict:
+    by_persona = _row(40, "한 도현", "promised", obj="세라", object_type="character", value="항구에서 만나기",
+                      knowledge="limited", known_by=["한 도현", "세라"], hidden_from=["카이토"],
+                      asserted_by="한 도현", turn=2, position=4)
+    by_sera = _row(41, "세라", "promised", obj="카이토", object_type="character", value="열쇠를 찾아주기",
+                   turn=3, position=6)
+    goal = _row(42, "카이토", "goal", value="등대지기가 되기", turn=3, position=7)
+    all_rows = [by_persona, by_sera, goal]
+    r = resolve(SRC_ID, all_rows, persona=("도현",))
+    for row in all_rows:
+        _annotate(row, r)
+    threads, _, _ = fold_threads(all_rows, r)
+    return {"facts": [], "threads": threads, "assertions": all_rows, "resolution": r,
+            "entities": r.entities(), "excluded": {}}
+
+
+def test_a_carried_thread_holds_its_opening_assertion_that_opens_it_again() -> None:
+    snap = carry.snapshot_of(_thread_view(), None, "continue", [], SRC_ID, {40: REV_1, 41: REV_2, 42: REV_3})
+    assert len(snap["threads"]) == 3
+    for t in snap["threads"]:
+        opening = t["opening"]
+        assert opens(opening, None)
+        assert opening["predicate"] in KINDS and KINDS[opening["predicate"]] == t["kind"]
+        assert set(opening) <= set(carry.FACT_KEYS)  # trimmed like a fact row, no `from` of its own
+        assert opening["turn"] == t["turn"] and opening["position"] == t["position"]
+    by_id = {t["from"]["assertion"]: t for t in snap["threads"]}
+    persona_made = by_id[40]["opening"]
+    assert persona_made["subject"] == PERSONA and persona_made["asserted_by"] == PERSONA
+    assert persona_made["known_by"] == [PERSONA, "세라"] and persona_made["object"] == "세라"
+    assert by_id[40]["by"] == PERSONA
+    assert by_id[41]["opening"]["subject"] == "세라" and by_id[41]["opening"]["value"] == "열쇠를 찾아주기"
+    json.dumps(snap, ensure_ascii=False)
+
+
+def test_a_regression_thread_opening_carries_the_same_marks_as_the_thread() -> None:
+    snap = carry.snapshot_of(_thread_view(), None, "regression", ["세라"], SRC_ID, {40: REV_1, 41: REV_2})
+    assert snap["threads"]
+    for t in snap["threads"]:
+        opening = t["opening"]
+        assert opening["knowledge"] == t["knowledge"] == "limited"
+        assert opening["known_by"] == t["known_by"]
+        assert opening["orig_knowledge"] == t["orig_knowledge"]
+        assert opening["orig_known_by"] == t["orig_known_by"]
+    by_id = {t["from"]["assertion"]: t for t in snap["threads"]}
+    assert by_id[40]["opening"]["known_by"] == ["세라"]
+    assert by_id[40]["opening"]["orig_known_by"] == [PERSONA, "세라"]
+
+
+def test_a_thread_whose_opening_row_is_missing_carries_a_null_opening() -> None:
+    view = _thread_view()
+    view["assertions"] = []
+    snap = carry.snapshot_of(view, None, "continue", [], SRC_ID, {})
+    assert snap["threads"] and all(t["opening"] is None for t in snap["threads"])

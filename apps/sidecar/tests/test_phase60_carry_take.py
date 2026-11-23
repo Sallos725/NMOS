@@ -16,6 +16,7 @@ from nmos_sidecar.entities import PERSONA
 from nmos_sidecar.extraction import ALIAS_CONFIRM_SYSTEM
 from nmos_sidecar.facts import fact_text, memory_view
 from nmos_sidecar.ids import uuid7
+from nmos_sidecar.threads import KINDS, opens
 from nmos_sidecar.worker import run_once
 from simchat import SimChat
 from test_canon import push as push_canon
@@ -315,3 +316,25 @@ def test_story_repeating_a_kept_secret_is_left_out_with_reason(migrated: str) ->
             secret_fact = next(f for f in snap["facts"] if f["predicate"] == "knows")
             assert secret_fact["knowledge"] == "limited"
             assert secret_fact["hidden_from"] == ["카이토"]
+
+
+def test_a_carried_open_thread_holds_an_opening_that_opens_it_again(migrated: str) -> None:
+    with make_client(migrated, **ON) as c:
+        src_sim = _build_source_chat(4)
+        sync(c, src_sim, character_name="세라", persona_name="도현")
+        drain_extract(migrated, _stub_extract)
+        src_id = UUID(conv_id(c, src_sim))
+
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            keys = _keys(conn, with_summary=False)
+            cont = carry.take_reading(conn, src_id, "continue", [], keys)["snapshot"]
+            reg = carry.take_reading(conn, src_id, "regression", ["카이토"], keys)["snapshot"]
+            assert cont["threads"] and reg["threads"]
+            for t in cont["threads"]:
+                opening = t["opening"]
+                assert opens(opening, None)
+                assert KINDS[opening["predicate"]] == t["kind"]
+                assert opening["subject"] == t["by"] == "세라" and opening["object"] == "카이토"
+                assert opening["compiler"] is not None
+            for t in reg["threads"]:
+                assert t["opening"]["known_by"] == t["known_by"] == ["카이토"]

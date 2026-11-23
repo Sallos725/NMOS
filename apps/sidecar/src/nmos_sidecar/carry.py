@@ -389,9 +389,17 @@ def snapshot_of(
         mapped = persona_mapped(trimmed, r)
         closed_by = t.get("closed_by")
         mapped["closed_turn"] = closed_by.get("turn") if (t.get("status") != "open" and isinstance(closed_by, Mapping)) else None
+        opening = assertions_by_id.get(t.get("id"))
+        # The opening assertion, kept like a fact row (its provenance is the thread's `from`), so a reader can fold
+        # the thread again from it as `threads.fold` opens one.
+        opening_row: dict[str, Any] | None = (
+            persona_mapped({k: opening[k] for k in FACT_KEYS if k in opening}, r) if opening is not None else None
+        )
         if mode == "regression":
             _apply_regression_marks(mapped, rems)
-        opening = assertions_by_id.get(t.get("id"))
+            if opening_row is not None:
+                _apply_regression_marks(opening_row, list(rems))
+        mapped["opening"] = opening_row
         gen = opening.get("generation") if opening is not None else t.get("generation")
         mapped["from"] = _provenance(source_id, t, rev_map, generation=gen)
         thread_rows.append(mapped)
