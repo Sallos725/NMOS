@@ -64,7 +64,7 @@ live AS (
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence, a.evidence,
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
-       a.participants::text AS participants, a.outcome, a.because, a.feeling::text AS feeling,
+       a.participants::text AS participants, a.outcome, a.because, a.feeling::text AS feeling, a.when_happened,
        -- a check's rows read as the extraction it checked
        l.position, l.turn, l.host_logical_id, l.chosen AS generation, l.chosen_compiler AS compiler,
        -- the turn's hash: a secret's (ADR 0033 amendment 2) and an owner repair's target (ADR 0044); and the hash a
@@ -118,6 +118,8 @@ def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, 
             stored_knowledge(r)
         if (detail := r.pop("feeling")) is not None:  # extract-v18 only (PHASE-58): other rows read as before
             r["feeling"] = _parse_feeling(detail)
+        if (when := r.pop("when_happened")) is not None:  # extract-v19 only (PHASE-60 S7): other rows read as before
+            r["when_happened"] = when
     return rows
 
 
@@ -253,6 +255,8 @@ def _entry(h: dict[str, Any], outcome: dict[int, str], closer: dict[int, dict[st
            "known_by": h.get("known_by"), "hidden_from": h.get("hidden_from")}
     if h.get("feeling"):  # PHASE-58: how the feeling felt then
         out["feeling"] = h["feeling"]
+    if h.get("when_happened"):  # PHASE-60 S7: when it happened, apart from when the turn told it
+        out["when_happened"] = h["when_happened"]
     if h.get("canon"):
         out["canon"] = h["canon"]
     by = (closer or {}).get(id(h))
