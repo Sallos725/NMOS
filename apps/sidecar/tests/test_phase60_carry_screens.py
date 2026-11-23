@@ -8,6 +8,7 @@ reaches the note. Stub extractor, summarizer and note model only; synthetic name
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import pytest
@@ -287,3 +288,119 @@ def test_the_memory_screens_attention_count_is_the_chats_own(
                                 if t["status"] == "open" and "등대 열쇠" in (t.get("text") or "")]
                 # it would be a stale thread to close in a carried read: the attention count must not hold it
                 assert carried_open and all(inspector.stale(t, last) for t in carried_open)
+
+
+# --- the seam between the data side and the renderer (Phase 60 finishing slice) -------------------------------------
+# The panel's renderer (`views.memory` / `views.person`) was written against a contract for `d["carry"]`; these tests
+# feed it what the routes really build and check the keys it reads are the keys it is sent.
+
+CARRY_KEYS = {"source", "mode", "names", "created_at", "lines"}  # what `views` reads, `cutoff_turn` aside (never sent)
+SOURCE_KEYS = {"id", "character", "chat"}
+FROM_KEYS = {"conversation", "assertion", "revision", "generation", "turn"}
+
+
+def _fragment(c, url: str, lang: str) -> str:
+    res = c.get(url, params={"lang": lang})
+    assert res.status_code == 200, (url, res.text[:300])
+    return str(res.json()["html"])
+
+
+def _carry_section(html: str) -> str:
+    """The carry section's HTML (`test_phase60_carry_render.sec`), here without importing that module's fixtures."""
+    rest = html.split('<div class="v-sec" id="s-carry">')[1]
+    return rest.split('<div class="v-sec" id=')[0]
+
+
+def _check_lines(carry: dict[str, Any], src: str) -> None:
+    """The keys `views` reads from `d["carry"]` and from each of its lines are there, under the names it reads."""
+    assert CARRY_KEYS <= set(carry), sorted(carry)
+    assert set(carry["source"]) == SOURCE_KEYS and str(carry["source"]["id"]) == src
+    assert isinstance(carry["names"], list) and isinstance(carry["created_at"], str)
+    assert "cutoff_turn" not in carry  # the renderer would show "up to tN"; the data side never sends it
+    for row in carry["lines"]:
+        assert row["carried"] and row["kind"] in ("fact", "thread"), row
+        assert FROM_KEYS <= set(row["carried_from"]) and row["carried_from"]["conversation"] == src, row
+        assert {"subject", "predicate", "object", "value"} <= set(row), row
+        if row["kind"] == "fact":  # a thread line has no polarity; `views.carry_text` reads it on facts only
+            assert "polarity" in row, row
+        else:  # a thread line: by / to / text kept, and also in subject / object / value
+            assert {"by", "to", "text"} <= set(row)
+            assert (row["subject"], row["object"], row["value"]) == (row["by"], row["to"], row["text"])
+
+
+def _hrefs_safe(html: str, src: str) -> None:
+    """The plugin sanitizer's tags and links (test_phase60_carry_render.panel_safe), and in the carry section only
+    the two shapes `views.carry_href` makes, to the real source chat."""
+    from test_phase60_carry_render import panel_safe
+    panel_safe(html)
+    for href in re.findall(r'href="([^"]*)"', _carry_section(html)):
+        assert re.fullmatch(rf"/inspector/c/{src}(?:/t/(?:0|[1-9][0-9]{{0,6}}))?", href), href
+
+
+def test_the_renderer_reads_what_the_routes_send_and_unlinking_restores_every_fragment(
+    migrated: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = Seen(monkeypatch)
+    with make_client(migrated, **ON) as c:
+        src, tgt = _setup(c, migrated)
+        sera, kaito = _entity_id(c, tgt, "세라"), _entity_id(c, tgt, "카이토")
+        urls = [f"/v1/views/c/{tgt}/memory", f"/v1/views/c/{tgt}/memory?map=true",
+                f"/v1/views/c/{tgt}/person/{sera}", f"/v1/views/c/{tgt}/person/{kaito}"]
+        before = {(u, lang): _fragment(c, u, lang) for u in urls for lang in ("ko", "en")}
+        assert not any("s-carry" in html for html in before.values())
+
+        _link(c, tgt, src, "continue")
+        ko = _fragment(c, f"/v1/views/c/{tgt}/memory", "ko")
+        assert seen.memory is not None
+        carry = seen.memory["carry"]
+        _check_lines(carry, src)
+        assert carry["mode"] == "continue" and carry["names"] == []
+        kinds = {r["kind"] for r in carry["lines"]}
+        assert kinds == {"fact", "thread"}, kinds  # both shapes reach the renderer
+        s = _carry_section(ko)
+        assert f'<span class="v-n">{len(carry["lines"])}</span>' in s
+        assert '<p class="v-text">세라 · 항구의 밤에서 이어받음 · 이 채팅의 턴이 아님</p>' in s
+        assert f'<a class="v-src" href="/inspector/c/{src}/t/2">하나 위치 항구 시장</a>' in s
+        assert (f'<span class="v-tag k-promise">약속</span><a class="v-src" href="/inspector/c/{src}/t/1">'
+                f'세라 → 카이토: 내일 새벽 등대 열쇠를 찾아주기</a>') in s
+        assert s.count('class="v-line"') == len(carry["lines"]) and "t-1" not in s
+        _hrefs_safe(ko, src)
+        en = _fragment(c, f"/v1/views/c/{tgt}/memory", "en")
+        s = _carry_section(en)
+        assert '<p class="v-text">Carried from 세라 · 항구의 밤 · not this chat&#x27;s own turns</p>' in s
+        assert f'<a class="v-src" href="/inspector/c/{src}/t/2">하나 location 항구 시장</a>' in s
+        assert "earlier chat t2" in s
+        _hrefs_safe(en, src)
+        for lang in ("ko", "en"):
+            sheet = _fragment(c, f"/v1/views/c/{tgt}/person/{sera}", lang)
+            assert seen.person is not None
+            _check_lines(seen.person["carry"], src)
+            lines = seen.person["carry"]["lines"]
+            assert lines and all("세라" in (r["subject"], r["object"]) for r in lines)
+            assert f'<span class="v-n">{len(lines)}</span>' in _carry_section(sheet)
+            _hrefs_safe(sheet, src)
+
+        _link(c, tgt, src, "regression")  # names ["세라"]: only she remembers
+        for lang, head, forgot in (
+                ("ko", "이전 타임라인 · 세라만 기억", "이 채팅은 이전 타임라인을 이어받았지만, 이 인물은 그것을 기억하지 않습니다"),
+                ("en", "Earlier timeline · remembered only by 세라",
+                 "This chat carries an earlier timeline, which this person does not remember")):
+            memory = _fragment(c, f"/v1/views/c/{tgt}/memory", lang)
+            assert seen.memory is not None
+            _check_lines(seen.memory["carry"], src)
+            assert seen.memory["carry"]["mode"] == "regression" and seen.memory["carry"]["names"] == ["세라"]
+            assert seen.memory["carry"]["lines"]
+            assert f'<p class="v-text">{head}</p>' in _carry_section(memory)
+            _hrefs_safe(memory, src)
+            sheet = _fragment(c, f"/v1/views/c/{tgt}/person/{sera}", lang)
+            assert seen.person is not None and seen.person["carry"]["lines"]
+            assert f'<p class="v-text">{head}</p>' in _carry_section(sheet) and forgot not in sheet
+            _hrefs_safe(sheet, src)
+            other = _fragment(c, f"/v1/views/c/{tgt}/person/{kaito}", lang)
+            assert seen.person is not None and seen.person["carry"]["lines"] == []
+            assert f'<p class="v-note">{forgot}</p>' in _carry_section(other) and "v-src" not in _carry_section(other)
+            _hrefs_safe(other, src)
+
+        assert c.delete(f"/v1/conversations/{tgt}/carry").status_code == 200
+        after = {(u, lang): _fragment(c, u, lang) for u in urls for lang in ("ko", "en")}
+        assert after == before  # byte for byte, in both languages
