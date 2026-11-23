@@ -10,6 +10,8 @@
 //@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 4000)
 //@arg deadline_ms int Hard request-path deadline in ms (0 = 3000)
 //@arg inject_position string before_last_user (default) or end
+//@arg trim_old_turns int 1 = leave old dialogue out in steps once memory and summaries cover it (needs summaries on)
+//@arg keep_recent_turns int Recent turns always sent when trimming; the cut moves in steps of this many (0 = 20, 4-200)
 //@arg route string auto (default) / direct / server — how to reach the sidecar
 //@arg language string Panel language: ko (default) or en
 //@arg hud int 1 = progress display on the chat screen (turn it on from the NMOS panel)
@@ -17,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:98d003859a8b".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:ae1247ff5e6a".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -157,7 +159,12 @@
   var DEFAULT_RESERVED_TOKENS = 4e3;
   var MAX_RESERVED_TOKENS = 2e4;
   var PANEL_MAX_RESERVED_TOKENS = 8e3;
-  var SECTIONS = ["conn", "llm", "emb", "tune"];
+  var DEFAULT_KEEP_RECENT_TURNS = 20;
+  var MIN_KEEP_RECENT_TURNS = 4;
+  var MAX_KEEP_RECENT_TURNS = 200;
+  var MIN_RERANK_TIMEOUT_MS = 50;
+  var MAX_RERANK_TIMEOUT_MS = 5e3;
+  var SECTIONS = ["conn", "llm", "emb", "rerank", "tune", "trim"];
   var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
   function serviceAccountProject(key) {
     const text2 = key.trim();
@@ -199,13 +206,19 @@
     const n = Number(value.trim());
     return value.trim() !== "" && Number.isFinite(n) ? n : value;
   }
-  function configBody(dirty, v) {
+  function configBody(dirty, v, known = {}) {
     const body = {};
     for (const [section, prefix] of [["llm", "llm"], ["emb", "embed"]]) {
       if (!dirty.includes(section)) continue;
       body[`${prefix}_url`] = v[section].url.trim();
       body[`${prefix}_model`] = v[section].model.trim();
       if (v[section].key.trim()) body[`${prefix}_api_key`] = v[section].key.trim();
+    }
+    if (dirty.includes("rerank") && known.rerank) {
+      body.rerank_url = v.rerank.url.trim();
+      body.rerank_model = v.rerank.model.trim();
+      body.rerank_timeout_ms = num(v.rerank.timeout);
+      if (v.rerank.key.trim()) body.rerank_api_key = v.rerank.key.trim();
     }
     if (dirty.includes("tune")) {
       Object.assign(body, {
@@ -218,6 +231,7 @@
         canon_facts: v.tune.canonFacts
       });
       if (v.tune.embedWait.trim() !== "") body.embed_timeout_ms = num(v.tune.embedWait);
+      if (known.pinAt) body.pin_at_mentions = v.tune.pinAt;
     }
     return body;
   }
@@ -235,6 +249,14 @@
       reserved_memory_tokens: Math.min(PANEL_MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0 ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
       deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS)),
       auth_token: v.token.trim()
+    };
+  }
+  function trimArgs(v) {
+    const n = Math.floor(Number(v.keep.trim()));
+    const keep = Number.isFinite(n) && n > 0 ? n : DEFAULT_KEEP_RECENT_TURNS;
+    return {
+      trim_old_turns: v.on ? 1 : 0,
+      keep_recent_turns: Math.min(MAX_KEEP_RECENT_TURNS, Math.max(MIN_KEEP_RECENT_TURNS, keep))
     };
   }
 
@@ -781,6 +803,17 @@
       "\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900\uC744 voyage-4-large\uC5D0\uC11C \uC7B0 \uAC12 0.3\uC73C\uB85C \uB9DE\uCDC4\uC2B5\uB2C8\uB2E4. \uACB0\uC81C \uC218\uB2E8\uC744 \uB4F1\uB85D\uD558\uC9C0 \uC54A\uC740 Voyage \uACC4\uC815\uC740 \uBD84\uB2F9 3\uD68C\uB85C \uC81C\uD55C\uB418\uC5B4, \uB300\uD654\uB97C \uC784\uBCA0\uB529\uD558\uAE30\uC5D0 \uBD80\uC871\uD569\uB2C8\uB2E4. Voyage\uB294 \uBAA8\uB378 \uBAA9\uB85D\uC744 \uC8FC\uC9C0 \uC54A\uC73C\uB2C8 \uB2E4\uB978 \uBAA8\uB378\uC740 \uC774\uB984\uC744 \uC9C1\uC811 \uC801\uC73C\uC138\uC694.",
       "The vector min similarity is set to 0.3, the value measured for voyage-4-large. A Voyage account with no payment method is limited to 3 requests a minute, too few to embed a chat. Voyage lists no models, so type the name of another model yourself."
     ],
+    // settings: optional reranker (PHASE-60 S5)
+    "rerank.title": ["\uC7AC\uC815\uB82C \uBAA8\uB378 (\uC120\uD0DD)", "Reranker (optional)"],
+    "rerank.sub": [
+      "\uC8FC\uC18C\uC640 \uBAA8\uB378\uC744 \uBAA8\uB450 \uB123\uC73C\uBA74, \uB9E4 \uC694\uCCAD\uB9C8\uB2E4 \uC0AC\uC6A9\uC790 \uBA54\uC2DC\uC9C0\uC640 \uCC3E\uC740 \uAE30\uC5B5 \uD6C4\uBCF4 \uCD5C\uB300 30\uAC1C\uC758 \uAE00\uC744 \uADF8 \uC8FC\uC18C\uB85C \uBCF4\uB0B4 \uB354 \uC54C\uB9DE\uC740 \uC21C\uC11C\uB85C \uB2E4\uC2DC \uB9E4\uAE41\uB2C8\uB2E4(\uC784\uBCA0\uB529 \uBAA8\uB378\uC5D0 \uB300\uD654 \uAE00\uC744 \uBCF4\uB0B4\uB294 \uAC83\uACFC \uAC19\uC2B5\uB2C8\uB2E4). \uC720\uB8CC \uC11C\uBE44\uC2A4\uB294 \uC694\uCCAD\uB9C8\uB2E4 \uBE44\uC6A9\uC774 \uB4E4 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC751\uB2F5\uC774 \uB2A6\uAC70\uB098 \uC624\uB958\uAC00 \uB098\uBA74 \uAE30\uC5B5\uC740 \uC6D0\uB798 \uC21C\uC11C \uADF8\uB300\uB85C \uB4E4\uC5B4\uAC11\uB2C8\uB2E4. \uC784\uBCA0\uB529 \uB300\uAE30\uC640 \uC7AC\uC815\uB82C \uB300\uAE30\uB97C \uD569\uCCD0 \uD50C\uB7EC\uADF8\uC778\uC758 \uC694\uCCAD \uC81C\uD55C \uC2DC\uAC04(\uAE30\uBCF8 3\uCD08)\uBCF4\uB2E4 \uB109\uB109\uD788 \uC9E7\uAC8C \uB450\uC138\uC694. \uB044\uB824\uBA74 \uC8FC\uC18C\uB098 \uBAA8\uB378\uC744 \uBE44\uC6CC \uB450\uC138\uC694.",
+      "With both an address and a model set, each request sends your message and the text of up to 30 recalled memory candidates to that address to put them in a better order, just as chat text goes to the embedder. Paid services may charge for each request. If it is slow or fails, memory goes out in its usual order. Keep the embedding wait plus the reranker wait well under the plugin request deadline (3 s by default). Leave the address or model empty to turn it off."
+    ],
+    "rerank.on": ["\uCF1C\uC9D0: \uC694\uCCAD\uB9C8\uB2E4 \uC21C\uC11C\uB97C \uB2E4\uC2DC \uB9E4\uAE41\uB2C8\uB2E4", "On: reorders memory candidates on every request"],
+    "rerank.off": ["\uAEBC\uC9D0: \uC8FC\uC18C\uC640 \uBAA8\uB378\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4", "Off: address and model are empty"],
+    "rerank.url": ["\uC8FC\uC18C", "Endpoint URL"],
+    "rerank.model_placeholder": ["\uC7AC\uC815\uB82C \uBAA8\uB378 \uC774\uB984", "reranker model name"],
+    "rerank.timeout": ["\uC7AC\uC815\uB82C \uB300\uAE30(ms)", "Reranker wait (ms)"],
     "preset.off": ["\uC0AC\uC6A9 \uC548 \uD568", "Off"],
     "preset.ollama": ["Ollama (\uC774 PC)", "Ollama (this PC)"],
     "preset.custom": ["\uC9C1\uC811 \uC785\uB825 (OpenAI \uD638\uD658)", "Custom (OpenAI-compatible)"],
@@ -1104,7 +1137,121 @@
     "set.act_delete_desc": [
       "NMOS\uC5D0 \uC800\uC7A5\uB41C \uC774 \uCC44\uD305\uC758 \uBAA8\uB4E0 \uAE30\uC5B5\uACFC \uAE30\uB85D\uC744 \uC601\uAD6C \uC0AD\uC81C\uD569\uB2C8\uB2E4.",
       "Permanently deletes everything NMOS recorded for this chat."
-    ]
+    ],
+    // trimming old dialogue (PHASE-60 S1)
+    "trim.left_out": ["\uC624\uB798\uB41C \uB300\uD654 {n}\uAC1C\uB97C \uBE7C\uACE0 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4 (\uC57D {t}\uD1A0\uD070 \uC808\uC57D)", "Left out {n} old messages (about {t} tokens saved)"],
+    "trim.kept": ["\uC624\uB798\uB41C \uB300\uD654\uB97C \uBE7C\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4: {r}", "No old messages left out: {r}"],
+    "trim.recorded_through": ["\uAE30\uC5B5\uC740 {n}\uD134\uAE4C\uC9C0 \uAE30\uB85D\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4", "Memory is recorded through turn {n}"],
+    // settings: leaving out old dialogue (PHASE-60 S1)
+    "trimset.title": ["\uC624\uB798\uB41C \uB300\uD654 \uBE7C\uAE30", "Leave out old dialogue"],
+    "trimset.sub": [
+      "\uAE30\uC5B5\uC774 \uC774\uBBF8 \uB2F4\uACE0 \uC788\uB294 \uC624\uB798\uB41C \uB300\uD654\uB294 \uBCF4\uB0B4\uB294 \uB0B4\uC6A9\uC5D0\uC11C \uBE8D\uB2C8\uB2E4. \uBE7C\uB294 \uC9C0\uC810\uC740 \uC544\uB798 \uD134 \uC218\uB9CC\uD07C\uC529 \uD55C\uAEBC\uBC88\uC5D0 \uC62E\uACA8\uC11C, \uC81C\uACF5\uC790\uC758 \uD504\uB86C\uD504\uD2B8 \uCE90\uC2DC\uAC00 \uACC4\uC18D \uB9DE\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC5D0\uC11C\uB294 \uC544\uBB34\uAC83\uB3C4 \uC9C0\uC6B0\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC7A5\uBA74 \uC694\uC57D \uB9CC\uB4E4\uAE30\uAC00 \uCF1C\uC838 \uC788\uC5B4\uC57C \uD569\uB2C8\uB2E4.",
+      "Old dialogue that memory already holds is left out of what is sent, in steps of the number of turns below, so the provider's prompt cache keeps working. Nothing is removed from the chat. It needs Scene summaries on."
+    ],
+    "trimset.on": ["\uAE30\uC5B5\uC774 \uB2F4\uC740 \uC624\uB798\uB41C \uB300\uD654 \uBE7C\uAE30", "Leave out old dialogue memory holds"],
+    "trimset.keep": ["\uD56D\uC0C1 \uBCF4\uB0B4\uB294 \uCD5C\uADFC \uD134 \uC218", "Recent turns always sent"],
+    "trimset.needs_summaries": [
+      "\uC8FC\uC758: \uC7A5\uBA74 \uC694\uC57D \uB9CC\uB4E4\uAE30\uAC00 \uAEBC\uC838 \uC788\uC5B4\uC11C, \uCF1C\uAE30 \uC804\uAE4C\uC9C0\uB294 \uC544\uBB34\uAC83\uB3C4 \uBE7C\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "Note: Scene summaries are off, so nothing is left out until they are on."
+    ],
+    // pinning a character (PHASE-60 S8)
+    "tune.pin_at": ["\uBA54\uC2DC\uC9C0\uC5D0\uC11C @\uC774\uB984\uC73C\uB85C \uC778\uBB3C \uACE0\uC815", "Pin a character with @name in a message"],
+    "tune.pin_at_hint": [
+      '\uCF1C\uBA74 "@\uC138\uB77C \uC5B4\uB514 \uC788\uC5B4?"\uCC98\uB7FC \uBA54\uC2DC\uC9C0\uC5D0 @\uC774\uB984\uC73C\uB85C \uC4F4 \uC778\uBB3C\uC740, \uC7A5\uBA74\uC5D0 \uC774\uB984\uC774 \uB098\uC624\uC9C0 \uC54A\uC544\uB3C4 \uADF8 \uB2F5\uC7A5\uC758 \uAE30\uC5B5\uC5D0 \uB4E4\uC5B4\uAC11\uB2C8\uB2E4. \uB2E8\uC5B4 \uC548\uC758 @(\uC774\uBA54\uC77C \uC8FC\uC18C, \uC544\uC774\uB514)\uB098 \uC774 \uCC44\uD305\uC758 \uC778\uBB3C\uC774 \uC544\uB2CC \uC774\uB984 \uC55E\uC758 @\uB294 \uC544\uBB34 \uC77C\uB3C4 \uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.',
+      'On: a message like "@Sera where are you?" keeps Sera in memory for that reply even when the scene does not name her. An @ inside a word (an e-mail address, a handle) or before a name that is no character of this chat does nothing.'
+    ],
+    "pin.title": ["{n} \uACE0\uC815", "Pin {n}"],
+    "pin.toggle": ["\uD56D\uC0C1 \uAE30\uC5B5\uC5D0 \uB450\uAE30", "Always keep in memory"],
+    "pin.sub": [
+      "\uACE0\uC815\uD55C \uC778\uBB3C\uC758 \uD604\uC7AC \uC0AC\uC2E4\uC740 \uC7A5\uBA74\uC5D0 \uC774\uB984\uC774 \uB098\uC624\uC9C0 \uC54A\uC544\uB3C4 \uB9E4 \uB2F5\uC7A5\uC758 \uAE30\uC5B5\uC5D0 \uB4E4\uC5B4\uAC11\uB2C8\uB2E4. \uADF8\uB798\uC11C \uACE0\uC815\uC740 \uC694\uCCAD\uB9C8\uB2E4 \uAE30\uC5B5 \uC608\uC0B0\uC758 \uC77C\uBD80\uB97C \uC501\uB2C8\uB2E4. \uC5B8\uC81C\uB4E0 \uD480 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+      "A pinned character's current facts go into memory on every reply, even when the scene does not name them, so a pin uses part of the memory budget on every request. You can take it off any time."
+    ],
+    "pin.done": ["\uACE0\uC815\uD588\uC2B5\uB2C8\uB2E4", "Pinned"],
+    "pin.undone": ["\uACE0\uC815\uC744 \uD480\uC5C8\uC2B5\uB2C8\uB2E4", "Unpinned"],
+    "pins.title": ["\uACE0\uC815\uD55C \uC778\uBB3C", "Pinned characters"],
+    "pins.unpin": ["\uACE0\uC815 \uD480\uAE30", "Unpin"],
+    "pins.none": ["\uACE0\uC815\uD55C \uC778\uBB3C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uC778\uBB3C \uD398\uC774\uC9C0\uC5D0\uC11C \uACE0\uC815\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", "No pinned characters. Pin one from a person's page."],
+    "pins.failed": ["\uACE0\uC815\uD55C \uC778\uBB3C \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "Could not load the pinned characters."],
+    "hud.trim.left_out": [" \xB7 \uC624\uB798\uB41C \uB300\uD654 {n}\uAC1C \uBE8C (\uC57D {t}\uD1A0\uD070)", " \xB7 {n} old messages left out (~{t} tokens)"],
+    "hud.trim.kept": [" \xB7 \uB300\uD654 \uADF8\uB300\uB85C: {r}", " \xB7 dialogue kept: {r}"],
+    "trim.reason.format": ["\uD504\uB9AC\uC14B\uC774 \uB300\uD654\uB97C \uBA54\uC2DC\uC9C0\uBCC4\uB85C \uBCF4\uB0B4\uC9C0 \uC54A\uC544 \uC548\uC804\uD558\uAC8C \uBE84 \uC218 \uC5C6\uC74C", "the preset does not send the chat one message at a time"],
+    "trim.reason.short": ["\uC544\uC9C1 \uBE84 \uB9CC\uD07C \uAE38\uC9C0 \uC54A\uC74C", "the chat is not long enough yet"],
+    "trim.reason.uncovered": ["\uAE30\uC5B5 \uC815\uB9AC(\uCD94\uCD9C\xB7\uC694\uC57D)\uAC00 \uC544\uC9C1 \uB530\uB77C\uC624\uC9C0 \uBABB\uD568", "memory (extraction and summaries) has not caught up yet"],
+    "trim.reason.no_summaries": ["\uC694\uC57D\uC774 \uAEBC\uC838 \uC788\uC74C (\uC694\uC57D\uC774 \uD544\uC694\uD569\uB2C8\uB2E4)", "summaries are off (trimming needs them)"],
+    "trim.reason.stale": ["\uAE30\uC5B5\uC774 \uC774 \uCC44\uD305\uC758 \uCD5C\uC2E0 \uC0C1\uD0DC\uAC00 \uC544\uB2D8", "memory is not at the chat's latest state"],
+    "trim.reason.empty_packet": ["\uC774\uBC88\uC5D0 \uB123\uC744 \uAE30\uC5B5\uC774 \uC5C6\uC74C", "no memory for this request"],
+    "trim.reason.failed": ["NMOS\uC758 \uB2F5\uC744 \uBC1B\uC9C0 \uBABB\uD568", "no answer from NMOS"],
+    "trim.reason.unsupported": ["NMOS\uAC00 \uC774 \uAE30\uB2A5\uC744 \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC74C (\uC5C5\uB370\uC774\uD2B8 \uD544\uC694)", "NMOS does not support it yet (update it)"],
+    "trim.reason.other": ["\uAE30\uD0C0 ({r})", "other ({r})"],
+    // carrying another chat's memory (PHASE-60 S6)
+    "carry.title": ["\uC774\uC804 \uCC44\uD305 \uC774\uC5B4\uBC1B\uAE30", "Carry an earlier chat's memory"],
+    "carry.sub": [
+      "\uB2E4\uB978 \uCC44\uD305\uC758 \uAE30\uC5B5\uC744 \uC9C0\uAE08 \uD55C \uBC88 \uC77D\uC5B4 \uC774 \uCC44\uD305\uC5D0 \uC5F0\uACB0\uD569\uB2C8\uB2E4. \uC6D0\uBCF8 \uCC44\uD305\uC740 \uAC74\uB4DC\uB9AC\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "Read another chat's memory once now and link it to this chat. Neither chat is modified."
+    ],
+    "carry.policy_note": [
+      "\uC774\uC5B4\uBC1B\uC740 \uAE30\uC5B5\uC740 \uC0AC\uC774\uB4DC\uCE74\uC5D0\uC11C \uC0C8 \uAE30\uC5B5 \uC815\uCC45(packet-v20)\uC744 \uC120\uD0DD\uD55C \uB3D9\uC548\uC5D0\uB9CC \uB2F5\uC7A5\uC5D0 \uBC18\uC601\uB418\uBA70, \uD328\uB110 \uD654\uBA74\uC5D0\uC11C\uB294 \uC815\uCC45\uACFC \uC0C1\uAD00\uC5C6\uC774 \uC5F0\uACB0\uC774 \uBCF4\uC785\uB2C8\uB2E4.",
+      "Carried memory reaches replies only while the new memory policy (packet-v20) is selected on the sidecar; the panel screens show the link either way."
+    ],
+    "carry.source": ["\uC6D0\uBCF8 \uCC44\uD305", "Source chat"],
+    "carry.no_other": ["\uC774\uC5B4\uBC1B\uC744 \uB2E4\uB978 \uCC44\uD305\uC774 \uC544\uC9C1 \uC5C6\uC2B5\uB2C8\uB2E4.", "No other recorded chats are available to carry from."],
+    "carry.mode": ["\uC774\uC5B4\uBC1B\uAE30 \uBC29\uC2DD", "Mode"],
+    "carry.mode_continue": ["\uC774\uC5B4\uAC00\uAE30", "Continue"],
+    "carry.mode_continue_desc": [
+      "\uC774 \uCC44\uD305\uC774 \uADF8 \uCC44\uD305\uC758 \uC774\uC57C\uAE30\uB97C \uC774\uC5B4\uAC11\uB2C8\uB2E4: \uADF8\uCABD\uC758 \uC0AC\uC2E4\xB7\uAD00\uACC4\xB7\uC5F4\uB9B0 \uC57D\uC18D\uACFC \uC9C0\uAE08\uAE4C\uC9C0\uC758 \uC774\uC57C\uAE30\uAC00 \uC774 \uCC44\uD305\uC774 \uC2DC\uC791\uB418\uAE30 \uC804\uC758 \uAE30\uC5B5\uC774 \uB429\uB2C8\uB2E4.",
+      "This chat continues that story: its facts, ties, open threads and story so far become memory from before this chat began."
+    ],
+    "carry.mode_regression": ["\uD68C\uADC0", "Regression"],
+    "carry.mode_regression_desc": [
+      "\uC774\uC57C\uAE30\uAC00 \uCC98\uC74C\uBD80\uD130 \uB2E4\uC2DC \uC2DC\uC791\uB410\uACE0, \uACE0\uB978 \uC778\uBB3C\uB9CC \uC774\uC804 \uD0C0\uC784\uB77C\uC778\uC744 \uAE30\uC5B5\uD569\uB2C8\uB2E4. \uB2E4\uB978 \uB204\uAD6C\uB3C4 \uBAA8\uB974\uBA70, \uC9C0\uAE08\uB3C4 \uC0AC\uC2E4\uC774\uB77C\uB294 \uBCF4\uC7A5\uC740 \uC5C6\uC2B5\uB2C8\uB2E4.",
+      "The story began again from the start, and only the chosen characters remember the previous timeline. Nobody else knows it, and it may not hold now."
+    ],
+    "carry.cutoff": ["\uC5B4\uB514\uAE4C\uC9C0 \uC77D\uC744\uC9C0 (\uD134 \uBC88\uD638, \uBE44\uC6B0\uBA74 \uB05D\uAE4C\uC9C0)", "Stop at turn (optional, leave empty for the end)"],
+    "carry.cutoff_placeholder": ["\uBE44\uC6B0\uBA74 \uD604\uC7AC \uB05D\uAE4C\uC9C0", "Empty = current end"],
+    "carry.cutoff_invalid": ["\uD134 \uBC88\uD638\uB294 0 \uC774\uC0C1\uC758 \uC815\uC218\uB85C \uC785\uB825\uD558\uAC70\uB098 \uBE44\uC6CC \uB450\uC138\uC694.", "Enter a whole turn number (0 or more), or leave empty."],
+    "carry.preview_btn": ["\uBBF8\uB9AC \uBCF4\uAE30", "Preview"],
+    "carry.link_btn": ["\uC5F0\uACB0", "Link"],
+    "carry.read_again": ["\uB2E4\uC2DC \uC77D\uAE30", "Read again"],
+    "carry.unlink": ["\uC5F0\uACB0 \uD574\uC81C", "Unlink"],
+    "carry.unlink_confirm": ["\uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC5F0\uACB0 \uD574\uC81C", "Tap again to unlink"],
+    "carry.linked_badge": ["\uC5F0\uACB0\uB428", "Linked"],
+    "carry.linked": ["\uC774\uC804 \uCC44\uD305\uC758 \uAE30\uC5B5\uC744 \uC5F0\uACB0\uD588\uC2B5\uB2C8\uB2E4.", "Linked the earlier chat's memory."],
+    "carry.unlinked": ["\uC5F0\uACB0\uC744 \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4. \uC774\uC804 \uC5F0\uACB0 \uAE30\uB85D\uC740 \uB0A8\uC544 \uC788\uC2B5\uB2C8\uB2E4.", "Unlinked. The earlier link is kept for the record."],
+    "carry.loading": ["\uBBF8\uB9AC \uBCF4\uAE30\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading preview\u2026"],
+    "carry.pv_title": ["\uC774\uC5B4\uBC1B\uC744 \uAE30\uC5B5 \uBBF8\uB9AC \uBCF4\uAE30", "Preview of carried memory"],
+    "carry.pv_source": ["\uC6D0\uBCF8: {source} \xB7 {mode} \xB7 {cutoff}", "Source: {source} \xB7 {mode} \xB7 {cutoff}"],
+    "carry.pv_counts": [
+      "\uC0AC\uC2E4 {f}\uAC1C \xB7 \uC774\uB984/\uBCC4\uCE6D {a}\uAC1C \xB7 \uC5F4\uB9B0 \uC57D\uC18D {th}\uAC1C \xB7 \uC9C0\uAE08\uAE4C\uC9C0\uC758 \uC774\uC57C\uAE30: {story}",
+      "{f} facts \xB7 {a} names/aliases \xB7 {th} open threads \xB7 story so far: {story}"
+    ],
+    "carry.story_yes": ["\uD3EC\uD568", "included"],
+    "carry.story_no": ["\uD3EC\uD568 \uC548 \uB428", "not included"],
+    "carry.pv_lines": ["\uC774\uC5B4\uBC1B\uC744 \uAE30\uC5B5 \uC55E\uBD80\uBD84", "First lines"],
+    "carry.pv_lines_empty": ["\uC774\uC5B4\uBC1B\uC744 \uAE30\uC5B5 \uC904\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No memory lines to carry."],
+    "carry.pv_chars": ["\uC774\uC804 \uD0C0\uC784\uB77C\uC778\uC744 \uAE30\uC5B5\uD560 \uC778\uBB3C (1~8\uBA85)", "Characters who remember the previous timeline (1\u20138)"],
+    "carry.pv_chars_pick": ["\uC778\uBB3C\uC744 \uCD5C\uC18C 1\uBA85 \uACE0\uB974\uBA74 \uC774\uC5B4\uBC1B\uC744 \uAE30\uC5B5\uC774 \uD45C\uC2DC\uB429\uB2C8\uB2E4.", "Tick at least one character to preview what they remember."],
+    "carry.pv_chars_none": ["\uC6D0\uBCF8 \uCC44\uD305\uC5D0 \uC120\uD0DD\uD560 \uC778\uBB3C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No characters were found in the source chat."],
+    "carry.pv_replaces": ["\uD604\uC7AC \uC5F0\uACB0\uB41C \uC774\uC804 \uCC44\uD305\uC744 \uC774 \uC5F0\uACB0\uB85C \uBC14\uAFC9\uB2C8\uB2E4.", "This replaces the link currently in force."],
+    "carry.pv_notice": [
+      '\uC6D0\uBCF8 \uCC44\uD305\uC740 \uC9C0\uAE08 \uD55C \uBC88\uB9CC \uC77D\uC73C\uBA70, \uC774\uD6C4 \uC6D0\uBCF8\uC774 \uBC14\uB00C\uC5B4\uB3C4 \uB530\uB77C\uC624\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC6D0\uBCF8 \uCC44\uD305\uC758 \uAC00\uC7A5 \uCD5C\uADFC \uB2F5\uC7A5\uC740 \uAE30\uC5B5 \uC815\uB9AC\uAC00 \uC544\uC9C1 \uB530\uB77C\uC624\uC9C0 \uC54A\uC544 \uBE60\uC84C\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4. PocketRisu\uC758 \uC5B4\uB290 \uCC44\uD305\uB3C4 \uAC74\uB4DC\uB9AC\uC9C0 \uC54A\uC73C\uBA70, \uBAA8\uB378\uC744 \uD638\uCD9C\uD558\uC9C0 \uC54A\uC544 \uBE44\uC6A9\uC774 \uB4E4\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC5B8\uC81C\uB4E0 "\uC5F0\uACB0 \uD574\uC81C"\uB85C \uB418\uB3CC\uB9B4 \uC218 \uC788\uC2B5\uB2C8\uB2E4(\uC774\uC804 \uC5F0\uACB0 \uAE30\uB85D\uC740 \uB0A8\uC544 \uC788\uC2B5\uB2C8\uB2E4).',
+      "The source chat is read once now, and later changes there do not follow. Its very last reply may not be included yet if memory has not caught up. This does not touch either chat in PocketRisu, calls no model, and costs nothing. You can undo it any time with Unlink (the earlier link is kept for the record)."
+    ],
+    "carry.changed": [
+      "\uBBF8\uB9AC \uBCF4\uAE30 \uC774\uD6C4 \uC6D0\uBCF8 \uCC44\uD305\uC774 \uBC14\uB00C\uC5C8\uC2B5\uB2C8\uB2E4. \uC0C8\uB85C \uC77D\uC740 \uB0B4\uC6A9\uC744 \uD655\uC778\uD55C \uB4A4 \uB2E4\uC2DC \uC5F0\uACB0\uD574 \uC8FC\uC138\uC694.",
+      "The source chat changed since the preview. Review the refreshed preview and confirm Link again."
+    ],
+    "carry.cutoff_turn": ["t{t}\uAE4C\uC9C0", "through t{t}"],
+    "carry.cutoff_end": ["\uB05D\uAE4C\uC9C0", "through the end"],
+    "carry.only_remember": ["\uC774\uC804 \uD0C0\uC784\uB77C\uC778 \xB7 {names}\uB9CC \uAE30\uC5B5", "earlier timeline \xB7 remembered only by {names}"],
+    "carry.linked_continue": ["{source}\uC5D0\uC11C \uC774\uC5B4\uBC1B\uC740 \uAE30\uC5B5 (\uC774 \uCC44\uD305\uC758 \uD134\uC774 \uC544\uB2D8)", "Carried from {source} (not this chat's own turns)"],
+    "carry.taken_at": ["\uC77D\uC740 \uC2DC\uAC01: {time}", "Taken: {time}"],
+    "carry.too_large": [
+      "\uC774 \uCC44\uD305\uC758 \uAE30\uC5B5\uC774 \uB108\uBB34 \uB9CE\uC544 \uC774\uC5B4\uBC1B\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4 ({n}\uC904, \uCD5C\uB300 {m}\uC904). \uB354 \uC774\uB978 \uD134\uC5D0\uC11C \uB04A\uC5B4 \uBCF4\uC138\uC694.",
+      "This chat has too much memory to carry ({n} lines, maximum {m}). Try cutting off at an earlier turn."
+    ],
+    "carry.err_no_link": ["\uD604\uC7AC \uC5F0\uACB0\uB41C \uC774\uC804 \uCC44\uD305\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "There is no link in force."],
+    "carry.err_not_found": ["\uD574\uB2F9 \uCC44\uD305\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "That chat could not be found."],
+    "carry.err_failed": ["\uC694\uCCAD\uC744 \uCC98\uB9AC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.", "The request could not be completed. Please try again."]
   };
   function t(lang, key, vars = {}) {
     const text2 = STRINGS[key][lang === "en" ? 1 : 0];
@@ -1280,34 +1427,129 @@ ${revisionHash}`;
     };
   }
 
+  // src/placement.ts
+  var MEMORY_MARKER = "[NMOS.memory]";
+  function isTextPart(part) {
+    return typeof part === "object" && part !== null && !Array.isArray(part) && part.type === "text" && typeof part.text === "string";
+  }
+  function findMarker(prompt) {
+    if (!Array.isArray(prompt)) return null;
+    for (let i = 0; i < prompt.length; i += 1) {
+      const m = prompt[i];
+      if (!m || typeof m !== "object") continue;
+      const content = m.content;
+      if (typeof content === "string") {
+        const offset = content.indexOf(MEMORY_MARKER);
+        if (offset >= 0) return { message: i, part: null, offset };
+      } else if (Array.isArray(content)) {
+        for (let j = 0; j < content.length; j += 1) {
+          const part = content[j];
+          if (!isTextPart(part)) continue;
+          const offset = part.text.indexOf(MEMORY_MARKER);
+          if (offset >= 0) return { message: i, part: j, offset };
+        }
+      }
+    }
+    return null;
+  }
+  function replaceInString(text2, packet, placed) {
+    if (!text2.includes(MEMORY_MARKER)) return { text: text2, changed: false, placed };
+    const parts = text2.split(MEMORY_MARKER);
+    if (placed) return { text: parts.join(""), changed: true, placed: true };
+    return { text: `${parts[0] ?? ""}${packet}${parts.slice(1).join("")}`, changed: true, placed: true };
+  }
+  function resolvePlaceholders(prompt, packet) {
+    if (!Array.isArray(prompt)) return prompt;
+    const cleanPacket = typeof packet === "string" ? packet.split(MEMORY_MARKER).join("") : "";
+    let out = null;
+    let placed = false;
+    for (let i = 0; i < prompt.length; i += 1) {
+      const m = prompt[i];
+      if (!m || typeof m !== "object") continue;
+      const content = m.content;
+      if (typeof content === "string") {
+        const res = replaceInString(content, cleanPacket, placed);
+        placed = res.placed;
+        if (res.changed) {
+          if (out === null) out = prompt.slice();
+          out[i] = { ...m, content: res.text };
+        }
+      } else if (Array.isArray(content)) {
+        let newParts = null;
+        for (let j = 0; j < content.length; j += 1) {
+          const part = content[j];
+          if (!isTextPart(part)) continue;
+          const res = replaceInString(part.text, cleanPacket, placed);
+          placed = res.placed;
+          if (res.changed) {
+            if (newParts === null) newParts = content.slice();
+            newParts[j] = { ...part, text: res.text };
+          }
+        }
+        if (newParts !== null) {
+          if (out === null) out = prompt.slice();
+          out[i] = { ...m, content: newParts };
+        }
+      }
+    }
+    return out ?? prompt;
+  }
+  function stripMarkers(prompt) {
+    return resolvePlaceholders(prompt, "");
+  }
+  function holdsText(prompt, text2) {
+    if (!text2 || typeof text2 !== "string" || !Array.isArray(prompt)) return false;
+    for (let i = 0; i < prompt.length; i += 1) {
+      const m = prompt[i];
+      if (!m || typeof m !== "object") continue;
+      const content = m.content;
+      if (typeof content === "string") {
+        if (content.includes(text2)) return true;
+      } else if (Array.isArray(content)) {
+        for (let j = 0; j < content.length; j += 1) {
+          const part = content[j];
+          if (isTextPart(part) && part.text.includes(text2)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // src/prompt.ts
   var PACKET_TAG = '<NarrativeMemory version="0" source="nmos">';
+  var GUARD_LINE = "(The user's most recent message comes before this memory and has already happened; where the two differ, that message wins.)";
+  var GUARD_RESERVE_TOKENS = 40;
   function contentText(content) {
     if (typeof content === "string") return content;
     if (content == null) return "";
     return JSON.stringify(content);
   }
   function isActive(message) {
-    return message.disabled !== true && !message.isComment;
+    return message != null && message.disabled !== true && !message.isComment;
   }
   function latestUserIndex(messages) {
+    if (!Array.isArray(messages)) return -1;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const m = messages[i];
-      if (m.role === "user" && isActive(m)) return i;
+      if (m && m.role === "user" && isActive(m)) return i;
     }
     return -1;
   }
+  function userTurnAnchor(hostMessages) {
+    if (!Array.isArray(hostMessages)) return "";
+    const hostIndex = latestUserIndex(hostMessages);
+    if (hostIndex < 0) return "";
+    const expected = cleanText(selectedContent(hostMessages[hostIndex]));
+    return expected ? anchorOf(expected, 64) : "";
+  }
   function userTurnIndex(prompt, hostMessages) {
     if (!Array.isArray(prompt)) return -1;
-    const hostIndex = latestUserIndex(hostMessages);
-    if (hostIndex < 0) return -1;
-    const expected = cleanText(selectedContent(hostMessages[hostIndex]));
-    if (!expected) return -1;
-    const anchor = anchorOf(expected, 64);
+    const anchor = userTurnAnchor(hostMessages);
+    if (!anchor) return -1;
     for (let i = prompt.length - 1; i >= 0; i -= 1) {
       if (prompt[i]?.role === "assistant") continue;
       const sent = cleanText(contentText(prompt[i]?.content));
-      if (sent === expected || sent.includes(anchor)) return i;
+      if (sent.includes(anchor)) return i;
     }
     return -1;
   }
@@ -1322,14 +1564,15 @@ ${revisionHash}`;
     const start = Math.floor((text2.length - size) / 2);
     return text2.slice(start, start + size);
   }
-  function inContextIds(prompt, hostMessages, minAnchor = 16, maxMisses = 3) {
+  function matchPromptToHost(prompt, hostMessages, minAnchor = 16, maxMisses = 3) {
+    const matches = /* @__PURE__ */ new Map();
+    if (!Array.isArray(prompt) || !Array.isArray(hostMessages)) return matches;
     const texts = prompt.map((m) => cleanText(contentText(m?.content)));
     let pointer = texts.length - 1;
-    let boundary = hostMessages.length;
     let misses = 0;
     for (let i = hostMessages.length - 1; i >= 0 && pointer >= 0; i -= 1) {
       const m = hostMessages[i];
-      if (!isActive(m)) continue;
+      if (!m || !isActive(m)) continue;
       const text2 = cleanText(selectedContent(m));
       if (text2.length < minAnchor) continue;
       const anchor = anchorOf(text2);
@@ -1341,12 +1584,21 @@ ${revisionHash}`;
         }
       }
       if (found >= 0) {
-        boundary = i;
+        matches.set(i, found);
         pointer = found - 1;
         misses = 0;
       } else if (++misses >= maxMisses) {
         break;
       }
+    }
+    return matches;
+  }
+  function inContextIds(prompt, hostMessages, minAnchor = 16, maxMisses = 3) {
+    const matches = matchPromptToHost(prompt, hostMessages, minAnchor, maxMisses);
+    if (matches.size === 0) return [];
+    let boundary = hostMessages.length;
+    for (const i of matches.keys()) {
+      if (i < boundary) boundary = i;
     }
     return hostMessages.slice(boundary).map((m) => String(m.chatId ?? "")).filter(Boolean);
   }
@@ -1355,7 +1607,9 @@ ${revisionHash}`;
     const message = { role: "system", content: packet };
     const out = prompt.slice();
     if (position === "end") {
-      out.push(message);
+      let index2 = out.length;
+      while (index2 > 0 && out[index2 - 1]?.role === "assistant") index2 -= 1;
+      out.splice(index2, 0, message);
       return out;
     }
     let index = turn >= 0 && turn < out.length && out[turn]?.role !== "assistant" ? turn : out.length;
@@ -1365,6 +1619,36 @@ ${revisionHash}`;
     while (index > 0 && out[index]?.role === "user" && out[index - 1]?.role === "user") index -= 1;
     out.splice(index, 0, message);
     return out;
+  }
+  function withGuard(packet) {
+    return packet ? `${packet}
+${GUARD_LINE}` : "";
+  }
+  function textAfterMarker(message, marker) {
+    const content = message?.content;
+    const start = marker.offset + MEMORY_MARKER.length;
+    if (marker.part === null) {
+      return typeof content === "string" ? content.slice(start) : "";
+    }
+    if (!Array.isArray(content)) return "";
+    const chunks = [];
+    const part = content[marker.part];
+    if (isTextPart(part)) chunks.push(part.text.slice(start));
+    for (let j = marker.part + 1; j < content.length; j += 1) {
+      const later = content[j];
+      if (isTextPart(later)) chunks.push(later.text);
+    }
+    return chunks.join("\n");
+  }
+  function landsAfterUserTurn(prompt, hostMessages, position, turn, marker) {
+    if (turn < 0) return position === "end" || marker !== null;
+    if (marker === null) return position === "end";
+    if (marker.message > turn) return true;
+    if (marker.message < turn) return false;
+    const anchor = userTurnAnchor(hostMessages);
+    if (!anchor) return true;
+    const after = Array.isArray(prompt) ? textAfterMarker(prompt[marker.message], marker) : "";
+    return !cleanText(after).includes(anchor);
   }
   function queryTexts(hostMessages) {
     const userIndex = latestUserIndex(hostMessages);
@@ -1378,6 +1662,144 @@ ${revisionHash}`;
       }
     }
     return { query, previousAi };
+  }
+
+  // src/budget.ts
+  var FIT_CAP = 8e3;
+  function budgetAdvice(r, current2) {
+    if (!r || r.outcome === "failed" || !r.memory || !(r.memory.cut > 0) || !(r.budgetTokens && r.budgetTokens > 0)) return null;
+    const all = typeof r.memory.fits_at === "number";
+    const suggest = all ? r.memory.fits_at : FIT_CAP;
+    if (suggest <= r.budgetTokens || current2 !== void 0 && current2 >= suggest) return null;
+    return { cut: r.memory.cut, offered: r.memory.offered, budget: r.budgetTokens, suggest, all };
+  }
+  function estimateTokens(text2) {
+    if (!text2) return 0;
+    let asciiChars = 0;
+    let otherChars = 0;
+    for (const ch of text2) {
+      if (ch.charCodeAt(0) < 128) asciiChars += 1;
+      else otherChars += 1;
+    }
+    return Math.ceil(asciiChars / 3.5 + otherChars * 1.2);
+  }
+
+  // src/trim.ts
+  var DROPPABLE_KEYS = /* @__PURE__ */ new Set(["role", "content", "memo", "attr", "thoughts"]);
+  var MIN_ANCHOR = 16;
+  function sameText(prompt, hostMessages, p, i) {
+    const m = prompt[p];
+    if (!m || typeof m.content !== "string") return false;
+    const sent = cleanText(m.content);
+    if (!sent) return false;
+    return sent === cleanText(selectedContent(hostMessages[i]));
+  }
+  function trimPrompt(prompt, hostMessages, keepFromId) {
+    const refuse = () => ({ prompt, dropped: 0, savedTokens: 0, reason: "format" });
+    if (!Array.isArray(prompt) || !Array.isArray(hostMessages) || typeof keepFromId !== "string" || !keepFromId) {
+      return refuse();
+    }
+    try {
+      const b = hostMessages.findIndex(
+        (m) => isActive(m) && m?.chatId != null && String(m.chatId) === keepFromId
+      );
+      if (b < 0) return refuse();
+      if (b > latestUserIndex(hostMessages)) return refuse();
+      const turn = userTurnIndex(prompt, hostMessages);
+      if (turn < 0) return refuse();
+      const pairs = matchPromptToHost(prompt, hostMessages);
+      let K = turn;
+      for (const [hostIdx, promptIdx] of pairs) {
+        if (hostIdx >= b && promptIdx < K) K = promptIdx;
+      }
+      let j = -1;
+      for (let i = b - 1; i >= 0; i -= 1) {
+        if (isActive(hostMessages[i]) && pairs.has(i)) {
+          j = i;
+          break;
+        }
+      }
+      if (j < 0) return refuse();
+      const jPrompt = pairs.get(j);
+      if (jPrompt === void 0) return refuse();
+      const run = /* @__PURE__ */ new Map([[jPrompt, j]]);
+      let q = jPrompt + 1;
+      for (let i = j + 1; i < b; i += 1) {
+        if (!isActive(hostMessages[i])) continue;
+        if (pairs.has(i)) return refuse();
+        if (q < K && sameText(prompt, hostMessages, q, i)) {
+          run.set(q, i);
+          q += 1;
+        } else {
+          break;
+        }
+      }
+      let p = jPrompt - 1;
+      for (let i = j - 1; i >= 0; i -= 1) {
+        if (!isActive(hostMessages[i])) continue;
+        if (pairs.has(i)) {
+          if (pairs.get(i) === p) {
+            run.set(p, i);
+            p -= 1;
+            continue;
+          }
+          break;
+        }
+        if (p >= 0 && sameText(prompt, hostMessages, p, i)) {
+          run.set(p, i);
+          p -= 1;
+          continue;
+        }
+        break;
+      }
+      for (const [hostIdx, promptIdx] of pairs) {
+        if (hostIdx < b && !run.has(promptIdx)) return refuse();
+      }
+      if (run.size === 0) return refuse();
+      let runStart = Infinity;
+      let runOldest = Infinity;
+      for (const [k, hostIdx] of run) {
+        if (k < runStart) runStart = k;
+        if (hostIdx < runOldest) runOldest = hostIdx;
+      }
+      const before = prompt.slice(0, runStart).map((m) => cleanText(contentText(m?.content)));
+      if (before.length > 0) {
+        for (let i = runOldest - 1; i >= 0; i -= 1) {
+          if (!isActive(hostMessages[i])) continue;
+          const text2 = cleanText(selectedContent(hostMessages[i]));
+          if (text2.length < MIN_ANCHOR) continue;
+          const anchor = anchorOf(text2);
+          if (before.some((t2) => t2.includes(anchor))) return refuse();
+        }
+      }
+      let savedTokens = 0;
+      for (const [k, hostIdx] of run) {
+        const m = prompt[k];
+        if (!m || m.role !== "user" && m.role !== "assistant") return refuse();
+        if (typeof m.content !== "string") return refuse();
+        if (Object.keys(m).some((key) => !DROPPABLE_KEYS.has(key))) return refuse();
+        if (m.content.includes(MEMORY_MARKER)) return refuse();
+        if (k >= K || k >= turn) return refuse();
+        const sent = cleanText(m.content).length;
+        const own = cleanText(selectedContent(hostMessages[hostIdx])).length;
+        if (sent > 1.25 * own + 64) return refuse();
+        savedTokens += estimateTokens(m.content);
+      }
+      const boundary = cleanText(selectedContent(hostMessages[b]));
+      if (boundary) {
+        let newest = -1;
+        for (const k of run.keys()) if (k > newest) newest = k;
+        const sent = cleanText(prompt[newest]?.content);
+        const own = cleanText(selectedContent(hostMessages[run.get(newest)]));
+        const at = own ? sent.lastIndexOf(own) : -1;
+        const tail = at >= 0 ? sent.slice(at + own.length) : sent;
+        if (tail.includes(boundary)) return refuse();
+      }
+      const out = prompt.filter((_, idx) => !run.has(idx));
+      return { prompt: out, dropped: run.size, savedTokens, reason: null };
+    } catch {
+      return refuse();
+    }
   }
 
   // src/failure.ts
@@ -1401,9 +1823,33 @@ ${revisionHash}`;
   // src/core.ts
   var DeadlineError = class extends Error {
   };
+  var FAILED_TRIM = { keepFromId: null, keepFromTurn: null, reason: "failed" };
+  function keepRecentTurnsOf(settings) {
+    if (!settings.trimOldTurns) return 0;
+    const n = settings.keepRecentTurns;
+    const k = typeof n === "number" && Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_KEEP_RECENT_TURNS;
+    return Math.min(MAX_KEEP_RECENT_TURNS, Math.max(MIN_KEEP_RECENT_TURNS, k));
+  }
+  var finiteOrNull = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
+  function trimDecisionOf(fresh, trim) {
+    if (!fresh) return FAILED_TRIM;
+    if (!trim || typeof trim !== "object") return { keepFromId: null, keepFromTurn: null, reason: "unsupported" };
+    const t2 = trim;
+    const keepFromId = typeof t2.keep_from_id === "string" && t2.keep_from_id ? t2.keep_from_id : null;
+    const reason = typeof t2.reason === "string" ? t2.reason : null;
+    if (!keepFromId && reason === null) return FAILED_TRIM;
+    return { keepFromId, keepFromTurn: finiteOrNull(t2.keep_from_turn), reason };
+  }
+  function coverageOf(coverage) {
+    if (!coverage || typeof coverage !== "object") return null;
+    const c = coverage;
+    return { recordedThroughTurn: finiteOrNull(c.recorded_through_turn), coveredThroughTurn: finiteOrNull(c.covered_through_turn) };
+  }
   var SUCCESS_TTL_MS = 10 * 6e4;
   var FAILURE_TTL_MS = 3e4;
   var CACHE_LIMIT = 64;
+  var RETRY_MEMO_TTL_MS = 12e4;
+  var RETRY_MEMO_LIMIT = 4;
   var BODY_CHUNK = 250;
   var NAME_TTL_MS = 10 * 6e4;
   var CANON_TIMEOUT_MS = 3e4;
@@ -1419,6 +1865,7 @@ ${revisionHash}`;
   }
   function createAdapter(host, onActivity) {
     const cache = /* @__PURE__ */ new Map();
+    const returnedMemo = /* @__PURE__ */ new Map();
     const conversations = /* @__PURE__ */ new Map();
     const names = /* @__PURE__ */ new Map();
     const canonSent = /* @__PURE__ */ new Map();
@@ -1550,9 +1997,38 @@ ${revisionHash}`;
       if (!personas || host.now() - personas.at > PERSONA_TTL_MS) warmPersonas();
       return personas?.value ? personaOf(chat, personas.value) : null;
     }
-    function remember(key, packet, ttl, failed = false, memory = null, vectors = null, canon) {
-      cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon });
+    function remember(key, packet, ttl, failed = false, memory = null, vectors = null, canon, trim = null, coverage = null) {
+      cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon, trim, coverage });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
+    }
+    function promptSignature(prompt) {
+      if (!Array.isArray(prompt)) return null;
+      try {
+        return JSON.stringify(prompt.map((m) => [m?.role ?? null, m?.content ?? null]));
+      } catch {
+        return null;
+      }
+    }
+    function isReturnedMemo(prompt, now) {
+      if (returnedMemo.size === 0) return false;
+      const sig = promptSignature(prompt);
+      if (sig === null) return false;
+      const expires = returnedMemo.get(sig);
+      if (expires === void 0) return false;
+      if (expires <= now) {
+        returnedMemo.delete(sig);
+        return false;
+      }
+      return true;
+    }
+    function memoiseReturned(prompt) {
+      const sig = promptSignature(prompt);
+      if (sig === null) return;
+      returnedMemo.delete(sig);
+      returnedMemo.set(sig, host.now() + RETRY_MEMO_TTL_MS);
+      while (returnedMemo.size > RETRY_MEMO_LIMIT) {
+        returnedMemo.delete(returnedMemo.keys().next().value);
+      }
     }
     async function within(work, deadline, what) {
       const remaining = deadline - host.now();
@@ -1615,7 +2091,7 @@ ${revisionHash}`;
       if (result.status === "needs_bodies") throw new Error("sidecar still needs bodies");
       return { ...result, rewritten: rewritten2 };
     }
-    async function beforeRequest(prompt, mode) {
+    async function prepare(prompt, mode) {
       const started = host.now();
       const since = epoch;
       let settings = null;
@@ -1624,16 +2100,19 @@ ${revisionHash}`;
       let announced = false;
       let failure = null;
       let lateAt = null;
+      let k = 0;
       const late = (at) => {
         lateAt = at;
         if (failure) failure.neededMs = Math.round(at - started);
       };
       try {
-        if (mode !== "model" || hasPacket(prompt)) return prompt;
+        if (mode !== "model") return prompt;
+        if (isReturnedMemo(prompt, started) || hasPacket(prompt)) return prompt;
         settings = await within(host.settings(), started + DEFAULT_DEADLINE_MS, "the plugin settings");
         if (!settings.enabled || !settings.sidecarUrl) return prompt;
         if (!secureContext()) throw new Error(INSECURE_ERROR);
         const deadline = started + settings.deadlineMs;
+        k = keepRecentTurnsOf(settings);
         emit({ type: "request-start" });
         announced = true;
         const chat = await within(host.currentChat(), deadline, "the host chat read");
@@ -1672,6 +2151,45 @@ ${revisionHash}`;
           });
           return prompt;
         }
+        const marker = findMarker(prompt);
+        const position = settings.injectPosition;
+        const after = landsAfterUserTurn(prompt, messages, position, turn, marker);
+        const budget = after ? Math.max(0, settings.reservedMemoryTokens - GUARD_RESERVE_TOKENS) : settings.reservedMemoryTokens;
+        const place = (p, packet2, at) => {
+          if (!packet2) return { out: stripMarkers(p), placed: false };
+          if (holdsText(p, packet2.split(MEMORY_MARKER).join(""))) return { out: stripMarkers(p), placed: false };
+          const text2 = after ? withGuard(packet2) : packet2;
+          return {
+            out: marker ? resolvePlaceholders(p, text2) : stripMarkers(injectPacket(p, text2, position, at)),
+            placed: true
+          };
+        };
+        const finishPrompt = (packet2, decision2) => {
+          let p = prompt;
+          let dropped = 0;
+          let savedTokens = 0;
+          let reason = decision2?.reason ?? null;
+          if (decision2?.keepFromId) {
+            if (!packet2) reason = "empty_packet";
+            else {
+              const r = trimPrompt(prompt, messages, decision2.keepFromId);
+              p = r.prompt;
+              dropped = r.dropped;
+              savedTokens = r.savedTokens;
+              reason = r.reason;
+            }
+          }
+          const { out, placed } = place(p, packet2, turn - dropped);
+          if (out !== prompt && (placed || dropped > 0)) memoiseReturned(out);
+          const outcome2 = {
+            dropped,
+            savedTokens,
+            reason,
+            keepFromTurn: dropped > 0 ? decision2?.keepFromTurn ?? null : null
+          };
+          return { out, trim: outcome2 };
+        };
+        const shown = (o) => ({ dropped: o.dropped, savedTokens: o.savedTokens, reason: o.reason });
         const t0 = host.now();
         const { request, bodies } = await within(buildManifest(
           chat,
@@ -1691,7 +2209,9 @@ ${revisionHash}`;
           settings.sidecarUrl.replace(/\/+$/, ""),
           settings.route,
           settings.authToken,
-          settings.reservedMemoryTokens
+          budget,
+          !!settings.trimOldTurns,
+          k
         ])), deadline, "the cache key");
         const canon = await observeCanon(chat, prompt, deadline);
         const canonKey = JSON.stringify([canon?.snapshot?.id ?? null, canon?.held ?? []]);
@@ -1700,6 +2220,7 @@ ${revisionHash}`;
           const known = conversations.get(chat.id);
           if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
           const outcome2 = cached.packet ? "injected" : "nothing-relevant";
+          const done2 = finishPrompt(cached.packet, k > 0 ? cached.failed ? FAILED_TRIM : cached.trim ?? FAILED_TRIM : null);
           if (!cached.failed) last = {
             at: Date.now(),
             ms: Math.round(host.now() - started),
@@ -1707,9 +2228,11 @@ ${revisionHash}`;
             packet: cached.packet,
             outcome: outcome2,
             deadlineMs: settings.deadlineMs,
-            budgetTokens: settings.reservedMemoryTokens,
+            budgetTokens: budget,
             memory: cached.memory ?? null,
-            vectors: cached.vectors ?? null
+            vectors: cached.vectors ?? null,
+            ...k > 0 ? { trim: done2.trim } : {},
+            ...cached.coverage ? { coverage: cached.coverage } : {}
           };
           emit({
             type: "request-end",
@@ -1717,9 +2240,10 @@ ${revisionHash}`;
             chars: cached.packet.length,
             reused: true,
             vectors: cached.vectors ?? null,
-            conversationId: conversations.get(chat.id) ?? null
+            conversationId: conversations.get(chat.id) ?? null,
+            ...k > 0 ? { trim: shown(done2.trim) } : {}
           });
-          return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
+          return done2.out;
         }
         const t1 = host.now();
         const synced = await sync(settings, request, bodies, deadline);
@@ -1739,17 +2263,21 @@ ${revisionHash}`;
           query,
           previous_ai: previousAi,
           in_context_ids: inContext,
-          budget_tokens: settings.reservedMemoryTokens,
+          budget_tokens: budget,
           client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
           canon_manifest_id: canon?.snapshot?.id ?? null,
-          canon_held: canon?.held ?? []
+          canon_held: canon?.held ?? [],
+          // Only when the owner turned trimming on: without it the request is the one sent before PHASE-60.
+          ...k > 0 ? { trim: { keep_recent_turns: k, step: k } } : {}
         }, deadline, void 0, late);
         if (canon?.snapshot && synced.conversation_id) syncCanon(settings, synced.conversation_id, chat.id, canon.snapshot);
         const packet = retrieved.freshness === "fresh" ? retrieved.packet.text : "";
         const memory = retrieved.freshness === "fresh" ? retrieved.memory ?? null : null;
         const vectors = retrieved.freshness === "fresh" ? retrieved.vectors ?? null : null;
+        const decision = k > 0 ? trimDecisionOf(retrieved.freshness === "fresh", retrieved.trim) : null;
+        const coverage = coverageOf(retrieved.coverage);
         if (epoch !== since) throw new Error("memory changed during this request");
-        remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors, canonKey);
+        remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors, canonKey, decision, coverage);
         host.debug("[NMOS] request done", {
           ms: Math.round(host.now() - started),
           manifestMs: Math.round(manifestMs),
@@ -1758,6 +2286,7 @@ ${revisionHash}`;
           packetChars: packet.length
         });
         const outcome = packet ? "injected" : "nothing-relevant";
+        const done = finishPrompt(packet, decision);
         last = {
           at: Date.now(),
           ms: Math.round(host.now() - started),
@@ -1765,9 +2294,11 @@ ${revisionHash}`;
           packet,
           outcome,
           deadlineMs: settings.deadlineMs,
-          budgetTokens: settings.reservedMemoryTokens,
+          budgetTokens: budget,
           memory,
-          vectors
+          vectors,
+          ...k > 0 ? { trim: done.trim } : {},
+          ...coverage ? { coverage } : {}
         };
         emit({
           type: "request-end",
@@ -1775,9 +2306,10 @@ ${revisionHash}`;
           chars: packet.length,
           vectors,
           conversationId: synced.conversation_id ?? null,
-          ...synced.rewritten > 0 ? { rewritten: synced.rewritten } : {}
+          ...synced.rewritten > 0 ? { rewritten: synced.rewritten } : {},
+          ...k > 0 ? { trim: shown(done.trim) } : {}
         });
-        return injectPacket(prompt, packet, settings.injectPosition, turn);
+        return done.out;
       } catch (error) {
         if (key && epoch === since) remember(key, "", FAILURE_TTL_MS, true);
         last = failure = {
@@ -1787,7 +2319,9 @@ ${revisionHash}`;
           packet: "",
           outcome: "failed",
           error: error instanceof Error ? error.message : String(error),
-          deadlineMs: settings?.deadlineMs ?? 0
+          deadlineMs: settings?.deadlineMs ?? 0,
+          // Nothing is left out on any failure: the host's prompt goes as it is.
+          ...k > 0 ? { trim: { dropped: 0, savedTokens: 0, reason: "failed", keepFromTurn: null } } : {}
         };
         if (lateAt !== null) failure.neededMs = Math.round(lateAt - started);
         if (announced) emit({
@@ -1796,10 +2330,18 @@ ${revisionHash}`;
           chars: 0,
           error: last.error,
           deadlineMs: last.deadlineMs,
-          conversationId: chatId && conversations.get(chatId) || null
+          conversationId: chatId && conversations.get(chatId) || null,
+          ...k > 0 ? { trim: { dropped: 0, savedTokens: 0, reason: "failed" } } : {}
         });
         host.warn("[NMOS] memory skipped for this request (fail open):", error instanceof Error ? error.message : error);
         return prompt;
+      }
+    }
+    async function beforeRequest(prompt, mode) {
+      try {
+        return stripMarkers(await prepare(prompt, mode));
+      } catch {
+        return stripMarkers(prompt);
       }
     }
     function onOutput(arg2) {
@@ -1928,6 +2470,50 @@ ${revisionHash}`;
     };
   }
 
+  // src/trimtext.ts
+  var REASON_KEYS = /* @__PURE__ */ new Map([
+    ["format", "trim.reason.format"],
+    ["short", "trim.reason.short"],
+    ["uncovered", "trim.reason.uncovered"],
+    ["no_summaries", "trim.reason.no_summaries"],
+    ["stale", "trim.reason.stale"],
+    ["empty_packet", "trim.reason.empty_packet"],
+    ["failed", "trim.reason.failed"],
+    ["unsupported", "trim.reason.unsupported"]
+  ]);
+  function trimReason(lang, reason) {
+    if (reason === null) return "";
+    const key = REASON_KEYS.get(reason);
+    return key ? t(lang, key) : t(lang, "trim.reason.other", { r: reason });
+  }
+  function trimStatusLine(lang, trim) {
+    if (!trim) return null;
+    if (trim.dropped > 0) {
+      const locale = lang === "en" ? "en-US" : "ko-KR";
+      return t(lang, "trim.left_out", { n: trim.dropped, t: trim.savedTokens.toLocaleString(locale) });
+    }
+    if (trim.reason !== null) {
+      return t(lang, "trim.kept", { r: trimReason(lang, trim.reason) });
+    }
+    return null;
+  }
+  function coverageLine(lang, coverage) {
+    const n = coverage?.recordedThroughTurn;
+    if (typeof n !== "number" || !Number.isFinite(n)) return null;
+    return t(lang, "trim.recorded_through", { n: n.toLocaleString(lang === "en" ? "en-US" : "ko-KR") });
+  }
+  function trimHudSuffix(lang, trim) {
+    if (!trim) return "";
+    if (trim.dropped > 0) {
+      const locale = lang === "en" ? "en-US" : "ko-KR";
+      return t(lang, "hud.trim.left_out", { n: trim.dropped, t: trim.savedTokens.toLocaleString(locale) });
+    }
+    if (trim.reason !== null) {
+      return t(lang, "hud.trim.kept", { r: trimReason(lang, trim.reason) });
+    }
+    return "";
+  }
+
   // src/hud.ts
   var OUTCOME_MS = 4e3;
   var DONE_MS = 3e3;
@@ -1951,7 +2537,8 @@ ${revisionHash}`;
           until: now + OUTCOME_MS,
           reused: event.reused,
           vectors: event.vectors,
-          rewritten: event.rewritten
+          rewritten: event.rewritten,
+          trim: event.trim
         } };
       case "coverage": {
         const shown = state.progress && "coverage" in state.progress ? state.progress : null;
@@ -1983,16 +2570,13 @@ ${revisionHash}`;
         const how = [
           r.reused ? t(lang, "hud.reused") : "",
           r.vectors === "fallback" ? t(lang, "hud.lexical") : "",
-          r.rewritten ? t(lang, "hud.rewritten", { n: r.rewritten }) : ""
+          r.rewritten ? t(lang, "hud.rewritten", { n: r.rewritten }) : "",
+          trimHudSuffix(lang, r.trim)
         ].filter(Boolean).join("");
         return { kind: "ok", text: t(lang, "hud.injected", { n: r.chars }) + how, fraction: null };
       }
       if (r.outcome === "nothing-relevant") {
-        return {
-          kind: "muted",
-          text: t(lang, "hud.nothing") + (r.rewritten ? t(lang, "hud.rewritten", { n: r.rewritten }) : ""),
-          fraction: null
-        };
+        return { kind: "muted", text: t(lang, "hud.nothing") + (r.rewritten ? t(lang, "hud.rewritten", { n: r.rewritten }) : "") + trimHudSuffix(lang, r.trim), fraction: null };
       }
       if (r.outcome === "chat-off") return { kind: "muted", text: t(lang, "hud.chat_off"), fraction: null };
       if (r.outcome === "skipped") return { kind: "warn", text: t(lang, "hud.skipped", { r: t(lang, "hud.reason.no_turn") }), fraction: null };
@@ -2316,16 +2900,6 @@ ${revisionHash}`;
     } catch {
       return "direct";
     }
-  }
-
-  // src/budget.ts
-  var FIT_CAP = 8e3;
-  function budgetAdvice(r, current2) {
-    if (!r || r.outcome === "failed" || !r.memory || !(r.memory.cut > 0) || !(r.budgetTokens && r.budgetTokens > 0)) return null;
-    const all = typeof r.memory.fits_at === "number";
-    const suggest = all ? r.memory.fits_at : FIT_CAP;
-    if (suggest <= r.budgetTokens || current2 !== void 0 && current2 >= suggest) return null;
-    return { cut: r.memory.cut, offered: r.memory.offered, budget: r.budgetTokens, suggest, all };
   }
 
   // src/parser-form.ts
@@ -3030,6 +3604,62 @@ ${revisionHash}`;
     pick(g.focus);
   }
 
+  // src/carrytext.ts
+  var CARRY_MAX_NAMES = 8;
+  var REFUSAL_MARKER = /^(?:\/v1\/\S+ -> HTTP 422:\s*)?too_many_rows:\s*rows=(\d+)\s+max=(\d+)\b/;
+  function carryRefusal(message) {
+    const m = REFUSAL_MARKER.exec(message.trim());
+    if (!m) return null;
+    return { rows: Number(m[1]), max: Number(m[2]) };
+  }
+  function rawMessage(error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  function isCarryNotFound(error) {
+    return /\bHTTP 404\b|^404\b/.test(rawMessage(error));
+  }
+  function isCarryConflict(error) {
+    return /\bHTTP 409\b|^409\b/.test(rawMessage(error));
+  }
+  function parseCutoffTurn(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed) return { ok: true, value: null };
+    if (!/^\d+$/.test(trimmed)) return { ok: false };
+    const n = Number(trimmed);
+    return Number.isSafeInteger(n) ? { ok: true, value: n } : { ok: false };
+  }
+  function carrySourceLabel(source) {
+    const ch = (source.character ?? "").trim();
+    const chat = (source.chat ?? "").trim();
+    return ch && chat && chat !== ch ? `${ch} \xB7 ${chat}` : ch || chat || source.id.slice(0, 8);
+  }
+  function carryCutoffLabel(lang, turn) {
+    return typeof turn === "number" && Number.isFinite(turn) ? t(lang, "carry.cutoff_turn", { t: turn }) : t(lang, "carry.cutoff_end");
+  }
+  function carryCountsLine(lang, counts) {
+    return t(lang, "carry.pv_counts", {
+      f: counts.facts,
+      a: counts.aliases,
+      th: counts.threads,
+      story: t(lang, counts.story ? "carry.story_yes" : "carry.story_no")
+    });
+  }
+  function carryErrorText(lang, error, fallback) {
+    const raw = rawMessage(error);
+    const refusal = carryRefusal(raw);
+    if (refusal) return t(lang, "carry.too_large", { n: refusal.rows, m: refusal.max });
+    if (isCarryNotFound(error)) {
+      return /no link in force/i.test(raw) ? t(lang, "carry.err_no_link") : t(lang, "carry.err_not_found");
+    }
+    if (/^\/v1\/\S+ -> HTTP 422: /.test(raw)) return fallback(lang, error);
+    const http = /^(?:\/v1\/\S+ -> )?HTTP \d{3}(?::\s*(.*))?$/.exec(raw.trim());
+    if (http) {
+      const detail = (http[1] ?? "").trim();
+      return detail && detail !== "[object Object]" ? `${t(lang, "sidecar_error")}${detail}` : t(lang, "carry.err_failed");
+    }
+    return fallback(lang, error);
+  }
+
   // src/restore.ts
   function base64Of(bytes) {
     let s = "";
@@ -3111,7 +3741,9 @@ ${revisionHash}`;
     conn: "conn.title",
     llm: "llm.title",
     emb: "emb.title",
-    tune: "tune.title"
+    rerank: "rerank.title",
+    tune: "tune.title",
+    trim: "trimset.title"
   };
   var CSS = `
 html,body{margin:0;background:${PALETTE.bg}}
@@ -3503,6 +4135,10 @@ html,body{margin:0;background:${PALETTE.bg}}
           el("div", { class: "line" }, el("span", { class: `dot ${kind}` }), el("span", { text: what })),
           el("div", { class: "muted", text: `${L("status.ago", { n: Math.round((Date.now() - s.last.at) / 1e3) })} \xB7 ${s.last.ms}ms` })
         );
+        const trimmed = trimStatusLine(lang, s.last.trim);
+        if (trimmed !== null) lastCard.append(el("div", { class: "muted", text: trimmed }));
+        const recorded = coverageLine(lang, s.last.coverage);
+        if (recorded !== null) lastCard.append(el("div", { class: "muted", text: recorded }));
         if (s.last.packet) lastCard.append(el(
           "details",
           { class: "help" },
@@ -3715,6 +4351,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("details", { class: "sub help" }, el("summary", { text: L("act.help") }), el("p", { text: L("act.sub") }))
     );
     const linkCard = el("div", { class: "card", style: "display:none" });
+    const pinCard = el("div", { class: "card", style: "display:none" });
     const modeCard = el("div", { class: "card", style: "display:none" });
     const statusCard = el("div", { id: "nmos-status-windows", class: "card", style: "display:none" });
     const picked = /* @__PURE__ */ new Set();
@@ -3746,6 +4383,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       bulkBar,
       modeCard,
       statusCard,
+      pinCard,
       linkCard,
       inspectorBody,
       inspectorAddress
@@ -4212,7 +4850,10 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       actions.style.display = rawInspector ? "" : "none";
       const shownEntity = inspectorEntity(path);
-      if (!shownEntity) linkCard.style.display = "none";
+      if (!shownEntity) {
+        linkCard.style.display = "none";
+        pinCard.style.display = "none";
+      }
       if (!rawInspector || shownEntity) {
         modeCard.style.display = "none";
         statusCard.style.display = "none";
@@ -4223,6 +4864,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       } else {
         shownPath = null;
         inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("insp.loading") }));
+        pinCard.style.display = "none";
       }
       const base = (await deps.getArg("sidecar_url") || "http://127.0.0.1:8790").replace(/\/+$/, "");
       const direct = routeFor(base, await deps.getArg("route")) === "direct";
@@ -4259,7 +4901,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         } else if (keep) restore(keep);
         else root.scrollTop = 0;
         if (viewsOn) syncShellForPath(path);
-        if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
+        if (shownEntity) void showEntityCards(shownEntity.conversation, shownEntity.entity, load);
         else if (conversation && !isView && !attentionMode) {
           void showMode(conversation, load);
           void showStatusWindows(conversation, load);
@@ -4268,6 +4910,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (load !== loads) return;
         shownPath = null;
         retryButton.style.display = "none";
+        pinCard.style.display = "none";
         inspectorBody.replaceChildren(el("div", { class: "card err", text: errorText(lang, error) }));
       } finally {
         if (load === loads) inspectorBody.classList.remove("busy");
@@ -4499,14 +5142,59 @@ html,body{margin:0;background:${PALETTE.bg}}
       box.append(el("div", { class: "btns" }, ok, cancel));
       spot.replaceChildren(box);
     }
-    async function showLinks(conversation, entity, load) {
+    async function showEntityCards(conversation, entity, load) {
       let entities;
       try {
-        entities = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
+        const rows = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
+        entities = Array.isArray(rows) ? rows : null;
       } catch {
-        entities = [];
+        entities = null;
       }
       if (load !== loads) return;
+      showPin(conversation, entity, entities);
+      showLinks(conversation, entity, entities ?? []);
+    }
+    let pinSaid = null;
+    function showPin(conversation, entity, entities) {
+      const row = entities?.find((e) => e.id === entity);
+      const said = pinSaid?.entity === entity ? pinSaid.key : null;
+      pinSaid = null;
+      if (!row || row.type !== "character" || row.persona || row.excluded) {
+        pinCard.style.display = "none";
+        pinCard.replaceChildren();
+        return;
+      }
+      const pinned = typeof row.pinned === "string" && row.pinned ? row.pinned : null;
+      const box = el("input", { type: "checkbox" });
+      box.checked = pinned !== null;
+      const msg = el("div", { class: "msg", role: "status" });
+      if (said) say(msg, L(said), "ok");
+      box.addEventListener("change", async () => {
+        const on = box.checked;
+        box.disabled = true;
+        say(msg, "");
+        try {
+          if (on) await deps.api("POST", `/v1/conversations/${conversation}/repairs`, { kind: "entity_pin", item: entity }, 15e3);
+          else if (pinned) await deps.api("POST", `/v1/conversations/${conversation}/repairs/${pinned}/remove`, {}, 15e3);
+          pinSaid = { entity, key: on ? "pin.done" : "pin.undone" };
+          say(msg, L(pinSaid.key), "ok");
+          await showInspector();
+        } catch (error) {
+          box.checked = !on;
+          say(msg, errorText(lang, error), "err");
+        } finally {
+          box.disabled = false;
+        }
+      });
+      pinCard.replaceChildren(
+        el("h2", { text: L("pin.title", { n: row.name }) }),
+        el("p", { class: "sub", text: L("pin.sub") }),
+        el("label", { class: "check" }, box, el("span", { text: L("pin.toggle") })),
+        msg
+      );
+      pinCard.style.display = "";
+    }
+    function showLinks(conversation, entity, entities) {
       const choices = linkChoices(entities, entity);
       if (!choices) {
         linkCard.style.display = "none";
@@ -5171,6 +5859,52 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (p.minSim !== void 0) minSim.value = String(p.minSim);
       }
     );
+    let rerankKnown = false;
+    const rerankUrl = el("input", { placeholder: "https://\u2026/v1", spellcheck: "false" });
+    const rerankModel = el("input", { placeholder: L("rerank.model_placeholder"), spellcheck: "false" });
+    const rerankKey = el("input", { type: "password", placeholder: L("model.key_placeholder"), autocomplete: "off" });
+    const rerankTimeout = el("input", { type: "number", min: MIN_RERANK_TIMEOUT_MS, max: MAX_RERANK_TIMEOUT_MS, step: 50 });
+    const rerankDot = el("span", { class: "dot" });
+    const rerankStateText = el("span", { text: L("rerank.off") });
+    const rerankState = el("div", { class: "line muted" }, rerankDot, rerankStateText);
+    const rerankCard = el(
+      "div",
+      { class: "card", style: "display:none" },
+      el("h2", { text: L("rerank.title") }),
+      rerankState,
+      el("p", { class: "sub", text: L("rerank.sub") }),
+      field(L("rerank.url"), rerankUrl),
+      field(L("model.model"), rerankModel),
+      field(L("model.key"), rerankKey),
+      field(L("rerank.timeout"), rerankTimeout)
+    );
+    settingsView.append(rerankCard);
+    const rerank = {
+      values: () => ({ url: rerankUrl.value, model: rerankModel.value, key: rerankKey.value, timeout: rerankTimeout.value }),
+      fill(cfg) {
+        rerankKnown = Boolean(cfg);
+        if (cfg) {
+          rerankUrl.value = cfg.url;
+          rerankModel.value = cfg.model;
+          rerankKey.value = "";
+          rerankKey.placeholder = L(cfg.key_set ? "model.key_saved" : "model.key_placeholder");
+          rerankTimeout.value = String(cfg.timeout_ms);
+          rerankState.className = cfg.configured ? "line ok" : "line muted";
+          rerankDot.className = cfg.configured ? "dot ok" : "dot";
+          rerankStateText.textContent = L(cfg.configured ? "rerank.on" : "rerank.off");
+        } else {
+          rerankUrl.value = "";
+          rerankModel.value = "";
+          rerankKey.value = "";
+          rerankKey.placeholder = L("model.key_placeholder");
+          rerankTimeout.value = "";
+          rerankState.className = "line muted";
+          rerankDot.className = "dot";
+          rerankStateText.textContent = L("rerank.off");
+        }
+        rerankCard.style.display = rerankKnown && (!viewsOn || currentGroup === "models") ? "" : "none";
+      }
+    };
     const threshold = el("input", { type: "number", step: 0.05, min: 0.05, max: 1 });
     const minSim = el("input", { type: "number", step: 0.01, min: 0, max: 1 });
     const embedWait = el("input", { type: "number", step: 100, min: 100, max: 5e3 });
@@ -5179,6 +5913,8 @@ html,body{margin:0;background:${PALETTE.bg}}
     const backfill = el("input", { type: "number", min: 0, max: 5e3 });
     const summaries = el("input", { type: "checkbox" });
     const canonFacts = el("input", { type: "checkbox" });
+    const pinAt = el("input", { type: "checkbox", disabled: true });
+    let pinAtKnown = false;
     settingsView.append(el(
       "div",
       { class: "card" },
@@ -5196,7 +5932,25 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("div", { class: "check" }, summaries, el("span", { text: L("tune.summaries") })),
       el("p", { class: "sub", text: L("tune.summaries_hint") }),
       el("div", { class: "check" }, canonFacts, el("span", { text: L("tune.canon_facts") })),
-      el("p", { class: "sub", text: L("tune.canon_facts_hint") })
+      el("p", { class: "sub", text: L("tune.canon_facts_hint") }),
+      el("div", { class: "check" }, pinAt, el("span", { text: L("tune.pin_at") })),
+      el("p", { class: "sub", text: L("tune.pin_at_hint") })
+    ));
+    const trimOn = el("input", { type: "checkbox" });
+    const trimKeep = el("input", { type: "number", min: MIN_KEEP_RECENT_TURNS, max: MAX_KEEP_RECENT_TURNS, step: 1 });
+    trimKeep.value = String(DEFAULT_KEEP_RECENT_TURNS);
+    const trimWarn = el("div", { class: "warn", text: L("trimset.needs_summaries"), style: "display:none" });
+    const syncTrimWarn = () => {
+      trimWarn.style.display = trimOn.checked && !summaries.checked ? "" : "none";
+    };
+    settingsView.append(el(
+      "div",
+      { class: "card" },
+      el("h2", { text: L("trimset.title") }),
+      el("p", { class: "sub", text: L("trimset.sub") }),
+      el("div", { class: "check" }, trimOn, el("span", { text: L("trimset.on") })),
+      field(L("trimset.keep"), trimKeep),
+      trimWarn
     ));
     const rules = el("textarea", {
       id: "nmos-parser-draft",
@@ -5508,6 +6262,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         },
         llm: llm.values(),
         emb: emb.values(),
+        rerank: rerank.values(),
         tune: {
           threshold: threshold.value,
           minSim: minSim.value,
@@ -5516,8 +6271,10 @@ html,body{margin:0;background:${PALETTE.bg}}
           facts: factsLimit.value,
           backfill: backfill.value,
           summaries: summaries.checked,
-          canonFacts: canonFacts.checked
-        }
+          canonFacts: canonFacts.checked,
+          pinAt: pinAt.checked
+        },
+        trim: { on: trimOn.checked, keep: trimKeep.value }
       };
     }
     let baseline = values();
@@ -5525,6 +6282,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     const dirty = () => dirtySections(baseline, values());
     function update(message) {
       const d = dirty();
+      syncTrimWarn();
       save.disabled = d.length === 0;
       revert.disabled = d.length === 0;
       if (message) say(barText, message.text, message.kind);
@@ -5542,10 +6300,19 @@ html,body{margin:0;background:${PALETTE.bg}}
       token.value = await deps.getArg("auth_token") || "";
       hudBox.checked = Number(await deps.getArg("hud")) === 1;
     }
+    async function loadTrim() {
+      const stored = trimArgs({
+        on: Number(await deps.getArg("trim_old_turns")) === 1,
+        keep: String(await deps.getArg("keep_recent_turns") ?? "")
+      });
+      trimOn.checked = stored.trim_old_turns === 1;
+      trimKeep.value = String(stored.keep_recent_turns);
+    }
     function fillServer(cfg) {
       install = cfg.install ?? null;
       llm.fill(cfg.llm);
       emb.fill(cfg.embeddings);
+      rerank.fill(cfg.rerank);
       threshold.value = String(cfg.recall.threshold);
       minSim.value = String(cfg.recall.vector_min_sim);
       embedWait.value = cfg.recall.embed_timeout_ms === void 0 ? "" : String(cfg.recall.embed_timeout_ms);
@@ -5555,10 +6322,14 @@ html,body{margin:0;background:${PALETTE.bg}}
       backfill.value = String(cfg.extraction.backfill);
       summaries.checked = cfg.extraction.summaries !== false;
       canonFacts.checked = cfg.extraction.canon_facts !== false;
+      pinAtKnown = typeof cfg.recall.pin_at_mentions === "boolean";
+      pinAt.checked = cfg.recall.pin_at_mentions === true;
+      pinAt.disabled = !pinAtKnown;
       fillParsers(cfg);
     }
     async function loadAll() {
       await loadConn();
+      await loadTrim();
       try {
         fillServer(await deps.api("GET", "/v1/config", void 0, 5e3));
       } catch {
@@ -5612,7 +6383,20 @@ html,body{margin:0;background:${PALETTE.bg}}
       let connSaved = 0;
       let connTotal = 0;
       let connComplete = !d.includes("conn");
+      let trimComplete = !d.includes("trim");
       try {
+        if (d.includes("trim")) {
+          const args = trimArgs(v.trim);
+          await deps.setArg("trim_old_turns", args.trim_old_turns);
+          await deps.setArg("keep_recent_turns", args.keep_recent_turns);
+          trimComplete = true;
+          trimKeep.value = String(args.keep_recent_turns);
+          baseline = { ...baseline, trim: values().trim };
+          if (d.length === 1) {
+            update({ text: L("saved"), kind: "ok" });
+            return true;
+          }
+        }
         if (d.includes("conn")) {
           parserSupported = false;
           updateParser();
@@ -5627,7 +6411,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           deadline.value = String(args.deadline_ms);
           baseline = { ...baseline, conn: values().conn };
         }
-        const body = configBody(d, v);
+        const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown });
         const tight = (d.includes("tune") || d.includes("conn")) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline) ? ` ${L("tune.embed_wait_tight", { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : "";
         if (!Object.keys(body).length) {
           fillServer(await deps.api("GET", "/v1/config", void 0, 5e3));
@@ -5656,7 +6440,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         return true;
       } catch (error) {
         const text2 = errorText(lang, error);
-        update({ text: !connComplete ? L("conn_save_failed", { n: connSaved, total: connTotal, e: text2 }) : d.includes("conn") ? L("conn_saved_server_failed", { e: text2 }) : text2, kind: "err" });
+        update({ text: !trimComplete ? text2 : !connComplete ? L("conn_save_failed", { n: connSaved, total: connTotal, e: text2 }) : d.includes("conn") ? L("conn_saved_server_failed", { e: text2 }) : text2, kind: "err" });
         return false;
       }
     }
@@ -6309,7 +7093,9 @@ html,body{margin:0;background:${PALETTE.bg}}
         [L("conn.title")]: "connection",
         [L("llm.title")]: "models",
         [L("emb.title")]: "models",
+        [L("rerank.title")]: "models",
         [L("tune.title")]: "memory",
+        [L("trimset.title")]: "memory",
         [L("rules.title")]: "rules",
         [L("exp.title")]: "backup",
         [L("rst.title")]: "backup"
@@ -6352,7 +7138,9 @@ html,body{margin:0;background:${PALETTE.bg}}
       for (const btn of Array.from(groupList.querySelectorAll("button[data-group]"))) {
         btn.classList.toggle("on", btn.dataset.group === group);
       }
-      for (const page of pages()) page.style.display = page.dataset.group === group ? "" : "none";
+      for (const page of pages()) {
+        page.style.display = page.dataset.group === group && (page !== rerankCard || rerankKnown) ? "" : "none";
+      }
       if (group === "connection") void refreshStatus();
       if (group === "chat") showChatPage();
     }
@@ -6398,9 +7186,406 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("div", { class: "maint-list" }, ...maintRows),
         actionMsg
       );
-      chatPage.replaceChildren(switchSlot, modeCard, statusCard, maintCard);
+      const pinsCard = el("div", { class: "card" }, el("h2", { text: L("pins.title") }), el("p", { class: "sub", text: L("pin.sub") }));
+      const carryCard = el("div", { class: "card", style: "display:none" });
+      chatPage.replaceChildren(switchSlot, modeCard, statusCard, pinsCard, carryCard, maintCard);
+      void showPins(cid, pinsCard);
+      void showCarry(cid, carryCard);
       void showMode(cid, loads);
       void showStatusWindows(cid, loads);
+    }
+    async function showCarry(conversation, card, said) {
+      const carryHead = () => [
+        el("h2", { text: L("carry.title") }),
+        el("p", { class: "sub", text: L("carry.sub") }),
+        el("p", { class: "sub", text: L("carry.policy_note") })
+      ];
+      let state;
+      try {
+        const res = await deps.api("GET", `/v1/conversations/${conversation}/carry`, void 0, 15e3);
+        if (!res || typeof res !== "object" || !("in_force" in res)) {
+          card.style.display = "none";
+          card.replaceChildren();
+          return;
+        }
+        state = res;
+      } catch (error) {
+        if (!card.isConnected || actionConversation !== conversation) return;
+        if (isCarryNotFound(error)) {
+          card.style.display = "none";
+          card.replaceChildren();
+          return;
+        }
+        const errMsg = el("div", { class: "msg", role: "status" });
+        say(errMsg, carryErrorText(lang, error, errorText), "err");
+        card.replaceChildren(...carryHead(), errMsg);
+        card.style.display = "";
+        return;
+      }
+      if (!card.isConnected || actionConversation !== conversation) return;
+      const msg = el("div", { class: "msg", role: "status" });
+      if (said) say(msg, L(said), "ok");
+      const previewSpot = el("div");
+      const carryCharacters = (rows) => rows.filter((e) => e && e.type === "character" && !e.persona && e.excluded !== "memory" && typeof e.name === "string").map((e, i) => ({ name: String(e.name), mentions: Number(e.mentions) || 0, i })).sort((a, b) => b.mentions - a.mentions || a.i - b.i).map((e) => e.name);
+      async function openPreview(trigger, req, changed = false) {
+        const round = nextRound(previewSpot);
+        say(msg, "");
+        trigger.disabled = true;
+        const discover = req.mode === "regression" && req.entity_names.length === 0;
+        const body = {
+          source_conversation_id: req.source_conversation_id,
+          mode: discover ? "continue" : req.mode,
+          entity_names: discover ? [] : [...req.entity_names],
+          cutoff_turn: req.cutoff_turn
+        };
+        let first = null;
+        let chars = [];
+        try {
+          first = await deps.api("POST", `/v1/conversations/${conversation}/carry/preview`, body, 15e3);
+          chars = first.characters ?? [];
+        } catch (error) {
+          if (previewRound.get(previewSpot) !== round) return;
+          const refused = () => {
+            say(msg, carryErrorText(lang, error, errorText), "err");
+            trigger.disabled = false;
+          };
+          if (!discover || !carryRefusal(error instanceof Error ? error.message : String(error))) {
+            refused();
+            return;
+          }
+          let rows;
+          try {
+            rows = await deps.api("GET", `/v1/conversations/${req.source_conversation_id}/entities`, void 0, 15e3);
+          } catch {
+            rows = null;
+          }
+          if (previewRound.get(previewSpot) !== round) return;
+          if (!Array.isArray(rows)) {
+            refused();
+            return;
+          }
+          chars = carryCharacters(rows);
+        }
+        if (previewRound.get(previewSpot) !== round) return;
+        let active = discover ? null : first;
+        let pickedNames = discover ? [] : [...req.entity_names];
+        const detailsSpot = el("div");
+        const ok = el("button", { class: "primary", text: L("carry.link_btn") });
+        const cancel = el("button", { text: L("cancel") });
+        ok.disabled = active === null;
+        function renderDetails(pv, loading = false) {
+          if (loading) {
+            detailsSpot.replaceChildren(el("div", { class: "muted", text: L("carry.loading") }));
+            return;
+          }
+          if (!pv) {
+            const hint = chars.length ? L("carry.pv_chars_pick") : L("carry.pv_chars_none");
+            detailsSpot.replaceChildren(el("div", { class: "muted", text: hint }));
+            return;
+          }
+          const modeText = L(pv.mode === "regression" ? "carry.mode_regression" : "carry.mode_continue");
+          const headLine = L("carry.pv_source", {
+            source: carrySourceLabel(pv.source),
+            mode: modeText,
+            cutoff: carryCutoffLabel(lang, pv.cutoff.turn)
+          });
+          const items = [
+            el("div", { text: headLine }),
+            el("div", { text: carryCountsLine(lang, pv.counts) })
+          ];
+          if (pv.first_lines.length) {
+            items.push(
+              el("div", { class: "muted", style: "margin-top:6px", text: L("carry.pv_lines") }),
+              ...pv.first_lines.map((line) => el("div", { text: `\xB7 ${line}` }))
+            );
+          } else {
+            items.push(el("div", { class: "muted", text: L("carry.pv_lines_empty") }));
+          }
+          if (pv.replaces) items.push(el("div", { class: "warn", style: "margin-top:6px", text: L("carry.pv_replaces") }));
+          detailsSpot.replaceChildren(...items);
+        }
+        const box = el("div", { class: "preview" }, el("b", { text: L("carry.pv_title") }));
+        if (changed) box.append(el("div", { class: "warn", text: L("carry.changed") }));
+        if (req.mode === "regression") {
+          const allChars = [...chars, ...pickedNames.filter((n) => !chars.includes(n))];
+          box.append(el("div", { style: "margin-top:6px;font-weight:500", text: L("carry.pv_chars") }));
+          if (allChars.length) {
+            const boxes = [];
+            const syncCap = () => {
+              const count2 = boxes.filter((b) => b.checked).length;
+              for (const b of boxes) b.disabled = !b.checked && count2 >= CARRY_MAX_NAMES;
+            };
+            const charList = el("div", { class: "pins" }, ...allChars.map((name) => {
+              const cb = el("input", { type: "checkbox", value: name });
+              cb.checked = pickedNames.includes(name);
+              boxes.push(cb);
+              cb.addEventListener("change", async () => {
+                syncCap();
+                const chosen2 = boxes.filter((b) => b.checked).map((b) => b.value);
+                pickedNames = chosen2;
+                say(msg, "");
+                if (chosen2.length === 0) {
+                  nextRound(previewSpot);
+                  active = null;
+                  ok.disabled = true;
+                  renderDetails(null);
+                  return;
+                }
+                const subRound = nextRound(previewSpot);
+                active = null;
+                ok.disabled = true;
+                renderDetails(null, true);
+                try {
+                  const pv = await deps.api("POST", `/v1/conversations/${conversation}/carry/preview`, {
+                    source_conversation_id: req.source_conversation_id,
+                    mode: "regression",
+                    entity_names: chosen2,
+                    cutoff_turn: req.cutoff_turn
+                  }, 15e3);
+                  if (previewRound.get(previewSpot) !== subRound) return;
+                  active = pv;
+                  renderDetails(pv);
+                  ok.disabled = false;
+                } catch (error) {
+                  if (previewRound.get(previewSpot) !== subRound) return;
+                  renderDetails(null);
+                  say(msg, carryErrorText(lang, error, errorText), "err");
+                }
+              });
+              return el("label", { class: "check" }, cb, el("span", { text: name }));
+            }));
+            syncCap();
+            box.append(charList);
+          }
+        }
+        renderDetails(active);
+        cancel.addEventListener("click", () => {
+          nextRound(previewSpot);
+          previewSpot.replaceChildren();
+          trigger.disabled = false;
+          say(msg, "");
+        });
+        ok.addEventListener("click", async () => {
+          if (!active) return;
+          const chosenNames = req.mode === "regression" ? [...pickedNames] : [];
+          if (req.mode === "regression" && chosenNames.length === 0) return;
+          ok.disabled = true;
+          say(msg, "");
+          const linkBody = {
+            source_conversation_id: req.source_conversation_id,
+            mode: req.mode,
+            entity_names: chosenNames,
+            cutoff_turn: req.cutoff_turn,
+            expect: active.fingerprint
+          };
+          try {
+            await deps.api("POST", `/v1/conversations/${conversation}/carry`, linkBody, 15e3);
+            previewSpot.replaceChildren();
+            await showCarry(conversation, card, "carry.linked");
+          } catch (error) {
+            if (isCarryConflict(error)) {
+              void openPreview(trigger, {
+                source_conversation_id: req.source_conversation_id,
+                mode: req.mode,
+                entity_names: chosenNames,
+                cutoff_turn: req.cutoff_turn
+              }, true);
+              return;
+            }
+            say(msg, carryErrorText(lang, error, errorText), "err");
+            ok.disabled = false;
+          }
+        });
+        box.append(
+          detailsSpot,
+          el("p", { class: "sub", style: "margin-top:8px", text: L("carry.pv_notice") }),
+          el("div", { class: "btns" }, ok, cancel)
+        );
+        previewSpot.replaceChildren(box);
+      }
+      if (state.in_force) {
+        const link = state.in_force;
+        const modeText = L(link.mode === "regression" ? "carry.mode_regression" : "carry.mode_continue");
+        const lt = localTime(link.created_at, lang);
+        const takenEl = el("div", { class: "muted", text: L("carry.taken_at", { time: lt ? lt.text : link.created_at }) });
+        if (lt) takenEl.title = lt.title;
+        const sourceText = carrySourceLabel(link.source);
+        const summaryLines = [
+          el(
+            "div",
+            { class: "line" },
+            el("span", { class: "badge b-info", text: L("carry.linked_badge") }),
+            el("strong", { text: sourceText })
+          ),
+          el("div", { text: `${modeText} \xB7 ${carryCutoffLabel(lang, link.cutoff_turn)}` }),
+          el("div", {
+            text: link.mode === "regression" ? L("carry.only_remember", { names: link.entity_names.join(", ") }) : L("carry.linked_continue", { source: sourceText })
+          }),
+          takenEl
+        ];
+        const readAgainBtn = el("button", { text: L("carry.read_again") });
+        const unlinkBtn = el("button", { text: L("carry.unlink") });
+        let unlinkArmed = false;
+        let unlinkTimer = 0;
+        const disarmUnlink = () => {
+          window.clearTimeout(unlinkTimer);
+          unlinkArmed = false;
+          unlinkBtn.textContent = L("carry.unlink");
+          unlinkBtn.className = "";
+        };
+        readAgainBtn.addEventListener("click", () => {
+          disarmUnlink();
+          void openPreview(readAgainBtn, {
+            source_conversation_id: link.source_conversation_id,
+            mode: link.mode,
+            entity_names: [...link.entity_names],
+            cutoff_turn: link.cutoff_turn
+          });
+        });
+        unlinkBtn.addEventListener("click", async () => {
+          if (!unlinkArmed) {
+            unlinkArmed = true;
+            unlinkBtn.textContent = L("carry.unlink_confirm");
+            unlinkBtn.className = "danger";
+            unlinkTimer = window.setTimeout(disarmUnlink, 6e3);
+            return;
+          }
+          disarmUnlink();
+          nextRound(previewSpot);
+          previewSpot.replaceChildren();
+          readAgainBtn.disabled = true;
+          unlinkBtn.disabled = true;
+          say(msg, "");
+          try {
+            await deps.api("DELETE", `/v1/conversations/${conversation}/carry`, void 0, 15e3);
+            await showCarry(conversation, card, "carry.unlinked");
+          } catch (error) {
+            readAgainBtn.disabled = false;
+            unlinkBtn.disabled = false;
+            say(msg, carryErrorText(lang, error, errorText), "err");
+          }
+        });
+        card.replaceChildren(
+          ...carryHead(),
+          ...summaryLines,
+          el("div", { class: "btns" }, readAgainBtn, unlinkBtn),
+          previewSpot,
+          msg
+        );
+        card.style.display = "";
+        return;
+      }
+      if (!knownChats.length) {
+        try {
+          const rows = await deps.api("GET", "/v1/conversations?host=pocketrisu", void 0, 5e3);
+          if (Array.isArray(rows) && rows.length) {
+            knownChats = rows.map((r) => {
+              const ch = (r.host_character_name ?? "").trim();
+              const ti = (r.host_chat_name ?? r.title ?? "").trim();
+              const name = ch && ti && ti !== ch ? `${ch} \xB7 ${ti}` : ch || ti || r.id.slice(0, 8);
+              const turns = typeof r.messages === "number" ? r.messages : typeof r.message_count === "number" ? r.message_count : void 0;
+              return { id: r.id, name, character: ch, title: ti, turns };
+            });
+          }
+        } catch {
+        }
+        if (!card.isConnected || actionConversation !== conversation) return;
+      }
+      const choices = knownChats.filter((c) => c.id !== conversation);
+      if (!choices.length) {
+        card.replaceChildren(
+          ...carryHead(),
+          el("div", { class: "muted", text: L("carry.no_other") }),
+          msg
+        );
+        card.style.display = "";
+        return;
+      }
+      const sourceSelect = el(
+        "select",
+        { "aria-label": L("carry.source") },
+        ...choices.map((c) => el("option", { value: c.id, text: c.name }))
+      );
+      const radioName = `nmos-carry-mode-${conversation}`;
+      const continueRadio = el("input", { type: "radio", name: radioName, value: "continue" });
+      continueRadio.checked = true;
+      const regressionRadio = el("input", { type: "radio", name: radioName, value: "regression" });
+      const cutoffInput = el("input", {
+        type: "number",
+        min: "0",
+        step: "1",
+        placeholder: L("carry.cutoff_placeholder"),
+        "aria-label": L("carry.cutoff")
+      });
+      const previewBtn = el("button", { class: "primary", text: L("carry.preview_btn") });
+      const resetPreview = () => {
+        nextRound(previewSpot);
+        previewSpot.replaceChildren();
+        previewBtn.disabled = false;
+        say(msg, "");
+      };
+      sourceSelect.addEventListener("change", resetPreview);
+      continueRadio.addEventListener("change", resetPreview);
+      regressionRadio.addEventListener("change", resetPreview);
+      cutoffInput.addEventListener("input", resetPreview);
+      previewBtn.addEventListener("click", () => {
+        const parsed = parseCutoffTurn(cutoffInput.value);
+        if (cutoffInput.validity?.badInput || !parsed.ok) {
+          say(msg, L("carry.cutoff_invalid"), "err");
+          return;
+        }
+        const mode = regressionRadio.checked ? "regression" : "continue";
+        void openPreview(previewBtn, {
+          source_conversation_id: sourceSelect.value,
+          mode,
+          entity_names: [],
+          cutoff_turn: parsed.value
+        });
+      });
+      card.replaceChildren(
+        ...carryHead(),
+        field(L("carry.source"), sourceSelect),
+        el("label", { text: L("carry.mode") }),
+        el("label", { class: "check" }, continueRadio, el("strong", { text: L("carry.mode_continue") })),
+        el("p", { class: "sub", text: L("carry.mode_continue_desc") }),
+        el("label", { class: "check" }, regressionRadio, el("strong", { text: L("carry.mode_regression") })),
+        el("p", { class: "sub", text: L("carry.mode_regression_desc") }),
+        field(L("carry.cutoff"), cutoffInput),
+        el("div", { class: "btns" }, previewBtn),
+        previewSpot,
+        msg
+      );
+      card.style.display = "";
+    }
+    async function showPins(conversation, card, said) {
+      const head = [el("h2", { text: L("pins.title") }), el("p", { class: "sub", text: L("pin.sub") })];
+      const msg = el("div", { class: "msg", role: "status" });
+      if (said) say(msg, L(said), "ok");
+      let rows;
+      try {
+        const list = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
+        if (!Array.isArray(list)) throw new Error("not a list");
+        rows = list;
+      } catch {
+        card.replaceChildren(...head, el("div", { class: "muted", text: L("pins.failed") }));
+        return;
+      }
+      const lines = rows.filter((e) => typeof e.pinned === "string" && e.pinned).map((e) => {
+        const unpin = el("button", { class: "mini", text: L("pins.unpin") });
+        unpin.addEventListener("click", async () => {
+          unpin.disabled = true;
+          say(msg, "");
+          try {
+            await deps.api("POST", `/v1/conversations/${conversation}/repairs/${e.pinned}/remove`, {}, 15e3);
+            await showPins(conversation, card, "pin.undone");
+          } catch (error) {
+            unpin.disabled = false;
+            say(msg, errorText(lang, error), "err");
+          }
+        });
+        return el("div", { class: "btns" }, el("span", { text: e.name }), unpin);
+      });
+      card.replaceChildren(...head, ...lines.length ? lines : [el("div", { class: "muted", text: L("pins.none") })], msg);
     }
     async function retryFrom(conversation) {
       if (!conversation) return;
@@ -6495,7 +7680,12 @@ html,body{margin:0;background:${PALETTE.bg}}
         deadlineMs: positiveInt(await arg("deadline_ms"), DEFAULT_DEADLINE_MS, MAX_DEADLINE_MS),
         injectPosition: position === "end" ? "end" : "before_last_user",
         language: langOf(await arg("language")),
-        offChats: parseChatIds(await arg(CHAT_OFF_ARG))
+        offChats: parseChatIds(await arg(CHAT_OFF_ARG)),
+        trimOldTurns: Number(await arg("trim_old_turns")) === 1,
+        keepRecentTurns: Math.max(
+          MIN_KEEP_RECENT_TURNS,
+          positiveInt(await arg("keep_recent_turns"), DEFAULT_KEEP_RECENT_TURNS, MAX_KEEP_RECENT_TURNS)
+        )
       };
     },
     async currentChat() {
