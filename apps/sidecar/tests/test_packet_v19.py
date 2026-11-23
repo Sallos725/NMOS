@@ -15,7 +15,7 @@ def test_v19_inherits_v18_and_is_the_owner_selected_default():
     for name, policies in vars(packet).items():
         if name.endswith("_POLICIES") and "packet-v18" in policies:
             assert "packet-v19" in policies, name
-    assert packet.RELATED_FILL_POLICIES == {"packet-v19"}
+    assert packet.RELATED_FILL_POLICIES == {"packet-v19", "packet-v20"}
     assert packet.NON_ASCII["packet-v19"] == packet.NON_ASCII["packet-v18"]
     assert packet.fill(8000, "packet-v19") == packet.fill(8000, "packet-v18")  # the budget still grows excerpts
 
