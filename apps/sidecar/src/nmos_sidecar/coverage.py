@@ -7,9 +7,10 @@ scene summary holds it (D52, ADR 0042).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import psycopg
@@ -120,3 +121,45 @@ def read(
         served_turns=served,
         covered_turns=covered,
     )
+
+
+@dataclass(frozen=True)
+class TrimCut:
+    """Result of the pure trim boundary decision (PHASE-60 S1, ADR 0083 item 5)."""
+
+    cut: int | None
+    reason: Literal["short", "uncovered", "no_summaries"] | None
+
+
+def decide_trim(
+    now: int | None,
+    keep_recent_turns: int,
+    step: int,
+    window_turns: Sequence[tuple[int, bool]],
+    summaries_on: bool,
+) -> TrimCut:
+    """Decide the step-quantized trim cut for a fresh head. Pure.
+
+    `window_turns` lists the prompt window's turns as `(turn, covered)` pairs.
+    `raw_cut = floor((now - keep_recent_turns) / step) * step`.
+    If any window turn below `raw_cut` is uncovered, `cut` is lowered to
+    `floor(first_uncovered / step) * step`. Returns reason `short` when `raw_cut`
+    already leaves nothing before it in the window, or `uncovered` when lowering
+    for an uncovered turn is what left nothing before it.
+    """
+    if not summaries_on:
+        return TrimCut(None, "no_summaries")
+    if now is None or not window_turns:
+        return TrimCut(None, "short")
+    ordered = sorted(window_turns, key=lambda item: item[0])
+    first_turn = ordered[0][0]
+    raw_cut = ((now - keep_recent_turns) // step) * step
+    if raw_cut <= first_turn:
+        return TrimCut(None, "short")
+    first_uncovered = next((t for t, cov in ordered if t < raw_cut and not cov), None)
+    if first_uncovered is not None:
+        cut = (first_uncovered // step) * step
+        if cut <= first_turn:
+            return TrimCut(None, "uncovered")
+        return TrimCut(cut, None)
+    return TrimCut(raw_cut, None)

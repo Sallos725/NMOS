@@ -354,3 +354,38 @@ def test_trim_request_and_response_models():
     assert resp_with_trim.model_dump()["trim"] == {
         "keep_from_id": None, "keep_from_turn": None, "reason": "short",
     }
+
+
+def test_decide_trim_pure_boundaries_and_reasons():
+    def full_window(hi: int, lo: int = 0, uncovered: set[int] = frozenset()) -> list[tuple[int, bool]]:
+        return [(t, t not in uncovered) for t in range(lo, hi + 1)]
+
+    # Summaries off takes precedence over arithmetic.
+    assert coverage.decide_trim(60, 20, 20, full_window(60), summaries_on=False) == coverage.TrimCut(None, "no_summaries")
+    assert coverage.decide_trim(None, 20, 20, [], summaries_on=True) == coverage.TrimCut(None, "short")
+    assert coverage.decide_trim(60, 20, 20, [], summaries_on=True) == coverage.TrimCut(None, "short")
+
+    # Growing chat (keep=20, step=20): boundary moves only at multiples of step.
+    for now in (0, 19, 20, 39):
+        assert coverage.decide_trim(now, 20, 20, full_window(now), summaries_on=True) == coverage.TrimCut(None, "short")
+    for now in (40, 41, 50, 59):
+        assert coverage.decide_trim(now, 20, 20, full_window(now), summaries_on=True) == coverage.TrimCut(20, None)
+    for now in (60, 61, 79):
+        assert coverage.decide_trim(now, 20, 20, full_window(now), summaries_on=True) == coverage.TrimCut(40, None)
+    assert coverage.decide_trim(80, 20, 20, full_window(80), summaries_on=True) == coverage.TrimCut(60, None)
+
+    # An uncovered turn at 33 with raw_cut=40 lowers cut to floor(33/20)*20 = 20.
+    assert coverage.decide_trim(60, 20, 20, full_window(60, uncovered={33}), summaries_on=True) == coverage.TrimCut(20, None)
+    # An uncovered turn at 15 with raw_cut=20 lowers cut to 0 <= first_turn(0) -> reason="uncovered".
+    assert coverage.decide_trim(40, 20, 20, full_window(40, uncovered={15}), summaries_on=True) == coverage.TrimCut(None, "uncovered")
+    # Smallest uncovered turn decides (gap at 4 beats gap at 33).
+    assert coverage.decide_trim(60, 20, 20, full_window(60, uncovered={4, 33}), summaries_on=True) == coverage.TrimCut(None, "uncovered")
+    # Uncovered turns at or above raw_cut stay in the kept window and do not lower the boundary.
+    assert coverage.decide_trim(60, 20, 20, full_window(60, uncovered={40, 55, 60}), summaries_on=True) == coverage.TrimCut(40, None)
+
+    # Prompt window starting past turn 0 (host already trimmed turns 0..19).
+    assert coverage.decide_trim(40, 20, 20, full_window(40, lo=20), summaries_on=True) == coverage.TrimCut(None, "short")
+    assert coverage.decide_trim(60, 20, 20, full_window(60, lo=20), summaries_on=True) == coverage.TrimCut(40, None)
+    assert coverage.decide_trim(60, 20, 20, full_window(60, lo=20, uncovered={33}), summaries_on=True) == coverage.TrimCut(None, "uncovered")
+    # Unsorted input produces the same result.
+    assert coverage.decide_trim(60, 20, 20, list(reversed(full_window(60, uncovered={33}))), summaries_on=True) == coverage.TrimCut(20, None)
