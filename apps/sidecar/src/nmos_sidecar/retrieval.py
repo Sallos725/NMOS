@@ -1121,11 +1121,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 g.facts = [line for line in g.facts if line.ref.get("assertion") not in used]
                 g.threads = [line for line in g.threads if line.ref.get("assertion") not in used]
         if options.policy in GONE_POLICIES and options.facts_limit > 0 and r is not None:
-            # packet-v20 (PHASE-60 S3): a gone character's status, whether or not the message names them
-            pinned = pin_gone(g, view, r, now, options)
-            if changes:
-                offered = {f["id"] for f in selected}
-                selected += [f for f in pinned if f["id"] not in offered]
+            # packet-v20 (PHASE-60 S3): a gone character's status, whether or not the message names them; like <Cast>,
+            # whether or not its message is in the prompt (the mark is what the prompt lacks)
+            pin_gone(g, view, r, now, options)
     if options.policy in COVERAGE_POLICIES and coverage_info is not None:
         g.note += coverage_note(coverage_info.get("recorded_through_turn"), coverage_info.get("latest_replied_turn"))
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3

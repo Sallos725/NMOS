@@ -448,7 +448,7 @@ def _entry(kind: str, ref: dict[str, Any], turn: int | None, text: str, content:
 
 def _label(ledger: list[dict[str, Any]], state: list[StateItem], story: list[Line], cast: list[Line],
            offered: list[Line], ranked: list[Excerpt], first: int | None, named: frozenset[str],
-           risky: frozenset[str], gone: list[Line] = ()) -> None:
+           risky: frozenset[str], gone: list[Line] | None = None) -> None:
     """What each line is for (PHASE-34 Q1), by rule. Required: what the request cannot do without: the state, the
     cast, the story so far (owner, 2026-10-07: the continuity every packet carries), a line some in the scene do not
     know (Private, Secret), a gone character's status (packet-v20, `gone`), a fact, claim or thread the question names
@@ -463,9 +463,10 @@ def _label(ledger: list[dict[str, Any]], state: list[StateItem], story: list[Lin
         ref = str(line.ref.get("assertion"))
         return "required" if ref in named else ("risky" if ref in risky else "supportive")
 
+    gone = gone or []
     sections = (["state"] * len(state) + ["story"] * len(story) + ["cast"] * len(cast) + ["gone"] * len(gone)
                 + ["line"] * len(offered))
-    lines: list[Line | None] = [None] * len(state) + story + cast + list(gone) + offered
+    lines: list[Line | None] = [None] * len(state) + story + cast + gone + offered
     for n, entry in enumerate(ledger):
         if n < len(sections):
             entry["label"] = "required" if sections[n] == "state" else of_line(lines[n], sections[n])

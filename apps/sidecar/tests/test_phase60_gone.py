@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import re
 import uuid
+from uuid import UUID
 
+import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 from conftest import make_client
 from memeval import stub_extractor
-from nmos_sidecar import packet, retrieval, scene
+from nmos_sidecar import audit, packet, retrieval, scene
 from nmos_sidecar.entities import resolve
 from nmos_sidecar.facts import _versions, fact_entry, fact_line
 from nmos_sidecar.packet import GONE_MARK, GONE_NOTE, Line, compile_lines
@@ -210,6 +213,14 @@ def test_gone_lines_take_at_most_a_tenth_of_the_budget_newest_kept():
     assert packet.cut_lines(out.ledger) == 0  # a capped pin is not a line the budget left out
 
 
+def test_no_note_when_every_gone_line_is_beyond_the_share():
+    out = compile_lines([], 300, facts=[plain(30)], gone=[gone_line(10, value="전투 중 전사, 오랜 원정 끝에")],
+                        policy="packet-v20")
+    entry = next(e for e in out.ledger if (e.get("marks") or {}).get("gone"))
+    assert entry["why"] == "gone_cap" and not entry["placed"]
+    assert out.text and GONE_NOTE not in out.text and GONE_MARK not in out.text
+
+
 def test_a_gone_line_is_first_in_its_cast_group_and_never_twice():
     rows = [status(10, "세라", "사망"), place(11, "세라", "정원"), seen(19, "카이토")]
     rows[1]["position"] = 9  # an older place: the status is newest
@@ -347,6 +358,9 @@ def test_a_dead_character_is_pinned_under_v20_only(migrated, policy):
         assert marked(text) == 1 and GONE_NOTE in text
         entry = next(e for e in trace["lines"] if (e.get("marks") or {}).get("gone"))
         assert entry["placed"] and entry["label"] == "required"
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:  # the recorded pin replays as it was (D39)
+            again = audit.replay(conn, UUID(out["trace_id"]), RecallOptions(), policy=None)
+        assert again["status"] == "ok" and again["reproduced"] is True and again["text"] == text
     else:
         assert GONE_MARK not in text and GONE_NOTE not in text
 
