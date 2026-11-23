@@ -16,6 +16,7 @@ from nmos_sidecar import audit, canonfacts, extraction, packet, reveals, summari
 from nmos_sidecar.config import Settings
 from nmos_sidecar.retrieval import RecallOptions
 from test_packet_fill import secrets_chat
+from test_packet_ledger import extract
 
 BASE = dict(
     database_url="postgresql://x",
@@ -219,6 +220,7 @@ def test_v20_compiles_like_v19(migrated):
             for query in queries:
                 chat.user(query)
                 _sync(client, chat)
+                extract(migrated)
                 for budget in budgets:
                     res = client.post(
                         "/v1/retrieve",
