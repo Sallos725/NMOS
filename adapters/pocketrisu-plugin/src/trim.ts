@@ -4,7 +4,7 @@
 import { estimateTokens } from './budget';
 import { selectedContent } from './manifest';
 import { MEMORY_MARKER } from './placement';
-import { cleanText, isActive, latestUserIndex, matchPromptToHost, userTurnIndex } from './prompt';
+import { anchorOf, cleanText, contentText, isActive, latestUserIndex, matchPromptToHost, userTurnIndex } from './prompt';
 import type { HostMessage, PromptMessage } from './types';
 
 export type TrimReason = 'format';
@@ -22,6 +22,9 @@ export interface TrimResult {
  * other key (images, tool calls, names, …) means the message is more than its text and nothing is dropped.
  */
 const DROPPABLE_KEYS: ReadonlySet<string> = new Set(['role', 'content']);
+
+/** `matchPromptToHost`'s default `minAnchor`: shorter host messages are never anchor-matched. */
+const MIN_ANCHOR = 16;
 
 function sameText(prompt: PromptMessage[], hostMessages: HostMessage[], p: number, i: number): boolean {
   const m = prompt[p];
@@ -119,6 +122,26 @@ export function trimPrompt(
     }
 
     if (run.size === 0) return refuse();
+
+    // The pointer match stops after a few consecutive misses (a request script that rewrote several turns), so
+    // older chat messages may still be in the prompt unmatched: dropping the run would leave them before a hole.
+    // Refuse when any older active host message long enough to anchor still has its anchor before the run.
+    let runStart = Infinity;
+    let runOldest = Infinity;
+    for (const [k, hostIdx] of run) {
+      if (k < runStart) runStart = k;
+      if (hostIdx < runOldest) runOldest = hostIdx;
+    }
+    const before = prompt.slice(0, runStart).map((m) => cleanText(contentText(m?.content)));
+    if (before.length > 0) {
+      for (let i = runOldest - 1; i >= 0; i -= 1) {
+        if (!isActive(hostMessages[i])) continue;
+        const text = cleanText(selectedContent(hostMessages[i]));
+        if (text.length < MIN_ANCHOR) continue;
+        const anchor = anchorOf(text);
+        if (before.some((t) => t.includes(anchor))) return refuse();
+      }
+    }
 
     // Validate every dropped prompt message.
     let savedTokens = 0;

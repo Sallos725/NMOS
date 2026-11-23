@@ -275,6 +275,38 @@ describe('trimPrompt (Phase 60 S1 / A15)', () => {
     expect(resKept.prompt[1]).toBe(keptField[3]);
   });
 
+  it('refuses with format when older chat messages stay in the prompt behind a stopped match', () => {
+    // Three consecutive turns rewritten by a request script stop the pointer match (3 misses): only the newest
+    // messages are matched, and the older ones, still in the prompt, would stay before a hole.
+    const host: HostMessage[] = [];
+    for (let n = 0; n < 12; n += 1) {
+      host.push({
+        role: n % 2 === 0 ? 'user' : 'char',
+        // The number sits in the middle, where the 48-char anchor is taken, so every message has its own anchor.
+        data: `T${n} 세라는 창가에서 T${n} 번째 편지를 읽었다 T${n}T${n}T${n} 바깥에는 비가 내리고 T${n} 있었다 T${n}.`,
+        chatId: `m${n}`,
+      });
+    }
+    const prompt: PromptMessage[] = [
+      { role: 'system', content: 'Narrator.' },
+      ...host.map((m) => ({ role: toPromptRole(m.role), content: m.data })),
+    ];
+    for (const n of [6, 7, 8]) {
+      prompt[n + 1] = { role: toPromptRole(host[n]!.role), content: `<b>rewritten ${n}</b> 완전히 다른 텍스트 ${n} 입니다` };
+    }
+    const res = runTrim(prompt, host, 'm10');
+    expect(res).toEqual({ prompt, dropped: 0, savedTokens: 0, reason: 'format' });
+    expect(res.prompt).toBe(prompt);
+
+    // An older message that only a preset block quotes (not the chat) also refuses: drop nothing when unsure.
+    const quoted: PromptMessage[] = [
+      { role: 'system', content: `Narrator. Earlier: ${host[0]!.data}` },
+      ...host.slice(8).map((m) => ({ role: toPromptRole(m.role), content: m.data })),
+    ];
+    const resQuoted = runTrim(quoted, host, 'm10');
+    expect(resQuoted).toEqual({ prompt: quoted, dropped: 0, savedTokens: 0, reason: 'format' });
+  });
+
   it('refuses with format when keep_from_id is unknown or inactive', () => {
     const { host, prompt } = baseFixture();
 
