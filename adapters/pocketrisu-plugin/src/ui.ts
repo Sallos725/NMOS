@@ -75,6 +75,10 @@ interface ServerConfig {
   install?: string | null;
 }
 
+/** An entities row with what pins add (ADR 0087): `pinned` is the pin's repair id, only on a pinned row; `excluded`
+ *  marks a character the owner left out of memory, which is never pinned. */
+type PinRow = EntityRow & { excluded?: boolean; pinned?: string };
+
 /** `minSim`: the vector similarity bar measured for the preset's model (`docs/perf/embedders.md`); `hint`: said when
  *  the preset is picked. */
 interface Preset { label: string | StringKey; url: string; model?: string; minSim?: number; hint?: StringKey }
@@ -678,6 +682,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   // Back and Refresh stay in reach while reading far down a page.
   // On an entity's page: the owner joins it with another entity of its type, or undoes a join (ADR 0025).
   const linkCard = el('div', { class: 'card', style: 'display:none' });
+  // On a character's page: the owner pins it so its facts go into every reply's memory (ADR 0087). Built here, beside
+  // the sidecar's page, which stays as it is sent.
+  const pinCard = el('div', { class: 'card', style: 'display:none' });
   // On a conversation's page: how memory treats what only some characters know (ADR 0035).
   const modeCard = el('div', { class: 'card', style: 'display:none' });
   const statusCard = el('div', { id: 'nmos-status-windows', class: 'card', style: 'display:none' });
@@ -701,7 +708,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const homeQuickBar = el('div', { class: 'home-quick', style: 'display:none' });
   const memSubBar = el('div', { class: 'mem-subbar', style: 'display:none' });
   inspectorView.append(inspbar, homeQuickBar, memSubBar, actions, actionMsg, notesCard,
-    bulkBar, modeCard, statusCard, linkCard, inspectorBody, inspectorAddress);
+    bulkBar, modeCard, statusCard, pinCard, linkCard, inspectorBody, inspectorAddress);
   function updateBulk(): void {
     bulkBar.style.display = picked.size || bulkGroups.size ? '' : 'none';
     bulkClose.style.display = picked.size ? '' : 'none';
@@ -1152,7 +1159,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     actions.style.display = rawInspector ? '' : 'none';
     const shownEntity = inspectorEntity(path);
-    if (!shownEntity) linkCard.style.display = 'none';
+    if (!shownEntity) { linkCard.style.display = 'none'; pinCard.style.display = 'none'; }
     if (!rawInspector || shownEntity) { modeCard.style.display = 'none'; statusCard.style.display = 'none'; }
     if (viewsOn) syncShellForPath(path);
     if (again) {
@@ -1197,7 +1204,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       } else if (keep) restore(keep);
       else root.scrollTop = 0;
       if (viewsOn) syncShellForPath(path);
-      if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
+      if (shownEntity) void showEntityCards(shownEntity.conversation, shownEntity.entity, load);
       else if (conversation && !isView && !attentionMode) { void showMode(conversation, load); void showStatusWindows(conversation, load); }
     } catch (error) {
       if (load !== loads) return;
@@ -1386,14 +1393,59 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     box.append(el('div', { class: 'btns' }, ok, cancel));
     spot.replaceChildren(box);
   }
-  async function showLinks(conversation: string, entity: string, load: number): Promise<void> {
-    let entities: EntityRow[];
+  /** An entity's page's cards, from one list of the chat's entities: the pin switch and the joins. */
+  async function showEntityCards(conversation: string, entity: string, load: number): Promise<void> {
+    let entities: PinRow[] | null;
     try {
-      entities = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
+      const rows = await deps.api<PinRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
+      entities = Array.isArray(rows) ? rows : null;
     } catch {
-      entities = []; // the page itself already reports a failing sidecar
+      entities = null; // the page itself already reports a failing sidecar
     }
     if (load !== loads) return;
+    showPin(conversation, entity, entities);
+    showLinks(conversation, entity, entities ?? []);
+  }
+  /** Said once in the pin card after the refresh that follows a pin or an unpin of that entity. */
+  let pinSaid: { entity: string; key: StringKey } | null = null;
+  /** The pin switch (ADR 0087), for a character that is not the persona and not excluded (an exclusion wins). A list
+   *  from a sidecar older than pins has no `pinned` anywhere: the switch is off and simply pins. */
+  function showPin(conversation: string, entity: string, entities: PinRow[] | null): void {
+    const row = entities?.find((e) => e.id === entity);
+    const said = pinSaid?.entity === entity ? pinSaid.key : null;
+    pinSaid = null;
+    if (!row || row.type !== 'character' || row.persona || row.excluded) {
+      pinCard.style.display = 'none';
+      pinCard.replaceChildren();
+      return;
+    }
+    const pinned = typeof row.pinned === 'string' && row.pinned ? row.pinned : null;
+    const box = el('input', { type: 'checkbox' });
+    box.checked = pinned !== null;
+    const msg = el('div', { class: 'msg', role: 'status' });
+    if (said) say(msg, L(said), 'ok');
+    box.addEventListener('change', async () => {
+      const on = box.checked;
+      box.disabled = true;
+      say(msg, '');
+      try {
+        if (on) await deps.api('POST', `/v1/conversations/${conversation}/repairs`, { kind: 'entity_pin', item: entity }, 15_000);
+        else if (pinned) await deps.api('POST', `/v1/conversations/${conversation}/repairs/${pinned}/remove`, {}, 15_000);
+        pinSaid = { entity, key: on ? 'pin.done' : 'pin.undone' };
+        say(msg, L(pinSaid.key), 'ok');
+        await showInspector();
+      } catch (error) {
+        box.checked = !on;  // nothing changed: the switch says so
+        say(msg, errorText(lang, error), 'err');
+      } finally {
+        box.disabled = false;
+      }
+    });
+    pinCard.replaceChildren(el('h2', { text: L('pin.title') }), el('p', { class: 'sub', text: L('pin.sub') }),
+      el('label', { class: 'check' }, box, el('span', { text: L('pin.toggle') })), msg);
+    pinCard.style.display = '';
+  }
+  function showLinks(conversation: string, entity: string, entities: EntityRow[]): void {
     const choices = linkChoices(entities, entity);
     if (!choices) {
       linkCard.style.display = 'none';

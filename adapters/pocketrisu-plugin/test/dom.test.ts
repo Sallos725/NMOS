@@ -1216,6 +1216,113 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect(panel().textContent).toContain('Queued 2 turns for re-extraction.');
   });
 
+  describe("the pin switch on a person's page (PHASE-60 S8)", () => {
+    const pin = '0190f3a4-1b2c-7d3e-8f40-0000000000aa';
+    const hanaRow = (extra: Record<string, unknown> = {}) =>
+      ({ id: who, type: 'character', name: '하나', names: ['하나'], mentions: 9, links: [], aliases: [], ...extra });
+    const titles = { ko: '인물 고정', en: 'Pin this character' } as const;
+    const sentences = {
+      ko: '고정한 인물의 현재 사실은 장면에 이름이 나오지 않아도 매 답장의 기억에 들어갑니다. 그래서 고정은 요청마다 기억 예산의 일부를 씁니다. 언제든 풀 수 있습니다.',
+      en: "A pinned character's current facts go into memory on every reply, even when the scene does not name them, so a pin uses part of the memory budget on every request. You can take it off any time.",
+    } as const;
+    const pages = { inspector: `/inspector/c/${id}/e/${who}`, sheet: `/views/c/${id}/person/${who}` } as const;
+    const cardOf = (language: 'ko' | 'en') => [...panel().querySelectorAll<HTMLElement>('.card')]
+      .find((c) => c.querySelector('h2')?.textContent === titles[language] && c.style.display !== 'none');
+    /** The entity harness, with a person sheet, a language, and rows that follow a pin and an unpin. */
+    const open = async (rows: Record<string, unknown>[] | 'fail', page: keyof typeof pages = 'inspector',
+      language: 'ko' | 'en' = 'en', refuse?: string) => {
+      const h = deps(rows === 'fail' ? [] : rows);
+      const api = h.d.api;
+      h.d.getArg = async (key) => (key === 'language' ? language : '');
+      h.d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeout?: number) => {
+        if (path.startsWith(`/v1/views/c/${id}/person/`)) {
+          h.calls.push([method, path.split('?')[0]!, body]);
+          return { html: '<p>a character</p>' } as T;
+        }
+        if (rows === 'fail' && path.endsWith('/entities')) throw new Error(`${path} -> HTTP 503`);
+        const answer = await api<T>(method, path, body, timeout);
+        if (method === 'POST' && refuse) throw new Error(`/v1/conversations/${id}/repairs -> HTTP 422: ${refuse}`);
+        if (method === 'POST' && rows !== 'fail' && path.endsWith('/repairs')) rows[0]!.pinned = pin;
+        if (method === 'POST' && rows !== 'fail' && path.endsWith('/remove')) delete rows[0]!.pinned;
+        return answer;
+      };
+      await openChat(h.d, pages[page]);
+      return h;
+    };
+    const entityGets = (calls: [string, string, unknown][]) =>
+      calls.filter(([method, path]) => method === 'GET' && path.endsWith('/entities'));
+
+    it('offers an unpinned character a switch that is off, and pins it with one request', async () => {
+      for (const page of ['inspector', 'sheet'] as const) {
+        for (const language of ['ko', 'en'] as const) {
+          const { calls } = await open([hanaRow()], page, language);
+          const card = cardOf(language)!;
+          expect(card, `${page} ${language}`).toBeDefined();
+          expect(card.querySelector('p.sub')!.textContent).toBe(sentences[language]);
+          expect(card.querySelector('.check')!.textContent).toBe(language === 'en' ? 'Always keep in memory' : '항상 기억에 두기');
+          const box = card.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+          expect(box.checked).toBe(false);
+          expect(entityGets(calls)).toHaveLength(1);  // one list for the join card and this one
+          box.click();
+          await settle();
+          expect(posts(calls)).toEqual([['POST', `/v1/conversations/${id}/repairs`, { kind: 'entity_pin', item: who }]]);
+          const after = cardOf(language)!;  // the page was refreshed
+          expect(after.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
+          expect(after.querySelector('.msg')!.textContent).toBe(language === 'en' ? 'Pinned' : '고정했습니다');
+          document.body.replaceChildren();
+        }
+      }
+    });
+
+    it('shows a pin as on and takes it back with its remove request', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const { calls } = await open([hanaRow({ pinned: pin })], 'sheet', language);
+        const box = cardOf(language)!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+        expect(box.checked).toBe(true);
+        box.click();
+        await settle();
+        expect(posts(calls)).toEqual([['POST', `/v1/conversations/${id}/repairs/${pin}/remove`, {}]]);
+        const after = cardOf(language)!;
+        expect(after.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
+        expect(after.querySelector('.msg')!.textContent).toBe(language === 'en' ? 'Unpinned' : '고정을 풀었습니다');
+        document.body.replaceChildren();
+      }
+    });
+
+    it('shows no card for the persona, an excluded character, another kind, an entity not listed, or no list', async () => {
+      const cases: (Record<string, unknown>[] | 'fail')[] = [[hanaRow({ persona: true })], [hanaRow({ excluded: true })],
+        [hanaRow({ type: 'place' })], [hanaRow({ id: t2 })], 'fail'];
+      for (const rows of cases) {
+        await open(rows, 'inspector');
+        expect(panel().textContent).toContain('a character');  // the page itself is there
+        expect(cardOf('en'), JSON.stringify(rows)).toBeUndefined();
+        document.body.replaceChildren();
+      }
+    });
+
+    it('puts the switch back and says the refusal when the sidecar refuses the pin', async () => {
+      const { calls } = await open([hanaRow()], 'inspector', 'en', '하나 is not mentioned in this chat');
+      const card = cardOf('en')!;
+      const box = card.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      box.click();
+      await settle();
+      expect(posts(calls)).toHaveLength(1);
+      expect(box.checked).toBe(false);
+      expect(box.disabled).toBe(false);
+      expect(card.querySelector('.msg')!.textContent).toBe('Invalid: 하나 is not mentioned in this chat');
+    });
+
+    it("leaves the sidecar's page as it sent it: the card sits beside it", async () => {
+      for (const page of ['inspector', 'sheet'] as const) {
+        await open([hanaRow()], page);
+        const body = [...panel().querySelectorAll('p')].find((p) => p.textContent === 'a character')!.parentElement!;
+        expect(body.innerHTML).toBe('<p>a character</p>');
+        expect(body.contains(cardOf('en')!)).toBe(false);
+        document.body.replaceChildren();
+      }
+    });
+  });
+
   it('drops a preview answer that arrives after the owner picked another name', async () => {
     const rows = [...joinable(), { id: 'c3', type: 'character', name: '소라', names: ['소라'], mentions: 2, links: [] }];
     const { d, state } = deps(rows);
