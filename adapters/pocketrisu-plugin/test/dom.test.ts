@@ -1537,7 +1537,7 @@ describe("this chat's pinned characters in the settings (PHASE-60 S8)", () => {
           return { removed: path.split('/').at(-2) } as T;
         }
         if (path.startsWith('/v1/conversations?')) return [] as T;
-        if (path.includes('/status/candidates')) throw new Error('404');
+        if (path.includes('/status/candidates') || path.endsWith('/memory-mode')) throw new Error('404');
         return {} as T;
       },
       status: async () => ({ enabled: true, sidecarUrl: 'http://127.0.0.1:8790', language, connected: true,
