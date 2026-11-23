@@ -76,15 +76,18 @@ def activate(conn: psycopg.Connection, gen: Generation) -> str | None:
 
 MODEL_FIELDS = ("model", "endpoint")
 # Extractor compilers a switch between re-extracts nothing for (PHASE-58 S3, ADR 0081 item 4): extract-v18 is extract-v16
-# with a field on rows both write the same way, so the facts older turns have stay as good as they were.
-ADDS = frozenset({"extract-v16", "extract-v18"})
+# with a field on rows both write the same way, so the facts older turns have stay as good as they were. extract-v19
+# (PHASE-60 S7, ADR 0086 item 6) is extract-v18 with fields and a predicate on rows the others write the same way; its
+# spec has extract-v18's fields, so a switch among the three differs in `compiler` and `prompt` alone.
+ADDS = frozenset({"extract-v16", "extract-v18", "extract-v19"})
 ADDS_FIELDS = ("compiler", "prompt")
 
 
 def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) -> str:
     """What making `gen` active is, next to the generation `previous` that was (PHASE-57 A3): "same", "new" (none
     was), "model" (only the model or the endpoint differs: the owner changed the model), "adds" (only the compiler
-    and its prompt differ, between two compilers of ADDS: PHASE-58 S3; with the model too, "model") or "version"
+    and its prompt differ, between two compilers of ADDS: PHASE-58 S3, PHASE-60 S7; with the model too, "model") or
+    "version"
     (anything else: a release's version or prompt, or a setting the key hashes)."""
     if previous == gen.key:
         return "same"
