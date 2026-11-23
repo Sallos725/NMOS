@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from . import rerank
+
+RERANK_TIMEOUT_MS = (50, 5000)  # PHASE-60 S5: the reranker's own wait, in milliseconds, inclusive
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -67,6 +71,15 @@ class Settings:
     embed_model: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_MODEL", ""))
     embed_api_key: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_API_KEY", ""))
     embed_timeout_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_TIMEOUT_MS", "300")))
+    # PHASE-60 S5 (ADR 0084): an optional reranker, off unless both a URL and a model are set. When on, the request's
+    # candidate text is sent to this endpoint, as the embedder's is. The key is a credential like the other two. An
+    # empty timeout or format (as the compose files pass an unset variable) is the default.
+    rerank_url: str = field(default_factory=lambda: os.environ.get("NMOS_RERANK_URL", ""))
+    rerank_model: str = field(default_factory=lambda: os.environ.get("NMOS_RERANK_MODEL", ""))
+    rerank_api_key: str = field(default_factory=lambda: os.environ.get("NMOS_RERANK_API_KEY", ""))
+    rerank_timeout_ms: int = field(
+        default_factory=lambda: int(os.environ.get("NMOS_RERANK_TIMEOUT_MS") or rerank.DEFAULT_TIMEOUT_MS))
+    rerank_format: str = field(default_factory=lambda: os.environ.get("NMOS_RERANK_FORMAT") or "standard")
     # Budget for the lexical recall query; beyond it lexical abstains for that request (#12).
     lexical_timeout_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_LEXICAL_TIMEOUT_MS", "300")))
     # packet-v14: placements in a row before an unused supportive line rests (PHASE-34 Q2)
@@ -111,3 +124,9 @@ class Settings:
         # A cap under one would embed nothing and mark every embed job done (ADR 0062): refused at startup.
         if self.embed_max_chunks < 1:
             raise ValueError(f"NMOS_EMBED_MAX_CHUNKS must be at least 1, not {self.embed_max_chunks}")
+        # A format NMOS does not speak, or a wait no reranker answers in (or one that holds the request too long).
+        if self.rerank_format not in rerank.FORMATS:
+            raise ValueError(f"NMOS_RERANK_FORMAT must be {' or '.join(rerank.FORMATS)}, not {self.rerank_format!r}")
+        if not RERANK_TIMEOUT_MS[0] <= self.rerank_timeout_ms <= RERANK_TIMEOUT_MS[1]:
+            raise ValueError(f"NMOS_RERANK_TIMEOUT_MS must be between {RERANK_TIMEOUT_MS[0]} and {RERANK_TIMEOUT_MS[1]},"
+                             f" not {self.rerank_timeout_ms}")
