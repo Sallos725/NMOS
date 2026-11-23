@@ -25,7 +25,7 @@ from test_sidecar_integration import sync
 
 # A paraphrase found nowhere in SCENE: a packet that carried it could only have it from the told row.
 TOLD_VALUE = "유나의 출신에 얽힌 비밀"
-QUESTION = "세라가 카이토에게 무슨 말을 했지?"
+QUESTION = "세라가 카이토에게 유나에 대해 무슨 말을 했지?"
 
 
 def complete(system, user):
@@ -141,6 +141,7 @@ def test_a3_the_packet_is_the_same_with_or_without_told_rows_and_when_happened(m
                                 ).rowcount == 1
         without = retrieve(client, chat, QUESTION)
     assert with_rows["policy"] == without["policy"] == (policy or "packet-v19")
-    assert "고마움" in with_rows["text"]  # the packet does carry a fact of the told turn
+    assert "고마움" in with_rows["text"]  # the packet does carry facts of the told turn: the feeling and the event
+    assert '<Fact kind="event" turn="0">유나 event: 성을 떠났다</Fact>' in with_rows["text"]
     assert TOLD_VALUE not in with_rows["text"] and 'predicate="told"' not in with_rows["text"]
     assert with_rows["text"] == without["text"]
