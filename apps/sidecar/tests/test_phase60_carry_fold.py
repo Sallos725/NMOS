@@ -342,6 +342,7 @@ def test_an_owner_exclusion_in_the_target_leaves_carried_facts_out(migrated: str
         said = {(f["subject"], f["predicate"]) for f in _carried(view["facts"])}
         assert said == {("유나", "has_status")}
         assert not [a for a in view["assertions"] if a.get("carried") and a["subject"] == "세라"]
+        assert not [t for t in view["threads"] if t.get("carried")]  # 세라's promise left out with her
 
 
 # --- regression: memory apart, never in a fold ------------------------------------------------------------------
@@ -378,4 +379,3 @@ def test_regression_rows_are_listed_apart_and_enter_no_fold(migrated: str) -> No
         assert thread["by"] == "세라" and thread["to"] == "카이토" and "카이토" in thread["names"]
         # The read annotated copies: the link's rows are as stored.
         assert not [x for x in carried.regression if "subject_entity" in x]
-        assert not [t for t in view["threads"] if t.get("carried")]  # 세라's promise left out with her
