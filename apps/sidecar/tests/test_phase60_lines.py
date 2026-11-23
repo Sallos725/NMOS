@@ -555,7 +555,14 @@ def test_without_told_rows_the_pages_and_their_data_are_as_before(migrated, monk
             assert conn.execute("DELETE FROM assertion WHERE predicate = 'told'").rowcount == 1
         without = [client.get(u).content for u in urls]
         got = page_data(client, monkeypatch, conv, who)
-    assert with_rows == without  # nothing drawn from them yet, and nothing else moved
+    # The person sheet, the Inspector person page and the map draw the chains (PHASE-60 S8, Track 5); the graph and the
+    # memory document do not. Without the row nothing of them is left: no told section, and nothing else moved (the
+    # byte-for-byte pins of a chat without told rows are test_phase60_views_unchanged).
+    def told_section(page: bytes) -> bool:
+        return b'id=\\"s-told\\"' in page or b'id="s-told"' in page
+    assert [a == b for a, b in zip(with_rows, without)] == [False, False, False, True, True]
+    assert [told_section(page) for page in with_rows] == [True, True, True, False, False]
+    assert not any(told_section(page) for page in without)
     assert all("told" not in data for data in got.values())
 
 
