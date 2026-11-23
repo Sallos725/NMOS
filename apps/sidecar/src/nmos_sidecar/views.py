@@ -84,6 +84,8 @@ STYLE = """
 .nmos .v-diff-new{background:rgba(232,172,67,0.13);color:var(--c-warn);padding:1px 7px;border-radius:6px;font-weight:600}
 .nmos .v a.v-name{color:var(--c-link);font-weight:600}
 .nmos .v a.v-name:hover{text-decoration:underline}
+.nmos .v a.v-src{color:var(--c-link)}
+.nmos .v a.v-src:hover{text-decoration:underline}
 .nmos .v-text{color:var(--c-text-soft);margin:0}
 .nmos .v-note{font-size:var(--t-caption,13px);color:var(--c-text-muted);margin:8px 0 0}
 .nmos .v-more>summary{cursor:pointer;list-style:none;font-size:var(--t-secondary,14px);color:var(--c-link);padding:8px 0 2px;font-weight:500}
@@ -547,6 +549,34 @@ def carry_head(c: dict[str, Any], lang: str) -> str:
     return head + (" · " + t(lang, "carry_upto", t=cut) if cut is not None else "")
 
 
+def carry_line(row: dict[str, Any], lang: str) -> str:
+    """One carried line: a thread's kind, its words linked to where it was said in the source chat, when it happened
+    (without a turn: a carried row's turn is not this chat's), and the source chat's turn under it."""
+    text = _v(carry_text(row, lang))
+    href = carry_href(row)
+    main = f'<a class="v-src" href="{_v(href)}">{text}</a>' if href else text
+    if _is_thread(row):
+        main = _kind_tag(row.get("kind"), lang) + main
+    h = happened_mark({k: v for k, v in row.items() if k != "turn"}, lang)
+    src = row.get("carried_from")
+    turn = _turn_of(src.get("turn")) if isinstance(src, dict) else None
+    return line(main + (f" {h}" if h else ""), _v(t(lang, "carry_turn", t=turn)) if turn is not None else "")
+
+
+def carry_lines(c: dict[str, Any], lang: str, empty: str) -> str:
+    """The section's body: where from, then at most CARRY_MAX lines folded as the other lists, and how many more."""
+    rows = c.get("lines") or []
+    body = f'<p class="v-text">{_v(carry_head(c, lang))}</p>'
+    body += more([carry_line(r, lang) for r in rows[:CARRY_MAX]], lang) or empty
+    if len(rows) > CARRY_MAX:
+        left = _v(t(lang, "carry_left", n=len(rows) - CARRY_MAX))
+        src = str((c.get("source") or {}).get("id") or "")
+        body += (f'<p class="v-note">'
+                 + (f'<a class="v-src" href="/inspector/c/{src}">{left}</a>' if _UUID.fullmatch(src) else left)
+                 + "</p>")
+    return body
+
+
 def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     """A chat's memory as one document (PHASE-52 D2, PHASE-59 D3): now, open threads, people, so far, secrets, changed
     from the setting; sticky desktop TOC + mobile jump pills; at the foot, the way into everything else."""
@@ -593,11 +623,18 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     counts = {"s-now": len(now), "s-open": len(threads), "s-people": len(people),
               "s-sofar": len(scenes) + (1 if story else 0), "s-secrets": len(secrets), "s-changed": len(changed)}
     keys = ["s-now", "s-open", "s-people", "s-sofar", "s-secrets", "s-changed"]
+    c = d.get("carry")
+    carried = ""
+    if c:  # PHASE-60 S6: only while a link is in force
+        n = len(c.get("lines") or [])
+        counts["s-carry"] = n
+        keys.insert(1, "s-carry")
+        carried = section("s-carry", lang, carry_lines(c, lang, nothing), n or None)
     chips = '<div class="v-chips">' + "".join(
         f'<a href="#{k}"><span>{_v(t(lang, k))}</span>'
         + (f'<span class="v-chip-n">{counts[k]}</span>' if counts[k] else "") + "</a>"
         for k in keys) + "</div>"
-    body = (section("s-now", lang, more(now, lang, 6) or nothing)
+    body = (section("s-now", lang, more(now, lang, 6) or nothing) + carried
             + section("s-open", lang, (more(opened, lang) or nothing) + stale, len(threads))
             + section("s-people", lang, more(people, lang) or nothing, len(people))
             + section("s-sofar", lang, sofar or nothing)

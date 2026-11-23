@@ -109,3 +109,111 @@ def test_carry_head_says_where_from_in_words():
     reg = carry("regression", names=["세라", "카이토"])
     assert views.carry_head(reg, "ko") == "이전 타임라인 · 세라, 카이토만 기억"
     assert views.carry_head(reg, "en") == "Earlier timeline · remembered only by 세라, 카이토"
+
+
+# --- the panel's sanitizer ---------------------------------------------------------------------------------------
+
+UUID_RE = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+TURN_RE = "/t/(?:0|[1-9][0-9]{0,6})"
+
+
+def panel_safe(html: str) -> None:
+    """Only the tags and link shapes the plugin's sanitizer keeps (adapters/pocketrisu-plugin/src/inspector.ts)."""
+    assert "style=" not in html and "<script" not in html and "<svg" not in html and "<table" not in html
+    assert set(re.findall(r"<([a-z0-9]+)", html)) <= PANEL_TAGS - {"table", "thead", "tbody", "tr", "th", "td"}
+    for href in re.findall(r'href="([^"]*)"', html):
+        assert re.fullmatch(rf"/inspector/c/{UUID_RE}(?:/e/{UUID_RE}|{TURN_RE})?(?:#s-[a-z]+)?"
+                            rf"|/views/c/{UUID_RE}/(?:memory|map|person/{UUID_RE})|#s-[a-z]+", href), href
+    assert "mono" not in html
+
+
+def without_section(html: str, key: str, nxt: str) -> str:
+    """`html` with the section `key` (followed by the section `nxt`) and its contents chip taken out."""
+    head, rest = html.split(f'<div class="v-sec" id="{key}">')
+    rest = f'<div class="v-sec" id="{nxt}">' + rest.split(f'<div class="v-sec" id="{nxt}">', 1)[1]
+    return re.sub(rf'<a href="#{key}">.*?</a>', "", head) + rest
+
+
+# --- the memory document ------------------------------------------------------------------------------------------
+
+def test_memory_document_shows_continue_lines_after_now_in_ko_and_en():
+    d = {**memory_input(), "carry": carry()}
+    ko = views.memory(d, "ko")
+    assert re.findall(r'class="v-sec" id="(s-[a-z]+)"', ko) == [
+        "s-now", "s-carry", "s-open", "s-people", "s-sofar", "s-secrets", "s-changed"]
+    assert re.findall(r'<a href="#(s-[a-z]+)">', ko)[:2] == ["s-now", "s-carry"]
+    assert '<a href="#s-carry"><span>이전 채팅에서 이어받은 기억</span><span class="v-chip-n">3</span></a>' in ko
+    s = sec(ko)
+    assert '<h2 class="v-h2">이전 채팅에서 이어받은 기억<span class="v-n">3</span></h2>' in s
+    assert '<p class="v-text">세라 · 옛 항구에서 이어받음 · 이 채팅의 턴이 아님</p>' in s
+    assert f'<a class="v-src" href="/inspector/c/{SRC}/t/7">세라 위치 등대</a>' in s
+    assert f'<a class="v-src" href="/inspector/c/{SRC}">카이토 상태 지침</a>' in s  # turn null: the chat
+    assert (f'<span class="v-tag k-promise">약속</span><a class="v-src" href="/inspector/c/{SRC}/t/12">'
+            f'세라 → 카이토: 등대에서 만나기</a>') in s
+    assert "이전 채팅 t7" in s and "t-1" not in s
+    panel_safe(ko)
+
+    en = views.memory(d, "en")
+    s = sec(en)
+    assert "Carried from an earlier chat" in s
+    assert '<p class="v-text">Carried from 세라 · 옛 항구 · not this chat&#x27;s own turns</p>' in s
+    assert f'<a class="v-src" href="/inspector/c/{SRC}/t/7">세라 location 등대</a>' in s
+    assert "earlier chat t7" in s
+    panel_safe(en)
+
+
+def test_memory_document_with_carry_only_adds_its_section_and_chip():
+    for lang in ("ko", "en"):
+        base = views.memory(memory_input(), lang)
+        shown = views.memory({**memory_input(), "carry": carry()}, lang)
+        assert without_section(shown, "s-carry", "s-open") == base
+
+
+def test_memory_document_regression_head_names_who_remembers():
+    lines = [{**cfact("세라", "located_in", "등대"), "line": "fact"},
+             {**cthread("goal", "세라", "종 찾기"), "line": "thread"}]
+    d = {**memory_input(), "carry": carry("regression", lines, names=["세라", "카이토"])}
+    s = sec(views.memory(d, "ko"))
+    assert '<p class="v-text">이전 타임라인 · 세라, 카이토만 기억</p>' in s
+    assert "세라 위치 등대" in s and "세라: 종 찾기" in s
+    assert "Earlier timeline · remembered only by 세라, 카이토" in sec(views.memory(d, "en"))
+
+
+def test_memory_document_with_a_link_and_no_lines_still_says_where_from():
+    d = {**memory_input(), "carry": carry(lines=[])}
+    s = sec(views.memory(d, "ko"))
+    assert "세라 · 옛 항구에서 이어받음" in s and "아직 없어요" in s and 'class="v-n"' not in s
+    assert '<a href="#s-carry"><span>이전 채팅에서 이어받은 기억</span></a>' in views.memory(d, "ko")
+
+
+def test_memory_document_shows_fifty_lines_and_counts_the_rest():
+    lines = [cfact("세라", "has_status", None, f"상태 {i}", turn=i) for i in range(60)]
+    for lang, left in (("ko", "외 10줄"), ("en", "10 more")):
+        s = sec(views.memory({**memory_input(), "carry": carry(lines=lines)}, lang))
+        assert s.count('class="v-line"') == 50
+        assert "상태 49<" in s and "상태 50<" not in s
+        assert f'<span class="v-n">60</span>' in s
+        assert f'<p class="v-note"><a class="v-src" href="/inspector/c/{SRC}">{left}</a></p>' in s
+        assert '<details class="v-more">' in s  # the 50 fold as the other lists do
+    s = sec(views.memory({**memory_input(), "carry": carry(lines=lines[:50])}, "en"))
+    assert s.count('class="v-line"') == 50 and "v-note" not in s
+
+
+def test_memory_document_carried_line_shows_when_it_happened_without_a_turn_of_this_chat():
+    lines = [cfact("세라", "event", None, "종이 울렸다", when_happened="어제"),
+             cthread("promise", "세라", "등대에서 만나기", to="카이토", when_happened="4월 12일")]
+    s = sec(views.memory({**memory_input(), "carry": carry(lines=lines)}, "ko"))
+    assert "</a> [일어난 때: 어제]" in s and "</a> [일어난 때: 4월 12일]" in s and "t-1" not in s
+
+
+def test_memory_document_escapes_carried_values_and_source_names():
+    lines = [cfact("세라", "has_status", None, "<b>지침</b>"), cthread("goal", "<b>세라</b>", "<b>종</b>")]
+    d = {**memory_input(), "carry": carry(lines=lines, source={"id": SRC, "character": "<b>세라</b>",
+                                                                "chat": "<b>옛 항구</b>"})}
+    for lang in ("ko", "en"):
+        s = sec(views.memory(d, lang))
+        assert "<b>" not in s
+        assert "&lt;b&gt;세라&lt;/b&gt; · &lt;b&gt;옛 항구&lt;/b&gt;" in s and "&lt;b&gt;지침&lt;/b&gt;" in s
+        assert "&lt;b&gt;세라&lt;/b&gt;: &lt;b&gt;종&lt;/b&gt;" in s
+    reg = {**memory_input(), "carry": carry("regression", [], names=["<b>세라</b>"])}
+    assert "<b>" not in sec(views.memory(reg, "ko")) and "&lt;b&gt;세라&lt;/b&gt;만 기억" in sec(views.memory(reg, "ko"))
