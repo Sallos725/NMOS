@@ -835,7 +835,8 @@ describe('panel', () => {
       choose(preset, String([...preset.options].findIndex((o) => o.text === 'OpenRouter')));
       expect(h.endpoint.value).toBe(OR);
       expect(shown(h.effort)).toBe(true);
-      choose(preset, String([...preset.options].findIndex((o) => o.text === 'OpenAI')));
+      choose(preset, '0');  // "Off" empties the address
+      expect(h.endpoint.value).toBe('');
       expect(shown(h.effort)).toBe(false);
       h.panel.remove();
     });

@@ -71,7 +71,7 @@ describe('extra request values (PHASE-61 S4, A7)', () => {
     for (const url of ['https://openrouter.ai/api/v1', ' https://OpenRouter.AI/api/v1 ', 'https://eu.openrouter.ai/api/v1',
       'http://openrouter.ai:443/v1']) expect(isOpenRouter(url), url).toBe(true);
     for (const url of ['', 'openrouter.ai/api/v1', 'not a url', 'https://notopenrouter.ai/v1',
-      'https://openrouter.ai.example.com/v1', 'https://api.openai.com/v1', 'https://example.com/openrouter.ai'])
+      'https://openrouter.ai.example.com/v1', 'https://llm.example/v1', 'https://example.com/openrouter.ai'])
       expect(isOpenRouter(url), url).toBe(false);
   });
 });
