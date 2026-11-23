@@ -1616,7 +1616,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         roles = role_hints(ctx, earlier) if compiler in ROLES else []
         if compiler in PARTS_APART:
             pairs = name_pairs(hints, turn_text, persona_of(ctx["target"].get("host_persona_name")))
-        parsed, raw, usage = metered(complete, prompt_of(compiler, bool(roles)).format(registry=registry_prompt()),
+        system = prompt_of(compiler, bool(roles)).format(registry=registry_prompt(compiler=compiler))  # PHASE-60 S7
+        parsed, raw, usage = metered(complete, system,
                                      build_prompt(ctx, hints, promises, secrets, threads, roles, pairs,
                                                   compiler=compiler))
     items = parsed.get("assertions")

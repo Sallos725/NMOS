@@ -12,7 +12,12 @@ import pytest
 
 from nmos_sidecar import entities, extraction as X, generations, predicates as P
 from nmos_sidecar.config import Settings
+from conftest import make_client
+from test_extract_v18 import USED, chat_of
+from test_extraction import drain
+from test_generations import LLM
 from test_phase60_pins import BASE, PINNED_EXTRACT_SPEC_FIELDS
+from test_sidecar_integration import sync
 
 REGISTRY_PROMPT_SHA256 = "9cd57478151107025e53b7f29a38f5d7154ee57c66a5a92b8b3cfeb2e894084b"
 REGISTRY_PROMPT_ONLY_SHA256 = "4eac87e6574ab18970f8c236a774a47c8eb9749c2699ef1a7f210c76a3d72c63"
@@ -97,6 +102,38 @@ def test_the_told_definition_is_in_the_v19_key_only(monkeypatch):
     monkeypatch.setitem(P.EXTENSIONS, "extract-v19", {"told": P.TOLD})
     monkeypatch.setitem(P.EXTENSION_PARTICIPANTS, "extract-v19", frozenset())
     assert X.extractor(settings["extract-v19"]).key != before["extract-v19"]
+
+
+TOLD_LINE = "- told (subject: character"
+ALLOWED = "Allowed predicates (anything else is rejected):"  # in every extraction system prompt
+
+
+def extraction_systems(url: str, compiler: str) -> list[str]:
+    """The extraction system prompts the worker sends for a short chat under `compiler` (a stub model, no call)."""
+    systems: list[str] = []
+
+    def complete(system, user):
+        systems.append(system)
+        return {"assertions": []}, "{}", USED
+
+    with make_client(url, **LLM, extract_compiler=compiler) as c:
+        sync(c, chat_of("세라는 카이토에게 하나가 열쇠를 숨겼다는 사실을 조용히 털어놓았다."))
+        drain(url, complete)
+    found = [s for s in systems if ALLOWED in s]
+    assert found, "no extraction call was recorded"
+    return found
+
+
+def test_the_worker_formats_the_v19_registry_and_rules(migrated):
+    for system in extraction_systems(migrated, "extract-v19"):
+        assert TOLD_LINE in system and X.HAPPENED_RULE in system and X.TOLD_RULE in system
+        assert system.count(P.TOLD.description) == 1
+
+
+def test_the_worker_formats_v18_as_before(migrated):
+    for system in extraction_systems(migrated, "extract-v18"):
+        assert TOLD_LINE not in system and X.HAPPENED_RULE not in system and X.TOLD_RULE not in system
+        assert P.registry_prompt() in system
 
 
 def test_settings_accept_v19_and_refuse_a_later_name():
