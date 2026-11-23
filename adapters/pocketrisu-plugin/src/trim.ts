@@ -17,11 +17,15 @@ export interface TrimResult {
 }
 
 /**
- * The only keys a dropped prompt message may carry: a plain text turn. Nothing in HOST-FACTS, ARCHITECTURE §4
- * or the recorded host fixtures documents another key the host puts on chat messages in `beforeRequest`, so any
- * other key (images, tool calls, names, …) means the message is more than its text and nothing is dropped.
+ * The only keys a dropped prompt message may carry: a plain text turn and the per-message bookkeeping the host
+ * itself puts on every chat message it builds (`memo`, the message's id; `attr`; `thoughts`, the reasoning the host
+ * split out of that same message). Source reading of the host at v1.17.0 (`OpenAIChat` and the chat loop in
+ * `src/ts/process/index.svelte.ts`), not a runtime observation: allowing them only lets a message be dropped with
+ * its own bookkeeping, so it is safe whether or not they are there. Any other key (`multimodals`: the message
+ * carries images; tool calls; a `name`; a cache point; …) means the message is more than its text and nothing is
+ * dropped.
  */
-const DROPPABLE_KEYS: ReadonlySet<string> = new Set(['role', 'content']);
+const DROPPABLE_KEYS: ReadonlySet<string> = new Set(['role', 'content', 'memo', 'attr', 'thoughts']);
 
 /** `matchPromptToHost`'s default `minAnchor`: shorter host messages are never anchor-matched. */
 const MIN_ANCHOR = 16;

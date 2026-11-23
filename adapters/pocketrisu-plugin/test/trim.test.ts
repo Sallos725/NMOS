@@ -250,7 +250,7 @@ describe('trimPrompt (Phase 60 S1 / A15)', () => {
     expect(resMarker.prompt).toBe(markerPrompt);
   });
 
-  it('refuses with format when a message to drop carries anything beyond role and content', () => {
+  it('refuses with format when a message to drop carries anything beyond its text and the host bookkeeping', () => {
     const { host, prompt } = baseFixture();
     const sideFields: Array<[number, string, unknown]> = [
       [1, 'multimodals', [{ type: 'image', base64: 'data:image/png;base64,AAAA' }]],
@@ -264,6 +264,17 @@ describe('trimPrompt (Phase 60 S1 / A15)', () => {
       expect(res, key).toEqual({ prompt: withField, dropped: 0, savedTokens: 0, reason: 'format' });
       expect(res.prompt, key).toBe(withField);
     }
+
+    // The host's own per-message bookkeeping (memo = the message id, attr, thoughts) rides along with a dropped message.
+    const hostShaped: PromptMessage[] = prompt.map((m, i) => (i === 0 ? { ...m } : { ...m, memo: `id-${i}`, attr: [], thoughts: [] }));
+    const resHost = runTrim(hostShaped, host, 'u1');
+    expect(resHost.reason).toBeNull();
+    expect(resHost.dropped).toBe(2);
+    // …but not with images on it, as the host sends them.
+    const hostImage: PromptMessage[] = hostShaped.map((m, i) => (i === 1
+      ? { ...m, multimodals: [{ type: 'image', base64: 'data:image/png;base64,AAAA' }] }
+      : m));
+    expect(runTrim(hostImage, host, 'u1')).toEqual({ prompt: hostImage, dropped: 0, savedTokens: 0, reason: 'format' });
 
     // A kept message (the boundary and after) may carry other keys: only dropped messages are checked.
     const keptField: PromptMessage[] = prompt.map((m, i) => (i === 3
