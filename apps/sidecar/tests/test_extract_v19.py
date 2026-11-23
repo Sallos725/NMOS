@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+from uuid import uuid4
 
 import psycopg
 import pytest
@@ -328,6 +329,68 @@ def test_the_control_written_as_knows_queues_a_reveal_check(migrated):
     assert queued >= 1 and jobs == queued
     [knows] = [r for r in rows if r["predicate"] == "knows"]
     assert [s["id"] for s in secrets if s["predicate"] == "knows"] == [knows["id"]]
+
+
+def head_of(conn, chat) -> object:
+    return conn.execute("SELECT head_commit_id FROM conversation WHERE host_chat_ref = %s",
+                        (chat.id,)).fetchone()["head_commit_id"]
+
+
+def observe(conn, head, position: int, key: str, value: str, rules: str = "rules-a") -> None:
+    """A status-window observation stored on the head's revision at `position`, as the parser would store it."""
+    conn.execute(
+        "INSERT INTO state_observation (conversation_id, source_revision_id, rules_version, rule_id, key, value)"
+        " SELECT so.conversation_id, am.source_revision_id, %s, 'clock', %s, %s FROM active_membership am"
+        " JOIN source_revision sr ON sr.id = am.source_revision_id JOIN source_object so ON so.id = sr.source_object_id"
+        " WHERE am.commit_id = %s AND am.position = %s",
+        (rules, key, value, head, position))
+
+
+def at(head, position: int) -> dict:
+    """The fields of an extraction context `story_clock` reads: the target's commit and its members' positions."""
+    return {"target": {"commit_id": head}, "members": [{"position": position - 1}, {"position": position}]}
+
+
+def test_story_clock_reads_the_latest_unambiguous_field_as_of_the_target(migrated):
+    chat = chat_of("세라는 문을 열었다.", "카이토는 창가에 앉았다.", "하나는 차를 끓였다.")
+    with make_client(migrated) as c:
+        sync(c, chat)
+    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+        head = head_of(conn, chat)
+        assert X.story_clock(conn, at(head, 5)) is None  # no observation: no clock
+        observe(conn, head, 1, "날짜", "4월 12일")
+        observe(conn, head, 1, "시간", "오후 3시")
+        observe(conn, head, 1, "기분", "맑음")  # not a clock key
+        observe(conn, head, 5, "날짜", "4월 13일")
+        assert X.story_clock(conn, at(head, 1)) == "날짜: 4월 12일; 시간: 오후 3시"
+        assert X.story_clock(conn, at(head, 3)) == "날짜: 4월 12일; 시간: 오후 3시"
+        assert X.story_clock(conn, at(head, 5)) == "날짜: 4월 13일; 시간: 오후 3시"  # each field its own latest
+        observe(conn, head, 5, "date", "April 13")  # two date keys at the latest position: ambiguous
+        assert X.story_clock(conn, at(head, 5)) == "시간: 오후 3시"
+        assert X.story_clock(conn, at(head, 3)) == "날짜: 4월 12일; 시간: 오후 3시"
+        conn.execute("DELETE FROM state_observation WHERE key = 'date'")
+        observe(conn, head, 3, " Time ", "가" * 81)  # too long: the field is left out, not an earlier one
+        assert X.story_clock(conn, at(head, 3)) == "날짜: 4월 12일"
+        conn.execute("UPDATE state_observation SET value = %s WHERE key = ' Time '", ("가" * 80,))
+        assert X.story_clock(conn, at(head, 3)) == "날짜: 4월 12일;  Time : " + "가" * 80  # as stored
+        conn.execute("UPDATE state_observation SET value = '   ' WHERE key = ' Time '")
+        assert X.story_clock(conn, at(head, 3)) == "날짜: 4월 12일"
+        conn.execute("DELETE FROM state_observation WHERE key = ' Time '")
+        observe(conn, head, 3, "시각", "저녁", rules="rules-b")  # two rule sets: no clock
+        assert X.story_clock(conn, at(head, 3)) is None
+        assert X.story_clock(conn, at(head, 1)) == "날짜: 4월 12일; 시간: 오후 3시"  # rules-b is after turn 0
+        conn.execute("DELETE FROM state_observation WHERE rules_version = 'rules-b'")
+        assert X.story_clock(conn, at(head, 3)) == "날짜: 4월 12일; 시간: 오후 3시"
+        assert X.story_clock(conn, at(uuid4(), 3)) is None  # another commit's membership
+        conn.execute("DELETE FROM state_observation")
+    chat.disable(3)  # turn 1's reply
+    with make_client(migrated) as c:
+        sync(c, chat)
+    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+        head = head_of(conn, chat)
+        observe(conn, head, 1, "날짜", "4월 12일")
+        observe(conn, head, 3, "날짜", "4월 20일")  # on the disabled message: ignored
+        assert X.story_clock(conn, at(head, 5)) == "날짜: 4월 12일"
 
 
 def test_settings_accept_v19_and_refuse_a_later_name():

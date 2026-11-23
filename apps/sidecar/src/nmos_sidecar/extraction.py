@@ -30,6 +30,7 @@ from .predicates import (DERIVED, EXTENSION_PARTICIPANTS, REGISTRY, alias_eviden
                          knowledge, outcome, participants, horizon, registry_for, registry_prompt, salience, semantics,
                          validate, when_happened)
 from .secrets import fold as fold_secrets, reveal_value
+from .source_time import KEYS
 from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity
 from .reconcile import Entry, RevKey, turn_layout
 from .variants import FAMILY
@@ -645,6 +646,50 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, tu
     members = [r for r in rows if r["turn"] == target["turn"]]
     context = [r for r in rows if r["turn"] < target["turn"]]
     return {"target": target, "members": members, "context": context, "done": bool(done)}
+
+
+def story_clock(conn: psycopg.Connection, ctx: dict[str, Any]) -> str | None:
+    """The literal status-window clock as of the TARGET turn (PHASE-60 S7, ADR 0086 item 3), or None.
+
+    Read from `state_observation` as stored, on the target's commit up to the target's last member, after the latest
+    `allBefore` cut (as `state.current_state`), on accepted, enabled, non-comment revisions. Observations of more than
+    one `rules_version` give no clock. Per category (`date`, then `time`, by `source_time.KEYS`), only the rows at the
+    greatest position that has one count: exactly one, with a value non-empty and at most `CLOCK_MAX` characters, gives
+    the field; otherwise that category is left out (as `source_time.read`). The text is `key: value` pairs, as stored,
+    joined by "; ". A recorded input like the hints: never part of validity or of any key."""
+    upto = max(r["position"] for r in ctx["members"])
+    rows = conn.execute(
+        """
+        WITH m AS (
+            SELECT am.position, sr.id, sr.lifecycle, sr.metadata
+            FROM active_membership am
+            JOIN source_revision sr ON sr.id = am.source_revision_id
+            WHERE am.commit_id = %(head)s AND am.position <= %(upto)s
+        )
+        SELECT st.key, st.value, st.rules_version, m.position
+        FROM state_observation st
+        JOIN m ON m.id = st.source_revision_id
+        WHERE m.lifecycle = 'accepted'
+          AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')
+          AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+          AND coalesce(m.metadata->>'isComment', 'false') <> 'true'
+          AND lower(btrim(st.key)) = ANY(%(keys)s)
+        ORDER BY m.position, st.key, st.rule_id
+        """,
+        {"head": ctx["target"]["commit_id"], "upto": upto, "keys": list(KEYS)},
+    ).fetchall()
+    if len({r["rules_version"] for r in rows}) != 1:
+        return None
+    fields = []
+    for category in ("date", "time"):
+        candidates = [r for r in rows if KEYS[r["key"].strip().lower()] == category]
+        if not candidates:
+            continue
+        latest = max(r["position"] for r in candidates)
+        there = [r for r in candidates if r["position"] == latest]
+        if len(there) == 1 and there[0]["value"].strip() and len(there[0]["value"]) <= CLOCK_MAX:
+            fields.append(f"{there[0]['key']}: {there[0]['value']}")
+    return "; ".join(fields) or None
 
 
 def _speaker(meta: dict[str, Any]) -> str:
