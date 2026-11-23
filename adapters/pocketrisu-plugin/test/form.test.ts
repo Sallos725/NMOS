@@ -93,6 +93,19 @@ describe('leaving out old dialogue (PHASE-60 S1)', () => {
     expect(trimArgs({ on: false, keep: '' })).toEqual({ trim_old_turns: 0, keep_recent_turns: 20 });
   });
 
+  it('is a section of its own that sends nothing to the sidecar', () => {
+    const before: FormValues = { ...structuredClone(base), trim: { on: false, keep: '20' } };
+    const edited = structuredClone(before);
+    expect(dirtySections(before, edited)).toEqual([]);
+    edited.trim = { on: true, keep: '30' };
+    expect(dirtySections(before, edited)).toEqual(['trim']);
+    expect(configBody(['trim'], edited)).toEqual({});
+    edited.tune.topK = '3';
+    expect(dirtySections(before, edited)).toEqual(['tune', 'trim']);
+    expect(configBody(dirtySections(before, edited), edited)).not.toHaveProperty('trim_old_turns');
+    expect(configBody(dirtySections(before, edited), edited)).not.toHaveProperty('keep_recent_turns');
+  });
+
   it('stores what the plugin reads back', async () => {
     try {
       for (const v of [{ on: true, keep: '30' }, { on: false, keep: '' }, { on: true, keep: '500' }, { on: true, keep: '2' }]) {

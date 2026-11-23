@@ -1,6 +1,6 @@
 // Settings form model: which sections changed, and the single sidecar update they add up to.
 
-export type Section = 'conn' | 'llm' | 'emb' | 'tune';
+export type Section = 'conn' | 'llm' | 'emb' | 'tune' | 'trim';
 
 /** Request-path deadline when the plugin arg is unset (0). 3 s: on PocketRisu v1.12.0 a warm
  *  generation needs ≈1.5 s at 5,000 messages and ≈2.7 s at 10,000 (docs/perf/scale.md). */
@@ -22,7 +22,9 @@ export const PANEL_MAX_RESERVED_TOKENS = 8000;
 export const DEFAULT_KEEP_RECENT_TURNS = 20;
 export const MIN_KEEP_RECENT_TURNS = 4;
 export const MAX_KEEP_RECENT_TURNS = 200;
-export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune'];
+/** `trim` is plugin args only, apart from `conn`: a connection save resets what the sidecar can do, and it has no
+ *  part in the sidecar update `configBody` builds. */
+export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'trim'];
 
 /** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0022). */
 export const VERTEX_URL = 'https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi';
@@ -84,6 +86,8 @@ export interface FormValues {
   emb: ModelValues;
   tune: { threshold: string; minSim: string; embedWait: string; topK: string; facts: string; backfill: string;
     summaries: boolean; canonFacts: boolean };
+  /** Leaving out old dialogue (PHASE-60 S1): the switch and the recent turns always sent, as typed. */
+  trim: { on: boolean; keep: string };
 }
 
 /** Sections whose values differ from the last loaded or saved baseline. */

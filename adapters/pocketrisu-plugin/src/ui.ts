@@ -7,9 +7,10 @@ import { budgetAdvice } from './budget';
 import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
-import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, embedWaitTooLong, endpointForKey, fillProject,
-  isVertexEndpoint, MAX_DEADLINE_MS, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl, serviceAccountProject,
-  VERTEX_URL, type FormValues, type Section } from './form';
+import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_RESERVED_TOKENS, dirtySections, embedWaitTooLong,
+  endpointForKey, fillProject, isVertexEndpoint, MAX_DEADLINE_MS, MAX_KEEP_RECENT_TURNS, MIN_KEEP_RECENT_TURNS, OLLAMA_DOCKER,
+  PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl, serviceAccountProject, trimArgs, VERTEX_URL, type FormValues,
+  type Section } from './form';
 import { failureKind } from './failure';
 import { parserBindings, parserDraft, presetRules, type ParserPreset } from './parser-form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
@@ -111,7 +112,7 @@ const PARSER_EXAMPLE = {
 };
 
 const SECTION_TITLE: Record<Section, StringKey> = {
-  conn: 'conn.title', llm: 'llm.title', emb: 'emb.title', tune: 'tune.title',
+  conn: 'conn.title', llm: 'llm.title', emb: 'emb.title', tune: 'tune.title', trim: 'trimset.title',
 };
 
 // Opaque on purpose: the host settings page behind the full-screen frame must not show through.
@@ -1929,6 +1930,18 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('div', { class: 'check' }, canonFacts, el('span', { text: L('tune.canon_facts') })),
     el('p', { class: 'sub', text: L('tune.canon_facts_hint') })));
 
+  // Leaving out old dialogue (PHASE-60 S1, ADR 0083): two plugin args, saved on their own, never in the sidecar update.
+  const trimOn = el('input', { type: 'checkbox' });
+  const trimKeep = el('input', { type: 'number', min: MIN_KEEP_RECENT_TURNS, max: MAX_KEEP_RECENT_TURNS, step: 1 });
+  trimKeep.value = String(DEFAULT_KEEP_RECENT_TURNS);
+  // Without summaries the sidecar never moves the cut (`no_summaries`): said while both boxes say so, in words.
+  const trimWarn = el('div', { class: 'warn', text: L('trimset.needs_summaries'), style: 'display:none' });
+  const syncTrimWarn = (): void => { trimWarn.style.display = trimOn.checked && !summaries.checked ? '' : 'none'; };
+  settingsView.append(el('div', { class: 'card' },
+    el('h2', { text: L('trimset.title') }), el('p', { class: 'sub', text: L('trimset.sub') }),
+    el('div', { class: 'check' }, trimOn, el('span', { text: L('trimset.on') })),
+    field(L('trimset.keep'), trimKeep), trimWarn));
+
   // Status drafts have their own Apply; the general Save never reads or resets these controls.
   const rules = el('textarea', { id: 'nmos-parser-draft', spellcheck: 'false', 'aria-label': L('rules.draft'),
     placeholder: L('rules.none') });
@@ -2174,6 +2187,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       llm: llm.values(), emb: emb.values(),
       tune: { threshold: threshold.value, minSim: minSim.value, embedWait: embedWait.value, topK: topK.value,
         facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked },
+      trim: { on: trimOn.checked, keep: trimKeep.value },
     };
   }
   let baseline: FormValues = values();
@@ -2182,6 +2196,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   function update(message?: { text: string; kind: 'ok' | 'err' | 'warn' | 'muted' }): void {
     const d = dirty();
+    syncTrimWarn();  // here, since loading and saving set the boxes without an event
     save.disabled = d.length === 0;
     revert.disabled = d.length === 0;
     if (message) say(barText, message.text, message.kind);
@@ -2201,6 +2216,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     hudBox.checked = Number(await deps.getArg('hud')) === 1;
   }
 
+  /** The trimming args as `host.ts` reads them: on only at 1, the recent turns kept within 4..200 (20 when unset). */
+  async function loadTrim(): Promise<void> {
+    const stored = trimArgs({ on: Number(await deps.getArg('trim_old_turns')) === 1,
+      keep: String((await deps.getArg('keep_recent_turns')) ?? '') });
+    trimOn.checked = stored.trim_old_turns === 1;
+    trimKeep.value = String(stored.keep_recent_turns);
+  }
+
   function fillServer(cfg: ServerConfig): void {
     install = cfg.install ?? null;
     llm.fill(cfg.llm); emb.fill(cfg.embeddings);
@@ -2218,6 +2241,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   async function loadAll(): Promise<void> {
     await loadConn();
+    await loadTrim();
     try { fillServer(await deps.api<ServerConfig>('GET', '/v1/config', undefined, 5000)); } catch { /* the status tab shows why */ }
     baseline = values();
     update();
@@ -2269,7 +2293,18 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     let connSaved = 0;
     let connTotal = 0;
     let connComplete = !d.includes('conn');
+    let trimComplete = !d.includes('trim');
     try {
+      if (d.includes('trim')) {
+        // Plugin args only: no sidecar update, and the connection and status-rule state stay as they are.
+        const args = trimArgs(v.trim);
+        await deps.setArg('trim_old_turns', args.trim_old_turns);
+        await deps.setArg('keep_recent_turns', args.keep_recent_turns);
+        trimComplete = true;
+        trimKeep.value = String(args.keep_recent_turns);  // show what was stored: kept within 4..200
+        baseline = { ...baseline, trim: values().trim };
+        if (d.length === 1) { update({ text: L('saved'), kind: 'ok' }); return true; }
+      }
       if (d.includes('conn')) {
         // The prior connection's capabilities must not enable status writes to a changed sidecar.
         parserSupported = false; updateParser();
@@ -2316,7 +2351,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       return true;
     } catch (error) {
       const text = errorText(lang, error);
-      update({ text: !connComplete ? L('conn_save_failed', { n: connSaved, total: connTotal, e: text })
+      update({ text: !trimComplete ? text : !connComplete ? L('conn_save_failed', { n: connSaved, total: connTotal, e: text })
         : d.includes('conn') ? L('conn_saved_server_failed', { e: text }) : text, kind: 'err' });
       return false;
     }
@@ -2893,7 +2928,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   function groupSettings(): void {
     const byTitle: Record<string, Group> = {
       [L('hud.title')]: 'display', [L('conn.title')]: 'connection', [L('llm.title')]: 'models', [L('emb.title')]: 'models',
-      [L('tune.title')]: 'memory', [L('rules.title')]: 'rules', [L('exp.title')]: 'backup', [L('rst.title')]: 'backup',
+      [L('tune.title')]: 'memory', [L('trimset.title')]: 'memory', [L('rules.title')]: 'rules', [L('exp.title')]: 'backup', [L('rst.title')]: 'backup',
     };
     const existingCards = Array.from(settingsView.children) as HTMLElement[];
     for (const card of existingCards) {
