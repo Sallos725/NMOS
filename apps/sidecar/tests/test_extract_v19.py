@@ -7,7 +7,10 @@ from __future__ import annotations
 
 import hashlib
 
+import pytest
+
 from nmos_sidecar import entities, extraction as X, predicates as P
+from nmos_sidecar.config import Settings
 
 REGISTRY_PROMPT_SHA256 = "9cd57478151107025e53b7f29a38f5d7154ee57c66a5a92b8b3cfeb2e894084b"
 REGISTRY_PROMPT_ONLY_SHA256 = "4eac87e6574ab18970f8c236a774a47c8eb9749c2699ef1a7f210c76a3d72c63"
@@ -70,3 +73,9 @@ def test_v19_prompt_extends_v18_and_joins_only_v18_compiler_sets():
     assert v19.format(registry=P.registry_prompt(compiler="extract-v19"))
     assert "extract-v19" in X.ROLES & X.PARTS_APART & X.CONFIRMS & X.FEELINGS & entities.PART_EDGES
     assert "extract-v19" not in X.HORIZONS | X.SPEAKERS
+
+
+def test_settings_accept_v19_and_refuse_a_later_name():
+    assert Settings(database_url="", extract_compiler="extract-v19").extract_compiler == "extract-v19"
+    with pytest.raises(ValueError, match="extract-v19"):
+        Settings(database_url="", extract_compiler="extract-v20")
