@@ -64,7 +64,7 @@ class CarryChanged(CarryError):
 
 
 class TooManyRows(CarryError):
-    """The reading holds more rows than a link may carry (the API answers 422 with a structured detail)."""
+    """The reading holds more rows than a link may carry (the API answers 422 with `too_many_rows: rows=… max=…`)."""
 
     def __init__(self, rows: int, max_rows: int) -> None:
         super().__init__(f"the reading holds {rows} rows; a link carries at most {max_rows}")

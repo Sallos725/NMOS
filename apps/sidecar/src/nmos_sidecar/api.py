@@ -1004,8 +1004,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return HTTPException(status_code=409, detail={"message": "the source changed since its preview",
                                                           "preview": jsonable_encoder(error.preview)})
         if isinstance(error, carry.TooManyRows):
-            return HTTPException(status_code=422, detail={"code": "too_many_rows", "rows": error.rows,
-                                                          "max": error.max, "message": str(error)})
+            return HTTPException(status_code=422,
+                                 detail=f"too_many_rows: rows={error.rows} max={error.max} ({error})")
         return HTTPException(status_code=422, detail=str(error))
 
     def carry_labelled(conn, link: dict[str, Any] | None) -> dict[str, Any] | None:

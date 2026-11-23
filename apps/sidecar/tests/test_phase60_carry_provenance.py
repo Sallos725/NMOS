@@ -186,11 +186,12 @@ def test_too_many_rows_exception_shape() -> None:
     assert str(err) == "the reading holds 2005 rows; a link carries at most 2000"
 
 
-def test_row_cap_refusal_returns_structured_422_on_preview_and_link(
+def test_row_cap_refusal_returns_422_string_with_counts_on_preview_and_link(
     migrated: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Exceeding `carry.MAX_ROWS` raises `TooManyRows` and answers 422 with a stable structured detail on both
-    preview and link, while other `CarryError` refusals keep their plain string detail."""
+    """Exceeding `carry.MAX_ROWS` raises `TooManyRows` and answers 422 with a stable string detail
+    `too_many_rows: rows=<N> max=<M> (<message>)` on both preview and link, while other `CarryError` refusals stay
+    unchanged."""
     with make_client(migrated, **ON) as c:
         src_sim = _build_source_chat(4)
         sync(c, src_sim, character_name="세라", chat_name="항구의 밤", persona_name="도현")
@@ -219,22 +220,23 @@ def test_row_cap_refusal_returns_structured_422_on_preview_and_link(
             assert caught.value.max == 2
             assert str(caught.value) == f"the reading holds {total} rows; a link carries at most 2"
 
-        expected = {
-            "code": "too_many_rows",
-            "rows": total,
-            "max": 2,
-            "message": f"the reading holds {total} rows; a link carries at most 2",
-        }
+        msg = f"the reading holds {total} rows; a link carries at most 2"
+        expected = f"too_many_rows: rows={total} max=2 ({msg})"
         for path in (f"/v1/conversations/{tgt_id}/carry/preview", f"/v1/conversations/{tgt_id}/carry"):
             res = c.post(path, json={"source_conversation_id": src_id, "mode": "continue"})
             assert res.status_code == 422, res.text
-            assert res.json()["detail"] == expected
+            detail = res.json()["detail"]
+            assert isinstance(detail, str)
+            assert detail.startswith("too_many_rows: rows=")
+            assert f"rows={total}" in detail and "max=2" in detail
+            assert detail == expected
 
-        # Other CarryErrors stay plain strings.
+        # Other CarryErrors stay plain strings without the too_many_rows prefix.
         other = c.post(f"/v1/conversations/{src_id}/carry/preview",
                        json={"source_conversation_id": src_id, "mode": "continue"})
         assert other.status_code == 422
         assert isinstance(other.json()["detail"], str) and "never carries itself" in other.json()["detail"]
+        assert not other.json()["detail"].startswith("too_many_rows:")
 
         with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
             assert conn.execute("SELECT count(*) AS n FROM conversation_carry").fetchone()["n"] == 0
