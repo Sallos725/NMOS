@@ -16,8 +16,11 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+import psycopg
+
+from . import summaries
 from .entities import PERSONA, Resolution
-from .facts import fact_text
+from .facts import fact_text, memory_view
 
 SHAPE = 1
 MAX_ROWS = 2000
@@ -477,3 +480,158 @@ def preview_of(
         "fingerprint": reading["fingerprint"],
         "replaces": str(replaces) if replaces is not None else None,
     })
+
+
+# --- database reading -------------------------------------------------------------------------------------------
+
+def _as_uuid(value: UUID | str) -> UUID:
+    return value if isinstance(value, UUID) else UUID(str(value))
+
+
+def _validate_pair(
+    conn: psycopg.Connection,
+    target_id: UUID | str,
+    source_id: UUID | str,
+    *,
+    lock: bool = False,
+) -> dict[str, Any]:
+    tgt, src = _as_uuid(target_id), _as_uuid(source_id)
+    if tgt == src:
+        raise CarryError("a chat never carries itself")
+    sql = (
+        "SELECT id, host_character_name, host_chat_name FROM conversation"
+        " WHERE id = ANY(%s) ORDER BY id"
+        + (" FOR UPDATE" if lock else "")
+    )
+    found = {r["id"]: r for r in conn.execute(sql, ([tgt, src],)).fetchall()}
+    if tgt not in found:
+        raise NoSuchChat(f"no conversation {tgt}")
+    if src not in found:
+        raise NoSuchChat(f"no conversation {src}")
+    s = found[src]
+    return {"character": s["host_character_name"], "chat": s["host_chat_name"]}
+
+
+def cutoff_of(
+    conn: psycopg.Connection,
+    source_id: UUID | str,
+    cutoff_turn: int | None = None,
+) -> tuple[UUID, int, int | None]:
+    """Resolve the source's head commit and cutoff (position, turn), or raise NoSuchChat / CarryError."""
+    src = _as_uuid(source_id)
+    row = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (src,)).fetchone()
+    if row is None:
+        raise NoSuchChat(f"no conversation {src}")
+    head: UUID | None = row["head_commit_id"]
+    if head is None:
+        raise CarryError("the source has no messages")
+    if cutoff_turn is None:
+        last = conn.execute(
+            "SELECT position, turn FROM active_membership WHERE commit_id = %s ORDER BY position DESC LIMIT 1",
+            (head,),
+        ).fetchone()
+        if last is None:
+            raise CarryError("the source has no messages")
+        return head, int(last["position"]), last["turn"]
+    found = conn.execute(
+        "SELECT max(position) AS position FROM active_membership WHERE commit_id = %s AND turn = %s",
+        (head, cutoff_turn),
+    ).fetchone()
+    if found is None or found["position"] is None:
+        raise CarryError(f"turn {cutoff_turn} is not on the source's current head")
+    return head, int(found["position"]), cutoff_turn
+
+
+def _fetch_revisions(conn: psycopg.Connection, view: Mapping[str, Any], mode: str) -> dict[int, UUID]:
+    """Fetch source_revision_id for every stored assertion referenced by the reading, in one query."""
+    ids: set[int] = set()
+    for row in view.get("facts") or ():
+        if not row.get("canon") and (aid := _positive_int(row.get("id"))) is not None:
+            ids.add(aid)
+    r: Resolution | None = view.get("resolution")
+    if mode == "continue" and r is not None:
+        for _, _, row in r.alias_rows:
+            if not row.get("canon") and (aid := _positive_int(row.get("id"))) is not None:
+                ids.add(aid)
+    for t in view.get("threads") or ():
+        if mode == "continue" and t.get("status") != "open":
+            continue
+        if (aid := _positive_int(t.get("id"))) is not None:
+            ids.add(aid)
+    if not ids:
+        return {}
+    rows = conn.execute(
+        "SELECT id, source_revision_id FROM assertion WHERE id = ANY(%s)",
+        (sorted(ids),),
+    ).fetchall()
+    return {int(r["id"]): r["source_revision_id"] for r in rows}
+
+
+def take_reading(
+    conn: psycopg.Connection,
+    source_id: UUID | str,
+    mode: str,
+    names: Sequence[str] | None,
+    keys: Keys,
+    cutoff_turn: int | None = None,
+) -> dict[str, Any]:
+    """Read the source chat once as of its head and cutoff_turn and return the frozen reading. Writes nothing."""
+    if mode not in MODES:
+        raise CarryError(f"mode must be one of: {', '.join(MODES)}")
+    raw_names = [str(n).strip() for n in (names or ())]
+    if mode == "continue" and raw_names:
+        raise CarryError("continue mode takes no character names")
+    if mode == "regression" and (not raw_names or len(raw_names) > MAX_NAMES):
+        raise CarryError(f"regression mode needs 1 to {MAX_NAMES} character names")
+
+    src = _as_uuid(source_id)
+    head, position, turn = cutoff_of(conn, src, cutoff_turn)
+    view = memory_view(conn, head, keys.extractor, upto=position, canon_key=keys.canon)
+    revisions = _fetch_revisions(conn, view, mode)
+    story_info = (
+        summaries.current(conn, src, head, keys.summarize, view["secrets"], upto=position)
+        if mode == "continue" and keys.summarize
+        else None
+    )
+    snap = snapshot_of(view, story_info, mode, raw_names, src, revisions)
+    total = len(snap["facts"]) + len(snap["aliases"]) + len(snap["threads"])
+    if total > MAX_ROWS:
+        raise CarryError(f"the reading holds {total} rows; a link carries at most {MAX_ROWS}")
+
+    gens = {
+        "extractor": keys.extractor,
+        "summarize": keys.summarize,
+        "canon": keys.canon,
+        "served": served_generations(snap),
+    }
+    reading: dict[str, Any] = {
+        "source": str(src),
+        "mode": mode,
+        "names": snap["names"],
+        "cutoff": {"commit": str(head), "position": position, "turn": turn},
+        "generations": gens,
+        "snapshot": snap,
+    }
+    reading["fingerprint"] = fingerprint(reading)
+    return reading
+
+
+def preview(
+    conn: psycopg.Connection,
+    target_id: UUID | str,
+    source_id: UUID | str,
+    mode: str,
+    names: Sequence[str] | None,
+    keys: Keys,
+    cutoff_turn: int | None = None,
+) -> dict[str, Any]:
+    """Validate target/source and return a preview of what linking would carry. Writes nothing."""
+    tgt, src = _as_uuid(target_id), _as_uuid(source_id)
+    labels = _validate_pair(conn, tgt, src, lock=False)
+    reading = take_reading(conn, src, mode, names, keys, cutoff_turn=cutoff_turn)
+    current = conn.execute(
+        "SELECT id FROM conversation_carry WHERE target_conversation_id = %s AND removed_at IS NULL",
+        (tgt,),
+    ).fetchone()
+    replaces = current["id"] if current is not None else None
+    return preview_of(reading, labels, replaces)
