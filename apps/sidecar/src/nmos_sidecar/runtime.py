@@ -19,8 +19,8 @@ from urllib.parse import urlsplit
 import psycopg
 from psycopg.types.json import Jsonb
 
-from .config import Settings
-from . import vertex
+from .config import RERANK_TIMEOUT_MS, Settings
+from . import rerank, vertex
 from .llm import ChatModel, Embedder, LLMError, chat_headers
 from .parsers import RuleSet, compile_rules, load_rules
 
@@ -32,12 +32,18 @@ EDITABLE: dict[str, type] = {
     "events_limit": int, "threads_limit": int,
     "extract_backfill": int, "summaries": bool, "canon_facts": bool,
     "pin_at_mentions": bool,  # PHASE-60 S8: `@name` pins a character for the request
+    # PHASE-60 S5 (ADR 0084): the optional reranker; its key is a credential like the other two
+    "rerank_url": str, "rerank_model": str, "rerank_api_key": str, "rerank_timeout_ms": int, "rerank_format": str,
 }
-SECRET = {"llm_api_key", "embed_api_key"}
-KEY_HOSTS = {"llm_api_key": "llm_url", "embed_api_key": "embed_url"}  # each key belongs to its endpoint's host
+SECRET = {"llm_api_key", "embed_api_key", "rerank_api_key"}
+# each key belongs to its endpoint's host
+KEY_HOSTS = {"llm_api_key": "llm_url", "embed_api_key": "embed_url", "rerank_api_key": "rerank_url"}
 RANGES = {"recall_threshold": (0.05, 1.0), "vector_min_sim": (0.0, 1.0), "recall_top_k": (0, 20),
           "facts_limit": (0, 30), "events_limit": (0, 30), "threads_limit": (0, 10), "extract_backfill": (0, 5000),
-          "embed_timeout_ms": (100, 5000)}
+          "embed_timeout_ms": (100, 5000), "rerank_timeout_ms": RERANK_TIMEOUT_MS}
+CHOICES = {"rerank_format": rerank.FORMATS}  # a value outside these would refuse the next startup (`Settings`)
+RERANK_NOTE = ("When a URL and a model are set, each request sends the user's message and the text of up to "
+               f"{rerank.MAX_CANDIDATES} recalled candidates to this endpoint, as the embedder is sent chat text.")
 PARSERS_KEY = "parsers"
 PRESETS_KEY = "parser_presets"
 STATUS_PINS_KEY = "status_pins"  # PHASE-43: {card: [status keys told every time]}
@@ -161,6 +167,14 @@ def keys_follow_hosts(base: Settings, overrides: dict[str, Any], clean: dict[str
     return out
 
 
+def reranker(settings: Settings) -> rerank.Reranker | None:
+    """The configured reranker, or None when its URL or model is empty (ADR 0084 item 4: then nothing calls one)."""
+    if not settings.rerank_url.strip() or not settings.rerank_model.strip():
+        return None
+    return rerank.Reranker(url=settings.rerank_url, model=settings.rerank_model, api_key=settings.rerank_api_key,
+                           timeout_ms=settings.rerank_timeout_ms, format=settings.rerank_format)
+
+
 def ruleset(base: Settings, overrides: dict[str, Any]) -> RuleSet:
     if PARSERS_KEY in overrides:
         return compile_rules(overrides[PARSERS_KEY])
@@ -223,6 +237,9 @@ def validate_update(update: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         if key in RANGES and not RANGES[key][0] <= coerced <= RANGES[key][1]:
             errors.append(f"{key}: must be between {RANGES[key][0]} and {RANGES[key][1]}")
             continue
+        if key in CHOICES and coerced not in CHOICES[key]:
+            errors.append(f"{key}: must be {' or '.join(CHOICES[key])}")
+            continue
         if key.endswith("_url") and coerced and not coerced.startswith(("http://", "https://")):
             errors.append(f"{key}: must start with http:// or https://")
             continue
@@ -235,7 +252,7 @@ def validate_update(update: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             except vertex.VertexAuthError as exc:
                 errors.append(f"{key}: {exc}")
                 continue
-        if key == "embed_api_key" and coerced.strip().startswith("{"):
+        if key in ("embed_api_key", "rerank_api_key") and coerced.strip().startswith("{"):
             errors.append(f"{key}: service-account JSON keys are supported for the extraction LLM only")
             continue
         clean[key] = coerced.strip() if isinstance(coerced, str) else coerced
@@ -268,6 +285,10 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
                    "top_k": settings.recall_top_k, "facts_limit": settings.facts_limit,
                    "events_limit": settings.events_limit,
                    "threads_limit": settings.threads_limit, "pin_at_mentions": settings.pin_at_mentions},
+        "rerank": {"url": settings.rerank_url, "model": settings.rerank_model,
+                   "timeout_ms": settings.rerank_timeout_ms, "format": settings.rerank_format,
+                   "key_set": bool(settings.rerank_api_key), "configured": reranker(settings) is not None,
+                   "note": RERANK_NOTE},
         "extraction": {"backfill": settings.extract_backfill, "summaries": settings.summaries,
                        "canon_facts": settings.canon_facts},
         "parsers": {"rules": overrides.get(PARSERS_KEY) if PARSERS_KEY in overrides else None,

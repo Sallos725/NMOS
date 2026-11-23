@@ -5,10 +5,15 @@ archived. Nothing calls a reranker."""
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
-from nmos_sidecar import rerank
+from conftest import make_client
+from nmos_sidecar import canonfacts, extraction, rerank, reveals, summaries, vectors
 from nmos_sidecar.config import Settings
+from test_generations import LLM
+from test_phase60_pins import BASE, PINNED
 
 RERANK_ENV = ("NMOS_RERANK_URL", "NMOS_RERANK_MODEL", "NMOS_RERANK_API_KEY", "NMOS_RERANK_TIMEOUT_MS",
               "NMOS_RERANK_FORMAT")
@@ -72,3 +77,115 @@ def test_the_format_and_timeout_are_checked_for_every_settings(clean_env):
         Settings(rerank_format="other")
     with pytest.raises(ValueError, match="NMOS_RERANK_TIMEOUT_MS"):
         Settings(rerank_timeout_ms=10)
+
+
+# --- runtime: editable, redacted, bound to its host ------------------------------------------------------------------
+
+URL, MODEL, SAVED_KEY = "http://rerank.test/v1", "rerank-a", "rk-saved-0123456789"
+ENV_KEY = "rk-environment-0123456789"
+
+
+def view_of(c) -> dict:
+    return c.get("/v1/config").json()["rerank"]
+
+
+def test_unconfigured_the_view_says_off(client):
+    view = view_of(client)
+    assert {k: v for k, v in view.items() if k != "note"} == {
+        "url": "", "model": "", "timeout_ms": 600, "format": "standard", "key_set": False, "configured": False}
+    assert "sent" in view["note"] and "endpoint" in view["note"]
+
+
+def test_the_panel_sets_and_resets_every_field(client):
+    res = client.put("/v1/config", json={"rerank_url": URL, "rerank_model": MODEL, "rerank_api_key": SAVED_KEY,
+                                         "rerank_timeout_ms": 1200, "rerank_format": "standard"})
+    assert res.status_code == 200, res.text
+    view = res.json()["rerank"]
+    assert {k: view[k] for k in ("url", "model", "timeout_ms", "format", "key_set", "configured")} == {
+        "url": URL, "model": MODEL, "timeout_ms": 1200, "format": "standard", "key_set": True, "configured": True}
+    assert SAVED_KEY not in res.text  # the PUT's answer redacts it
+    got = client.get("/v1/config")
+    assert got.json()["rerank"]["key_set"] is True and SAVED_KEY not in got.text  # and so does GET
+    reset = client.put("/v1/config", json={k: None for k in (
+        "rerank_url", "rerank_model", "rerank_api_key", "rerank_timeout_ms", "rerank_format")}).json()
+    assert reset["rerank"]["configured"] is False and reset["rerank"]["key_set"] is False
+    assert reset["rerank"]["timeout_ms"] == 600 and reset["overridden"] == []
+
+
+def test_a_url_or_a_model_alone_is_not_configured(client):
+    assert client.put("/v1/config", json={"rerank_url": URL}).json()["rerank"]["configured"] is False
+    assert client.put("/v1/config", json={"rerank_url": None, "rerank_model": MODEL}).json()["rerank"]["configured"] is False
+
+
+def test_the_saved_settings_outlive_a_restart(migrated):
+    with make_client(migrated) as c:
+        c.put("/v1/config", json={"rerank_url": URL, "rerank_model": MODEL, "rerank_api_key": SAVED_KEY,
+                                  "rerank_timeout_ms": 800})
+    with make_client(migrated) as c:
+        view = view_of(c)
+        assert (view["url"], view["model"], view["timeout_ms"], view["key_set"]) == (URL, MODEL, 800, True)
+
+
+def test_the_environment_configures_it(migrated):
+    with make_client(migrated, rerank_url=URL, rerank_model=MODEL, rerank_api_key=ENV_KEY) as c:
+        res = c.get("/v1/config")
+        assert res.json()["rerank"]["configured"] is True and res.json()["rerank"]["key_set"] is True
+        assert ENV_KEY not in res.text
+
+
+@pytest.mark.parametrize("update", [
+    {"rerank_format": "other"}, {"rerank_format": ""}, {"rerank_format": 1},
+    {"rerank_timeout_ms": 49}, {"rerank_timeout_ms": 5001}, {"rerank_timeout_ms": "600"}, {"rerank_timeout_ms": 1.5},
+    {"rerank_url": "ftp://rerank.test"}, {"rerank_model": 3}, {"rerank_api_key": '{"private_key": "x"}'},
+])
+def test_a_bad_value_is_refused_and_nothing_is_saved(client, update):
+    res = client.put("/v1/config", json=update)
+    assert res.status_code == 422, res.text
+    assert client.get("/v1/config").json()["overridden"] == []
+
+
+def test_a_url_on_another_host_drops_the_saved_key(client):
+    client.put("/v1/config", json={"rerank_url": URL, "rerank_model": MODEL, "rerank_api_key": SAVED_KEY})
+    same_host = client.put("/v1/config", json={"rerank_url": "http://rerank.test/v2"}).json()["rerank"]
+    assert same_host["key_set"] is True  # the same host keeps it
+    moved = client.put("/v1/config", json={"rerank_url": "http://other-rerank.test/v1"}).json()["rerank"]
+    assert moved["key_set"] is False
+    back = client.put("/v1/config", json={"rerank_url": URL}).json()["rerank"]
+    assert back["key_set"] is False  # a dropped key does not come back
+
+
+def test_the_environment_key_is_withheld_from_another_host_and_returns_with_its_host(migrated):
+    with make_client(migrated, rerank_url=URL, rerank_model=MODEL, rerank_api_key=ENV_KEY) as c:
+        assert c.put("/v1/config", json={"rerank_url": "http://other-rerank.test/v1"}).json()["rerank"]["key_set"] is False
+        assert c.put("/v1/config", json={"rerank_url": URL}).json()["rerank"]["key_set"] is True
+
+
+def test_a_reranker_changes_no_generation_key():
+    """ADR 0084 consequences: the reranker reorders, it derives nothing stored."""
+    keyed = dict(rerank_url=URL, rerank_model=MODEL, rerank_api_key=SAVED_KEY, rerank_timeout_ms=900)
+    for compiler in ("extract-v15", "extract-v16", "extract-v17", "extract-v18"):
+        assert extraction.extractor(Settings(**BASE, **keyed, extract_compiler=compiler)).key == PINNED[compiler]
+    with_rerank = Settings(**BASE, **keyed)
+    assert extraction.extractor(with_rerank).key == PINNED["default"]
+    assert canonfacts.generation(with_rerank).key == PINNED["canon"]
+    assert summaries.summarizer(with_rerank).key == PINNED["summarize"]
+    assert reveals.generation(with_rerank).key == PINNED["reveal"]
+    assert vectors.projection(with_rerank).key == PINNED["embed"]
+
+
+def test_saving_the_reranker_queues_nothing(migrated):
+    with make_client(migrated, **LLM) as c:
+        before = c.get("/v1/health").json()["generations"]
+        res = c.put("/v1/config", json={"rerank_url": URL, "rerank_model": MODEL, "rerank_api_key": SAVED_KEY,
+                                        "rerank_timeout_ms": 700})
+        assert res.status_code == 200 and res.json()["queued_jobs"] == 0
+        assert c.get("/v1/health").json()["generations"] == before
+
+
+def test_no_log_record_holds_the_key(client, caplog):
+    caplog.set_level(logging.DEBUG)
+    res = client.put("/v1/config", json={"rerank_url": URL, "rerank_model": MODEL, "rerank_api_key": SAVED_KEY})
+    assert res.status_code == 200
+    client.get("/v1/config")
+    assert caplog.records  # the capture is live
+    assert not [r for r in caplog.records if SAVED_KEY in r.getMessage() or SAVED_KEY in repr(r.args)]
