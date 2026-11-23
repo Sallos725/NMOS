@@ -564,6 +564,19 @@ A system message right before your latest message (at the very end of the prompt
 On the tested PocketRisu build, only main generations get a packet (not summaries, translations or
 suggestions), retries inject once, and excerpts already in the prompt are not repeated.
 
+**Choosing where memory goes: `[NMOS.memory]`** (Phase 60). Write `[NMOS.memory]` in a preset (prompt template) or in
+a lorebook entry, exactly as shown, and memory goes there; there is no setting to turn on.
+
+- Only the **first** marker in the prompt becomes the memory; every other marker is removed, so memory is placed once.
+- With a marker in the prompt `inject_position` is not used; without one it applies as before.
+- The marker's own text never reaches the model: it is also removed when there is no memory to place, when the plugin
+  or this chat's memory is off, when the sidecar does not answer, and on auxiliary requests (summaries, translations).
+- A marker in a lorebook entry works only while that entry is active and in the prompt. The entry's text is kept as
+  written in the canon record.
+- A marker placed **after** your latest message (and `inject_position=end`) gets one line after the memory saying that
+  your latest message has already happened and outranks it; the memory budget is 40 tokens smaller for it.
+- `inject_position=end` goes **before** a trailing run of assistant messages (a prefill), not after it.
+
 A question about what someone said ("그때 뭐라고 했지?", at a turn or the first time) brings up to two quote lines with
 the words verbatim and their turn, before the excerpts (since 0.4.0, `packet-v13`, ADR 0067):
 `<Quote turn="12">"…"</Quote>`, with `speaker` only when the narration names one (K47). Every line of the packet is
