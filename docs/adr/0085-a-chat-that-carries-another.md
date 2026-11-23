@@ -36,7 +36,11 @@ break provenance (a row's revision belongs to the other chat) and rebuildability
 5. **`regression` is memory, not truth.** The restarted world does not hold the earlier timeline's facts. Carried
    rows involving the named characters are offered only as limited knowledge of those characters, in their own
    group, and never enter current facts, cast, gone pins or open threads. Soft marks only (D19); hard isolation
-   stays out of scope (D9).
+   stays out of scope (D9). Nobody remembers what they never knew (amended 2026-11-23, coordinator's decision): a
+   row's rememberers are, by its marks at the cutoff, all named for a public row, the named in `known_by` for a
+   limited one, and only the named the row involves otherwise, always minus `hidden_from`; a row with none is left
+   out. A kept row is stored `knowledge = limited`, `known_by` = its rememberers, `hidden_from` as stored, with its
+   original marks beside them.
 6. **One level, one link.** One link in force per target; a source's own link is not followed. Chains would make a
    read depend on an unbounded number of chats.
 7. **A request records the link it read.** Its replay reads that link, removed since or not.

@@ -175,7 +175,9 @@ fact does (D44, D45).
     inside a `<Regression remembered_by="…">` group, and never enter the target's current facts, cast, gone pins or
     open threads. The Note says: only those characters remember the previous timeline; nobody else knows it, and it
     may not hold now. They are limited knowledge and follow strict and narrator modes as private lines do (D45). No
-    summary is carried.
+    summary is carried. A row's rememberers are all named for a public row, the named in `known_by` for a limited
+    one, and only the named the row involves otherwise, always minus `hidden_from`; a row with none is not carried
+    (ADR 0085 item 5, amended 2026-11-23).
 - **Not in this phase:** carried excerpts (raw recall stays per chat), carried memory shown to the target's
   extraction (its prompts and hints read the target only), chains of links. Known limit: the source's last turn is
   extracted only once the user continued from it (D5), so a chat's final reply may not be in the reading.
