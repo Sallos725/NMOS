@@ -22,10 +22,14 @@ from __future__ import annotations
 
 import difflib
 import os
+import re
 from pathlib import Path
 from typing import Any
 
+from conftest import make_client
 from nmos_sidecar import views
+from simchat import SimChat
+from test_sidecar_integration import sync
 
 GOLDEN = Path(__file__).parent / "golden" / "phase60"
 WRITE = os.environ.get("NMOS_WRITE_GOLDEN") == "1"
@@ -141,7 +145,8 @@ def person_input() -> dict[str, Any]:
     and a timeline whose marks are of every kind the sheet shows (4-tuples with their predicate)."""
     marks = [(2, False, "등대지기", "identity"), (5, False, "등대", "located_in"), (9, True, "betrayed 카이토", "event"),
              (12, False, "카이토 → 등대에서 만나기", "promised"), (15, True, "카이토 → 연인", "relationship"),
-             (20, False, "old mill", "located_in"), (24, False, "chore 1", "event"), (27, True, "the bell rang", "event"),
+             (20, False, "old mill", "located_in"), (24, False, "chore 1", "event"),
+             (27, True, "the bell rang", "event"),
              (31, False, "카이토 → 보호자", "role_toward"), (38, False, "지침", "has_status")]
     return {"conv": {"id": CID, "name": "등대 마을 & <harbor>", "character": "세라", "turns": 42},
             "entity": {"id": SERA, "name": "세라", "names": ["세라", "세라짱", "Sera"], "persona": False,
@@ -166,3 +171,76 @@ def test_the_memory_document_renders_as_before():
 def test_a_persons_sheet_renders_as_before():
     for lang in ("ko", "en"):
         check_golden(f"person.{lang}.html", views.person(person_input(), lang))
+
+
+# --- through the API, on one synthetic chat ------------------------------------------------------------------------
+
+# Each line is one user message (the reply is "Noted."), extracted by the suite's deterministic stub
+# (`memeval.stub_extractor`): a place and a move, a relationship, a promise, a secret kept from someone, a goal, a major
+# and a minor event, a feeling with its cause, a form of address and a debt.
+STORY = ("Hana is in the library.", "Hana is Kaito's classmate.",
+         'Hana says to Kaito: "I promise to meet you at the lighthouse."',
+         "Hana keeps a secret from Kaito: the map is fake.", "Kaito wants to find the drowned bell.",
+         "Hana betrayed Yuna.", "Kaito is angry at Hana because she lied.", "Hana and Kaito agree to speak informally.",
+         "Hana moved to the harbor.", "Yuna did chore 1.", "Rowan owes Yuna a favour.")
+CHAT_ID = "phase60-views-unchanged"
+
+UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+ISO_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)")
+UTC_TIME = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC")
+
+
+def normalize(text: str) -> str:
+    """Replace what differs from run to run, each kind by its own rule, and nothing else (found by diffing the raw
+    pages of two runs a minute apart):
+
+    - UUIDs: the conversation and commit ids are uuid7 (made at run time) and the entity ids are derived from the
+      conversation's, so every one differs per run. Each distinct id becomes `<uuid-N>`, numbered by first appearance
+      in the page, so a link that points at the wrong person, or two ids that become one, still differ.
+    - ISO 8601 instants (`2026-11-23T04:50:01+00:00`): the exact time a row was written, in the title of the
+      Inspector's `<span class="ts">`. Becomes `<iso-time>`.
+    - Shown UTC times (`2026-11-23 04:50 UTC`): the same instant as the Inspector shows it. Becomes `<utc-time>`.
+
+    Deliberately not replaced: the generation keys (`extract-…`, `canon-…`, `summarize-…`) and the stub model's name
+    and URL. They are the same on every run, and PHASE-60 keeps the keys and the code defaults byte-identical, so a
+    change to them is a difference this file must report. Integer row ids (threads, facts in `data-repair`) stay
+    too: every test has its own fresh database (`conftest.database_url`), so they are the same on every run.
+    """
+    ids: dict[str, str] = {}
+    text = UUID.sub(lambda m: ids.setdefault(m.group(0), f"<uuid-{len(ids) + 1}>"), text)
+    return UTC_TIME.sub("<utc-time>", ISO_TIME.sub("<iso-time>", text))
+
+
+def test_the_screens_of_a_chat_without_the_new_features_render_as_before(migrated):
+    from memeval import stub_extractor
+    from test_extraction import drain
+    from test_generations import LLM
+
+    chat = SimChat(CHAT_ID)
+    for said in STORY:
+        chat.user(said)
+        chat.reply("Noted.")
+    chat.user("next")
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain(migrated, stub_extractor)
+        cid = c.get("/v1/views/hub", params={"chat": chat.id}).json()["conversation"]
+        hana = next(e["id"] for e in c.get(f"/v1/conversations/{cid}/entities").json() if e["name"] == "Hana")
+        pages = {}
+        for lang in ("ko", "en"):
+            memory = c.get(f"/v1/views/c/{cid}/memory", params={"lang": lang})
+            person = c.get(f"/v1/views/c/{cid}/person/{hana}", params={"lang": lang})
+            chat_page = c.get(f"/inspector/c/{cid}", params={"lang": lang})
+            assert memory.status_code == person.status_code == chat_page.status_code == 200
+            pages[f"api-memory.{lang}.html"] = memory.json()["html"]
+            pages[f"api-person.{lang}.html"] = person.json()["html"]
+            pages[f"api-inspector-chat.{lang}.html"] = chat_page.text
+    # real pages of this chat, not an empty or error page: facts, a promise, an event, a secret, names
+    for lang in ("ko", "en"):
+        memory, person = pages[f"api-memory.{lang}.html"], pages[f"api-person.{lang}.html"]
+        assert 'id="s-open"' in memory and "meet you at the lighthouse" in memory and ">Kaito<" in memory
+        assert "classmate" in memory and "the map is fake" in memory
+        assert ">Hana<" in person and 'class="v-ev' in person and "betrayed Yuna" in person
+        assert "Hana keeps a secret from Kaito" in pages[f"api-inspector-chat.{lang}.html"]
+    for name, html in pages.items():
+        check_golden(name, normalize(html))
