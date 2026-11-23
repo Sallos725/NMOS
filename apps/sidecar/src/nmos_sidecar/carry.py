@@ -855,18 +855,22 @@ def link(
         replaced: UUID | None = current["id"] if current is not None else None
         if expect is not None and expect != reading["fingerprint"]:
             raise CarryChanged(preview_of(reading, labels, replaced))
+        # One instant, read under the locks: `now()` is the transaction's start, before any wait for them, so a link
+        # that waited on another would stamp it removed before it was made (review F3). The replaced link's
+        # `removed_at` is the new link's `created_at`, the order `as_of` and `history` read.
+        at = conn.execute("SELECT clock_timestamp() AS at").fetchone()["at"]
         if replaced is not None:  # before the insert: the partial unique index allows one link in force
-            conn.execute("UPDATE conversation_carry SET removed_at = now() WHERE id = %s", (replaced,))
+            conn.execute("UPDATE conversation_carry SET removed_at = %s WHERE id = %s", (at, replaced))
         cutoff = reading["cutoff"]
         row = conn.execute(
             "INSERT INTO conversation_carry (id, target_conversation_id, source_conversation_id, mode, entity_names,"
-            " cutoff_commit_id, cutoff_position, cutoff_turn, generations, snapshot)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " cutoff_commit_id, cutoff_position, cutoff_turn, generations, snapshot, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             f" RETURNING {_columns(False)}",
             (
                 uuid7(), tgt, src, reading["mode"], Jsonb(reading["names"]),
                 _as_uuid(cutoff["commit"]), cutoff["position"], cutoff["turn"],
-                Jsonb(reading["generations"]), Jsonb(reading["snapshot"]),
+                Jsonb(reading["generations"]), Jsonb(reading["snapshot"]), at,
             ),
         ).fetchone()
     return {"link": dict(row), "replaced": replaced}
