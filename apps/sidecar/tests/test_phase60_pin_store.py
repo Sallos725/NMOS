@@ -307,3 +307,28 @@ def test_every_policy_compiles_the_same_packet_with_the_switch_on(migrated):
         assert used == set(POLICIES)
         assert not conn.execute("SELECT count(*) FROM retrieval_trace WHERE recall_options ? 'pin_at_mentions'"
                                 ).fetchone()[0]
+
+
+# The archive (step 5, A5): a pin made through the API comes back with a whole install's archive and a chat's.
+
+def pin_rows(url: str) -> list[tuple]:
+    with psycopg.connect(url) as conn:
+        return conn.execute("SELECT id, kind, target, value, note, created_at, removed_at FROM owner_repair"
+                            " WHERE kind = 'entity_pin' ORDER BY id").fetchall()
+
+
+@pytest.mark.parametrize("whole", [True, False], ids=["install", "one-chat"])
+def test_an_archive_round_trips_a_pin(whole, migrated, database_url_factory, tmp_path):
+    from nmos_sidecar import archive
+    from test_restore import export_to
+    with make_client(migrated, **LLM) as c:
+        cid = setup(c, migrated)
+        assert pin(c, cid, "Kaito", note="every scene").status_code == 200
+        taken = pin(c, cid, "Hana").json()["repair"]["id"]
+        assert c.post(f"/v1/conversations/{cid}/repairs/{taken}/remove").status_code == 200  # kept for audit
+    source = export_to(tmp_path, migrated, "pins", **({} if whole else {"conversations": [cid]}))
+    target = database_url_factory()
+    done = archive.restore_file(target, str(source))
+    assert [str(x["id"]) for x in done.conversations] == [cid]
+    assert len(pin_rows(migrated)) == 2 and pin_rows(target) == pin_rows(migrated)
+    assert [p["name"] for p in view(target, cid)["pins"]] == ["Kaito"]
