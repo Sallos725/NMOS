@@ -641,6 +641,20 @@ const STRINGS = {
     'Downloads a backup archive (.nmos.zip) of this chat.'],
   'set.act_delete_desc': ['NMOS에 저장된 이 채팅의 모든 기억과 기록을 영구 삭제합니다.',
     'Permanently deletes everything NMOS recorded for this chat.'],
+  // trimming old dialogue (PHASE-60 S1)
+  'trim.left_out': ['오래된 대화 {n}개를 빼고 보냈습니다 (약 {t}토큰 절약)', 'Left out {n} old messages (about {t} tokens saved)'],
+  'trim.kept': ['오래된 대화를 빼지 않았습니다: {r}', 'No old messages left out: {r}'],
+  'hud.trim.left_out': [' · 오래된 대화 {n}개 뺌', ' · {n} old messages left out'],
+  'hud.trim.kept': [' · 대화 그대로: {r}', ' · dialogue kept: {r}'],
+  'trim.reason.format': ['프리셋이 대화를 메시지별로 보내지 않아 안전하게 뺄 수 없음', 'the preset does not send the chat one message at a time'],
+  'trim.reason.short': ['아직 뺄 만큼 길지 않음', 'the chat is not long enough yet'],
+  'trim.reason.uncovered': ['기억 정리(추출·요약)가 아직 따라오지 못함', 'memory (extraction and summaries) has not caught up yet'],
+  'trim.reason.no_summaries': ['요약이 꺼져 있음 (요약이 필요합니다)', 'summaries are off (trimming needs them)'],
+  'trim.reason.stale': ['기억이 이 채팅의 최신 상태가 아님', "memory is not at the chat's latest state"],
+  'trim.reason.empty_packet': ['이번에 넣을 기억이 없음', 'no memory for this request'],
+  'trim.reason.failed': ['NMOS의 답을 받지 못함', 'no answer from NMOS'],
+  'trim.reason.unsupported': ['NMOS가 이 기능을 지원하지 않음 (업데이트 필요)', 'NMOS does not support it yet (update it)'],
+  'trim.reason.other': ['기타 ({r})', 'other ({r})'],
 } as const satisfies Record<string, readonly [string, string]>;
 
 export type StringKey = keyof typeof STRINGS;
