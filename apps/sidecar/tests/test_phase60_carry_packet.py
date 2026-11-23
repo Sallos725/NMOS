@@ -340,6 +340,45 @@ def test_the_regression_group_follows_private_lines_and_precedes_excerpts() -> N
         assert with_lines.ledger == compile_lines([excerpt], 3000, facts=[private], policy=policy).ledger
 
 
+def test_an_owner_memory_exclusion_leaves_its_regression_lines_and_rememberer_out(migrated: str) -> None:
+    """Review F1 (PHASE-47 S2): with 카이토 left out of the target's memory, the group loses the standing he is one
+    end of and no longer names him; removing the exclusion brings them back; a request recorded under it replays as
+    it was answered; packet-v19 shows no regression line either way."""
+    from test_phase60_carry_recall import _ask, _client, _replay
+
+    def lines(text: str) -> tuple[str, list[str]]:
+        group = _group(text)
+        assert group is not None
+        return group[0], group[1].split("\n")
+
+    with _client(migrated, "packet-v20") as c:
+        src, tgt_sim, tgt = _world(c, migrated, 4)  # the target's turn 3 names 카이토
+        with _connect(migrated) as conn:
+            _link(conn, tgt, src, "regression", ["세라", "카이토"])
+        before, _ = _ask(c, tgt_sim)
+        names, kept = lines(before)
+        assert names == "세라, 카이토" and any("오랜 동료" in x and 'known_by="세라, 카이토"' in x for x in kept)
+        res = c.post(f"/v1/conversations/{tgt}/repairs",
+                     json={"kind": "entity_exclude", "item": "카이토", "scope": "memory"})
+        assert res.status_code == 200, res.text
+        rid = res.json()["repair"]["id"]
+        excluded, trace = _ask(c, tgt_sim)
+        names, kept = lines(excluded)
+        assert names == "세라" and kept and all(' known_by="세라"' in x for x in kept)
+        assert "오랜 동료" not in excluded  # a standing 카이토 is one end of
+    with _client(migrated, "packet-v19") as c:
+        older, _ = _ask(c, tgt_sim)
+    assert "<Regression" not in older and 'timeline="previous"' not in older
+    with _client(migrated, "packet-v20") as c:
+        assert c.post(f"/v1/conversations/{tgt}/repairs/{rid}/remove").status_code == 200
+        again, _ = _ask(c, tgt_sim)
+    assert _group(again) == _group(before)
+    replayed = _replay(migrated, trace)  # the exclusion as of the request, removed since
+    assert replayed["text"] == excluded and replayed["reproduced"] is True
+    with _client(migrated, "packet-v19") as c:
+        assert "<Regression" not in _ask(c, tgt_sim)[0]
+
+
 # --- packet-v19 never reads a link (A3) ---------------------------------------------------------------------------
 
 def test_v19_packets_are_byte_identical_with_a_link_in_force_fresh_and_replayed(migrated: str) -> None:

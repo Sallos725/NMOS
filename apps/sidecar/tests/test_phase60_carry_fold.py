@@ -463,6 +463,72 @@ def test_regression_rows_are_listed_apart_and_enter_no_fold(migrated: str) -> No
         assert not [x for x in carried.regression if "subject_entity" in x]
 
 
+def _regression_of(src: UUID) -> carry.Carried:
+    """A regression link of 세라 and 카이토 with one line per way an exclusion of 카이토 can reach it."""
+    def fact(subject: str, predicate: str, value: str | None, known_by: list[str], obj: str | None = None,
+             aid: int = 0) -> dict[str, Any]:
+        return {"predicate": predicate, "subject": subject, "subject_type": "character", "value": value,
+                "object": obj, "object_type": "character" if obj else None, "polarity": "positive",
+                "modality": "actual", "source": "narration", "turn": aid, "position": aid, "knowledge": "limited",
+                "known_by": known_by, "hidden_from": None, "from": _from(aid)}
+
+    def thread(kind: str, by: str, to: str | None, text: str, aid: int) -> dict[str, Any]:
+        return {"kind": kind, "by": by, "to": to, "text": text, "status": "open", "turn": aid, "position": aid,
+                "names": [n for n in (by, to) if n], "closed_turn": None, "opening": None, "knowledge": "limited",
+                "known_by": ["세라"], "from": _from(aid)}
+
+    facts = [fact("세라", "has_status", "피곤함", ["세라", "카이토"], aid=6),  # 카이토 only leaves its rememberers
+             fact("카이토", "has_status", "슬픔", ["세라"], aid=5),  # his own fact
+             fact("세라", "relationship", "오랜 동료", ["세라"], "카이토", aid=4),  # a standing he is one end of
+             fact("세라", "located_in", None, ["카이토"], aid=3)]  # only he remembers it
+    facts[3].update(object="등대", object_type="place")
+    threads = [thread("promise", "세라", "카이토", PROMISE, 2),  # made to him: a target thread to him stays too
+               thread("goal", "카이토", None, "등대를 고치기", 1)]  # his own
+    return carry.target_rows({"id": UUID(LINK), "source_conversation_id": src, "mode": "regression",
+                              "entity_names": ["세라", "카이토"],
+                              "snapshot": {"mode": "regression", "names": ["세라", "카이토"], "facts": facts,
+                                           "threads": threads}})
+
+
+def _lines(view: dict[str, Any]) -> list[tuple[str, str | None, list[str]]]:
+    return [(x["line"], x.get("value") or x.get("text") or x.get("object"), x["known_by"]) for x in view["regression"]]
+
+
+def test_an_owner_exclusion_in_the_target_leaves_regression_lines_out(migrated: str) -> None:
+    """PHASE-47 S2 on a regression link's lines (review F1): `memory` drops a line as it drops a target row (its
+    subject, or the other end of a standing; a thread by its maker) and the excluded character from every line's
+    rememberers, a line no one is left to remember with it; `cast` changes no line."""
+    with make_client(migrated, **CANON_ON) as c:
+        src, _, tgt = _world(c, migrated, 4)  # the target's turn 3 names 카이토
+        with _connect(migrated) as conn:
+            head, key = _head(conn, tgt), _key(conn)
+            carried = _regression_of(src)
+            plain = memory_view(conn, head, key, carried=carried)
+            assert plain["resolution"].entity("character", "카이토") is not None
+            assert _lines(plain) == [("fact", "피곤함", ["세라", "카이토"]), ("fact", "슬픔", ["세라"]),
+                                     ("fact", "오랜 동료", ["세라"]), ("fact", "등대", ["카이토"]),
+                                     ("thread", PROMISE, ["세라"]), ("thread", "등대를 고치기", ["세라"])]
+            res = c.post(f"/v1/conversations/{tgt}/repairs",
+                         json={"kind": "entity_exclude", "item": "카이토", "scope": "cast"})
+            assert res.status_code == 200, res.text
+            cast_id = res.json()["repair"]["id"]
+            cast = memory_view(conn, head, key, carried=carried)
+            assert c.post(f"/v1/conversations/{tgt}/repairs/{cast_id}/remove").status_code == 200
+            res = c.post(f"/v1/conversations/{tgt}/repairs",
+                         json={"kind": "entity_exclude", "item": "카이토", "scope": "memory"})
+            assert res.status_code == 200, res.text
+            memory = memory_view(conn, head, key, carried=carried)
+            undone = memory_view(conn, head, key, carried=carried,
+                                 what_if={"drop_repairs": {res.json()["repair"]["id"]}})
+        assert _lines(cast) == _lines(plain)  # `cast` keeps every line and every rememberer
+        assert _lines(memory) == [("fact", "피곤함", ["세라"]), ("thread", PROMISE, ["세라"])]
+        assert [x["known_by"] for x in carry.panel_lines(memory)] == [["세라"], ["세라"]]  # the panel reads the same
+        assert _lines(undone) == _lines(plain)
+        # The link's rows are as stored: the read filtered copies.
+        assert [r["known_by"] for r in carried.regression][:1] == [["세라", "카이토"]]
+        assert len(carried.regression) == 6
+
+
 # --- the scene: a carried row is never the scene ----------------------------------------------------------------
 
 def test_a_carried_row_puts_no_one_in_the_scene(migrated: str) -> None:

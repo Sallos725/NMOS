@@ -456,7 +456,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     story supersedes them, the owner's repairs and exclusions apply to them, a carried opening opens its thread (marked
     `carried`) and the story can close it by text; they take no part in secrets and keep their stored marks. A
     `regression` link's rows are listed apart (`regression`), annotated with the target's resolution, and enter
-    neither the resolution nor a fold. Either way the view gains `carried` and `regression`; without it, neither.
+    neither the resolution nor a fold; the owner's `memory` exclusions leave them out as they leave rows out and take
+    the excluded from their rememberers (`_regression_kept`). Either way the view gains `carried` and `regression`; without it, neither.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
@@ -643,7 +644,9 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if carried is not None:
         view["carried"] = {"link": carried.link, "source": carried.source, "mode": carried.mode,
                            "names": carried.names, "rows": len(carried_rows), "story": carried.story}
-        view["regression"] = [_regression_line(x, r) for x in carried.regression]
+        forgotten = {i for i, x in excluded.items() if x["scope"] == "memory"}  # as the rows above leave them out
+        view["regression"] = [line for x in carried.regression
+                              if (line := _regression_kept(_regression_line(x, r), r, forgotten)) is not None]
     return view
 
 
@@ -700,6 +703,25 @@ def _regression_line(stored: dict[str, Any], r: Resolution) -> dict[str, Any]:
     for k in ("subject_entity", "object_entity", "names"):
         if k in basis:
             line[k] = basis[k]
+    return line
+
+
+def _regression_kept(line: dict[str, Any], r: Resolution, out: set[str]) -> dict[str, Any] | None:
+    """An annotated regression line (`_regression_line`) under the target's `memory` exclusions (PHASE-47 S2, the
+    entity ids in `out`), as a target row is: None when its subject (a thread's maker) is left out, or the other end
+    of a standing; else the line with the left-out characters gone from its rememberers (`known_by`), None when no one
+    is left to remember it. A `cast` exclusion changes no line."""
+    if not out:
+        return line
+    s, o = (str((line.get(f"{side}_entity") or {}).get("id")) for side in ("subject", "object"))
+    if s in out or (line.get("predicate") in STANDING and o in out):
+        return None
+    known = line.get("known_by") or []
+    kept = [n for n in known if str((r.entity("character", n) or {}).get("id")) not in out]
+    if known and not kept:
+        return None
+    if len(kept) != len(known):
+        line["known_by"] = kept
     return line
 
 
