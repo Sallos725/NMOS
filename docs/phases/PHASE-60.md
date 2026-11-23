@@ -367,6 +367,9 @@ Whole
   `extract-v19` rows (`told`, `when_happened`) on turns no `extract-v16`/`-v18` extraction serves, an `entity_pin`
   repair and a `conversation_carry` link on the copy: both steps queue 0 jobs, and the previous image answers
   `/v1/retrieve` and the Inspector without error (its readers skip `told` rows and ignore the pin).
+  **As rehearsed (2026-11-23):** on the copy every replied turn was already served, so the `extract-v19` rows were
+  stored, with a stub model answer, on the newest replied turn of three chats after that turn's extractions were
+  discarded (no job row touched); both steps queued nothing and the previous image answered every page.
 - D1. Production: a fresh dump, `.env` and compose-file backups and `rollback.sh` in
   `~/nmos-eval/phase60-backup-<timestamp>/`; the compose file passes `NMOS_PACKET_POLICY` and `NMOS_RERANK_*`
   through; the worker is held until the queue is checked; `/v1/health` reports the image, the schema and the plugin

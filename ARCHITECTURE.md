@@ -866,7 +866,11 @@ the panel's memory document and person sheet, which also get the link's `carry` 
 author's note, dropped facts, endings, the Inspector's pages, the hub and the map read the chat alone. Known limits: a
 source's very last reply may not be in a reading, since it is extracted only once the user continues from it (D5).
 Closed regression threads are stored but never offered. A restore that renumbers assertions moves the snapshot's
-`from.assertion` but not a recorded trace line's `ref.source_assertion`.
+`from.assertion` but not a recorded trace line's `ref.source_assertion`. Amended 2026-11-23 (the phase's
+review): a regression link's lines follow the target's `memory` exclusions as its own rows do (an excluded character
+is no rememberer, and a line left with none is dropped); a carried persona marker reads as the target's host persona
+name (ADR 0023) in every line, screen and link preview, the stored snapshot unchanged; a replaced link's `removed_at`
+is its successor's `created_at`, read under the locks.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

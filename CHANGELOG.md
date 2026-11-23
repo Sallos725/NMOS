@@ -83,6 +83,19 @@ switch.
   keep `NMOS_EMBED_TIMEOUT_MS` plus `NMOS_RERANK_TIMEOUT_MS` well under that deadline (3 s by default). The trace
   records the scores and a replay reapplies them, never calling the reranker. Only the `standard` format is built;
   `systemone` is not.
+- **From the phase's review, before its first use** (Phase 60). A character is marked gone only when the status plainly
+  says the character itself is dead, missing or gone for good now: near death, a rumour, someone else's fate, 전사 as
+  "warrior", a missing object and a leave not plainly for good no longer count (S3 amended). A regression link's lines
+  follow the owner's memory exclusions, and an excluded character is no rememberer. In a chat that carries another, the
+  source's persona reads as this chat's persona name (the stored marker no longer shows in a packet, a screen or the link
+  preview). A linked chat's replaced link is removed at the instant its successor is made, and a link that loses a lock
+  answers 409, try again. The panel can start a regression link for a source whose whole reading is over the row cap, has
+  no close button on a carried thread, and shows `[happened: …]` on a person's timeline. The trim leaves out nothing when
+  a message to drop carries more than a text turn (images, a name, tool calls), when older chat messages would stay behind
+  a hole, when a short kept message was merged into a dropped one, and in a narrator chat (its packet holds no story). The
+  coverage read of a request fails open (null `coverage`, no boundary), reads no memory of its own, and is counted in
+  `latency_ms.coverage`; a stale request answers null coverage. The reranker fails open on a score no float can hold and
+  its timeout bounds name resolution too.
 - **`/v1/retrieve` answers with `coverage`** (`recorded_through_turn`: the latest turn an extraction serves;
   `covered_through_turn`: the last turn up to which every turn has an extraction and a scene summary) and, when the
   request asked for trimming, `trim`. Older plugins ignore both.

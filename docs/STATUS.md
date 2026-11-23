@@ -1,5 +1,23 @@
 # NMOS Status
 
+## Phase 60 on production — 2026-11-23
+
+**Deployed 2026-11-23 22:34 KST (owner request: a trial on production, the quiet weeks knowingly restarted).** Phase 60,
+the local image `exp-phase60-4a8cac1` built from the phase branch at `4a8cac1` (later commits docs only), with
+`NMOS_EXTRACT_COMPILER=extract-v19` and `NMOS_PACKET_POLICY=packet-v20` (production's compose file passes the policy,
+`NMOS_PIN_AT_MENTIONS` and `NMOS_RERANK_*` through since this deployment; no reranker is configured), after a fresh
+`pg_dump`, an `.env` and a compose-file backup. Migrations `0036`–`0038` applied; the extractor switched from
+`extract-v18` to `extract-v19` (`adds`): no job queued (the whole job table identical before and after, 2,822 rows), row
+fingerprints of source revisions, assertions, extractions, summaries, owner repairs and conversations identical before
+and after, no log error. The worker was held until that was checked. The plugin build changed (`ae1247ff5e6a`): the
+owner re-imports the plugin and reloads the page (H13). The trial install (6113) was not changed. **The 1.0 gate's two
+quiet weeks restart at this deployment; earliest end 2026-12-07** (`ROADMAP-1.0.md`). No paid gate: every check was
+zero-call and the owner's use is the live check; a first live turn (the worker's first `extract-v19` job, the first
+`packet-v20` request) had not been seen when this was written. Rollback is two steps with the worker stopped, the
+compiler before the image, never a restore (PHASE-60 C3): `rollback.sh` beside the backups in
+`~/nmos-eval/phase60-backup-20261123-2226/`. After a rollback an archive is restored with the new image (the previous
+image refuses its own export of a `0038` database).
+
 ## Phase 58 on production — 2026-11-18
 
 **Deployed 2026-11-18 15:36 KST (owner request: 6113 and 6003 at once, the quiet weeks restarted).** Phase 58 (#339),
@@ -142,8 +160,32 @@ characters who are gone, a return after a long absence, threads that just closed
 `@name` (ADR 0082, 0087); a short message embedded with the reply before it and an optional, strictly opt-in reranker
 (ADR 0084; amends `AGENTS.md §4`); a chat that carries another chat's memory, continuing it or as a regression (ADR
 0085, migration `0036`); `extract-v19` on `extract-v18` with `when_happened` and `told`, a switch that queues nothing
-(ADR 0086, migration `0037`). The defaults stay `packet-v19` and `extract-v16`. **State: spec and ADRs written
-(step 1); nothing built yet.** [Spec](phases/PHASE-60.md).
+(ADR 0086, migration `0037`). The defaults stay `packet-v19` and `extract-v16`. **State: built (steps 1–10) and on production since 2026-11-23 22:34 KST (step 11); the owner's trial is the live
+check.** [Spec](phases/PHASE-60.md).
+
+Phase 60's checks, on `4a8cac1` (all zero-call): the sidecar suite 2,524 passed (`NMOS_TEST_REQUIRE_DB=1`,
+`tests/test_upgrade.py` included); the plugin's 424 tests, typecheck and build (`ae1247ff5e6a`); the pinned generation
+keys unchanged and `extract-v18 ↔ v19` classified `adds` (A1, A2); the replay of production's 707 recorded requests
+under `packet-v19`, three runs, byte-identical to the code before the phase outside that code's own run-to-run noise
+(three traces whose packets vary with the lexical route's timing, each with a packet common to both sides; A3), and
+under `packet-v20` no error, 62 of the 404 replayable packets differing; `extract-v19`'s system prompt 7.82 % longer
+than `extract-v18`'s (A7). On a copy of production (C1) the switch queued nothing and changed no row fingerprint;
+production gained two chats that evening, so C1 was repeated on a fresh dump right before the deployment, with the same
+result. C2: one gone pin in all 58 chats, read and right (killed, then stated dead, no later row), no return-gap mark,
+the largest `continue` reading 349 rows of the 2,000 allowed. C3: both rollback steps queued nothing, and the previous
+image answered `/v1/retrieve` and the owner's pages without error on the migrated copy holding `told` rows, a
+`when_happened`, a pin and a carry link. The coverage read costs about 4 ms a request on the copy. The scoped
+self-review (six areas, high risk, `AGENTS.md §14`) found no defect in keys, replay, migrations or rollback; what it
+found was fixed before the deployment: the gone rule marked living characters (S3 amended), a regression link ignored
+the owner's memory exclusion, a carried persona read as the stored marker in a fresh chat, the coverage read was
+unguarded on every request, the reranker could raise or outlast its timeout, four trim cases now refuse, a narrator chat
+no longer trims, and a regression link could not be started for a source over the row cap. Not built: the `systemone`
+rerank format. For the owner: `떠남` counts as gone only alone or for good; a character the story brought back is
+recognized only inside the two-turn scene window; the trim's allowed message keys rest on a source reading of the host
+(`HOST-FACTS.md`), not a runtime observation. Known limits: a told row kept from someone is not tracked as a secret and
+no repair retracts one; a source persona's name inside free text is carried as written; a linked chat's request reads
+its whole frozen reading (bounded by the row cap); a reranker URL holding credentials is logged by the HTTP client as
+the other two endpoints' are; the short-message embedding reads the previous reply as the plugin sends it.
 
 **Phase 58 — how a feeling feels: its strength, its sign and a feeling under it: approved 2026-11-18 (an owner request;
 Q1–Q4 answered by the owner), high risk (a new extractor generation, migration `0035`, a generation switch that queues
