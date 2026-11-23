@@ -441,8 +441,9 @@ def _pair_bits(p: dict[str, Any], lang: str) -> list[str]:
     for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
         for f in p[k]:
             value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
+            h = happened_mark(f, lang)
             bits.append(_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)} ") + feeling_dot(f, lang)
-                        + _v(f"{value}") + feeling_detail(f, lang))
+                        + _v(f"{value}") + feeling_detail(f, lang) + (f" {h}" if h else ""))
     return bits
 
 
@@ -460,10 +461,10 @@ def more(items: list[str], lang: str, n: int = 3) -> str:
 
 
 def thread_meta(th: dict[str, Any], lang: str) -> str:
-    """A thread's kind, how long it is meant to last when known (PHASE-51), and since when."""
+    """A thread's kind, how long it is meant to last when known (PHASE-51), since when, and when it happened (PHASE-60 S7)."""
     kind = t(lang, th["kind"]) if th["kind"] in T else th["kind"]
     horizon = t(lang, f"hz.{th['horizon']}") if th.get("horizon") in ("scene", "arc", "lasting") else None
-    return " · ".join(x for x in (kind, horizon, t(lang, "since", t=th.get("turn"))) if x)
+    return " · ".join(x for x in (kind, horizon, t(lang, "since", t=th.get("turn")), happened_text(th, lang)) if x)
 
 
 def name_link(cid: str, entities: dict[str, str], name: str | None) -> str:
@@ -498,7 +499,10 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
         bits = _pair_bits(p, lang)
         if len(p["relationship"]) > 1 or any(not symmetric(f.get("value")) for f in p["relationship"]):
             bits = [_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, 'relationship')} {f.get('value')}")
+                    + (f" {h}" if (h := happened_mark(f, lang)) else "")
                     for f in p["relationship"]] + bits
+        else:
+            bits = [h for f in p["relationship"] if (h := happened_mark(f, lang))] + bits
         people.append(line(head, " · ".join(bits)))
     story, scenes = d.get("story"), d.get("scenes") or []
     sofar = (f'<p class="v-text">{_v(story["text"])}</p><div class="v-meta">{_v(t(lang, "story"))} · '
@@ -508,12 +512,14 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
                   + "".join(line(_v(s["text"]), f"t{s['first_turn']}–{s['last_turn']}") for s in scenes) + "</details>")
     secrets = [line(_v(content(s)), _v(" · ".join(x for x in (
         t(lang, "by", who=", ".join(s.get("holders") or [])) if s.get("holders") else "",
-        t(lang, "kept", who=", ".join(s.get("open") or [])), f"t{s.get('turn')}") if x)))
+        t(lang, "kept", who=", ".join(s.get("open") or [])), f"t{s.get('turn')}",
+        happened_text(s, lang)) if x)))
         for s in d.get("secrets") or [] if s.get("open")]
     changed = [line(
         f"{nm(_named(c['fact'], 'subject'))} {_v(t(lang, c['fact']['predicate']) if c['fact']['predicate'] in T else c['fact']['predicate'])}",
         f'<span class="v-diff"><span class="v-diff-old">{_v(c["old"])}</span> → <span class="v-diff-new">{_v(c["new"])}</span>'
-        f'<span>· t{c["fact"].get("turn")}</span></span>')
+        f'<span>· t{c["fact"].get("turn")}</span></span>'
+        + (f' · {h}' if (h := happened_mark(c["fact"], lang)) else ""))
                for c in d.get("changes") or []]
     counts = {"s-now": len(now), "s-open": len(threads), "s-people": len(people),
               "s-sofar": len(scenes) + (1 if story else 0), "s-secrets": len(secrets), "s-changed": len(changed)}
@@ -555,8 +561,16 @@ def change_text(text: str, predicate: str | None, lang: str) -> str:
 
 def _event(m: tuple[Any, ...], major: bool, lang: str) -> str:
     text = change_text(str(m[2]), m[3] if len(m) > 3 else None, lang)
+    extra = m[4] if len(m) > 4 else None
+    if isinstance(extra, dict):
+        row = extra if "turn" in extra else {"turn": m[0], **extra}
+    elif isinstance(extra, str):
+        row = {"turn": m[0], "when_happened": extra}
+    else:
+        row = None
+    mark = happened_mark(row, lang) if row is not None else ""
     return (f'<div class="v-ev{" major" if major else ""}"><span class="v-t">t{m[0]}</span><span class="v-d"></span>'
-            f'<span class="v-x">{_v(text)}</span></div>')
+            f'<span class="v-x">{_v(text)}{f" {mark}" if mark else ""}</span></div>')
 
 
 def _timeline(d: dict[str, Any], lang: str) -> str:

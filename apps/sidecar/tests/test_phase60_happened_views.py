@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 from nmos_sidecar import inspector, views
 
 
@@ -113,4 +115,71 @@ def test_inspector_threads_table_shows_happened_mark_and_leaves_others_identical
     assert "[일어난 때: 봄]" in inspector._threads_table([carried], "ko")
     assert "[happened: 봄]" in inspector._threads_table([carried], "en")
     assert "told" not in inspector._threads_table([carried], "en")
+
+
+def test_views_memory_shows_happened_mark_on_threads_and_facts_and_leaves_others_identical():
+    from test_phase60_views_unchanged import memory_input
+
+    plain = copy.deepcopy(memory_input())
+    for lang in ("ko", "en"):
+        base = views.memory(plain, lang)
+        none_copy = copy.deepcopy(plain)
+        none_copy["threads"][0] = {**none_copy["threads"][0], "when_happened": None}
+        none_copy["secrets"][0] = {**none_copy["secrets"][0], "when_happened": ""}
+        none_copy["changes"][0] = {**none_copy["changes"][0],
+                                   "fact": {**none_copy["changes"][0]["fact"], "when_happened": None}}
+        assert views.memory(none_copy, lang) == base
+
+    dated = copy.deepcopy(plain)
+    dated["threads"][0] = {**dated["threads"][0], "when_happened": "4월 11일"}
+    dated["threads"][1] = {**dated["threads"][1], "when_happened": "<b>봄</b> & 밤"}
+    dated["secrets"][0] = {**dated["secrets"][0], "when_happened": "the night of the fire"}
+    dated["changes"][0] = {**dated["changes"][0],
+                           "fact": {**dated["changes"][0]["fact"], "when_happened": "지난 주"}}
+    dated["pairs"][0] = {**dated["pairs"][0],
+                         "role": [{**dated["pairs"][0]["role"][0], "when_happened": "겨울"}]}
+
+    ko = views.memory(dated, "ko")
+    en = views.memory(dated, "en")
+    assert "t12부터 · [일어난 때: 4월 11일; t12에 말함]" in ko
+    assert "since t12 · [happened: 4월 11일; told t12]" in en
+    assert "<b>" not in ko and "[일어난 때: &lt;b&gt;봄&lt;/b&gt; &amp; 밤; t3에 말함]" in ko
+    assert "&amp;lt;" not in ko  # never double-escaped
+    assert "t14 · [일어난 때: the night of the fire; t14에 말함]" in ko
+    assert "t14 · [happened: the night of the fire; told t14]" in en
+    assert "[일어난 때: 지난 주; t9에 말함]" in ko
+    assert "[happened: 지난 주; told t9]" in en
+    assert "[일어난 때: 겨울; t6에 말함]" in ko
+    assert "[happened: 겨울; told t6]" in en
+
+
+def test_views_person_shows_happened_mark_on_threads_and_timeline_events():
+    from test_phase60_views_unchanged import person_input
+
+    plain = copy.deepcopy(person_input())
+    for lang in ("ko", "en"):
+        base = views.person(plain, lang)
+        none_copy = copy.deepcopy(plain)
+        none_copy["threads"][0] = {**none_copy["threads"][0], "when_happened": None}
+        none_copy["marks"][2] = (*none_copy["marks"][2], None)
+        assert views.person(none_copy, lang) == base
+
+    dated = copy.deepcopy(plain)
+    dated["threads"][0] = {**dated["threads"][0], "when_happened": "4월 11일"}
+    dated["marks"][2] = (*dated["marks"][2], {"when_happened": "the night of the fire", "turn": 9})
+    dated["marks"][7] = (*dated["marks"][7], "<b>4월 10일</b>")
+
+    ko = views.person(dated, "ko")
+    en = views.person(dated, "en")
+    assert "t12부터 · [일어난 때: 4월 11일; t12에 말함]" in ko
+    assert "since t12 · [happened: 4월 11일; told t12]" in en
+    assert "betrayed 카이토 [일어난 때: the night of the fire; t9에 말함]" in ko
+    assert "betrayed 카이토 [happened: the night of the fire; told t9]" in en
+    assert "<b>" not in ko and "the bell rang [일어난 때: &lt;b&gt;4월 10일&lt;/b&gt;; t27에 말함]" in ko
+
+    # A 5-tuple row with explicit turn=None leaves out the told part; a 4-tuple without a row is untouched.
+    no_turn = views._event((12, True, "등대 화재", "event", {"when_happened": "봄", "turn": None}), True, "en")
+    assert "[happened: 봄]" in no_turn and "told" not in no_turn
+    assert views._event((12, True, "등대 화재", "event", {}), True, "ko") == views._event((12, True, "등대 화재", "event"), True, "ko")
+
 
