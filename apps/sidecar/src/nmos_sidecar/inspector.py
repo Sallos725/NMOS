@@ -929,7 +929,7 @@ def _step(h: dict[str, Any], lang: str) -> str:
         said = f"{_t(lang, 'w.not')} {said}" if lang == "en" else f"{said} {_t(lang, 'w.not')}"
     turn = h["turn"] if h.get("turn") is not None else h["position"]
     outcome = h.get("outcome", "superseded")
-    return (f"<span class=\"muted\">{_v(turn)}</span> {_v(said)} "
+    return (f"<span class=\"muted\">{_v(turn)}</span>{_happened_span(h, lang)} {_v(said)} "
             f"<span class=\"chip\" title=\"{_v(outcome)}\">{_v(_t(lang, f'o.{outcome}'))}</span>")
 
 
@@ -955,10 +955,12 @@ def turn_link(turn: Any, text: str | None = None) -> str:
     return f"<a href=\"{href.replace('{turn}', str(turn))}\">{shown}</a>"
 
 
-def _turn(a: dict[str, Any]) -> str:
+def _turn(a: dict[str, Any], lang: str | None = None) -> str:
     if a.get("canon"):  # before turn 0 (ADR 0047): the canon text it came from
-        return f"<span class=\"chip\" title=\"{_v(a['canon'])}\">canon</span>"
-    return turn_link(a["turn"]) if a.get("turn") is not None else _v(a["position"])
+        base = f"<span class=\"chip\" title=\"{_v(a['canon'])}\">canon</span>"
+    else:
+        base = turn_link(a["turn"]) if a.get("turn") is not None else _v(a["position"])
+    return base + (_happened_span(a, lang) if lang else "")
 
 
 def happened_text(row: dict[str, Any], lang: str) -> str:
@@ -1201,7 +1203,7 @@ def _facts_rows(facts: list[dict[str, Any]], active: str | None, lang: str, anch
           + (_act("fact_lock", f["id"]) if (f.get("canon") or f.get("owner")) and not f.get("locked") else ""),
           _with(f, lang),
           _knowledge(f, lang),
-          _turn(f)
+          _turn(f, lang)
           # a canon fact carries its canon generation, whose reads the Canon section covers (ADR 0047)
           + (older if active and f.get("generation") not in (None, active) and not f.get("owner")
              and not f.get("canon") else "")
@@ -1244,7 +1246,7 @@ def _threads_table(threads: list[dict[str, Any]], lang: str, anchors: bool = Fal
                                                   "h.restated")],
                  [[chip(lang, "k", t.get("kind", "promise")) + (" " + chip(lang, "hz", t["horizon"]) if t.get("horizon") else ""),
                    _v(t["by"]), _v(t.get("to") or ""), _v(t.get("text")),
-                   _turn(t), chip(lang, "t", t["status"])
+                   _turn(t, lang), chip(lang, "t", t["status"])
                    + (_close(t) if t["status"] == "open"
                       else _act("thread_reopen", t["id"]) if not (t.get("closed_by") or {}).get("owner") else ""),
                    closed(t), _v(", ".join(str(r["turn"] if r.get("turn") is not None else r["position"])
