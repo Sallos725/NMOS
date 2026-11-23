@@ -137,7 +137,11 @@ Since `extract-v9` `also_called` also records the name the target turn reveals f
 as unnamed (D35, ADR 0024). Since `extract-v10` the registry has `addresses` (how one character speaks to
 and calls another, single per direction; D38, ADR 0028). Since `extract-v11` a predicate no longer declares an
 epistemic class: nothing read it (audit A-14). The prompt also says that notes outside the story (OOC, system
-lines, requests to the memory, memory markup) are not evidence (audit A-12, K27).
+lines, requests to the memory, memory markup) are not evidence (audit A-12, K27). **Amended 2026-11-23 (ADR 0086,
+D86):** a compiler may declare per-compiler predicates outside `REGISTRY` (`predicates.EXTENSIONS`, `extract-v19`'s
+`told`); validation and prompt formatting read `REGISTRY` plus the compiler's extension (`registry_for`), while the
+registry fingerprint hashes `REGISTRY` alone and the extension is hashed into that compiler's `prompt` fingerprint so
+earlier generation keys do not move.
 
 **D7 — Bounded extraction context, per turn (revised 2026-09-23, ADR 0008).** The unit of
 extraction is the **turn**: a run of user messages plus the run of replies that answers it (comments,
@@ -751,12 +755,47 @@ scene or named, broken, failed and abandoned before the rest, then newest, follo
 status="…" … closed_turn="…">`, `supportive`, not counted in `threads_limit` (none when it is 0). Each mark is explained in the Note only when a
 kept line uses it. Not the default; older policies compile as before, fresh or replayed (D39).
 
-**D85 — The owner pins a character (ADR 0087; PHASE-60 S8).** `owner_repair` kind `entity_pin` (migration 0038 widens
+**D85 — The owner pins a character (ADR 0087; PHASE-60 S8).** `owner_repair` kind `entity_pin` (migration `0038` widens
 the kind check) names a character by name and type as `entity_exclude` names its target, resolved on every read, so a
 name the story joins to it follows and a split one does not; `entity_exclude` wins over a pin. Removed like any
 repair, kept by rebuilds, archived, deleted with the chat. A chat's entities and a person's sheet name the pin. The
 setting `pin_at_mentions` (`NMOS_PIN_AT_MENTIONS`; off when unset, empty or `0`; a runtime setting that queues nothing)
-is stored. Stored and listed only: no policy reads a pin or `@name` yet (read under `packet-v20`, S8).
+enables `@name` pinning for one request. Under `packet-v20` (`PIN_POLICIES`), `pinned_characters` collects the
+request's pins in order, never the persona and never an excluded character: first `@name` matches in the user's message
+(only with `pin_at_mentions` on: `@` at the start of a word followed by a character's normalized name or alias, up to
+two words, with at most one trailing Korean particle; an `@` inside a word, an unknown name or a name two characters
+share does nothing), then the owner's pins, newest first. Each pinned character joins the scene's cast after everyone
+already in it, so knowledge marks, `<Private>`, strict and narrator modes, and scene summaries treat it as present. Its
+own chat's `NOW` and `STANDING` facts rank as if the message named it and are marked `required` (facts named only by a
+pin do not count as a message name for `packet-v19`'s unrelated-question fill); its other facts rank as before. After
+the cast's own 4 groups, each pinned character without one gets a `<Cast>` group of the same shape, at most 3 beyond
+the 4 (`PIN_EXTRA`), in pin order, from its own chat's rows only (carried rows never fill a pinned group or become
+required by a pin); a pinned gone character keeps its `gone="true"` line first in that group. A live request with pins
+records each resolved character's name and source (`at` / `owner`) as `recall_options.pins`; its replay reads that
+record instead of the message or the pins in force (a trace without it replays with none). Older policies ignore pins
+and `@name`.
+
+**D86 — `extract-v19`: when it happened and who was told (ADR 0086; PHASE-60 S7, S8).** Selectable
+(`NMOS_EXTRACT_COMPILER=extract-v19`, not the default; `extract-v16` stays the default). Built on `extract-v18`
+(keeping roles, name pairs and `feeling`), adding `when_happened`, `story_clock` and `told`.
+`when_happened` (`assertion.when_happened`, migration `0037`, 1–80 characters) is kept on `event` and `promised` only
+when the target turn places it at another time than the turn itself — a short phrase in the story's own words, resolved
+against the story clock when one is shown, never a computed timestamp and never used to order rows; dropped on any
+other predicate or compiler, and carried through `ASSERTION_COLUMNS`, fact reads and archives.
+`story_clock` (`extraction.story_clock`, migration `0037`) records the literal `date` / `time` status-window values as
+of the target turn (single `rules_version`, latest position per category, at most 80 characters each), shown as one
+prompt line (`CLOCK_LINE`) and recorded on the extraction like the hints (D7), never part of validity.
+`told` (character → character, multi, with typed participants `with` via `EXTENSION_PARTICIPANTS`) records that a
+character passed on something that matters later which the hearer did not have; it requires a quote (`evidence`), else
+is parked `pending`. It stays outside `REGISTRY` in `predicates.EXTENSIONS["extract-v19"]` (D6 amended), hashed with
+`EXTENSION_PARTICIPANTS`, `CLOCK_LINE` and the length caps into `extract-v19`'s `prompt` fingerprint so the keys of
+`extract-v15`–`extract-v18` and of canon, summarize, reveal and embed do not move. `told` changes no knowledge marks by
+itself; `memory_view` keeps reading `REGISTRY` alone, while `facts.served_told` reads served `told` rows of compilers
+whose extension declares it, oldest first, as of `upto` / `known_at` (`packet-v20` does not yet emit `happened` or
+`told` lines). `extract-v19` joins `generations.ADDS` with `extract-v16` and `extract-v18`, so switching among them
+with the same model and endpoint is classified `adds` in both directions and queues no already-served turns. Known
+limits: a `told` row kept from someone keeps its knowledge marks but is in `secrets.NOT_SECRETS`, so it is not tracked
+as a secret and no reveal check ends it; `fact_restore` (`repairs.RESTORED`) does not carry `when_happened`.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
