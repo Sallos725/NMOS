@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:ae1247ff5e6a".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:5a803b19475d".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -153,6 +153,54 @@
     return sha256Hex(canonicalJson(rows));
   }
 
+  // src/extrabody.ts
+  var EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+  var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+  function bodyOf(text2) {
+    if (!text2.trim()) return {};
+    try {
+      const v = JSON.parse(text2);
+      return isObj(v) ? v : null;
+    } catch {
+      return null;
+    }
+  }
+  function showBody(body) {
+    return Object.keys(body).length ? JSON.stringify(body, null, 2) : "";
+  }
+  function bodyKey(text2) {
+    const body = bodyOf(text2);
+    return body ? canonicalJson(body) : `!${text2}`;
+  }
+  function effortOf(text2) {
+    const body = bodyOf(text2);
+    if (!body) return { state: "invalid" };
+    if (!("reasoning" in body)) return { state: "none" };
+    const r = body.reasoning;
+    if (!isObj(r)) return { state: "custom" };
+    if (!("effort" in r)) return { state: "none" };
+    return typeof r.effort === "string" && EFFORTS.includes(r.effort) ? { state: "value", effort: r.effort } : { state: "custom" };
+  }
+  function withEffort(text2, effort) {
+    const body = bodyOf(text2);
+    if (!body) return text2;
+    const r = body.reasoning;
+    if (effort !== null) body.reasoning = isObj(r) ? Object.assign(r, { effort }) : { effort };
+    else if (isObj(r) && "effort" in r) {
+      delete r.effort;
+      if (!Object.keys(r).length) delete body.reasoning;
+    }
+    return showBody(body);
+  }
+  function isOpenRouter(url) {
+    try {
+      const host = new URL(url.trim()).hostname.toLowerCase();
+      return host === "openrouter.ai" || host.endsWith(".openrouter.ai");
+    } catch {
+      return false;
+    }
+  }
+
   // src/form.ts
   var DEFAULT_DEADLINE_MS = 3e3;
   var MAX_DEADLINE_MS = 3e4;
@@ -200,19 +248,29 @@
     return url.startsWith(head) && url.endsWith(tail) && url.length > head.length + tail.length && !url.slice(head.length, url.length - tail.length).includes("/");
   }
   function dirtySections(baseline, current2) {
-    return SECTIONS.filter((s) => JSON.stringify(baseline[s]) !== JSON.stringify(current2[s]));
+    const view2 = (v, s) => s === "llm" && v.llm.extra !== void 0 ? { ...v.llm, extra: bodyKey(v.llm.extra) } : v[s];
+    return SECTIONS.filter((s) => JSON.stringify(view2(baseline, s)) !== JSON.stringify(view2(current2, s)));
+  }
+  function modelChange(baseline, current2) {
+    const [b, c] = [baseline.llm, current2.llm];
+    return c.url.trim() !== b.url.trim() || c.model.trim() !== b.model.trim() || bodyKey(c.extra ?? "") !== bodyKey(b.extra ?? "") || Boolean(c.noTemp) !== Boolean(b.noTemp);
   }
   function num(value) {
     const n = Number(value.trim());
     return value.trim() !== "" && Number.isFinite(n) ? n : value;
   }
-  function configBody(dirty, v, known = {}) {
+  function configBody(dirty, v, known = {}, base) {
     const body = {};
     for (const [section, prefix] of [["llm", "llm"], ["emb", "embed"]]) {
       if (!dirty.includes(section)) continue;
       body[`${prefix}_url`] = v[section].url.trim();
       body[`${prefix}_model`] = v[section].model.trim();
       if (v[section].key.trim()) body[`${prefix}_api_key`] = v[section].key.trim();
+    }
+    if (dirty.includes("llm") && base) {
+      const extra = v.llm.extra === void 0 ? null : bodyOf(v.llm.extra);
+      if (extra && bodyKey(v.llm.extra) !== bodyKey(base.llm.extra ?? "")) body.llm_extra_body = extra;
+      if (v.llm.noTemp !== void 0 && v.llm.noTemp !== Boolean(base.llm.noTemp)) body.llm_no_temperature = v.llm.noTemp;
     }
     if (dirty.includes("rerank") && known.rerank) {
       body.rerank_url = v.rerank.url.trim();
@@ -794,6 +852,18 @@
       "\uD655\uC815\uB41C \uD134(\uC785\uB825\uACFC \uC751\uB2F5)\uB9C8\uB2E4 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uD55C \uBC88 \uD638\uCD9C\uD574 \uC778\uBB3C\xB7\uC7A5\uC18C\xB7\uC57D\uC18D\xB7\uAD00\uACC4\uB97C \uAE30\uB85D\uD569\uB2C8\uB2E4. \uC720\uB8CC API\uB294 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4.",
       "Called once per settled turn (input and reply) in the background to record people, places, promises and relationships. Paid APIs cost money."
     ],
+    // settings: what the extraction model's requests carry (PHASE-61 S4)
+    "extra.body": ["\uCD94\uAC00 \uC694\uCCAD \uAC12 (JSON)", "Extra request values (JSON)"],
+    "extra.body_sub": [
+      "\uC774 \uBAA8\uB378\uB85C \uBCF4\uB0B4\uB294 \uBAA8\uB4E0 \uC694\uCCAD\uC5D0 \uB354\uD574\uC9D1\uB2C8\uB2E4. API \uD0A4\uB098 \uC694\uCCAD \uC790\uCCB4\uC758 \uD56D\uBAA9(model, messages, temperature \uB4F1)\uC740 \uB123\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.",
+      "Added to every request made with this model. It may not hold an API key or the request's own fields (model, messages, temperature\u2026)."
+    ],
+    "extra.invalid": ["JSON \uAC1D\uCCB4\uAC00 \uC544\uB2D9\uB2C8\uB2E4", "Not a JSON object"],
+    "extra.effort": ["\uCD94\uB860 \uAC15\uB3C4", "Reasoning effort"],
+    "extra.effort_sub": ["\uACE0\uB974\uBA74 \uC704 JSON\uC758 reasoning.effort\uC5D0 \uC801\uD799\uB2C8\uB2E4.", "Writes reasoning.effort into the JSON above."],
+    "extra.custom": ["\uC9C1\uC811 \uC785\uB825", "custom"],
+    "extra.no_temp": ["temperature \uBCF4\uB0B4\uC9C0 \uC54A\uAE30", "Do not send a temperature"],
+    "extra.no_temp_sub": ["temperature\uB97C \uBC1B\uC9C0 \uC54A\uB294 \uBAA8\uB378\uC6A9\uC785\uB2C8\uB2E4. \uB044\uBA74 0\uC744 \uBCF4\uB0C5\uB2C8\uB2E4.", "For models that reject a temperature; otherwise 0 is sent."],
     "emb.title": ["\uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529", "Semantic recall embeddings"],
     "emb.sub": [
       "\uB2E4\uB978 \uB9D0\uB85C \uBB3C\uC5B4\uB3C4 \uC608\uC804 \uC7A5\uBA74\uC744 \uCC3E\uC2B5\uB2C8\uB2E4. Ollama\uC758 qwen3-embedding:0.6b\uB97C \uCD94\uCC9C\uD569\uB2C8\uB2E4.",
@@ -1307,7 +1377,7 @@
       generationId: meta.generationId
     };
   }
-  var bodyKey = (logicalId, revisionHash) => `${logicalId}
+  var bodyKey2 = (logicalId, revisionHash) => `${logicalId}
 ${revisionHash}`;
   var LABEL_MAX = 200;
   function labelOf(value) {
@@ -1353,7 +1423,7 @@ ${revisionHash}`;
   }
   function finish(chat, messages, entries, characterRef, labels, hashed) {
     const index = /* @__PURE__ */ new Map();
-    entries.forEach((e, i) => index.set(bodyKey(e.host_logical_id, e.revision_hash), i));
+    entries.forEach((e, i) => index.set(bodyKey2(e.host_logical_id, e.revision_hash), i));
     const bodies = {
       get(key) {
         const i = index.get(key);
@@ -2069,7 +2139,7 @@ ${GUARD_LINE}` : "";
       let result = await call(settings, "/v1/sync/reconcile", request, deadline);
       let rewritten2 = 0;
       if (result.status === "needs_bodies") {
-        const keys = (result.needed_bodies ?? []).map((n) => bodyKey(n.host_logical_id, n.revision_hash));
+        const keys = (result.needed_bodies ?? []).map((n) => bodyKey2(n.host_logical_id, n.revision_hash));
         rewritten2 = keys.filter((k) => bodies.rewritten(k)).length;
         const needed = keys.map((k) => bodies.get(k));
         if (needed.some((b) => !b)) throw new Error("sidecar asked for an unknown body");
@@ -5731,7 +5801,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("p", { class: "sub", text: L("conn.hint") }),
       el("p", { class: "sub", text: L("conn.deadline_hint") })
     ));
-    function modelSection(kind, title2, sub, presets, onPreset) {
+    function modelSection(kind, title2, sub, presets, onPreset, extra) {
       const preset = el("select", {}, ...presets.map((p, i) => el("option", {
         value: String(i),
         text: p.label.includes(".") ? L(p.label) : p.label
@@ -5808,13 +5878,15 @@ html,body{margin:0;background:${PALETTE.bg}}
         }
       });
       test.addEventListener("click", async () => {
+        const more = extra ? extra.test() : {};
+        if (!more) return say(msg, L("extra.invalid"), "err");
         test.disabled = true;
         say(msg, L("model.testing"));
         try {
           const r = await deps.api(
             "POST",
             "/v1/config/test",
-            { kind, url: endpoint.value.trim(), model: model.value.trim(), api_key: key.value.trim() || void 0 }
+            { kind, url: endpoint.value.trim(), model: model.value.trim(), api_key: key.value.trim() || void 0, ...more }
           );
           say(msg, r.ok ? L("model.test_ok", { ms: r.ms }) + (r.dimensions ? L("model.dims", { n: r.dimensions }) : "") : L("model.test_failed", { e: r.error ?? "" }), r.ok ? "ok" : "err");
         } catch (error) {
@@ -5833,6 +5905,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         field(L("model.model"), model),
         list,
         field(L("model.key"), key),
+        ...extra?.nodes ?? [],
         el("div", { class: "btns" }, pickKey, load, test),
         keyFile,
         msg
@@ -5849,7 +5922,53 @@ html,body{margin:0;background:${PALETTE.bg}}
         }
       };
     }
-    const llm = modelSection("llm", "llm.title", "llm.sub", LLM_PRESETS);
+    let extraKnown = false;
+    const extraText = el("textarea", {
+      rows: 4,
+      spellcheck: "false",
+      placeholder: "{}",
+      style: "min-height:96px",
+      "aria-label": L("extra.body")
+    });
+    const extraErr = el("div", { class: "msg err", text: L("extra.invalid"), style: "display:none" });
+    const effortCustom = el("option", { value: "custom", text: L("extra.custom") });
+    const effort = el(
+      "select",
+      { "aria-label": L("extra.effort") },
+      el("option", { value: "", text: "\u2014" }),
+      ...EFFORTS.map((e) => el("option", { value: e, text: e }))
+    );
+    const effortRow = el("div", {}, field(L("extra.effort"), effort), el("p", { class: "sub", text: L("extra.effort_sub") }));
+    const noTemp = el("input", { type: "checkbox" });
+    const extraBox = el(
+      "div",
+      { style: "display:none" },
+      field(L("extra.body"), extraText),
+      extraErr,
+      el("p", { class: "sub", text: L("extra.body_sub") }),
+      effortRow,
+      el("div", { class: "check" }, noTemp, el("span", { text: L("extra.no_temp") })),
+      el("p", { class: "sub", text: L("extra.no_temp_sub") })
+    );
+    effort.addEventListener("change", () => {
+      if (effort.value !== "custom") extraText.value = withEffort(extraText.value, effort.value || null);
+    });
+    function syncExtra() {
+      extraBox.style.display = extraKnown ? "" : "none";
+      effortRow.style.display = isOpenRouter(llm.values().url) ? "" : "none";
+      const s = effortOf(extraText.value);
+      if (s.state === "custom") effort.append(effortCustom);
+      else effortCustom.remove();
+      effort.value = s.state === "value" ? s.effort : s.state === "custom" ? "custom" : "";
+      effort.disabled = s.state === "invalid";
+      extraErr.style.display = s.state === "invalid" ? "" : "none";
+    }
+    const extraValues = () => extraKnown ? { extra: extraText.value, noTemp: noTemp.checked } : {};
+    const llm = modelSection("llm", "llm.title", "llm.sub", LLM_PRESETS, void 0, { nodes: [extraBox], test: () => {
+      if (!extraKnown) return {};
+      const body = bodyOf(extraText.value);
+      return body && { extra_body: body, no_temperature: noTemp.checked };
+    } });
     const emb = modelSection(
       "embeddings",
       "emb.title",
@@ -6260,7 +6379,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           deadline: deadline.value,
           token: token.value
         },
-        llm: llm.values(),
+        llm: { ...llm.values(), ...extraValues() },
         emb: emb.values(),
         rerank: rerank.values(),
         tune: {
@@ -6283,6 +6402,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     function update(message) {
       const d = dirty();
       syncTrimWarn();
+      syncExtra();
       save.disabled = d.length === 0;
       revert.disabled = d.length === 0;
       if (message) say(barText, message.text, message.kind);
@@ -6313,6 +6433,9 @@ html,body{margin:0;background:${PALETTE.bg}}
       llm.fill(cfg.llm);
       emb.fill(cfg.embeddings);
       rerank.fill(cfg.rerank);
+      extraKnown = typeof cfg.llm.extra_body === "object" && cfg.llm.extra_body !== null;
+      extraText.value = extraKnown ? showBody(cfg.llm.extra_body) : "";
+      noTemp.checked = cfg.llm.no_temperature === true;
       threshold.value = String(cfg.recall.threshold);
       minSim.value = String(cfg.recall.vector_min_sim);
       embedWait.value = cfg.recall.embed_timeout_ms === void 0 ? "" : String(cfg.recall.embed_timeout_ms);
@@ -6377,6 +6500,10 @@ html,body{margin:0;background:${PALETTE.bg}}
         update({ text: L("no_changes"), kind: "muted" });
         return true;
       }
+      if (extraKnown && !bodyOf(extraText.value)) {
+        update({ text: L("extra.invalid"), kind: "err" });
+        return false;
+      }
       save.disabled = true;
       say(barText, L("saving"));
       const v = values();
@@ -6411,7 +6538,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           deadline.value = String(args.deadline_ms);
           baseline = { ...baseline, conn: values().conn };
         }
-        const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown });
+        const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown }, baseline);
         const tight = (d.includes("tune") || d.includes("conn")) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline) ? ` ${L("tune.embed_wait_tight", { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : "";
         if (!Object.keys(body).length) {
           fillServer(await deps.api("GET", "/v1/config", void 0, 5e3));
@@ -6419,7 +6546,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           update({ text: L("saved") + tight, kind: tight ? "warn" : "ok" });
           return true;
         }
-        const modelChanged = d.includes("llm") && (v.llm.url.trim() !== baseline.llm.url.trim() || v.llm.model.trim() !== baseline.llm.model.trim());
+        const modelChanged = d.includes("llm") && modelChange(baseline, v);
         if (modelChanged) {
           const p = await deps.api("POST", "/v1/config/preview", body, 1e4).catch(() => null);
           if (p?.model_change) {
