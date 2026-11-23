@@ -225,17 +225,18 @@ def test_inspector_told_section_empty_lines_turn_links_and_escaping():
     ]
     with inspector.turn_links(CID, None, "ko"):
         ko = inspector.told_section(rows, "ko")
-    assert "<th>누가 누구에게</th><th>내용</th><th>관련 인물</th><th>턴</th>" in ko
+    assert "<table" not in ko and "<th>" not in ko  # lines, not a narrow table (Korean broke mid-syllable at 375 px)
     assert "세라 → 카이토 → 하나" in ko
     assert "&lt;b&gt;지도는 가짜다&lt;/b&gt;" in ko and "<b>" not in ko
     assert "&lt;b&gt;유나&lt;/b&gt;" in ko
-    assert f'<a href="/inspector/c/{CID}/t/5">5</a> → <a href="/inspector/c/{CID}/t/12">12</a>' in ko
+    assert f'<a href="/inspector/c/{CID}/t/5">t5</a> → <a href="/inspector/c/{CID}/t/12">t12</a>' in ko
+    assert "&lt;b&gt;유나&lt;/b&gt;에 대해" in ko
     assert "mono" not in ko
 
     with inspector.turn_links(CID, "tok", "en"):
         en = inspector.told_section(rows, "en")
-    assert "<th>Who to whom</th><th>What</th><th>About</th><th>Turn</th>" in en
-    assert f'<a href="/inspector/c/{CID}/t/5?token=tok&lang=en">5</a>' in en
+    assert "about &lt;b&gt;유나&lt;/b&gt;" in en
+    assert f'<a href="/inspector/c/{CID}/t/5?token=tok&lang=en">t5</a>' in en
 
 
 def test_inspector_character_page_includes_told_section_only_when_present():
@@ -258,8 +259,8 @@ def test_inspector_character_page_includes_told_section_only_when_present():
     assert 'id="s-told"' not in without and empty == without
     assert 'id="s-told"' in shown and 'href="#s-told"' in shown
     assert "누가 누구에게 들었나" in shown and "세라 → 카이토" in shown and "종이 사라졌다" in shown
-    assert f'<a href="/inspector/c/{CID}/t/8">8</a>' in shown
+    assert f'<a href="/inspector/c/{CID}/t/8">t8</a>' in shown and "하나에 대해" in shown
 
     with inspector.turn_links(CID, None, "en"):
         shown_en = inspector.character(conv, SERA, {**base_view, "told": rows}, None, lang="en", embed=True)
-    assert "Who told whom" in shown_en and f'<a href="/inspector/c/{CID}/t/8?lang=en">8</a>' in shown_en
+    assert "Who told whom" in shown_en and f'<a href="/inspector/c/{CID}/t/8?lang=en">t8</a>' in shown_en

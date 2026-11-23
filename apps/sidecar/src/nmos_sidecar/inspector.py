@@ -82,10 +82,7 @@ LANGS = ("ko", "en")
 T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "told": ("누가 누구에게 들었나", "Who told whom"),
     "toc.told": ("누가 누구에게 들었나", "Who told whom"),
-    "h.told_chain": ("누가 누구에게", "Who to whom"),
-    "h.told_what": ("내용", "What"),
-    "h.told_about": ("관련 인물", "About"),
-    "h.told_turn": ("턴", "Turn"),
+    "told_about": ("{who}에 대해", "about {who}"),
     "title": ("NMOS 인스펙터", "NMOS inspector"),
     "new_views": ("새 화면으로 보기 (채팅 목록 · 허브 · 기억)", "Open the new screens (chats · hub · memory)"),
     "intro": ("원장(source ledger) 읽기 전용 화면입니다. 백그라운드 작업:", "Read-only view of the source ledger. Background jobs:"),
@@ -1999,17 +1996,20 @@ def source_turn(conv: dict[str, Any], turn: int, messages: list[dict[str, Any]],
 
 
 def _told_table(chains: list[list[dict[str, Any]]], lang: str) -> str:
-    """Render grouped `told` chains as an Inspector table (PHASE-60 S8), oldest first."""
-    t = lambda k: _t(lang, k)
-    table_rows = []
+    """Grouped `told` chains, oldest first, one line each (PHASE-60 S8): who passed it to whom, what, about whom and
+    the turns. Lines, not a four-column table: on a phone a narrow column broke Korean words mid-syllable."""
+    lines = []
     for chain in chains:
         people = [chain[0]["teller"], *(link["hearer"] for link in chain)]
         who = " → ".join(_v(name) for name in people)
         about = list(dict.fromkeys(w for link in chain for w in link.get("about") or ()))
-        turns = [turn_link(link["turn"]) for link in chain
+        turns = [turn_link(link["turn"], f"t{link['turn']}") for link in chain
                  if isinstance(link.get("turn"), int) and not isinstance(link.get("turn"), bool)]
-        table_rows.append([who, _v(chain[0]["what"]), _v(", ".join(about)), " → ".join(turns)])
-    return table([t("h.told_chain"), t("h.told_what"), t("h.told_about"), t("h.told_turn")], table_rows)
+        meta = [_v(_t(lang, "told_about").format(who=", ".join(about))) if about else "", " → ".join(turns)]
+        tail = " · ".join(x for x in meta if x)
+        lines.append(f"<p>{who}: {_v(chain[0]['what'])}" + (f" <span class=\"muted\">· {tail}</span>" if tail else "")
+                     + "</p>")
+    return "".join(lines)
 
 
 def told_section(rows: list[dict[str, Any]] | None, lang: str = "ko") -> str:
