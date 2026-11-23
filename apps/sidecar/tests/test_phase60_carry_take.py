@@ -193,7 +193,11 @@ def test_take_reading_and_preview_with_provenance_and_story(migrated: str) -> No
                 "threads": 1,
                 "story": True,
             }
-            expected_lines = ([fact_text(f) for f in snap["facts"]] + [t["text"]])[:carry.FIRST_LINES]
+            # the lines shown spell the stored persona marker as the target will read it (its host persona name)
+            persona = conn.execute("SELECT host_persona_name AS n FROM conversation WHERE id = %s",
+                                   (tgt_id,)).fetchone()["n"]
+            shown = [carry._persona_named(f, persona) for f in snap["facts"]]
+            expected_lines = ([fact_text(f) for f in shown] + [t["text"]])[:carry.FIRST_LINES]
             assert prev["first_lines"] == expected_lines
             assert prev["fingerprint"] == reading["fingerprint"]
             assert prev["replaces"] is None

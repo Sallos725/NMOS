@@ -488,10 +488,14 @@ def preview_of(
     reading: Mapping[str, Any],
     labels: Mapping[str, Any],
     replaces: UUID | str | None = None,
+    persona: str | None = None,
 ) -> dict[str, Any]:
-    """Summarize a frozen reading for the owner before linking."""
+    """Summarize a frozen reading for the owner before linking. With `persona` (the target's host persona name), the
+    lines shown spell the stored persona marker as the target will read it (`Carried.for_persona`); the reading and
+    its fingerprint are untouched."""
     snap = reading["snapshot"]
-    lines: list[str] = [fact_text(f) for f in snap["facts"][:FIRST_LINES]]
+    shown = [_persona_named(f, persona) if persona and persona != PERSONA else f for f in snap["facts"][:FIRST_LINES]]
+    lines: list[str] = [fact_text(f) for f in shown]
     if len(lines) < FIRST_LINES:
         for t in snap["threads"]:
             if len(lines) >= FIRST_LINES:
@@ -849,7 +853,8 @@ def preview(
         (tgt,),
     ).fetchone()
     replaces = current["id"] if current is not None else None
-    return preview_of(reading, labels, replaces)
+    named = conn.execute("SELECT host_persona_name FROM conversation WHERE id = %s", (tgt,)).fetchone()
+    return preview_of(reading, labels, replaces, persona=named["host_persona_name"] if named else None)
 
 
 # --- the link store ---------------------------------------------------------------------------------------------

@@ -137,6 +137,22 @@ def test_carried_persona_lines_name_the_targets_persona(migrated: str, mode: str
         assert sheet.status_code == 200 and PERSONA not in sheet.text and persona in sheet.text
 
 
+def test_the_preview_shows_the_persona_as_the_target_will_read_it(migrated: str) -> None:
+    """The lines the owner sees before linking spell the stored marker as the target's persona; the reading's
+    fingerprint is the stored reading's, so a link made with it still goes through."""
+    c = _client(migrated)
+    with c:
+        src, _tgt, tgt = _setup(c, migrated, "타쿠미", fresh=True)
+        res = c.post(f"/v1/conversations/{tgt}/carry/preview", json={"source_conversation_id": src, "mode": "continue"})
+        assert res.status_code == 200, res.text
+        prev = res.json()
+        assert "타쿠미 located in 등대" in prev["first_lines"]
+        assert not [x for x in prev["first_lines"] if PERSONA in x or "도현" in x]
+        linked = c.post(f"/v1/conversations/{tgt}/carry",
+                        json={"source_conversation_id": src, "mode": "continue", "expect": prev["fingerprint"]})
+        assert linked.status_code == 200, linked.text
+
+
 def test_the_persona_keeps_its_entity_and_the_stored_snapshot_its_marker(migrated: str) -> None:
     """Only the spelling changes: the persona's entity id, the fold and the stored rows are as before."""
     with _client(migrated) as c:
