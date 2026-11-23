@@ -191,3 +191,62 @@ describe('parseCoverage', () => {
     expect(parseCoverage({ produced: { facts: '3' } }).produced).toBeNull();
   });
 });
+
+describe('trimming suffix on request outcome (PHASE-60 S1)', () => {
+  it('appends the dropped count to an injected outcome in both languages, after existing suffixes', () => {
+    const trim = { dropped: 12, savedTokens: 3400, reason: null };
+    const plain = run([[{ type: 'request-end', outcome: 'injected', chars: 500, conversationId: 'c', trim }, 0]]);
+    expect(view(plain, 1, 'ko')).toEqual({ kind: 'ok', text: '✓ 기억 주입 (500자) · 오래된 대화 12개 뺌', fraction: null });
+    expect(view(plain, 1, 'en')).toEqual({ kind: 'ok', text: '✓ Memory injected (500 chars) · 12 old messages left out', fraction: null });
+
+    const withAll = run([[{
+      type: 'request-end', outcome: 'injected', chars: 500, conversationId: 'c',
+      reused: true, vectors: 'fallback', rewritten: 2, trim,
+    }, 0]]);
+    expect(view(withAll, 1, 'ko')?.text)
+      .toBe('✓ 기억 주입 (500자) · 재사용 · 어휘 검색만 · 스크립트 수정 2개 반영 · 오래된 대화 12개 뺌');
+    expect(view(withAll, 1, 'en')?.text)
+      .toBe('✓ Memory injected (500 chars) · reused · lexical only · 2 script-edited replies picked up · 12 old messages left out');
+  });
+
+  it('appends the kept reason to a nothing-relevant outcome in both languages, after rewritten', () => {
+    const trim = { dropped: 0, savedTokens: 0, reason: 'uncovered' };
+    const plain = run([[{ type: 'request-end', outcome: 'nothing-relevant', chars: 0, conversationId: 'c', trim }, 0]]);
+    expect(view(plain, 1, 'ko')).toEqual({
+      kind: 'muted', text: '– 관련 기억 없음 · 대화 그대로: 기억 정리(추출·요약)가 아직 따라오지 못함', fraction: null,
+    });
+    expect(view(plain, 1, 'en')).toEqual({
+      kind: 'muted', text: '– Nothing relevant · dialogue kept: memory (extraction and summaries) has not caught up yet', fraction: null,
+    });
+
+    const withRewritten = run([[{
+      type: 'request-end', outcome: 'nothing-relevant', chars: 0, conversationId: 'c', rewritten: 1, trim,
+    }, 0]]);
+    expect(view(withRewritten, 1, 'en')?.text)
+      .toBe('– Nothing relevant · 1 script-edited replies picked up · dialogue kept: memory (extraction and summaries) has not caught up yet');
+  });
+
+  it('appends no suffix when nothing was dropped and no reason is given', () => {
+    const trim = { dropped: 0, savedTokens: 0, reason: null };
+    const inj = run([[{ type: 'request-end', outcome: 'injected', chars: 42, conversationId: 'c', trim }, 0]]);
+    expect(view(inj, 1, 'ko')?.text).toBe('✓ 기억 주입 (42자)');
+    expect(view(inj, 1, 'en')?.text).toBe('✓ Memory injected (42 chars)');
+
+    const none = run([[{ type: 'request-end', outcome: 'nothing-relevant', chars: 0, conversationId: 'c', trim }, 0]]);
+    expect(view(none, 1, 'ko')?.text).toBe('– 관련 기억 없음');
+    expect(view(none, 1, 'en')?.text).toBe('– Nothing relevant');
+  });
+
+  it('leaves other outcomes unchanged even if trim is present', () => {
+    const trim = { dropped: 0, savedTokens: 0, reason: 'failed' };
+    const failed = run([[{ type: 'request-end', outcome: 'failed', chars: 0, error: 'HTTP 500', conversationId: 'c', trim }, 0]]);
+    expect(view(failed, 1, 'ko')).toEqual({ kind: 'warn', text: '⚠ 건너뜀: 사이드카 오류', fraction: null });
+    expect(view(failed, 1, 'en')).toEqual({ kind: 'warn', text: '⚠ Skipped: sidecar error', fraction: null });
+
+    const skipped = run([[{ type: 'request-end', outcome: 'skipped', chars: 0, conversationId: 'c', trim }, 0]]);
+    expect(view(skipped, 1, 'en')).toEqual({ kind: 'warn', text: '⚠ Skipped: this message is not in the prompt', fraction: null });
+
+    const chatOff = run([[{ type: 'request-end', outcome: 'chat-off', chars: 0, conversationId: 'c', trim }, 0]]);
+    expect(view(chatOff, 1, 'en')).toEqual({ kind: 'muted', text: '⏻ NMOS is off for this chat', fraction: null });
+  });
+});

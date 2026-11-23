@@ -3,6 +3,7 @@
 
 import type { Vectors } from './core';
 import { t, type Lang } from './i18n';
+import { trimHudSuffix, type TrimShown } from './trimtext';
 
 /** How long a request outcome and a "done" pill stay up. */
 export const OUTCOME_MS = 4000;
@@ -27,7 +28,9 @@ export type ActivityEvent =
       /** A packet kept from an earlier identical request (a reroll), and whether its recall searched vectors (K34). */
       reused?: boolean; vectors?: Vectors | null;
       /** Replies the host rewrote after generating them, sent to memory by this request. */
-      rewritten?: number }
+      rewritten?: number;
+      /** Old-dialogue trimming outcome when trimming is on (PHASE-60 S1). */
+      trim?: TrimShown }
   | { type: 'background'; conversationId: string | null };
 
 export type HudEvent = ActivityEvent | { type: 'coverage'; coverage: Coverage } | { type: 'reset' };
@@ -35,7 +38,7 @@ export type HudEvent = ActivityEvent | { type: 'coverage'; coverage: Coverage } 
 export interface HudState {
   request: null | { phase: 'running' }
     | { phase: 'done'; outcome: Outcome; chars: number; error?: string; deadlineMs?: number; until: number;
-        reused?: boolean; vectors?: Vectors | null; rewritten?: number };
+        reused?: boolean; vectors?: Vectors | null; rewritten?: number; trim?: TrimShown };
   /** `since`: what the chat held when the work was first seen; `made`: what it added by the end (PHASE-17 Q6). */
   // `failedSince`: failures already there when the work was first seen; `failed`: the ones it added.
   progress: null | { coverage: Coverage; since: Produced | null; failedSince: number }
@@ -60,7 +63,7 @@ export function reduce(state: HudState, event: HudEvent, now: number): HudState 
     case 'request-end':
       return { ...state, request: { phase: 'done', outcome: event.outcome, chars: event.chars, error: event.error,
         deadlineMs: event.deadlineMs, until: now + OUTCOME_MS, reused: event.reused, vectors: event.vectors,
-        rewritten: event.rewritten } };
+        rewritten: event.rewritten, trim: event.trim } };
     case 'coverage': {
       const shown = state.progress && 'coverage' in state.progress ? state.progress : null;
       if (pending(event.coverage) > 0) {
@@ -88,12 +91,12 @@ export function view(state: HudState, now: number, lang: Lang): HudView | null {
     if (r.outcome === 'injected') {
       // Served, but reduced or from an earlier request: said plainly, not as a warning (PHASE-17 Q5).
       const how = [r.reused ? t(lang, 'hud.reused') : '', r.vectors === 'fallback' ? t(lang, 'hud.lexical') : '',
-        r.rewritten ? t(lang, 'hud.rewritten', { n: r.rewritten }) : ''].filter(Boolean).join('');
+        r.rewritten ? t(lang, 'hud.rewritten', { n: r.rewritten }) : '', trimHudSuffix(lang, r.trim)].filter(Boolean).join('');
       return { kind: 'ok', text: t(lang, 'hud.injected', { n: r.chars }) + how, fraction: null };
     }
     if (r.outcome === 'nothing-relevant') {
-      return { kind: 'muted', text: t(lang, 'hud.nothing') + (r.rewritten ? t(lang, 'hud.rewritten', { n: r.rewritten }) : ''),
-        fraction: null };
+      return { kind: 'muted', text: t(lang, 'hud.nothing') + (r.rewritten ? t(lang, 'hud.rewritten', { n: r.rewritten }) : '')
+        + trimHudSuffix(lang, r.trim), fraction: null };
     }
     if (r.outcome === 'chat-off') return { kind: 'muted', text: t(lang, 'hud.chat_off'), fraction: null };
     if (r.outcome === 'skipped') return { kind: 'warn', text: t(lang, 'hud.skipped', { r: t(lang, 'hud.reason.no_turn') }), fraction: null };
