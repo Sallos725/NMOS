@@ -98,6 +98,24 @@ def extra_body_error(body: Any) -> str | None:
     return None
 
 
+def secret_path(body: Any, secrets: list[str]) -> str | None:
+    """Where a string of an accepted `body` holds one of `secrets` (review F2): the path of that value, or for a key name
+    the object that holds it, so the answer never repeats the string; None when no string does."""
+    stack: list[tuple[Any, str]] = [(body, "")]
+    while stack:
+        value, path = stack.pop()
+        if isinstance(value, str) and any(s in value for s in secrets):
+            return path or "the top level"
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if any(s in key for s in secrets):
+                    return path or "the top level"
+                stack.append((item, f"{path}.{key}" if path else key))
+        elif isinstance(value, list):
+            stack.extend((item, f"{path}[{i}]") for i, item in enumerate(value))
+    return None
+
+
 def _env_extra_body() -> Any:
     """`NMOS_LLM_EXTRA_BODY` as JSON text; unset or empty (as the compose files pass an unset variable) is `{}`."""
     text = os.environ.get("NMOS_LLM_EXTRA_BODY", "").strip()

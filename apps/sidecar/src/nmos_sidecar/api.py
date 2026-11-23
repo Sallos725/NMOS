@@ -34,7 +34,7 @@ from . import (__version__, archive, audit, canon, canonfacts, carry, dropped, e
                plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
                vectors)
 from . import usage as model_usage
-from .config import Settings, extra_body_error
+from .config import Settings, extra_body_error, secret_path
 from .db import make_pool
 from .entities import norm
 from .extraction import enqueue_after_apply, job_counts, recent_errors
@@ -1788,6 +1788,31 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                                          '{"mode": "continue" | "recent", "canon": bool}'])
         return update, choice
 
+    BODY_KEY = "llm_extra_body"
+
+    def body_secret_errors(conn: psycopg.Connection, clean: dict[str, Any]) -> list[str]:
+        """After a save, in its transaction: the body in force holding one of this install's credentials, as the
+        archive's scan lists them (review F2). Such a body would sit in every generation spec, show in `/v1/config` and
+        refuse every later archive. A new body is refused; a key saved while the body holds it is refused too. Checked
+        only when the save touches the body or a key and the body in force is not empty."""
+        touched = set(clean) & ({BODY_KEY} | runtime.SECRET)
+        if not touched:
+            return []
+        current = runtime.effective(settings, runtime.stored(conn))
+        if not current.llm_extra_body:
+            return []
+        where = secret_path(current.llm_extra_body, archive._secrets(conn, [settings, current]))
+        if where is None:
+            return []
+        if clean.get(BODY_KEY) is not None:
+            return [f"{BODY_KEY}: {held_secret(where)}"]
+        return [f"{key}: the extra request body holds this key (at {where}); remove it from the body first"
+                for key in sorted(touched & runtime.SECRET)]
+
+    def held_secret(where: str) -> str:
+        return (f"{where} holds one of this install's credentials: a key belongs in the key field, which is never shown"
+                " or archived")
+
     def previous_keys() -> tuple[str | None, ...]:
         return tuple(rt[k].key if rt[k] else None for k in ("extractor", "projection", "summarizer", "canon"))
 
@@ -1810,7 +1835,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 counts: dict[str, int] = {}
                 with conn.transaction(force_rollback=True):
                     runtime.lock_config(conn)
-                    runtime.save(conn, runtime.keys_follow_hosts(settings, runtime.stored(conn), clean))
+                    saving = runtime.keys_follow_hosts(settings, runtime.stored(conn), clean)
+                    runtime.save(conn, saving)
+                    if errors := body_secret_errors(conn, saving):
+                        raise HTTPException(status_code=422, detail=errors)
                     prepared = configuration(runtime.stored(conn))
                     activate(conn, *before, choice=choice, cfg=prepared, counts=counts, changes=changes)
                 out[name] = counts
@@ -1833,6 +1861,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     latest = runtime.stored(conn)
                     clean = runtime.keys_follow_hosts(settings, latest, clean)
                     runtime.save(conn, clean)
+                    if errors := body_secret_errors(conn, clean):  # raised in the transaction: nothing is saved
+                        raise HTTPException(status_code=422, detail=errors)
                     overrides = runtime.stored(conn)
                     prepared = configuration(overrides) if set(clean) - {runtime.PRESETS_KEY} else None
                     if runtime.PARSERS_KEY in clean:
@@ -1869,7 +1899,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return {**result, "error": result["error"] + note} if note and not result.get("ok") and "error" in result else result
 
     @app.post("/v1/config/test", dependencies=[Depends(auth)])
-    def test_config(body: dict[str, Any]):
+    def test_config(body: dict[str, Any], request: Request):
         cur = rt["settings"]
         kind = body.get("kind")
         if kind == "llm":
@@ -1877,6 +1907,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             extra_body = body.get("extra_body") if "extra_body" in body else cur.llm_extra_body
             no_temperature = body.get("no_temperature") if "no_temperature" in body else cur.llm_no_temperature
             errors = [f"extra_body: {reason}"] if (reason := extra_body_error(extra_body)) is not None else []
+            if not errors and extra_body:  # review F2: never send one of this install's credentials as a value
+                with request.app.state.pool.connection() as conn:
+                    where = secret_path(extra_body, archive._secrets(conn, [settings, cur]))
+                if where is not None:
+                    errors.append(f"extra_body: {held_secret(where)}")
             if not isinstance(no_temperature, bool):
                 errors.append("no_temperature: expected a JSON boolean")
             if errors:
