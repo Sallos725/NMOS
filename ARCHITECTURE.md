@@ -106,12 +106,14 @@ proves a bridge API is needed (see reference §82 criteria). Any future fork is 
 max context by `reservedMemoryTokens` (setting; default 4,000 since Phase 15, ADR 0049; 2,000 since Phase 12, ADR 0042;
 800 since Phase 10, was 600). The packet
 never exceeds that reserve.
-Trimming host history from inside the plugin is a later, opt-in feature.
+Trimming host history from inside the plugin is opt-in since Phase 60 (ADR 0083, D82); it removes only what the host
+would send, and the reserve is unchanged.
 
 **D3 — Do not re-inject what the host already sent.** Evidence whose source revision is
 already present in the outgoing `formated` messages is excluded from the packet.
 Activated lorebook entries are treated the same way. Lorebook is canon for conflict checks,
-not a retrieval payload by default.
+not a retrieval payload by default. **Amended 2026-11-23 (ADR 0083, D82):** messages before a trimming boundary leave
+the in-context set before recall, so their evidence may be excerpted; the trace records the effective set.
 
 **D4 — Worldline commits only on divergence.** Appends update membership; commits are created
 for edit / delete / swipe / reroll / disable / branch / import / manual. Full DAG semantics
@@ -705,6 +707,55 @@ sharing the cap across both. An unshared Korean given name is accepted only on t
 mentions, entity resolution and Cast are unchanged. Existing history, event, rest, mode and token rules apply.
 The owner includes the correction in `0.4.0`; zero-call replay found no new majority failure (see `docs/perf/phase40-persona-questions.md`). The reduced live host answer check is open. After actual-model synthetic verification and
 6113 trial deployment, the owner selected `packet-v18` as the 0.4.0 default (2026-10-09).
+
+**D82 — Old dialogue left out in steps (ADR 0083; PHASE-60 S1).** Opt-in: with the plugin's `trim_old_turns` on (off by
+default; `keep_recent_turns` 20, 4–200) `/v1/retrieve` carries `trim: {keep_recent_turns, step}`, `step` equal to
+`keep_recent_turns`; a request without it is served as before. The sidecar decides the boundary (its turn numbers,
+ADR 0008): `cut = floor((now − keep_recent_turns) / step) × step`, lowered to the first turn of the prompt's window
+not covered — served by an extraction (D20) and held by a current scene summary not held back for a secret (D52) —
+rounded down to a multiple of `step`, so the boundary moves only in whole steps. No boundary (`keep_from_id: null`
+with a `reason`: `short`, `uncovered`, `no_summaries`, `stale`, `empty_packet`) when nothing can be cut, the head is
+stale, summaries are off or the packet is empty. The cut messages leave the in-context set before recall (D3);
+`recall_options.trim` records the decision. Every answer carries `coverage` (`recorded_through_turn`,
+`covered_through_turn`). The plugin applies the boundary to a copy in `beforeRequest`, never to the host chat, and
+drops nothing (reason `format`) unless every dropped prompt message is `user` or `assistant`, carries exactly one host
+message and lies in one contiguous run before the boundary and before the latest user turn; no answer, a stale one,
+an empty packet or any error drops nothing. The Status tab and the HUD say what was left out and the tokens saved.
+
+**D83 — Where memory goes (ADR 0083; PHASE-60 S2.2–S2.3).** `[NMOS.memory]` in any outgoing message (string content or
+text parts) is replaced at its first occurrence by the packet (by nothing when there is none) and removed everywhere
+else, on every path out of `beforeRequest` (an auxiliary request, the plugin or the chat off, the turn not found, a
+failure); with a marker the default placement is not used. `end` inserts before the trailing run of `assistant`
+messages. When the packet lands after the latest user turn (`end`, or a marker after it: `landsAfterUserTurn`),
+`GUARD_LINE` follows `</NarrativeMemory>` in the same message and the plugin asks for `reservedMemoryTokens` − 40, so
+the reserve bounds the whole message (D2). Idempotence is by content, not role (H2): a prompt that already holds the
+packet text being placed is returned as it is, and a prompt the plugin returned (the last 4, for 2 minutes) is
+returned unchanged when it comes back. Canon observation, the turn index and the in-context ids read the prompt as the
+host sent it; a marker in canon text is stored as written and `clean-v3` is unchanged, so nothing is re-derived.
+
+**D84 — A packet that knows where it stands (`packet-v20`; ADR 0082; PHASE-60 S2.1, S3, S4).** `packet-v19` plus four
+reads of what is stored, no model call, each gated on a policy set that holds `packet-v20` alone. *How far memory has
+got:* when the head has a replied turn after the latest one an extraction serves, the Note says memory is recorded
+through turn N and the chat is right where a newer message disagrees (or that nothing is recorded yet); recorded as
+`recall_options.coverage`. *Gone:* a character (not the persona, not one the owner left out) whose current, narrated,
+positive, undisputed `has_status` holds a word of `gone.py`'s lists as a whole word, with no recovered word, negation
+or near miss, or whose `located_in` is a whole name on its short list of non-places, has that status line marked
+`gone="true"`, `required`, first in its `<Cast>` group or first in `<Facts>`, at most 8, newest first, within 10 % of
+the budget, whether or not the turn names it. Canon and carried rows never pin; a character a row of a later turn in
+the scene window names is not pinned. The rule errs toward not pinning; the lists are policy constants, so a change is
+a new policy. *Return gap:* a `<Cast>` character whose current run (appearances at most 5 turns apart, begun at most 5
+turns ago) follows at least 40 served turns without it carries `back_after="~N turns"`; turns no extraction serves are
+not counted (invariant 4). *Settled:* up to 3 threads closed in the last 15 turns whose maker or recipient is in the
+scene or named, broken, failed and abandoned before the rest, then newest, follow the open threads as `<Thread
+status="…" … closed_turn="…">`, `supportive`, outside `threads_limit`. Each mark is explained in the Note only when a
+kept line uses it. Not the default; older policies compile as before, fresh or replayed (D39).
+
+**D85 — The owner pins a character (ADR 0087; PHASE-60 S8).** `owner_repair` kind `entity_pin` (migration 0038 widens
+the kind check) names a character by name and type as `entity_exclude` names its target, resolved on every read, so a
+name the story joins to it follows and a split one does not; `entity_exclude` wins over a pin. Removed like any
+repair, kept by rebuilds, archived, deleted with the chat. A chat's entities and a person's sheet name the pin. The
+setting `pin_at_mentions` (`NMOS_PIN_AT_MENTIONS`; off when unset, empty or `0`; a runtime setting that queues nothing)
+is stored. Stored and listed only: no policy reads a pin or `@name` yet (read under `packet-v20`, S8).
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
