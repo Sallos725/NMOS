@@ -342,4 +342,40 @@ def test_an_owner_exclusion_in_the_target_leaves_carried_facts_out(migrated: str
         said = {(f["subject"], f["predicate"]) for f in _carried(view["facts"])}
         assert said == {("유나", "has_status")}
         assert not [a for a in view["assertions"] if a.get("carried") and a["subject"] == "세라"]
+
+
+# --- regression: memory apart, never in a fold ------------------------------------------------------------------
+
+def test_regression_rows_are_listed_apart_and_enter_no_fold(migrated: str) -> None:
+    with make_client(migrated, **CANON_ON) as c:
+        src, _, tgt = _world(c, migrated)
+        with _connect(migrated) as conn:
+            head, key = _head(conn, tgt), _key(conn)
+            carried = _link_continue(conn, tgt, src, "regression", ["세라"])
+            plain = memory_view(conn, head, key)
+            view = memory_view(conn, head, key, carried=carried)
+
+        assert view["carried"] == {"link": carried.link, "source": str(src), "mode": "regression", "names": ("세라",),
+                                   "rows": 0, "story": None}
+        # Nothing reaches the folds or the resolution: the view is the target's own.
+        assert _shape(view) == _shape(plain)
+        for bucket in ("facts", "claims", "other", "threads", "assertions", "secrets"):
+            assert not [x for x in view[bucket] if x.get("carried") or (isinstance(x.get("id"), int) and x["id"] < 0)]
+        r = view["resolution"]
+        assert r.entity("character", "카이토") is None  # only a regression row names 카이토
+        assert r.entity("character", "세짱") != r.entity("character", "세라")  # no carried alias joins them
+
+        listed = view["regression"]
+        assert sorted((x["line"], x.get("predicate") or x.get("kind")) for x in listed) == [
+            ("fact", "knows"), ("fact", "located_in"), ("fact", "relationship"), ("thread", "promise")]
+        sera = r.entity("character", "세라")["id"]
+        for x in listed:
+            assert x["carried"] == carried.link and x["knowledge"] == "limited" and x["known_by"] == ["세라"]
+            assert _entity_id(x) == sera  # annotated with the target's resolution
+        rel = next(x for x in listed if x.get("predicate") == "relationship")
+        assert rel["object_entity"] == {"status": "unresolved", "candidates": []}
+        thread = next(x for x in listed if x["line"] == "thread")
+        assert thread["by"] == "세라" and thread["to"] == "카이토" and "카이토" in thread["names"]
+        # The read annotated copies: the link's rows are as stored.
+        assert not [x for x in carried.regression if "subject_entity" in x]
         assert not [t for t in view["threads"] if t.get("carried")]  # 세라's promise left out with her

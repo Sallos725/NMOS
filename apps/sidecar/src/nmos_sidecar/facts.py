@@ -640,7 +640,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if carried is not None:
         view["carried"] = {"link": carried.link, "source": carried.source, "mode": carried.mode,
                            "names": carried.names, "rows": len(carried_rows), "story": carried.story}
-        view["regression"] = []
+        view["regression"] = [_regression_line(x, r) for x in carried.regression]
     return view
 
 
@@ -680,6 +680,24 @@ def told_view(rows: list[dict[str, Any]], r: Resolution, excluded: Mapping[str, 
             continue
         out.append(row)
     return out
+
+
+def _regression_line(stored: dict[str, Any], r: Resolution) -> dict[str, Any]:
+    """A copy of a regression row (ADR 0085 item 5) annotated with the target's resolution like a fact: a thread by
+    its opening (else its maker and recipient as characters), so a later slice can rank and name it."""
+    line = dict(stored)
+    if line.get("line") != "thread":
+        _annotate(line, r)
+        return line
+    opening = line.get("opening")
+    basis: dict[str, Any] = dict(opening) if opening else {
+        "subject": line.get("by"), "subject_type": "character", "object": line.get("to"),
+        "object_type": "character" if line.get("to") else None, "participants": None}
+    _annotate(basis, r)
+    for k in ("subject_entity", "object_entity", "names"):
+        if k in basis:
+            line[k] = basis[k]
+    return line
 
 
 # Predicates whose story statement, replacing a canon one, is listed as a conflict (PHASE-14 Q4, ADR 0047 amendment 1):
