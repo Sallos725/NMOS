@@ -370,6 +370,7 @@ def snapshot_of(
                 "name": row.get("subject"),
                 "alias": row.get("value"),
                 "turn": row.get("turn"),
+                "compiler": row.get("compiler"),  # a part edge holds in the target too (entities.PART_EDGES)
             }
             mapped = persona_mapped(entry, r)
             mapped["from"] = _provenance(source_id, row, rev_map)
@@ -560,7 +561,7 @@ def target_rows(link: Mapping[str, Any]) -> Carried:
     for i, a in enumerate(snap.get("aliases") or ()):
         alias = {"subject": a.get("name"), "subject_type": a.get("entity_type"), "value": a.get("alias"),
                  "predicate": "also_called", "modality": "actual", "source": "narration", "polarity": "positive",
-                 "object": None, "object_type": None}
+                 "object": None, "object_type": None, "compiler": a.get("compiler")}
         rows.append(_carried_row(alias, link_id, "alias", i, CARRY_BASE + len(rows), a.get("from")))
     story = snap.get("story")
     return Carried(link_id, source, mode, names, tuple(rows), (), _plain(dict(story)) if story else None)

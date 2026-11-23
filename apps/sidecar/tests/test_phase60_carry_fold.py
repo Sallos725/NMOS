@@ -213,6 +213,30 @@ def test_ids_are_negative_unique_and_stable() -> None:
     assert not set(ids) & {r["id"] for r in carry.target_rows(other).rows}
 
 
+def test_a_carried_alias_keeps_its_compiler_so_a_part_edge_holds_in_the_target() -> None:
+    """A source alias 윤하람 → 하람 of an extract-v16 row is stored with its compiler and carried with it: with the
+    target's own 윤하람 → 람이 the full name is one person's names (entities.PART_EDGES), not an ambiguous name."""
+    from nmos_sidecar.entities import resolve
+
+    def alias(pos: int, subject: str, value: str) -> dict[str, Any]:
+        return {"id": pos, "position": pos, "turn": pos, "host_logical_id": f"m{pos}", "subject": subject,
+                "subject_type": "character", "predicate": "also_called", "object": None, "object_type": None,
+                "value": value, "polarity": "positive", "modality": "actual", "source": "narration",
+                "compiler": "extract-v16"}
+
+    source = resolve(uuid4(), [alias(3, "윤하람", "하람")])
+    snap = carry.snapshot_of({"resolution": source, "facts": [], "threads": [], "assertions": []}, None,
+                             "continue", [], SOURCE)
+    assert [(a["name"], a["alias"], a["compiler"]) for a in snap["aliases"]] == [("윤하람", "하람", "extract-v16")]
+    rows = carry.target_rows({"id": UUID(LINK), "source_conversation_id": UUID(SOURCE), "mode": "continue",
+                              "entity_names": [], "snapshot": snap}).rows
+    assert [(r["predicate"], r["compiler"]) for r in rows] == [("also_called", "extract-v16")]
+    r = resolve(uuid4(), list(rows) + [alias(5, "윤하람", "람이")])
+    assert r.status("character", "윤하람") == "resolved"
+    assert r.key("character", "하람") == r.key("character", "윤하람") == r.key("character", "람이")
+    assert not [m for m in r.ambiguous_mentions() if "하람" in str(m)]
+
+
 def test_target_rows_never_changes_the_stored_snapshot() -> None:
     link = _link()
     before = repr(link["snapshot"])
