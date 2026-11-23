@@ -196,17 +196,17 @@ describe('trimming suffix on request outcome (PHASE-60 S1)', () => {
   it('appends the dropped count to an injected outcome in both languages, after existing suffixes', () => {
     const trim = { dropped: 12, savedTokens: 3400, reason: null };
     const plain = run([[{ type: 'request-end', outcome: 'injected', chars: 500, conversationId: 'c', trim }, 0]]);
-    expect(view(plain, 1, 'ko')).toEqual({ kind: 'ok', text: '✓ 기억 주입 (500자) · 오래된 대화 12개 뺌', fraction: null });
-    expect(view(plain, 1, 'en')).toEqual({ kind: 'ok', text: '✓ Memory injected (500 chars) · 12 old messages left out', fraction: null });
+    expect(view(plain, 1, 'ko')).toEqual({ kind: 'ok', text: '✓ 기억 주입 (500자) · 오래된 대화 12개 뺌 (약 3,400토큰)', fraction: null });
+    expect(view(plain, 1, 'en')).toEqual({ kind: 'ok', text: '✓ Memory injected (500 chars) · 12 old messages left out (~3,400 tokens)', fraction: null });
 
     const withAll = run([[{
       type: 'request-end', outcome: 'injected', chars: 500, conversationId: 'c',
       reused: true, vectors: 'fallback', rewritten: 2, trim,
     }, 0]]);
     expect(view(withAll, 1, 'ko')?.text)
-      .toBe('✓ 기억 주입 (500자) · 재사용 · 어휘 검색만 · 스크립트 수정 2개 반영 · 오래된 대화 12개 뺌');
+      .toBe('✓ 기억 주입 (500자) · 재사용 · 어휘 검색만 · 스크립트 수정 2개 반영 · 오래된 대화 12개 뺌 (약 3,400토큰)');
     expect(view(withAll, 1, 'en')?.text)
-      .toBe('✓ Memory injected (500 chars) · reused · lexical only · 2 script-edited replies picked up · 12 old messages left out');
+      .toBe('✓ Memory injected (500 chars) · reused · lexical only · 2 script-edited replies picked up · 12 old messages left out (~3,400 tokens)');
   });
 
   it('appends the kept reason to a nothing-relevant outcome in both languages, after rewritten', () => {

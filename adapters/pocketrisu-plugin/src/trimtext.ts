@@ -40,7 +40,8 @@ export function trimStatusLine(lang: Lang, trim: TrimShown | null | undefined): 
 export function trimHudSuffix(lang: Lang, trim: TrimShown | null | undefined): string {
   if (!trim) return '';
   if (trim.dropped > 0) {
-    return t(lang, 'hud.trim.left_out', { n: trim.dropped });
+    const locale = lang === 'en' ? 'en-US' : 'ko-KR';
+    return t(lang, 'hud.trim.left_out', { n: trim.dropped, t: trim.savedTokens.toLocaleString(locale) });
   }
   if (trim.reason !== null) {
     return t(lang, 'hud.trim.kept', { r: trimReason(lang, trim.reason) });

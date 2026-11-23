@@ -74,8 +74,8 @@ describe('trimHudSuffix (PHASE-60 S1)', () => {
 
   it('returns the dropped suffix when messages were left out', () => {
     const shown: TrimShown = { dropped: 12, savedTokens: 3400, reason: null };
-    expect(trimHudSuffix('ko', shown)).toBe(' · 오래된 대화 12개 뺌');
-    expect(trimHudSuffix('en', shown)).toBe(' · 12 old messages left out');
+    expect(trimHudSuffix('ko', shown)).toBe(' · 오래된 대화 12개 뺌 (약 3,400토큰)');
+    expect(trimHudSuffix('en', shown)).toBe(' · 12 old messages left out (~3,400 tokens)');
   });
 
   it('returns the kept suffix with the translated reason when nothing was dropped', () => {
