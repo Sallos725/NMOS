@@ -46,6 +46,9 @@ from .state import current_state, history as state_history, windows as state_win
 from .threads import relevant_threads, similarity
 from .vectors import vector_candidates
 from .keywords import keywords, particle_lookup
+from . import carry
+from .carry import Carried
+from .packet import CARRY_POLICIES
 
 CANDIDATE_LIMIT = 50
 # packet-v17 (PHASE-39 Q3b): a message that asks how a status value changed: the past (HISTORY_CUE), when, how much,
@@ -976,7 +979,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
            served_turns: frozenset[int] | None = None,
            pins: list[dict[str, Any]] | None = None,
            recorded_sem_query: Any = LIVE,
-           rerank_scores: Mapping[str, float] | None = None) -> Gathered:
+           rerank_scores: Mapping[str, float] | None = None, carried: Carried | None = None) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time. The canon keys the
     prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047).
@@ -984,9 +987,12 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     `served_turns`: the turns an extraction serves as of the request, when the caller has read them (packet-v20's
     return gap); otherwise they are read here, as of `upto` and `known_at`, and only when a gap is possible.
     `pins`: a replay's recorded pins (`recall_options.pins`, ADR 0087 item 4), read instead of the message's `@name`s
-    and the owner's pins; None for a live request."""
+    and the owner's pins; None for a live request.
+    `carried`: what the chat's carry link carries (`carry.target_rows`, PHASE-60 S6, ADR 0085), read into every memory
+    view under CARRY_POLICIES only; every other policy reads as if there were none."""
     started = time.perf_counter()
     g = Gathered()
+    carried = carried if options.policy in CARRY_POLICIES else None
     # packet-v14 (PHASE-34 Q2, Q3): the supportive lines overused in the requests before this one rest
     # A question about the past or how it started asks for old memory: nothing rests then
     rest = (overuse.tired(recent or [], options.rest_after)
@@ -1067,7 +1073,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     if options.facts_limit > 0 or options.threads_limit > 0:
         view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
                            options.canon_key, canon_facts,
-                           told=options.policy in TOLD_POLICIES and options.facts_limit > 0)  # PHASE-60 S8
+                           told=options.policy in TOLD_POLICIES and options.facts_limit > 0,  # PHASE-60 S8
+                           carried=carried)
         g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"]
         persona = r.persona_names if r else frozenset()
@@ -1196,7 +1203,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
         if view is None and options.extractor_key:  # facts and threads off: the secrets still decide what may be told
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                               options.canon_key, canon_facts)
+                               options.canon_key, canon_facts, carried=carried)
             g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"] if view else None
         aliases = _aliases(r, query, previous_ai, options, view, names_of) if view else None
@@ -1390,7 +1397,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     if keyword_only and any(e.revision_id in keyword_only for e in g.ranked) and options.extractor_key:
         if view is None:
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                               options.canon_key, canon_facts)
+                               options.canon_key, canon_facts, carried=carried)
         r = view["resolution"]
         aliases = _aliases(r, query, previous_ai, options, view, names_of)
         cast = g.cast
@@ -1419,7 +1426,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         if clocks and options.extractor_key:
             if view is None:
                 view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                                   options.canon_key, canon_facts)
+                                   options.canon_key, canon_facts, carried=carried)
             # A clock is additional text from the source. Conservatively withhold any known secret overlap,
             # including a fabricated parser value, regardless of which characters are in this scene.
             protected = frozenset(norm(n) for secret in view["secrets"] for n in secret.get("open", ()))
@@ -2112,6 +2119,23 @@ def _head_last(conn: psycopg.Connection, head: UUID, upto: int | None) -> str | 
     return row["host_logical_id"] if row else None
 
 
+def carry_record(link: Mapping[str, Any]) -> dict[str, Any]:
+    """What a trace records of the carry link its request read (PHASE-60 S6, ADR 0085 item 7): ids as strings, the
+    cutoff its reading was taken at, its mode and the characters who remember."""
+    return {"link": str(link["id"]), "source": str(link["source_conversation_id"]),
+            "commit": str(link["cutoff_commit_id"]), "position": link["cutoff_position"], "mode": link["mode"],
+            "names": [str(n) for n in link.get("entity_names") or ()]}
+
+
+def read_carry(conn: psycopg.Connection, conversation: UUID, policy: str) -> tuple[Carried | None, dict[str, Any] | None]:
+    """The chat's carry link in force, as (what it carries, its record), under CARRY_POLICIES only; (None, None)
+    otherwise or without a link: nothing read, nothing recorded."""
+    if policy not in CARRY_POLICIES:
+        return None, None
+    link = carry.in_force(conn, conversation)
+    return (carry.target_rows(link), carry_record(link)) if link is not None else (None, None)
+
+
 def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> dict[str, Any]:
     started = time.perf_counter()
     trim_req = getattr(request, "trim", None)
@@ -2188,10 +2212,11 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     served_now = cov.served_turns if cov is not None else served  # read once; the return gap reuses it (PHASE-60 S4)
     history = (overuse.recent(conn, conv.id, head, n=options.rest_after + 1)
                if options.policy in REST_POLICIES and fresh else None)
+    carried, carry_record = read_carry(conn, conv.id, options.policy) if fresh else (None, None)
     g = (gather(conn, head, query, previous_ai, in_context, filled(options, request.budget_tokens), upto,
                 canon_manifest=getattr(request, "canon_manifest_id", None),
                 canon_held=getattr(request, "canon_held", None) or (), recent=history,
-                coverage_info=cov_for_gather, served_turns=served_now) if fresh else Gathered())
+                coverage_info=cov_for_gather, served_turns=served_now, carried=carried) if fresh else Gathered())
     def compile_at(budget: int) -> Compiled:
         return compile_gathered(g, budget, options.policy)
 
@@ -2206,7 +2231,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                    dataclasses.replace(filled(options, request.budget_tokens), reranker=None), upto,
                    canon_manifest=getattr(request, "canon_manifest_id", None),
                    canon_held=getattr(request, "canon_held", None) or (), recent=history,
-                   coverage_info=cov_for_gather, served_turns=served_now)
+                   coverage_info=cov_for_gather, served_turns=served_now, carried=carried)
         compiled = compile_at(request.budget_tokens)
     kept = kept_counts(compiled.ledger)
     # Memory the budget left out, and the budget that would hold it all: the panel suggests it (ADR 0036).
@@ -2247,6 +2272,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         trace_options["rerank_ms"] = g.timings.get("rerank", 0.0)
     if trim_trace is not None:
         trace_options["trim"] = trim_trace
+    if carry_record is not None:  # PHASE-60 S6: the link it read, for its replay (ADR 0085 item 7)
+        trace_options["carry"] = carry_record
     placed = [e for e in compiled.ledger if e["placed"]]
     trace_id: UUID = uuid7()
     conn.execute(

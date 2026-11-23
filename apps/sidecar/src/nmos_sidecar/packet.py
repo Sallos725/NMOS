@@ -342,6 +342,7 @@ PIN_POLICIES = frozenset({"packet-v20"})  # a character the owner or an `@name` 
 SEM_QUERY_POLICIES = frozenset({"packet-v20"})  # a short message embeds with the previous reply's tail (PHASE-60 S5, ADR 0084)
 HAPPENED_POLICIES = frozenset({"packet-v20"})  # when it happened, beside the turn that told it (PHASE-60 S7, ADR 0086)
 TOLD_POLICIES = frozenset({"packet-v20"})  # at most two lines of who told whom (PHASE-60 S8, ADR 0086)
+CARRY_POLICIES = frozenset({"packet-v20"})  # a request reads the chat's carry link and records it (PHASE-60 S6, ADR 0085)
 # The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
 _V20_MARKS = {GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES,
               HAPPENED_MARK: HAPPENED_POLICIES, TOLD_MARK: TOLD_POLICIES}
