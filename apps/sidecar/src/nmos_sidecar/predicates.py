@@ -362,6 +362,23 @@ def feeling(item: dict[str, Any]) -> dict[str, Any] | None:
     return {**out, "under": {"value": value, **weighed} if weighed else None}
 
 
+# extract-v19 (PHASE-60 S7, ADR 0086): when the turn places an event or a promise at another time than the turn.
+HAPPENED_PREDICATES = frozenset({"event", "promised"})
+
+
+def when_happened(item: dict[str, Any], limit: int) -> str | None:
+    """The `when_happened` of an `event` or a `promised` (PHASE-60 S7): the phrase as given, trimmed, at most `limit`
+    characters, or None. A phrase, not a timestamp (ADR 0086 item 2): NMOS computes no date from it and orders nothing
+    by it. None for any other predicate, for a value that is not text, and for an empty or `null`/`none`/`-` one."""
+    raw = item.get("when_happened")
+    if item.get("predicate") not in HAPPENED_PREDICATES or not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    if not value or value.casefold() in ("null", "none", "-"):
+        return None
+    return value[:limit].strip() or None
+
+
 SALIENCES = ("major", "minor")
 # How long a thread is meant to last (PHASE-51 S1), stored in `assertion.salience` for the predicates that open one
 # (S2): the scene or the day, a storyline over several scenes, or until the story ends it. Older rows have none.

@@ -145,6 +145,23 @@ def test_a7_v19_grows_the_prompt_by_at_most_15_percent(roles):
     assert len(formatted19) <= 1.15 * len(formatted18)
 
 
+def test_when_happened_reads_a_trimmed_phrase_on_event_and_promised_only():
+    def one(value, predicate="event", limit=80):
+        return P.when_happened({"predicate": predicate, "when_happened": value}, limit)
+
+    assert one("3년 전 겨울") == "3년 전 겨울" and one("  그날 밤 ") == "그날 밤"
+    assert one("다음 보름날", "promised") == "다음 보름날"
+    for predicate in ("knows", "feels_toward", "goal", "told", None):
+        assert one("3년 전 겨울", predicate) is None
+    for value in (None, "", "   ", "null", "NULL", " None ", "-", 3, 2.5, {"when": "어제"}, ["어제"]):
+        assert one(value) is None
+    cut = "가" * 79 + " " + "나" * 40  # a space at index 79: cut to 80, then stripped again
+    assert one(cut) == "가" * 79
+    assert one("가" * 120) == "가" * 80
+    assert one("  어 제", limit=2) == "어"  # stripped, cut to "어 ", stripped again
+    assert P.when_happened({"predicate": "event"}, 80) is None
+
+
 def test_settings_accept_v19_and_refuse_a_later_name():
     assert Settings(database_url="", extract_compiler="extract-v19").extract_compiler == "extract-v19"
     with pytest.raises(ValueError, match="extract-v19"):
