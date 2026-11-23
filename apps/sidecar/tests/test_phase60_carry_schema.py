@@ -160,6 +160,23 @@ def test_foreign_keys_refuse_missing_conversation(migrated: str) -> None:
             _insert_link(conn, existing, missing)
 
 
+@pytest.mark.parametrize("deleted", ["source", "target"])
+def test_a_raw_conversation_delete_cascades_to_its_links(migrated: str, deleted: str) -> None:
+    """An image from before this phase deletes a chat with no link step: the foreign keys remove the links."""
+    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+        source = _make_conversation(conn, f"chat-cascade-src-{deleted}")
+        target = _make_conversation(conn, f"chat-cascade-tgt-{deleted}")
+        kept = _make_conversation(conn, f"chat-cascade-kept-{deleted}")
+        link = _insert_link(conn, target, source)
+        gone, stays = (source, target) if deleted == "source" else (target, source)
+        other = _insert_link(conn, kept, stays)  # a link between two chats that stay
+
+        conn.execute("DELETE FROM conversation WHERE id = %s", (gone,))
+
+        assert conn.execute("SELECT 1 FROM conversation_carry WHERE id = %s", (link,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM conversation_carry WHERE id = %s", (other,)).fetchone() is not None
+
+
 def test_jsonb_shape_checks(migrated: str) -> None:
     with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
         a = _make_conversation(conn, "chat-json-a")
