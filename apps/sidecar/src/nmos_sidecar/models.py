@@ -266,6 +266,16 @@ class ReextractRequest(BaseModel):
     turns: list[int] | None = Field(default=None, max_length=10_000)
 
 
+class CarryRequest(BaseModel):
+    """A chat carries another chat's memory (PHASE-60 S6, ADR 0085): its source, the mode and, for `regression`, the
+    characters who remember; a turn of the source's current head to stop at, or None for its end now."""
+    source_conversation_id: UUID
+    mode: Literal["continue", "regression"]
+    entity_names: list[Annotated[Text, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=8)
+    cutoff_turn: int | None = Field(default=None, ge=0)
+    expect: str | None = Field(default=None, max_length=64)  # the preview's fingerprint
+
+
 class ExpectRequest(BaseModel):
     """An undo of a join or a split, made from its preview (PHASE-20 Q4): the preview's fingerprint."""
     expect: str | None = Field(default=None, max_length=64)
