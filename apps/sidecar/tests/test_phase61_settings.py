@@ -80,7 +80,7 @@ def test_a_credential_like_key_is_refused_at_any_depth(key):
     # other separators, and names outside the first list (review F1)
     "api.key", "API.Key", "oauth_token", "x_token", "xToken", "bearer", "Bearer", "auth", "AUTH", "key",
     "access_key", "accessKey", "private_key", "privateKey", "credentials", "credential", "cookie", "set-cookie",
-    "passwd", "subscription_key", "Ocp-Apim-Subscription-Key",
+    "passwd", "subscription_key", "X-Subscription-Key",
 ])
 def test_more_credential_like_names_are_refused_at_any_depth(key):
     for body in ({key: CREDENTIAL}, {"provider": {key: 1}}, {"list": [{"deeper": [{key: None}]}]}):
@@ -90,17 +90,17 @@ def test_more_credential_like_names_are_refused_at_any_depth(key):
 
 
 @pytest.mark.parametrize("key", [
-    "ａｐｉ＿ｋｅｙ",  # full-width
-    "api‐key",  # a hyphen that is not ASCII
-    "аpi_key",  # a Cyrillic letter that looks like `a`
-    "tokеn",  # a Cyrillic `e`
-    "ﬁeld",  # a compatibility ligature
+    "\uff41\uff50\uff49\uff3f\uff4b\uff45\uff59",  # full-width `api_key`
+    "api\u2010key",  # a hyphen that is not ASCII
+    "\u0430pi_key",  # a Cyrillic letter that looks like `a`
+    "tok\u0435n",  # a Cyrillic `e`
+    "\ufb01eld",  # a compatibility ligature
     "세라", "api key", "a/b", "a:b", "a b\n", "key$",
 ])
 def test_a_key_name_that_is_not_plain_ascii_is_refused_at_any_depth(key):
     for body in ({key: 1}, {"provider": {key: 1}}, {"list": [{"deeper": [{key: 1}]}]}):
         reason = extra_body_error(body)
-        assert reason is not None and "plain ASCII" in reason, body
+        assert reason is not None and "plain ASCII" in reason and ascii(key).strip("'") in reason, body
 
 
 LEGITIMATE_KEYS = [

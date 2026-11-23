@@ -70,10 +70,10 @@ def extra_body_error(body: Any) -> str | None:
                     return f"has a key that is not text{f' in {path}' if path else ''}"
                 if _unstorable(key):
                     return f"has a key with a NUL or an unpaired surrogate{f' in {path}' if path else ''}"
-                if not plain_key(key):
-                    return (f"has a key that is not plain ASCII{f' in {path}' if path else ''}: key names are plain"
-                            " ASCII letters, digits, '_', '-' and '.'")
                 where = f"{path}.{key}" if path else key
+                if not plain_key(key):
+                    return (f"has a key that is not plain ASCII ({ascii(where)}): key names are plain ASCII letters,"
+                            " digits, '_', '-' and '.'")
                 if credential_like(key):
                     return (f"may not hold a credential-like key ({where}): an API key belongs in the key field, which"
                             " is never shown or archived")
