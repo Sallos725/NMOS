@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, TypeVar
 from urllib.parse import urlsplit, urlunsplit
@@ -26,6 +28,55 @@ DEFAULT_TIMEOUT_MS = 600
 log = logging.getLogger("nmos.rerank")
 
 T = TypeVar("T")
+
+# The whole call (name resolution, connect, request, answer) runs on a small worker pool and the request waits on it
+# for at most its timeout plus a small constant: a lookup cannot be cancelled, and `asyncio.run`'s teardown joins the
+# default executor where a stuck `getaddrinfo` still runs, so only a bound from outside holds. A worker left behind
+# by a timed-out call ends by itself when its lookup returns; while every worker is busy a call fails open at once
+# instead of queueing behind them.
+_MAX_WORKERS = 4
+_GRACE_S = 0.05
+_POOL = ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="nmos-rerank")
+_SLOTS = threading.BoundedSemaphore(_MAX_WORKERS)
+_BUSY_LOCK = threading.Lock()
+_busy = 0
+
+
+class _PoolBusy(Exception):
+    """Every rerank worker is still running an earlier call."""
+
+
+def _in_flight() -> int:
+    """Rerank calls whose worker has not finished yet (tests)."""
+    with _BUSY_LOCK:
+        return _busy
+
+
+def _bounded(fn: Any, timeout_s: float) -> Any:
+    """`fn()` on a pool worker, waited on for at most `timeout_s + _GRACE_S`; never joins a worker that overruns."""
+    global _busy
+    if not _SLOTS.acquire(blocking=False):
+        raise _PoolBusy
+
+    def run() -> Any:
+        global _busy
+        try:
+            return fn()
+        finally:  # the worker frees its own slot when its call really ends, however late
+            with _BUSY_LOCK:
+                _busy -= 1
+            _SLOTS.release()
+
+    with _BUSY_LOCK:
+        _busy += 1
+    try:
+        future = _POOL.submit(run)
+    except BaseException:
+        with _BUSY_LOCK:
+            _busy -= 1
+        _SLOTS.release()
+        raise
+    return future.result(timeout=timeout_s + _GRACE_S)
 
 
 def _safe_url(url: str) -> str:
@@ -183,8 +234,13 @@ def _score(
     headers = _headers(reranker.api_key)
     started = time.monotonic()
 
+    url = endpoint(reranker.url)
+    timeout = float(effective_timeout)
     try:
-        res = _post(endpoint(reranker.url), payload, headers, float(effective_timeout), client)
+        res = _bounded(lambda: _post(url, payload, headers, timeout, client), timeout)
+    except _PoolBusy:
+        log.debug("rerank status=busy ms=%d", round((time.monotonic() - started) * 1000))
+        return None
     except (TimeoutError, httpx.TimeoutException):
         log.debug("rerank status=timeout ms=%d", round((time.monotonic() - started) * 1000))
         return None

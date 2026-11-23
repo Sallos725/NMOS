@@ -268,6 +268,77 @@ def test_real_server_sleeping_and_trickling_past_timeout_fail_open():
         thread.join(2)
 
 
+def test_a_stuck_name_lookup_is_bounded_by_the_timeout_and_never_queues(monkeypatch):
+    """The timeout bounds the whole call, name resolution included (a lookup cannot be cancelled): a 2 s lookup
+    under a 200 ms timeout returns None well under 1 s, a second call meanwhile too, and once every worker is stuck
+    the next call returns None at once without starting another lookup (fail open, nothing queues)."""
+    import socket
+
+    body = json.dumps({"results": [{"index": 0, "relevance_score": 0.9}]}).encode()
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    real = socket.getaddrinfo
+    gate = threading.Event()
+    lookups = 0
+    lock = threading.Lock()
+
+    def stuck(*args, **kwargs):
+        nonlocal lookups
+        with lock:
+            lookups += 1
+        gate.wait(2.0)  # a resolver that hangs (released at teardown so no worker outlives the test)
+        return real(*args, **kwargs)
+
+    def drain() -> None:
+        gate.set()
+        deadline = time.monotonic() + 5
+        while rerank._in_flight() and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+    # an IP literal skips resolution: the host name makes the client resolve it
+    r = Reranker(url=f"http://localhost:{server.server_port}/v1", model="rerank-v1", timeout_ms=200)
+    try:
+        assert score(r, "질문", ["세라"]) == [0.9]  # resolves and answers before the resolver is stuck
+        monkeypatch.setattr(socket, "getaddrinfo", stuck)
+        t0 = time.monotonic()
+        assert score(r, "질문", ["세라"]) is None
+        assert time.monotonic() - t0 < 1.0
+        t0 = time.monotonic()
+        assert score(r, "질문", ["세라"]) is None  # the first lookup is still stuck
+        assert time.monotonic() - t0 < 1.0
+        assert lookups == 2
+        for _ in range(rerank._MAX_WORKERS - 2):  # fill every worker with a stuck lookup
+            assert score(r, "질문", ["세라"]) is None
+        assert lookups == rerank._MAX_WORKERS
+        t0 = time.monotonic()
+        assert score(r, "질문", ["세라"]) is None  # every worker stuck: at once, no new lookup
+        assert time.monotonic() - t0 < 0.15
+        assert lookups == rerank._MAX_WORKERS
+        drain()
+        monkeypatch.undo()
+        assert rerank._in_flight() == 0
+        assert score(r, "질문", ["세라"]) == [0.9]  # the stuck workers ended by themselves; the pool serves again
+    finally:
+        drain()
+        monkeypatch.undo()
+        server.shutdown()
+        server.server_close()
+        thread.join(2)
+
+
 def test_bearer_header_sent_only_when_key_set():
     seen_headers: list[httpx.Headers] = []
 
