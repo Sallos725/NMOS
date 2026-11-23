@@ -1656,6 +1656,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     threads: list[dict[str, Any]] = []
     roles: list[dict[str, Any]] = []
     pairs: list[dict[str, Any]] = []
+    clock: str | None = None
     compiler = gen.spec.get("compiler", COMPILER_VERSION)
     turn_text = "\n".join(r["content"] for r in ctx["members"])
     if sum(len(r["content"]) for r in ctx["members"]) < MIN_CONTENT_CHARS:
@@ -1670,10 +1671,12 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         roles = role_hints(ctx, earlier) if compiler in ROLES else []
         if compiler in PARTS_APART:
             pairs = name_pairs(hints, turn_text, persona_of(ctx["target"].get("host_persona_name")))
+        if compiler in HAPPENED:  # a recorded input like the hints, never part of validity (PHASE-60 S7)
+            clock = story_clock(conn, ctx)
         system = prompt_of(compiler, bool(roles)).format(registry=registry_prompt(compiler=compiler))  # PHASE-60 S7
         parsed, raw, usage = metered(complete, system,
                                      build_prompt(ctx, hints, promises, secrets, threads, roles, pairs,
-                                                  compiler=compiler))
+                                                  compiler=compiler, clock=clock))
     items = parsed.get("assertions")
     if not isinstance(items, list):  # not an empty answer: fail the job, so it is retried and then counted failed
         raise LLMError("model reply has no `assertions` list")
@@ -1706,7 +1709,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         extraction_id = uuid7()
         inserted = conn.execute(
             "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
-            " coverage, members, hints, usage, speakers) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " coverage, members, hints, usage, speakers, story_clock)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " ON CONFLICT DO NOTHING RETURNING id",
             (extraction_id, revision_id, window_hash, compiler, gen.key, gen.model,
              Jsonb({"reply": raw[:20000], **({"confirmations": confirmations} if confirmations else {}),
@@ -1715,7 +1719,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
              None if hints is None and not promises and not secrets and not threads and not roles
              else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets, "threads": threads,
                          **({"roles": roles} if roles else {}), **({"names": pairs} if pairs else {})}),
-             Jsonb(usage) if usage is not None else None, Jsonb(spoken) if spoken else None),
+             Jsonb(usage) if usage is not None else None, Jsonb(spoken) if spoken else None, clock),
         ).fetchone()
         if inserted is None:
             return "done"

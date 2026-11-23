@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import json
+import re
 from uuid import uuid4
 
 import psycopg
@@ -406,6 +408,115 @@ def test_the_clock_line_goes_between_context_and_the_target_only_when_given():
     empty = dict(ctx, context=[])
     assert X.build_prompt(empty, clock="시간: 밤") == "CONTEXT:\n(none)\n\n" + X.CLOCK_LINE.format(clock="시간: 밤") + (
         "\n\nTARGET turn 2:\n카이토: 카이토는 창가에 앉았다.")
+
+
+CLOCKED = ("세라는 성문 앞에서 카이토를 기다렸다.",
+           "카이토가 늦게 도착했다.\n☆ [날짜: 4월 12일 | 시간: 오후 3시]",
+           "두 사람은 말없이 성벽을 따라 걸었다.",
+           "다음 날 아침 하나가 성문을 두드렸다.\n☆ [날짜: 4월 13일 | 시간: 아침]")
+CLOCK_12 = "날짜: 4월 12일; 시간: 오후 3시"
+CLOCK_13 = "날짜: 4월 13일; 시간: 아침"
+
+
+@pytest.fixture
+def clock_rules(tmp_path):
+    """A parser rules file whose status window (bound to the card 'Clock test') carries 날짜 and 시간."""
+    path = tmp_path / "clock.json"
+    path.write_text(json.dumps({"rules": [{"id": "clock", "card": "Clock test", "kind": "block", "role": "char",
+                                           "start": r"☆ \[", "end": r"\]\s*$", "separator": "|"}]}))
+    return str(path)
+
+
+def recording(prompts: dict[int, str]):
+    """A stub model that answers nothing and keeps each extraction call's user prompt by its TARGET turn."""
+    def complete(system, user):
+        if ALLOWED in system:
+            found = re.search(r"^TARGET turn (\d+):$", user, re.M)
+            assert found and int(found.group(1)) not in prompts
+            prompts[int(found.group(1))] = user
+        return {"assertions": []}, "{}", USED
+    return complete
+
+
+def extracted(url: str, chat) -> dict[int, dict]:
+    """The chat's extraction rows by the turn they extract."""
+    with psycopg.connect(url, row_factory=dict_row) as conn:
+        assert conn.execute("SELECT count(*) AS n FROM job WHERE last_error IS NOT NULL").fetchone()["n"] == 0
+        rows = conn.execute(
+            "SELECT am.turn, e.source_revision_id, e.window_hash, e.extractor_key, e.compiler_version, e.story_clock"
+            " FROM extraction e JOIN active_membership am ON am.source_revision_id = e.source_revision_id"
+            " AND am.commit_id = (SELECT head_commit_id FROM conversation WHERE host_chat_ref = %s)", (chat.id,)
+        ).fetchall()
+    assert len(rows) == len({r["turn"] for r in rows})
+    return {r["turn"]: r for r in rows}
+
+
+def clock_shown(prompt: str) -> str | None:
+    lines = [line for line in prompt.splitlines() if line.startswith("STORY CLOCK")]
+    assert len(lines) <= 1
+    return lines[0].removeprefix(X.CLOCK_LINE.format(clock="")) if lines else None
+
+
+def test_without_a_tracked_clock_the_v19_prompt_is_v18s(migrated):
+    prompts: dict[str, dict[int, str]] = {}
+    chats = {}
+    for compiler in ("extract-v19", "extract-v18"):
+        prompts[compiler], chats[compiler] = {}, chat_of(*CLOCKED[::2], "카이토는 성벽 위에서 별을 세었다.")
+        with make_client(migrated, **LLM, extract_compiler=compiler) as c:
+            sync(c, chats[compiler], character_name="Clock test")
+            drain(migrated, recording(prompts[compiler]))
+    v19, v18 = prompts["extract-v19"], prompts["extract-v18"]
+    assert len(v19) >= 3 and set(v19) == set(v18)
+    for turn, prompt in v19.items():
+        assert "STORY CLOCK" not in prompt and prompt == v18[turn]
+    rows = extracted(migrated, chats["extract-v19"])
+    assert set(v19) <= set(rows) and all(r["story_clock"] is None for r in rows.values())
+    assert {r["compiler_version"] for r in rows.values()} == {"extract-v19"}
+
+
+@pytest.mark.parametrize("compiler", ["extract-v19", "extract-v18"])
+def test_the_clock_as_of_each_target_turn_is_shown_and_recorded(migrated, clock_rules, compiler):
+    prompts: dict[int, str] = {}
+    chat = chat_of(*CLOCKED)
+    with make_client(migrated, **LLM, extract_compiler=compiler, parsers_file=clock_rules) as c:
+        sync(c, chat, character_name="Clock test")  # the head already holds the 13th when turn 2 is extracted
+        drain(migrated, recording(prompts))
+    rows = extracted(migrated, chat)
+    assert {0, 1, 2, 3} <= set(prompts) <= set(rows)
+    if compiler != "extract-v19":
+        assert all(clock_shown(p) is None for p in prompts.values())
+        assert all(r["story_clock"] is None for r in rows.values())
+        return
+    assert {t: clock_shown(prompts[t]) for t in (0, 1, 2, 3)} == {0: None, 1: CLOCK_12, 2: CLOCK_12, 3: CLOCK_13}
+    for turn, row in rows.items():
+        assert row["story_clock"] == (clock_shown(prompts[turn]) if turn in prompts else None)
+    line = X.CLOCK_LINE.format(clock=CLOCK_12)
+    assert "\n\n" + line + "\n\nTARGET turn 2:\n" in prompts[2]
+
+
+def test_the_clock_is_not_part_of_validity(migrated, clock_rules):
+    chat = chat_of(*CLOCKED)
+    with make_client(migrated, **LLM, extract_compiler="extract-v19", parsers_file=clock_rules) as c:
+        sync(c, chat, character_name="Clock test")
+        drain(migrated, recording({}))
+        row = extracted(migrated, chat)[2]
+        assert row["story_clock"] == CLOCK_12
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            head = head_of(conn, chat)
+            [rules] = [r["rules_version"] for r in
+                       conn.execute("SELECT DISTINCT rules_version FROM state_observation").fetchall()]
+            queued = "SELECT count(*) AS n FROM job WHERE kind = 'extract' AND status = 'queued'"
+            before = conn.execute(queued).fetchone()["n"]
+            position = conn.execute("SELECT max(position) AS p FROM active_membership WHERE commit_id = %s AND turn = 2",
+                                    (head,)).fetchone()["p"]
+            observe(conn, head, position, "날짜", "4월 30일", rules=rules)  # turn 2's clock source changes
+            ctx = X.load_context(conn, row["source_revision_id"], row["window_hash"], 3, row["extractor_key"])
+            assert X.story_clock(conn, ctx) == "날짜: 4월 30일; 시간: 오후 3시" != row["story_clock"]
+            assert ctx["done"]
+        sync(c, chat, character_name="Clock test")
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            assert conn.execute(queued).fetchone()["n"] == before
+    assert extracted(migrated, chat)[2]["story_clock"] == CLOCK_12
 
 
 def test_settings_accept_v19_and_refuse_a_later_name():
