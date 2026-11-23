@@ -309,6 +309,7 @@ STATUS_CHANGE_POLICIES = frozenset({"packet-v18", "packet-v19", "packet-v20"})  
 SOURCE_CLOCK_POLICIES = frozenset({"packet-v18", "packet-v19", "packet-v20"})  # a recalled excerpt's status-window clock (PHASE-42)
 KEYWORD_PARTICLE_POLICIES = frozenset({"packet-v18", "packet-v19", "packet-v20"})  # exact Korean particle hits (PHASE-41)
 RELATED_FILL_POLICIES = frozenset({"packet-v19", "packet-v20"})  # the budget fills facts and claims only for a related message (PHASE-46)
+COVERAGE_POLICIES = frozenset({"packet-v20"})  # Note states how far extraction has recorded when a replied turn is newer (PHASE-60 S2.1, ADR 0082 item 6)
 STATE_HISTORY_MAX = 6  # changes on one <StateHistory> line
 STATE_HISTORY_KEYS = 2  # keys one message gets a line for
 EXCERPT_FLOOR = 0.5  # packet-v14: an excerpt after the first needs this share of the best fused score, or a word hit
@@ -542,6 +543,18 @@ def fits_at(compile_at: Callable[[int], Compiled], budget: int) -> int | None:
         else:
             hi = mid
     return hi * FIT_STEP
+
+
+def coverage_note(recorded_through_turn: int | None, latest_replied_turn: int | None) -> str:
+    """One short Note sentence when a replied turn is newer than the last extracted turn (PHASE-60 S2.1)."""
+    if latest_replied_turn is None:
+        return ""
+    if recorded_through_turn is None:
+        return " Memory has not recorded this chat yet; the chat is right."
+    if latest_replied_turn > recorded_through_turn:
+        return (f" Memory is recorded through turn {recorded_through_turn};"
+                " where a newer message in the chat says otherwise, the chat is right.")
+    return ""
 
 
 def secret_text(holders: list[str], missing: list[str]) -> str:

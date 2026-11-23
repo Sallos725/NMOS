@@ -10,7 +10,7 @@ import math
 import re
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -29,15 +29,15 @@ from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
-                     CHANGE_POLICIES, CONTENTS, LABEL_POLICIES, STATE_HISTORY_KEYS, STATE_HISTORY_MAX,
-                     STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES, SOURCE_CLOCK_POLICIES,
-                     STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
+                     CHANGE_POLICIES, CONTENTS, COVERAGE_POLICIES, LABEL_POLICIES, STATE_HISTORY_KEYS,
+                     STATE_HISTORY_MAX, STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES,
+                     SOURCE_CLOCK_POLICIES, STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
-                     StateItem, anchor_rank, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts,
-                     hidden_entry, secret_line,
+                     StateItem, anchor_rank, clean_text, compile_lines, coverage_note, cut_lines, excerpt, fill,
+                     fits_at, kept_counts, hidden_entry, secret_line,
                      secret_text)
 from .state import current_state, history as state_history, windows as state_windows
 from .threads import relevant_threads, similarity
@@ -938,7 +938,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
            options: RecallOptions, upto: int | None = None, known_at: datetime | None = None,
            canon_manifest: str | None = None, canon_exact: bool = False, canon_held: Iterable[str] = (),
            canon_facts: Any = LIVE, vectors_now: bool = False,
-           recent: list[overuse.Recent] | None = None) -> Gathered:
+           recent: list[overuse.Recent] | None = None,
+           coverage_info: Mapping[str, int | None] | None = None) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time. The canon keys the
     prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047).
@@ -1115,6 +1116,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 g.lead = [line for line in g.lead if line.ref.get("assertion") not in used]
                 g.facts = [line for line in g.facts if line.ref.get("assertion") not in used]
                 g.threads = [line for line in g.threads if line.ref.get("assertion") not in used]
+    if options.policy in COVERAGE_POLICIES and coverage_info is not None:
+        g.note += coverage_note(coverage_info.get("recorded_through_turn"), coverage_info.get("latest_replied_turn"))
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
         if view is None and options.extractor_key:  # facts and threads off: the secrets still decide what may be told
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
@@ -1718,11 +1721,21 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                                   replies_only=conv.replies_only,
                                   state_pins=dict(options.pins_by_card).get(snap["host_character_name"] or "", ()))
     in_context = set(request.in_context_ids)
+    served: frozenset[int] | None = None
+    latest_replied: int | None = None
+    cov_for_gather: dict[str, int | None] | None = None
+    if fresh and options.policy in COVERAGE_POLICIES:
+        served, latest_replied = coverage.extraction_state(conn, head, upto)
+        cov_for_gather = {
+            "recorded_through_turn": max(served) if served else None,
+            "latest_replied_turn": latest_replied,
+        }
     history = (overuse.recent(conn, conv.id, head, n=options.rest_after + 1)
                if options.policy in REST_POLICIES and fresh else None)
     g = (gather(conn, head, query, previous_ai, in_context, filled(options, request.budget_tokens), upto,
                 canon_manifest=getattr(request, "canon_manifest_id", None),
-                canon_held=getattr(request, "canon_held", None) or (), recent=history) if fresh else Gathered())
+                canon_held=getattr(request, "canon_held", None) or (), recent=history,
+                coverage_info=cov_for_gather) if fresh else Gathered())
     def compile_at(budget: int) -> Compiled:
         return compile_gathered(g, budget, options.policy)
 
@@ -1744,6 +1757,15 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                 "sim": None if c.get("sim") is None else round(float(c["sim"]), 4),
                 "keyword_score": round(float(c.get("keyword_score") or 0), 4), "rrf": round(float(c.get("rrf") or 0), 5)}
 
+    cov = coverage.read(conn, conv.id, head, options.summarize_key, extractor_key=options.extractor_key,
+                        secrets=g.secrets if fresh else None, upto=upto,
+                        served=served, latest_replied=latest_replied)
+    trace_options: dict[str, Any] = {
+        **recorded_options(options), "canon_names": g.canon_names, "canon_facts": g.canon_facts,
+        "fill": fill(request.budget_tokens, options.policy),  # the growth its budget bought (ADR 0049)
+    }
+    if fresh and options.policy in COVERAGE_POLICIES:
+        trace_options["coverage"] = cov.recorded_dict()
     placed = [e for e in compiled.ledger if e["placed"]]
     trace_id: UUID = uuid7()
     conn.execute(
@@ -1778,15 +1800,12 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             options.policy, request.budget_tokens, upto if fresh else None, previous_ai,
             Jsonb(sorted(in_context)), options.extractor_key,
             options.embed_projection if options.embedder else None, options.rules_version,
-            Jsonb({**recorded_options(options), "canon_names": g.canon_names, "canon_facts": g.canon_facts,
-                   "fill": fill(request.budget_tokens, options.policy)}),  # the growth its budget bought (ADR 0049)
+            Jsonb(trace_options),
             Jsonb(compiled.ledger),
             getattr(request, "canon_manifest_id", None),  # ADR 0045
             Jsonb(sorted(set(getattr(request, "canon_held", None) or []))),
         ),
     )
-    cov = coverage.read(conn, conv.id, head, options.summarize_key, extractor_key=options.extractor_key,
-                        secrets=g.secrets if fresh else None, upto=upto)
     return {"freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": compiled.text,
             "tokens": compiled.tokens, "count": len(compiled.excerpts), "memory": memory, "conversation_id": conv.id,
             "vectors": ("fallback" if g.vector_note.startswith("fallback") else g.vector_note) if fresh else None,

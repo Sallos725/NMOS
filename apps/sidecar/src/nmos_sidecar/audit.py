@@ -185,10 +185,12 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     if recent is None and policy in REST_POLICIES:  # the requests before it, as it read them (PHASE-34 Q5)
         recent = overuse.recent(conn, t["conversation_id"], t["head_commit_id"], before=t["created_at"],
                                 n=opts.rest_after + 1)
+    recorded_coverage = (t.get("recall_options") or {}).get("coverage")
     g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
                set(t["in_context"] or []), filled(opts, t["budget_tokens"] if budget is None else budget),
                upto=kept, known_at=known_at or t["created_at"],
-               canon_held=t.get("canon_held") or (), vectors_now=other, recent=recent, **_canon_of(t))
+               canon_held=t.get("canon_held") or (), vectors_now=other, recent=recent,
+               coverage_info=recorded_coverage, **_canon_of(t))
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     if budget is not None:

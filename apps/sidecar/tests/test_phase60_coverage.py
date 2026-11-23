@@ -201,3 +201,112 @@ def test_retrieve_always_returns_coverage(migrated):
         assert stale.status_code == 200
         assert stale.json()["freshness"] == "stale"
         assert stale.json()["coverage"] == {"recorded_through_turn": 15, "covered_through_turn": 7}
+
+
+def test_coverage_note_pure():
+    from nmos_sidecar import packet
+
+    assert packet.COVERAGE_POLICIES == frozenset({"packet-v20"})
+    assert packet.coverage_note(None, None) == ""
+    assert packet.coverage_note(0, None) == ""
+    assert packet.coverage_note(None, 0) == " Memory has not recorded this chat yet; the chat is right."
+    assert packet.coverage_note(0, 1) == (
+        " Memory is recorded through turn 0; where a newer message in the chat says otherwise, the chat is right."
+    )
+    assert packet.coverage_note(5, 6) == (
+        " Memory is recorded through turn 5; where a newer message in the chat says otherwise, the chat is right."
+    )
+    assert packet.coverage_note(5, 5) == ""
+
+
+def test_coverage_sentence_in_v20_absent_in_v19_and_replays_exact(migrated):
+    """A11: coverage sentence appears under packet-v20 iff a replied turn is newer than the last served turn,
+    never under packet-v19, and replays identically even after newer turns are extracted."""
+    from nmos_sidecar import audit
+    from nmos_sidecar.retrieval import RecallOptions
+
+    base_settings = {k: v for k, v in settings_for("full").items() if not k.startswith("embed_")} | {"embed_backfill": 0}
+    chat = SimChat()
+    chat.reply("Welcome to the harbor.")
+    chat.user("Hana has the silver lantern in the archive.")
+    chat.reply("Hana noted the silver lantern.")
+    chat.user("Kaito walked to the north pier.")
+    chat.reply("Kaito waited at the pier.")
+    chat.user("Where is the silver lantern?")
+
+    # 1. Unextracted chat with replied turns -> v20 says not recorded yet; v19 omits it.
+    with make_client(migrated, **(base_settings | {"packet_policy": "packet-v20"})) as c20:
+        sync(c20, chat)
+        unextracted_v20 = c20.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "Where is the silver lantern?",
+            "in_context_ids": [chat.messages[-1]["chatId"]], "budget_tokens": 2000,
+        }).json()
+    assert "Memory has not recorded this chat yet; the chat is right." in unextracted_v20["packet"]["text"]
+    assert unextracted_v20["coverage"] == {"recorded_through_turn": None, "covered_through_turn": None}
+
+    with make_client(migrated, **(base_settings | {"packet_policy": "packet-v19"})) as c19:
+        unextracted_v19 = c19.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "Where is the silver lantern?",
+            "in_context_ids": [chat.messages[-1]["chatId"]], "budget_tokens": 2000,
+        }).json()
+        trace_v19 = c19.get(f"/v1/trace/{unextracted_v19['trace_id']}").json()
+    assert "Memory has not recorded" not in unextracted_v19["packet"]["text"]
+    assert "Memory is recorded through" not in unextracted_v19["packet"]["text"]
+    assert "coverage" not in trace_v19["recall_options"]
+
+    # 2. Extract turns 0..2, then add turn 3 (replied) + turn 4 (user) without extracting turn 3.
+    extract(migrated)
+    chat.reply("It is in the archive.")
+    chat.user("Remind me about the silver lantern again.")
+    with make_client(migrated, **(base_settings | {"packet_policy": "packet-v20"})) as c20:
+        sync(c20, chat)
+        partial_v20 = c20.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "Remind me about the silver lantern again.",
+            "in_context_ids": [chat.messages[-1]["chatId"]], "budget_tokens": 2000,
+        }).json()
+        trace_partial = c20.get(f"/v1/trace/{partial_v20['trace_id']}").json()
+    expected_sentence = "Memory is recorded through turn 2; where a newer message in the chat says otherwise, the chat is right."
+    assert expected_sentence in partial_v20["packet"]["text"]
+    assert trace_partial["recall_options"]["coverage"] == {
+        "recorded_through_turn": 2, "covered_through_turn": None, "latest_replied_turn": 3,
+    }
+
+    with make_client(migrated, **(base_settings | {"packet_policy": "packet-v19"})) as c19:
+        partial_v19 = c19.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "Remind me about the silver lantern again.",
+            "in_context_ids": [chat.messages[-1]["chatId"]], "budget_tokens": 2000,
+        }).json()
+    assert "Memory is recorded through" not in partial_v19["packet"]["text"]
+    # The only difference between v20 and v19 on this chat is that single Note sentence.
+    assert partial_v20["packet"]["text"].replace(" " + expected_sentence, "") == partial_v19["packet"]["text"]
+
+    # 3. Extract the pending turn 3 -> every replied turn is now served -> sentence disappears under v20.
+    extract(migrated)
+    with make_client(migrated, **(base_settings | {"packet_policy": "packet-v20"})) as c20:
+        caught_up_v20 = c20.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "Remind me about the silver lantern again.",
+            "in_context_ids": [chat.messages[-1]["chatId"]], "budget_tokens": 2000,
+        }).json()
+    assert "Memory is recorded through" not in caught_up_v20["packet"]["text"]
+    assert "Memory has not recorded" not in caught_up_v20["packet"]["text"]
+    assert caught_up_v20["coverage"]["recorded_through_turn"] == 3
+
+    # 4. Replay of the earlier partial v20 trace STILL reproduces the exact text (with turn 2 sentence)
+    # even though turn 3 has now been extracted; replaying under v19 omits it; stripping coverage omits it (D39).
+    tid = UUID(partial_v20["trace_id"])
+    with db(migrated) as conn:
+        replayed = audit.replay(conn, tid, RecallOptions())
+        as_v19 = audit.replay(conn, tid, RecallOptions(), policy="packet-v19")
+        assert replayed["status"] == "ok" and replayed["reproduced"] is True
+        assert replayed["text"] == partial_v20["packet"]["text"]
+        assert expected_sentence in replayed["text"]
+        assert as_v19["status"] == "ok" and expected_sentence not in as_v19["text"]
+
+        conn.execute(
+            "UPDATE retrieval_trace SET recall_options = recall_options - 'coverage' WHERE id = %s", (tid,)
+        )
+        conn.commit()
+        legacy = audit.replay(conn, tid, RecallOptions(), policy="packet-v20")
+        assert legacy["status"] == "ok"
+        assert "Memory is recorded through" not in legacy["text"]
+        assert "Memory has not recorded" not in legacy["text"]
