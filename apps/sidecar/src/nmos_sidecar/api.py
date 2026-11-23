@@ -59,8 +59,8 @@ from .models import (
 from .canonical import manifest_hash, manifest_hashes, normalize_text, storable
 from .reconcile import Entry, plan, plan_append
 from .llm import Embedder
-from .packet import DEFAULT_POLICY, POLICIES, clean_text
-from .retrieval import RecallOptions, prefetched, query_prefix, retrieve
+from .packet import DEFAULT_POLICY, POLICIES, SEM_QUERY_POLICIES, clean_text
+from .retrieval import RecallOptions, SEM_QUERY_MAX_CHARS, prefetched, query_prefix, retrieve, sem_query
 from .state import current_state, rebuild_state, reparse_conversation, sync_rules, write_state
 from . import statusshape
 from .parsers import _clean as clean_value, needs_card, parse as parse_rules, watched
@@ -492,10 +492,43 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with request.app.state.pool.connection() as conn:
             return do_reconcile(conn, body)
 
-    def prefetch_query(body: BodiesRequest) -> None:
+    def _prefetch_previous_reply(conn: psycopg.Connection, body: BodiesRequest) -> str:
+        """Normalized text of the active `char` message before the synced user message (PHASE-60 S5, ADR 0084).
+
+        Reads from `body.bodies` first, else one indexed lookup of that stored revision. Fails open to "" on any
+        error so the prefetch falls back to the message alone; a mismatch with `/v1/retrieve` only misses
+        `prefetched.take` and costs the usual bounded wait (`embed_timeout_ms` after recall's reads, D70)."""
+        assert body.then_reconcile is not None
+        prev = None
+        for m in reversed(body.then_reconcile.messages[:-1]):
+            if m.disabled == "allBefore":
+                break
+            if m.role == "char" and not m.disabled and not m.is_comment:
+                prev = m
+                break
+        if prev is None:
+            return ""
+        raw = next((b.content for b in body.bodies if b.host_logical_id == prev.host_logical_id
+                    and b.revision_hash == prev.revision_hash), None)
+        if raw is None:
+            with conn.transaction():
+                row = conn.execute(
+                    "SELECT sr.content FROM conversation c"
+                    " JOIN source_object so ON so.conversation_id = c.id AND so.host_logical_id = %s"
+                    " JOIN source_revision sr ON sr.source_object_id = so.id AND sr.revision_hash = %s"
+                    " WHERE c.host = %s AND c.host_chat_ref = %s",
+                    (prev.host_logical_id, prev.revision_hash, body.host, body.chat_id),
+                ).fetchone()
+            raw = row["content"] if row is not None else None
+        return clean_text(normalize_text(raw)) if raw else ""
+
+    def prefetch_query(body: BodiesRequest, conn: psycopg.Connection) -> None:
         """The newest user message's embedding is asked for as soon as its text arrives (ADR 0061 item 7): the
         retrieve that follows this sync sends the same text as its query (the plugin's `queryTexts`) and takes it from
-        `retrieval.prefetched`. Nothing is stored; a text no retrieve asks for is dropped after a minute."""
+        `retrieval.prefetched`. Under `SEM_QUERY_POLICIES` (ADR 0084 item 2), a short message is combined with the
+        previous reply using `retrieval.sem_query`; any lookup error falls back to the message alone, and a mismatch
+        with `/v1/retrieve` costs only the usual bounded wait (D70). Nothing is stored; a text no retrieve asks for
+        is dropped after a minute."""
         recall = rt["recall"]
         if recall.embedder is None or body.then_reconcile is None or not body.then_reconcile.messages:
             return
@@ -507,14 +540,23 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         if content is None:
             return
         text = clean_text(normalize_text(content))
-        if text.strip():
-            prefetched.start(recall.embedder, recall.embed_projection, recall.query_prefix + text,
-                             recall.embed_timeout_ms)
+        if not text.strip():
+            return
+        embed_text = text
+        if recall.policy in SEM_QUERY_POLICIES and len(text.strip()) < SEM_QUERY_MAX_CHARS:
+            try:
+                sem = sem_query(text, _prefetch_previous_reply(conn, body))
+                if sem is not None:
+                    embed_text = sem
+            except Exception:  # noqa: BLE001 — fail open to today's text; a mismatch costs only the bounded wait
+                pass
+        prefetched.start(recall.embedder, recall.embed_projection, recall.query_prefix + embed_text,
+                         recall.embed_timeout_ms)
 
     @app.post("/v1/sync/bodies", response_model=BodiesResponse, dependencies=[Depends(auth)])
     def bodies(body: BodiesRequest, request: Request):
-        prefetch_query(body)  # before the database work: the embedder gets that time too
         with request.app.state.pool.connection() as conn:
+            prefetch_query(body, conn)  # before the sync's lock and writes: the embedder gets that time too
             conv = ledger.lock_conversation(conn, body.host, body.chat_id, None)
             def derive(rid: UUID, content: str, meta: dict[str, Any]) -> None:
                 normtext.write(conn, rid, content)
