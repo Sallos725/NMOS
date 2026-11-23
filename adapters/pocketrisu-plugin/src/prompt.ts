@@ -123,7 +123,9 @@ export function injectPacket(prompt: PromptMessage[], packet: string, position: 
   const message: PromptMessage = { role: 'system', content: packet };
   const out = prompt.slice();
   if (position === 'end') {
-    out.push(message);
+    let index = out.length;
+    while (index > 0 && out[index - 1]?.role === 'assistant') index -= 1;
+    out.splice(index, 0, message);
     return out;
   }
   let index = turn >= 0 && turn < out.length && out[turn]?.role !== 'assistant' ? turn : out.length;

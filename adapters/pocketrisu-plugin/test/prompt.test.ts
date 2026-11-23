@@ -111,6 +111,38 @@ describe('injection (H2 idempotency)', () => {
     expect(injectPacket(mainPrompt, '')).toBe(mainPrompt);
   });
 
+  it('places end injection before a trailing run of assistant prefill messages', () => {
+    const onePrefill: PromptMessage[] = [
+      ...mainPrompt,
+      { role: 'assistant', content: '세라 stepped forward.' },
+    ];
+    const outOne = injectPacket(onePrefill, packet, 'end');
+    expect(outOne.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'user', 'system', 'assistant']);
+    expect(outOne[4]?.content).toBe(packet);
+    expect(outOne[5]?.content).toBe('세라 stepped forward.');
+    expect(onePrefill).toHaveLength(5);
+
+    const twoPrefill: PromptMessage[] = [
+      ...mainPrompt,
+      { role: 'assistant', content: '<thought>' },
+      { role: 'assistant', content: '세라 stepped forward.' },
+    ];
+    const outTwo = injectPacket(twoPrefill, packet, 'end');
+    expect(outTwo.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'user', 'system', 'assistant', 'assistant']);
+    expect(outTwo[4]?.content).toBe(packet);
+    expect(outTwo[5]?.content).toBe('<thought>');
+    expect(outTwo[6]?.content).toBe('세라 stepped forward.');
+
+    const noTrailingAssistant: PromptMessage[] = [
+      ...mainPrompt,
+      { role: 'assistant', content: 'Earlier reply.' },
+      { role: 'system', content: 'Continue.' },
+    ];
+    const outNone = injectPacket(noTrailingAssistant, packet, 'end');
+    expect(outNone.at(-1)?.content).toBe(packet);
+    expect(outNone).toHaveLength(noTrailingAssistant.length + 1);
+  });
+
   it('keeps before_last_user byte-identical across existing fixtures (pinned at 375efa5)', () => {
     const continuePrompt: PromptMessage[] = [...mainPrompt, { role: 'system', content: 'Continue the last response.' }];
     const wrapped: PromptMessage[] = [
