@@ -457,7 +457,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     `carried`) and the story can close it by text; they take no part in secrets and keep their stored marks. A
     `regression` link's rows are listed apart (`regression`), annotated with the target's resolution, and enter
     neither the resolution nor a fold; the owner's `memory` exclusions leave them out as they leave rows out and take
-    the excluded from their rememberers (`_regression_kept`). Either way the view gains `carried` and `regression`; without it, neither.
+    the excluded from their rememberers (`_regression_kept`). Either way the view gains `carried` and `regression`;
+    without it, neither.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
