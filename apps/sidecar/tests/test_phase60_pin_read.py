@@ -109,6 +109,27 @@ def test_recorded_pins_are_resolved_as_they_were_named_and_nothing_else_is_read(
     assert picked(view_of(r, excluded=["세라"]), r, recorded=recorded) == [("카이토", "at")]
 
 
+def test_a_pinned_gone_character_keeps_its_gone_mark_first_in_the_group_the_pin_brings():
+    """Item 7: the gone rule stays in charge of the status line; the pin adds its group, and the line appears once."""
+    from nmos_sidecar import retrieval, scene
+    from nmos_sidecar.retrieval import Gathered, cast_groups, pin_gone
+    from test_phase60_gone import GONE_NOTE, marked, status, view_of as gone_view
+    rows = [status(10, "세라", "사망"), place(8, "세라"), row(19, "카이토", "event", None, "walks in", **C)]
+    view = gone_view(rows)
+    r = resolve(uuid.uuid4(), rows)
+    sera = r.key("character", "세라")
+    g = Gathered()
+    g.cast = scene.cast(rows, r, "", "", 20)
+    assert sera not in g.cast  # nobody names them: without the pin, the gone line is first in <Facts>
+    g.cast[sera], g.pin_only = "세라", {sera}
+    g.cast_lines, _ = cast_groups(view, g.cast, r, "", V20, pins=[sera], added=g.pin_only)
+    pin_gone(g, view, r, 20, V20)
+    first = dict(g.cast_lines)["세라"][0]
+    assert first.marks.get("gone") and first.ref == {"assertion": 10} and not g.gone
+    out = retrieval.compile_gathered(g, 2000, "packet-v20")
+    assert out.text.count("세라 has status: 사망") == 1 and marked(out.text) == 1 and GONE_NOTE in out.text
+
+
 # --- in the packet (stub model, test database) -------------------------------------------------------------------------
 
 PAIR = re.compile(r"(?P<a>\w+) and (?P<b>\w+) are (?P<what>\w+)\.")
