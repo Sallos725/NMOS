@@ -13,7 +13,8 @@ import { t, type Lang, type StringKey } from './i18n';
 import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
 import type { ActivityEvent } from './hud';
 import { findMarker, resolvePlaceholders, stripMarkers } from './placement';
-import { hasPacket, inContextIds, injectPacket, queryTexts, userTurnIndex, type InjectPosition } from './prompt';
+import { GUARD_RESERVE_TOKENS, hasPacket, inContextIds, injectPacket, landsAfterUserTurn, queryTexts, userTurnIndex,
+  withGuard, type InjectPosition } from './prompt';
 import type { HostChat, HostMessage, HostPersonas, PromptMessage, ReconcileRequest } from './types';
 import { failureKind, INSECURE_ERROR, secureContext } from './failure';
 
@@ -444,9 +445,12 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
       const marker = findMarker(prompt);
       const position = settings.injectPosition;
+      const after = landsAfterUserTurn(prompt, messages, position, turn, marker);
+      const budget = after ? Math.max(0, settings.reservedMemoryTokens - GUARD_RESERVE_TOKENS) : settings.reservedMemoryTokens;
       const place = (p: PromptMessage[], packet: string): PromptMessage[] => {
         if (!packet) return stripMarkers(p);
-        return marker ? resolvePlaceholders(p, packet) : injectPacket(p, packet, position, turn);
+        const text = after ? withGuard(packet) : packet;
+        return marker ? resolvePlaceholders(p, text) : injectPacket(p, text, position, turn);
       };
 
       // Cache key = exact chat state (every message id + revision hash) + prompt shape and the messages it holds + the
@@ -463,7 +467,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       key = await within(sha256Hex(JSON.stringify([
         chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]), inContext,
         request.persona_name ?? null, // the sidecar reads `{{user}}` from the sync a cached packet skips (ADR 0023)
-        settings.sidecarUrl.replace(/\/+$/, ''), settings.route, settings.authToken, settings.reservedMemoryTokens,
+        settings.sidecarUrl.replace(/\/+$/, ''), settings.route, settings.authToken, budget,
       ])), deadline, 'the cache key');
       // Canon (ADR 0045): which of it this prompt holds and its manifest go with the request; the texts follow in the
       // background. Observed for a cached packet too, whose canon may have changed.
@@ -477,7 +481,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         const outcome = cached.packet ? 'injected' : 'nothing-relevant';
         // A retry served from the miss cache keeps the failure on the status tab.
         if (!cached.failed) last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: cached.packet.length,
-          packet: cached.packet, outcome, deadlineMs: settings.deadlineMs, budgetTokens: settings.reservedMemoryTokens,
+          packet: cached.packet, outcome, deadlineMs: settings.deadlineMs, budgetTokens: budget,
           memory: cached.memory ?? null, vectors: cached.vectors ?? null };
         emit({ type: 'request-end', outcome, chars: cached.packet.length, reused: true, vectors: cached.vectors ?? null,
           conversationId: conversations.get(chat.id) ?? null });
@@ -504,7 +508,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         query,
         previous_ai: previousAi,
         in_context_ids: inContext,
-        budget_tokens: settings.reservedMemoryTokens,
+        budget_tokens: budget,
         client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
         canon_manifest_id: canon?.snapshot?.id ?? null,
         canon_held: canon?.held ?? [],
@@ -520,7 +524,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
       const outcome = packet ? 'injected' : 'nothing-relevant';
       last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, packet, outcome,
-        deadlineMs: settings.deadlineMs, budgetTokens: settings.reservedMemoryTokens, memory, vectors };
+        deadlineMs: settings.deadlineMs, budgetTokens: budget, memory, vectors };
       emit({ type: 'request-end', outcome, chars: packet.length, vectors, conversationId: synced.conversation_id ?? null,
         ...(synced.rewritten > 0 ? { rewritten: synced.rewritten } : {}) });
       return place(prompt, packet);

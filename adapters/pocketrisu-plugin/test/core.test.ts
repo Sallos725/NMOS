@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { HostCard, HostLoreEntry } from '../src/canon';
 import { createAdapter, personaOf, type HostPort, type HttpResult, type Settings } from '../src/core';
 import { deadlineAdvice } from '../src/deadline';
 import { DEFAULT_DEADLINE_MS } from '../src/form';
 import type { ActivityEvent } from '../src/hud';
 import { MEMORY_MARKER } from '../src/placement';
-import { hasPacket } from '../src/prompt';
+import { GUARD_LINE, GUARD_RESERVE_TOKENS, hasPacket } from '../src/prompt';
 import type { HostChat, PromptMessage } from '../src/types';
 
 const chat: HostChat = {
@@ -390,9 +391,15 @@ describe('packet cache', () => {
     settings = { ...settings, route: 'server' };  // the PocketRisu server's localhost is not the browser's
     await reroll();
     expect(retrieves).toHaveLength(5);
-    settings = { ...settings, injectPosition: 'end', deadlineMs: 300 };  // where it goes and how long it may take: cached
+    settings = { ...settings, deadlineMs: 300 };  // how long it may take does not change the budget: cached
     await reroll();
     expect(retrieves).toHaveLength(5);
+    settings = { ...settings, injectPosition: 'end' };  // post-turn placement lowers budget by GUARD_RESERVE_TOKENS: misses cache
+    await reroll();
+    expect(retrieves).toHaveLength(6);
+    expect(retrieves.at(-1)).toBe('http://other-sidecar Bearer u 860');
+    await reroll();  // cached at the reduced budget
+    expect(retrieves).toHaveLength(6);
   });
 
   it('never reuses a packet for a prompt of the same length that holds other messages', async () => {
@@ -908,5 +915,155 @@ describe('[NMOS.memory] (PHASE-60 S2.3)', () => {
       { role: 'system', content: `narrator\n${PACKET}\nend` },
       { role: 'user', content: 'Where did we hide the lantern? ' },
     ]);
+  });
+
+  it('uses full budget with no guard before the user turn, and adds the guard with reduced budget after it', async () => {
+    const budgets: number[] = [];
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/retrieve') budgets.push(body.budget_tokens);
+      return happy(path, body);
+    }, { reservedMemoryTokens: 600 });
+    const adapter = createAdapter(host);
+
+    // Marker in a system message before the user turn: no guard, full budget.
+    const beforeInput: PromptMessage[] = [
+      { role: 'system', content: `narrator\n${MEMORY_MARKER}` },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+    ];
+    const beforeOut = await adapter.beforeRequest(beforeInput, 'model');
+    expect(beforeOut).toEqual([
+      { role: 'system', content: `narrator\n${PACKET}` },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+    ]);
+    expect(budgets).toEqual([600]);
+    expect((await adapter.status()).last?.budgetTokens).toBe(600);
+
+    // Marker in a user-role message after the user turn: guard line right after </NarrativeMemory>, reduced budget.
+    // Moving the marker across the user turn changes the effective budget, so it misses the cache.
+    const afterInput: PromptMessage[] = [
+      { role: 'system', content: 'narrator' },
+      { role: 'user', content: `Where did we hide the lantern?\n${MEMORY_MARKER}` },
+    ];
+    const afterOut = await adapter.beforeRequest(afterInput, 'model');
+    expect(afterOut).toEqual([
+      { role: 'system', content: 'narrator' },
+      { role: 'user', content: `Where did we hide the lantern?\n${PACKET}\n${GUARD_LINE}` },
+    ]);
+    expect(budgets).toEqual([600, 600 - GUARD_RESERVE_TOKENS]);
+    expect((await adapter.status()).last?.budgetTokens).toBe(600 - GUARD_RESERVE_TOKENS);
+
+    // Cached reuse of the post-turn prompt keeps the reduced budget on LastRequest and still appends the guard.
+    const afterCached = await adapter.beforeRequest(structuredClone(afterInput), 'model');
+    expect(afterCached).toEqual(afterOut);
+    expect(budgets).toEqual([600, 600 - GUARD_RESERVE_TOKENS]);
+    expect((await adapter.status()).last?.budgetTokens).toBe(600 - GUARD_RESERVE_TOKENS);
+  });
+
+  it('places the packet into a multipart message text part without disturbing other parts', async () => {
+    const budgets: number[] = [];
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/retrieve') budgets.push(body.budget_tokens);
+      return happy(path, body);
+    }, { reservedMemoryTokens: 600 });
+    const imagePart = { type: 'image_url', image_url: { url: 'https://example.invalid/harbor.png' } };
+    const input: PromptMessage[] = [
+      { role: 'system', content: 'narrator' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Where did we hide the lantern?' },
+          imagePart,
+          { type: 'text', text: `Notes:\n${MEMORY_MARKER}\nDone.` },
+        ],
+      },
+    ];
+    const out = await createAdapter(host).beforeRequest(input, 'model');
+    expect(out).toHaveLength(2);
+    expect(out[1]?.content).toEqual([
+      { type: 'text', text: 'Where did we hide the lantern?' },
+      imagePart,
+      { type: 'text', text: `Notes:\n${PACKET}\n${GUARD_LINE}\nDone.` },
+    ]);
+    expect(budgets).toEqual([600 - GUARD_RESERVE_TOKENS]);
+  });
+
+  it('removes the marker and places nothing when the sidecar returns an empty packet', async () => {
+    const { host } = fakeHost((path, body) => (path === '/v1/retrieve'
+      ? { status: 200, json: { freshness: 'fresh', packet: { text: '' } } }
+      : happy(path, body)));
+    const out = await createAdapter(host).beforeRequest(markedPrompt(), 'model');
+    expect(out).toEqual(strippedPrompt);
+    expect(hasPacket(out)).toBe(false);
+  });
+
+  it('places injectPosition=end before a trailing assistant prefill with the guard line and reduced budget', async () => {
+    const budgets: number[] = [];
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/retrieve') budgets.push(body.budget_tokens);
+      return happy(path, body);
+    }, { injectPosition: 'end', reservedMemoryTokens: 600 });
+    const withPrefill: PromptMessage[] = [
+      { role: 'system', content: 'narrator' },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+      { role: 'assistant', content: '세라 paused by the door.' },
+    ];
+    const out = await createAdapter(host).beforeRequest(withPrefill, 'model');
+    expect(out).toEqual([
+      { role: 'system', content: 'narrator' },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+      { role: 'system', content: `${PACKET}\n${GUARD_LINE}` },
+      { role: 'assistant', content: '세라 paused by the door.' },
+    ]);
+    expect(budgets).toEqual([600 - GUARD_RESERVE_TOKENS]);
+  });
+
+  it('keeps before_last_user without a marker identical to existing output (no guard, full budget)', async () => {
+    const budgets: number[] = [];
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/retrieve') budgets.push(body.budget_tokens);
+      return happy(path, body);
+    }, { injectPosition: 'before_last_user', reservedMemoryTokens: 600 });
+    const out = await createAdapter(host).beforeRequest(prompt, 'model');
+    expect(out).toEqual([
+      { role: 'system', content: 'narrator' },
+      { role: 'system', content: PACKET },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+    ]);
+    expect(budgets).toEqual([600]);
+  });
+
+  it('observes canon on the host prompt before marker replacement so canon_held is unchanged (A17)', async () => {
+    const card: HostCard = { name: '하나', desc: '하나는 항구 마을 등대지기의 딸이다.', personality: '', scenario: '',
+      firstMessage: '' };
+    const runWithLore = async (entryContent: string) => {
+      const lore: HostLoreEntry[] = [
+        { id: 'lore-slot', key: '', comment: 'slot', content: entryContent, mode: 'constant', alwaysActive: true },
+      ];
+      let held: string[] | null = null;
+      const { host } = fakeHost((path, body) => {
+        if (path === '/v1/sync/reconcile') return { status: 200, json: { status: 'noop', active_commit: 'c', manifest_hash: 'm', conversation_id: 'conv-1' } };
+        if (path === '/v1/sync/canon') return { status: 200, json: { needed: [] } };
+        if (path === '/v1/retrieve') {
+          held = body.canon_held;
+          return { status: 200, json: { freshness: 'fresh', packet: { text: PACKET } } };
+        }
+        return happy(path, body);
+      });
+      host.card = async () => card;
+      host.lorebook = async () => lore;
+      const adapter = createAdapter(host);
+      const p: PromptMessage[] = [
+        { role: 'system', content: `${card.desc}\n${entryContent}` },
+        { role: 'user', content: 'Where did we hide the lantern?' },
+      ];
+      const out = await adapter.beforeRequest(p, 'model');
+      return { held, out };
+    };
+
+    const withMarker = await runWithLore(`세라는 등대를 지킨다.\n${MEMORY_MARKER}`);
+    const withoutMarker = await runWithLore('세라는 등대를 지킨다.');
+    expect(withMarker.held).toContain('lore:lore-slot');
+    expect(withMarker.held).toEqual(withoutMarker.held);
+    expect(withMarker.out[0]?.content).toBe(`${card.desc}\n세라는 등대를 지킨다.\n${PACKET}`);
   });
 });
