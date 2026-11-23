@@ -455,10 +455,21 @@ def _pair_bits(p: dict[str, Any], lang: str) -> list[str]:
     for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
         for f in p[k]:
             value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
-            h = happened_mark(f, lang)
+            h = happened_mark(_own(f), lang)
+            m = carried_mark(f, lang)
             bits.append(_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)} ") + feeling_dot(f, lang)
-                        + _v(f"{value}") + feeling_detail(f, lang) + (f" {h}" if h else ""))
+                        + _v(f"{value}") + feeling_detail(f, lang) + (f" {h}" if h else "") + (f" {m}" if m else ""))
     return bits
+
+
+def carried_mark(row: dict[str, Any], lang: str) -> str:
+    """A small word on a row that came through a carry link (PHASE-60 S6), or "" (the row then reads as before)."""
+    return f'<span class="v-tag">{_v(t(lang, "carried"))}</span>' if row.get("carried") else ""
+
+
+def _own(row: dict[str, Any]) -> dict[str, Any]:
+    """A carried row without its turn, which is not this chat's (it sits before turn 0); any other row as it is."""
+    return {k: v for k, v in row.items() if k != "turn"} if row.get("carried") else row
 
 
 def line(main: str, meta: str = "", extra: str = "") -> str:
@@ -475,10 +486,18 @@ def more(items: list[str], lang: str, n: int = 3) -> str:
 
 
 def thread_meta(th: dict[str, Any], lang: str) -> str:
-    """A thread's kind, how long it is meant to last when known (PHASE-51), since when, and when it happened (PHASE-60 S7)."""
+    """A thread's kind, how long it is meant to last when known (PHASE-51), since when, and when it happened (PHASE-60 S7);
+    a carried thread (PHASE-60 S6) has no "since": its turn is not this chat's."""
     kind = t(lang, th["kind"]) if th["kind"] in T else th["kind"]
     horizon = t(lang, f"hz.{th['horizon']}") if th.get("horizon") in ("scene", "arc", "lasting") else None
-    return " · ".join(x for x in (kind, horizon, t(lang, "since", t=th.get("turn")), happened_text(th, lang)) if x)
+    since = None if th.get("carried") else t(lang, "since", t=th.get("turn"))
+    return " · ".join(x for x in (kind, horizon, since, happened_text(_own(th), lang)) if x)
+
+
+def _thread_meta(th: dict[str, Any], lang: str) -> str:
+    """`thread_meta` escaped, with the carried mark when the thread came through a link."""
+    m = carried_mark(th, lang)
+    return _v(thread_meta(th, lang)) + (f" · {m}" if m else "")
 
 
 def name_link(cid: str, entities: dict[str, str], name: str | None) -> str:
@@ -603,9 +622,9 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     now = [line(nm(x["name"]), " · ".join(_v(s) for s in x["said"])) for x in d.get("now") or []]
     threads = d.get("threads") or []
     opened = [line(f"{_kind_tag(th.get('kind'), lang)}{nm(th['by'])}{' → ' + nm(th['to']) if th.get('to') else ''}: {_v(th['text'])}",
-                   _v(thread_meta(th, lang)),
+                   _thread_meta(th, lang),
                    _close(th)) for th in threads]
-    stale = f'<p class="v-note">{_v(t(lang, "stale", n=d["stale"]))}</p>' if d.get("stale") else ""
+    stale =f'<p class="v-note">{_v(t(lang, "stale", n=d["stale"]))}</p>' if d.get("stale") else ""
     people = []
     for p in d.get("pairs") or []:
         names = sorted(p["names"].values())
@@ -614,10 +633,12 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
         bits = _pair_bits(p, lang)
         if len(p["relationship"]) > 1 or any(not symmetric(f.get("value")) for f in p["relationship"]):
             bits = [_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, 'relationship')} {f.get('value')}")
-                    + (f" {h}" if (h := happened_mark(f, lang)) else "")
+                    + (f" {h}" if (h := happened_mark(_own(f), lang)) else "")
+                    + (f" {m}" if (m := carried_mark(f, lang)) else "")
                     for f in p["relationship"]] + bits
         else:
-            bits = [h for f in p["relationship"] if (h := happened_mark(f, lang))] + bits
+            bits = [h for f in p["relationship"]
+                    if (h := " ".join(x for x in (happened_mark(_own(f), lang), carried_mark(f, lang)) if x))] + bits
         people.append(line(head, " · ".join(bits)))
     story, scenes = d.get("story"), d.get("scenes") or []
     sofar = (f'<p class="v-text">{_v(story["text"])}</p><div class="v-meta">{_v(t(lang, "story"))} · '
@@ -633,19 +654,20 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     changed = [line(
         f"{nm(_named(c['fact'], 'subject'))} {_v(t(lang, c['fact']['predicate']) if c['fact']['predicate'] in T else c['fact']['predicate'])}",
         f'<span class="v-diff"><span class="v-diff-old">{_v(c["old"])}</span> → <span class="v-diff-new">{_v(c["new"])}</span>'
-        f'<span>· t{c["fact"].get("turn")}</span></span>'
-        + (f' · {h}' if (h := happened_mark(c["fact"], lang)) else ""))
+        + ("" if c["fact"].get("carried") else f'<span>· t{c["fact"].get("turn")}</span>') + "</span>"
+        + (f' · {h}' if (h := happened_mark(_own(c["fact"]), lang)) else "")
+        + (f' · {m}' if (m := carried_mark(c["fact"], lang)) else ""))
                for c in d.get("changes") or []]
     counts = {"s-now": len(now), "s-open": len(threads), "s-people": len(people),
               "s-sofar": len(scenes) + (1 if story else 0), "s-secrets": len(secrets), "s-changed": len(changed)}
     keys = ["s-now", "s-open", "s-people", "s-sofar", "s-secrets", "s-changed"]
-    c = d.get("carry")
+    link = d.get("carry")
     carried = ""
-    if c:  # PHASE-60 S6: only while a link is in force
-        n = len(c.get("lines") or [])
+    if link:  # PHASE-60 S6: only while a link is in force
+        n = len(link.get("lines") or [])
         counts["s-carry"] = n
         keys.insert(1, "s-carry")
-        carried = section("s-carry", lang, carry_lines(c, lang, nothing), n or None)
+        carried = section("s-carry", lang, carry_lines(link, lang, nothing), n or None)
     chips = '<div class="v-chips">' + "".join(
         f'<a href="#{k}"><span>{_v(t(lang, k))}</span>'
         + (f'<span class="v-chip-n">{counts[k]}</span>' if counts[k] else "") + "</a>"
@@ -737,7 +759,7 @@ def person(d: dict[str, Any], lang: str) -> str:
         rel = [str(f.get("value")) for f in p["relationship"] if f.get("value")]
         rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), " · ".join(_pair_bits(p, lang))))
     threads = [line(f"{_v(th['text'])}" + (f" → {nm(th['to'])}" if th.get("to") and th.get("by") == e.get("name") else ""),
-                    _v(thread_meta(th, lang)),
+                    _thread_meta(th, lang),
                     _close(th)) for th in d.get("threads") or []]
     knows = [line(_v(content(s)), _v(t(lang, "knows") + f" · t{s.get('turn')}")) for s in d.get("knows") or []]
     knows += [line(_v(content(s)), _v(t(lang, "unaware", who=", ".join(s.get("holders") or [])) + f" · t{s.get('turn')}"))

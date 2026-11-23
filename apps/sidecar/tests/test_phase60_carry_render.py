@@ -271,3 +271,55 @@ def test_person_sheet_regression_for_one_who_remembers_lists_their_lines():
     s = sec(views.person({**person_input(), "carry": carry("regression", [], names=["sera"])}, "ko"))
     assert '<p class="v-text">이전 타임라인 · sera만 기억</p>' in s and "아직 없어요" in s
     assert "기억하지 않습니다" not in s
+
+
+# --- marks on rows that came through the link ---------------------------------------------------------------------
+
+MARK_KO, MARK_EN = '<span class="v-tag">이어받음</span>', '<span class="v-tag">carried</span>'
+
+
+def marked_memory(value: Any = LINK) -> dict[str, Any]:
+    """`memory_input()` with a thread, a role, a symmetric and an asymmetric relationship and a change carried
+    (`carried` = `value`), each at turn -1 as a carried row sits before turn 0."""
+    d = copy.deepcopy(memory_input())
+    rows = [d["threads"][0], d["pairs"][0]["role"][0], d["pairs"][0]["relationship"][0],
+            d["pairs"][2]["relationship"][1], d["changes"][1]["fact"]]
+    for row in rows:
+        row["carried"] = value
+        if value:
+            row["turn"] = -1
+    return d
+
+
+def test_memory_document_marks_carried_threads_pairs_and_changes():
+    ko = views.memory(marked_memory(), "ko")
+    assert f"<div class='v-meta'>약속 · 이야기 줄기 · {MARK_KO}</div>" in ko  # no "since" turn of this chat
+    assert f"세라→카이토 역할 보호자 {MARK_KO} · 카이토→세라 감정" in ko
+    assert f"<div class='v-meta'>{MARK_KO} · 세라→카이토 역할 보호자" in ko  # the symmetric relationship's own bit
+    assert f"유나→Rowan 관계 rival {MARK_KO}</div>" in ko
+    assert (f'<span class="v-diff-new">지침</span></span> · {MARK_KO}</div>') in ko
+    assert "t-1" not in ko
+    # rows without the mark read as before
+    assert "<div class='v-meta'>목표 · 오래 감 · t3부터</div>" in ko and "<span>· t9</span>" in ko
+    en = views.memory(marked_memory(), "en")
+    assert f"promise · storyline · {MARK_EN}</div>" in en and "t-1" not in en
+    panel_safe(ko)
+
+
+def test_person_sheet_marks_carried_threads():
+    d = copy.deepcopy(person_input())
+    d["threads"][1]["carried"], d["threads"][1]["turn"] = LINK, -1
+    d["threads"][1]["when_happened"] = "어제"
+    ko = views.person(d, "ko")
+    assert f"<div class='v-meta'>목표 · 이야기 줄기 · [일어난 때: 어제] · {MARK_KO}</div>" in ko
+    assert "t-1" not in ko
+    assert f"· {MARK_EN}</div>" in views.person(d, "en")
+
+
+def test_rows_without_a_link_render_as_before():
+    for lang in ("ko", "en"):
+        assert views.memory(marked_memory(None), lang) == views.memory(memory_input(), lang)
+        assert views.memory(marked_memory(""), lang) == views.memory(memory_input(), lang)
+        d = copy.deepcopy(person_input())
+        d["threads"][0]["carried"] = None
+        assert views.person(d, lang) == views.person(person_input(), lang)
