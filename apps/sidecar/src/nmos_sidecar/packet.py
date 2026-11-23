@@ -37,6 +37,10 @@ HAPPENED_NOTE = " happened says when it happened in the story; turn says when it
 # packet-v20 (PHASE-60 S8, ADR 0086): who passed what on to whom, a <Fact> of its own kind
 TOLD_MARK = 'kind="told"'
 TOLD_NOTE = " A told Fact says who passed what on to whom; it does not show the hearer believed it."
+# packet-v20 (PHASE-60 S6, ADR 0085 item 4): a fact or thread carried from the earlier chat this one continues
+CARRIED_MARK = 'source="carried"'
+CARRIED_NOTE = (" source=\"carried\" marks what an earlier chat this one continues had established; this chat's story"
+                " may have changed it since.")
 # Added to the Note only when a kept line uses the mark (ADR 0013), so other packets stay as they were.
 NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly not, or no longer, true."),
                ("<Claim ", " A Claim is what that character said, not established truth."),
@@ -64,7 +68,8 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                (BACK_AFTER_MARK, BACK_AFTER_NOTE),
                (SETTLED_MARK, SETTLED_NOTE),
                (HAPPENED_MARK, HAPPENED_NOTE),
-               (TOLD_MARK, TOLD_NOTE))
+               (TOLD_MARK, TOLD_NOTE),
+               (CARRIED_MARK, CARRIED_NOTE))
 MAX_EXCERPT_CHARS = 480
 # packet-v10 grows an excerpt to at most this many sentences (owner, 2026-09-30): growing to the whole length brought
 # back more values the story had since replaced (docs/perf/lexical-recall.md, "Step 4"); packet-v11 lifts the cap for a
@@ -345,7 +350,7 @@ TOLD_POLICIES = frozenset({"packet-v20"})  # at most two lines of who told whom 
 CARRY_POLICIES = frozenset({"packet-v20"})  # a request reads the chat's carry link and records it (PHASE-60 S6, ADR 0085)
 # The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
 _V20_MARKS = {GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES,
-              HAPPENED_MARK: HAPPENED_POLICIES, TOLD_MARK: TOLD_POLICIES}
+              HAPPENED_MARK: HAPPENED_POLICIES, TOLD_MARK: TOLD_POLICIES, CARRIED_MARK: CARRY_POLICIES}
 STATE_HISTORY_MAX = 6  # changes on one <StateHistory> line
 STATE_HISTORY_KEYS = 2  # keys one message gets a line for
 EXCERPT_FLOOR = 0.5  # packet-v14: an excerpt after the first needs this share of the best fused score, or a word hit

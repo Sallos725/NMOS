@@ -1573,6 +1573,8 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
         if scene.private(row, cast, r) or (row.get("canon") and row["host_logical_id"] in in_context
                                            and not row.get("held_off")):
             return False
+        if row.get("carried"):  # an earlier chat's (ADR 0085): not where a character stands in this one's scene
+            return False
         return not options.narrator or scene.narrator_knows(row, options.narrator, r)
 
     mine: dict[str, list[dict[str, Any]]] = {}

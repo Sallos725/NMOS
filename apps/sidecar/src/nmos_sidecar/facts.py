@@ -279,6 +279,8 @@ def _entry(h: dict[str, Any], outcome: dict[int, str], closer: dict[int, dict[st
         out["when_happened"] = h["when_happened"]
     if h.get("canon"):
         out["canon"] = h["canon"]
+    if h.get("carried"):  # ADR 0085: a statement an earlier chat made
+        out["carried"] = h["carried"]
     by = (closer or {}).get(id(h))
     if by is not None and out["outcome"] != "current":
         out["closed_turn"] = by["turn"] if by.get("turn") is not None else (0 if by.get("canon") else None)
@@ -571,10 +573,10 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     threads, unmatched, consumed = fold_threads(promises, r, thread_events(in_force, r, applied))
     if carried_openings:
         assert carried is not None
-        opened = {x["id"] for x in carried_openings}
+        opened = {x["id"]: x for x in carried_openings}
         for t in threads:
             if t["id"] in opened:
-                t["carried"] = carried.link
+                t["carried"], t["carried_from"] = carried.link, opened[t["id"]].get("carried_from")
     consumed |= reveals
     for row in rows:
         if row["id"] in consumed:
@@ -1248,9 +1250,9 @@ def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, mark
     A canon fact says so in place of a turn, and a fact the owner locked says that (ADR 0047). With `gone` (packet-v20,
     PHASE-60 S3), the status line of a character who is dead or gone is marked so (ADR 0082 item 3). With `happened`
     (packet-v20, PHASE-60 S7), a fact that says when it happened carries it right after its turn. `body`: the line's
-    text in place of `fact_text` (a told line, `told_entry`)."""
-    turn = f["turn"] if f.get("turn") is not None else f["position"]
-    attrs = f" kind={quoteattr(f['predicate'])}" + (' source="canon"' if f.get("canon") else f" turn=\"{turn}\"")
+    text in place of `fact_text` (a told line, `told_entry`). A carried row (ADR 0085) says where it comes from in
+    place of its turn (`_from_attr`)."""
+    attrs = f" kind={quoteattr(f['predicate'])}" + _from_attr(f)
     if happened:
         attrs += happened_attr(f)
     if f.get("locked"):
@@ -1277,10 +1279,23 @@ def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, mark
     return f"    <Fact{attrs}>{escape(text)}</Fact>"
 
 
+def _from_attr(f: dict[str, Any]) -> str:
+    """Where a fact or thread line comes from, as its attribute: its turn, canon (ADR 0047), or a chat this one
+    continues (`carried`, packet-v20 only: the only policy whose read carries rows, PHASE-60 S6, ADR 0085 item 4)."""
+    if f.get("canon"):
+        return ' source="canon"'
+    if f.get("carried"):
+        return ' source="carried"'
+    return f" turn=\"{f['turn'] if f.get('turn') is not None else f['position']}\""
+
+
 def _when(h: dict[str, Any]) -> str:
-    """Where a history entry comes from, for a packet line: its turn, or canon (ADR 0047)."""
+    """Where a history entry comes from, for a packet line: its turn, canon (ADR 0047), or an earlier chat this one
+    continues (ADR 0085)."""
     if h.get("canon"):
         return "in canon"
+    if h.get("carried"):
+        return "in an earlier chat"
     return f"turn {h['turn'] if h.get('turn') is not None else h['position']}"
 
 
@@ -1297,13 +1312,13 @@ def _knowledge_attrs(f: dict[str, Any]) -> str:
 
 
 def thread_line(t: dict[str, Any], happened: bool = False) -> str:
-    """An open promise (PHASE-7 Q5), with the knowledge marks of the turn that made it. With `happened` (packet-v20,
-    PHASE-60 S7), when the assertion that opened it says it happens, right after its turn."""
-    turn = t["turn"] if t.get("turn") is not None else t["position"]
+    """An open promise (PHASE-7 Q5), with the knowledge marks of the turn that made it; a carried one says so in place
+    of its turn (ADR 0085 item 4). With `happened` (packet-v20, PHASE-60 S7), when the assertion that opened it says
+    it happens, right after its turn."""
     attrs = f" kind={quoteattr(t['kind'])} by={quoteattr(t['by'])}"
     if t.get("to"):
         attrs += f" to={quoteattr(t['to'])}"
-    attrs += f" turn=\"{turn}\"" + (happened_attr(t) if happened else "") + _knowledge_attrs(t)
+    attrs += _from_attr(t) + (happened_attr(t) if happened else "") + _knowledge_attrs(t)
     return f"    <Thread{attrs}>{escape(t.get('text') or '')}</Thread>"
 
 
@@ -1374,8 +1389,12 @@ def claim_entry(c: dict[str, Any], private: bool = False, cause: bool = False) -
 
 
 def _ref(a: dict[str, Any]) -> dict[str, Any]:
-    """A line's provenance (ADR 0027): its assertion, and the owner's repair that changed it (ADR 0044)."""
-    return {"assertion": a["id"], "repair": a["repair"]} if a.get("repair") else {"assertion": a["id"]}
+    """A line's provenance (ADR 0027): its assertion, and the owner's repair that changed it (ADR 0044); a carried
+    row's also names its link and the source chat's assertion it was read from (ADR 0085)."""
+    ref = {"assertion": a["id"], "repair": a["repair"]} if a.get("repair") else {"assertion": a["id"]}
+    if a.get("carried"):
+        ref.update(carried=a["carried"], source_assertion=(a.get("carried_from") or {}).get("assertion"))
+    return ref
 
 
 def thread_entry(t: dict[str, Any], private: bool = False, happened: bool = False) -> Line:
