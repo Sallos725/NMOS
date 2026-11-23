@@ -30,6 +30,10 @@ export interface Settings {
   language: Lang;
   /** Host chat ids NMOS is switched off for (ADR 0048); none when missing. */
   offChats?: string[];
+  /** Leave old dialogue out in steps once memory covers it (PHASE-60 S1); off when missing. */
+  trimOldTurns?: boolean;
+  /** Recent turns always sent when trimming, and the step the cut moves by; 20 when missing. */
+  keepRecentTurns?: number;
 }
 
 export interface HttpResult {

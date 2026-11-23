@@ -17,6 +17,11 @@ export const DEFAULT_RESERVED_TOKENS = 4000;
 export const MAX_RESERVED_TOKENS = 20_000;
 /** The largest budget the panel saves (ADR 0049): recall grows up to it, and a larger one recalls as it does. */
 export const PANEL_MAX_RESERVED_TOKENS = 8000;
+/** Old-dialogue trimming (PHASE-60 S1, ADR 0083): recent turns always sent, and the step the cut moves by.
+ *  20 when the plugin arg is unset (0); kept within 4..200. */
+export const DEFAULT_KEEP_RECENT_TURNS = 20;
+export const MIN_KEEP_RECENT_TURNS = 4;
+export const MAX_KEEP_RECENT_TURNS = 200;
 export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune'];
 
 /** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0022). */
