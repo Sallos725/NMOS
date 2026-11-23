@@ -897,6 +897,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    persona_questions: bool = False, persona_entity: str | None = None,
                    persona_query_names: frozenset[str] | None = None,
                    persona_added: set[str] | None = None,
+                   pinned: frozenset[str] = frozenset(), pin_named: set[str] | None = None,
                    _question_facts: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
@@ -943,6 +944,10 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
 
     `risky` (the label policies, PHASE-34 Q1): the ids of contradicted facts; with it, a disputed or contradicted fact
     that is not named, private or secret ranks after the others, before `limit` and `events_limit` choose.
+
+    `pinned` (packet-v20, PHASE-60 S8, ADR 0087 item 2): the normalized names of the characters pinned for the request.
+    A fact of theirs about how they stand now or with another (NOW, STANDING) is mentioned and named as if the message
+    held the name; their other facts are ranked as before. `pin_named` collects the facts only a pin named.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
@@ -990,6 +995,9 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
         if _question_facts and str(f["id"]) in _question_facts:
             mention = max(mention, 1.5)
+        pin = bool(pinned) and f["predicate"] in NOW | STANDING and any(n in pinned for n in names)
+        if pin:  # a pinned character's now and standing facts, as a name in the message brings them
+            mention = max(mention, 2.0)
         hidden = [n for n in _widened(f.get("hidden_from") or [], aliases) if len(n) >= 2 and n not in user]
         grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
@@ -997,6 +1005,10 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                 not named_by_words or f["predicate"] in NOW | STANDING | asked or f.get("known_by")
                 or f.get("hidden_from") or lexical >= LEXICAL_BAR or any(n in fact_text(f) for n in nouns)):
             named.add(str(f["id"]))
+        elif pin and named is not None:
+            named.add(str(f["id"]))
+            if pin_named is not None:
+                pin_named.add(str(f["id"]))
         if any(n in q for n in hidden):
             mention += 2.5
         elif mention and any(n in present for n in hidden):

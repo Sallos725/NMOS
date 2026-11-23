@@ -926,6 +926,11 @@ class Gathered:
     gone: list[Line] = field(default_factory=list)  # gone characters' status lines not in <Cast> (packet-v20, PHASE-60 S3)
     cast_marks: dict[str, str] = field(default_factory=dict)  # <Cast> name → back_after value (packet-v20, PHASE-60 S4)
     settled: list[Line] = field(default_factory=list)  # threads closed lately, after the open ones (packet-v20, PHASE-60 S4)
+    # packet-v20 (PHASE-60 S8): the characters pinned for the request, in pin order (`pinned_characters`); those only a
+    # pin put in the scene's cast; and the facts only a pin named (required, but not the message's own: PHASE-46's fill)
+    pins: list[dict[str, Any]] = field(default_factory=list)
+    pin_only: set[str] = field(default_factory=set)
+    pin_named: set[str] = field(default_factory=set)
 
 
 def persona_question_names(r: Any) -> frozenset[str]:
@@ -949,13 +954,16 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
            canon_facts: Any = LIVE, vectors_now: bool = False,
            recent: list[overuse.Recent] | None = None,
            coverage_info: Mapping[str, int | None] | None = None,
-           served_turns: frozenset[int] | None = None) -> Gathered:
+           served_turns: frozenset[int] | None = None,
+           pins: list[dict[str, Any]] | None = None) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time. The canon keys the
     prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047).
     `vectors_now` searches vectors as they are now whatever `known_at` says (a replay's named projection).
     `served_turns`: the turns an extraction serves as of the request, when the caller has read them (packet-v20's
-    return gap); otherwise they are read here, as of `upto` and `known_at`, and only when a gap is possible."""
+    return gap); otherwise they are read here, as of `upto` and `known_at`, and only when a gap is possible.
+    `pins`: a replay's recorded pins (`recall_options.pins`, ADR 0087 item 4), read instead of the message's `@name`s
+    and the owner's pins; None for a live request."""
     started = time.perf_counter()
     g = Gathered()
     # packet-v14 (PHASE-34 Q2, Q3): the supportive lines overused in the requests before this one rest
@@ -1045,6 +1053,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
                             now, aliases=aliases,
                             marks=_thread_marks(view, aliases))
+        # packet-v20 (PHASE-60 S8, ADR 0087 item 2): a pinned character is present, before any line is judged private
+        _join_pins(g, view, r, query, options, pins)
         if options.threads_limit > 0:
             picked = relevant_threads(view["threads"], query, previous_ai, in_context,
                                       len(view["threads"]) if rest else options.threads_limit, persona,
@@ -1068,6 +1078,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             # the label policies rank a risky line after the others before the limits choose (PHASE-34 Q1)
             contradicted = (frozenset(str(c["fact"]) for c in view.get("conflicts") or [] if c.get("fact") is not None)
                             if options.policy in LABEL_POLICIES else None)
+            # packet-v20 (PHASE-60 S8): a pinned character's names make its now and standing facts named
+            pinned = scene.names({p["key"]: p["name"] for p in g.pins}, r, aliases) if g.pins else frozenset()
             ranked = relevant_facts(view["facts"], query, previous_ai, in_context,
                                     len(view["facts"]) if grow or rest else options.facts_limit,
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
@@ -1075,11 +1087,13 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     named=g.named, named_by_words=options.policy in NAMED_POLICIES, risky=contradicted,
                                     keep=(lambda f: bool(_rested([f], "fact", rest, g))) if rest else None,
                                     persona_questions=persona_questions, persona_entity=persona_entity,
-                                    persona_query_names=question_names, persona_added=persona_added)
+                                    persona_query_names=question_names, persona_added=persona_added,
+                                    pinned=pinned, pin_named=g.pin_named)
             # packet-v19 (PHASE-46): a question that names no one and shares no fact's words gets no added fact or
-            # claim slots; the configured limits still choose (small talk took 30 facts and 8 claims at 4,000 tokens)
+            # claim slots; the configured limits still choose (small talk took 30 facts and 8 claims at 4,000 tokens).
+            # A pin names no one in the message (PHASE-60 S8): the facts only a pin named do not count.
             fill_facts = 0 if options.fill_facts and options.policy in RELATED_FILL_POLICIES and unrelated_question(
-                query, g.named, view["facts"] + view["claims"]) else options.fill_facts
+                query, g.named - g.pin_named, view["facts"] + view["claims"]) else options.fill_facts
             if options.policy in LABEL_POLICIES:  # before the limits: a risky fact never takes an ordinary one's slot
                 ranked = _risky_last(ranked, view, g.named)
             if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2); the facts
@@ -1122,7 +1136,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             who = scene.display(r, options.narrator) if r is not None else options.narrator
             g.note = f" The story is told in the first person by {who}: only what they know is listed."
         if options.policy in CAST_POLICIES and r is not None:
-            g.cast_lines, used = cast_groups(view, g.cast, r, query, options, in_context, aliases)
+            g.cast_lines, used = cast_groups(view, g.cast, r, query, options, in_context, aliases,
+                                             pins=[p["key"] for p in g.pins], added=g.pin_only)
             if changes:
                 selected += [f for f in view["facts"] if f["id"] in used]
             if used:  # a line in <Cast> is not said again in another section
@@ -1160,6 +1175,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
                                 _head_turn(conn, head, upto), aliases=aliases,
                                 marks=_thread_marks(view, aliases))
+            _join_pins(g, view, r, query, options, pins)  # facts and threads off: the summaries' scene (PHASE-60 S8)
         g.story = summaries.packet_lines(conn, head, options.summarize_key, view["secrets"] if view else [], query,
                                          in_context, upto, known_at,
                                          scene.names(g.cast, r, aliases) if r is not None else frozenset(),
@@ -1434,6 +1450,17 @@ def pinned_characters(view: dict[str, Any] | None, r: Any, query: str, options: 
     return list(out.values())
 
 
+def _join_pins(g: Gathered, view: dict[str, Any], r: Any, query: str, options: RecallOptions,
+               recorded: list[dict[str, Any]] | None) -> None:
+    """The request's pins (`pinned_characters`) join the scene's cast after everyone already in it, so knowledge marks,
+    Private, strict and narrator lines treat them as present (ADR 0087 item 2). Every other policy: nothing."""
+    g.pins = pinned_characters(view, r, query, options, recorded)
+    for p in g.pins:
+        if p["key"] not in g.cast:
+            g.cast[p["key"]] = p["name"]
+            g.pin_only.add(p["key"])
+
+
 def recorded_pins(pins: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """What a request records of its pins (`recall_options.pins`, ADR 0087 item 4): each name it resolved to."""
     return [{"name": p["name"], "entity_type": "character", "source": p["source"]} for p in pins]
@@ -1452,7 +1479,8 @@ def cast_facts(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, Any]
 
 
 def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, options: RecallOptions,
-                in_context: set[str] = frozenset(), aliases: dict[str, frozenset[str]] | None = None
+                in_context: set[str] = frozenset(), aliases: dict[str, frozenset[str]] | None = None,
+                pins: Iterable[str] = (), added: Collection[str] = ()
                 ) -> tuple[list[tuple[str, list[Line]]], set[Any]]:
     """Each scene character's current state as the lines it is (PHASE-12 Q4, ADR 0043): place, condition, feeling
     toward the persona, what they carry, and, for a character the message names, their open goals, the one the
@@ -1461,11 +1489,15 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
     (its Private handling), and a narrator's unknowns are left out (ADR 0035). Returns the groups and the assertions
     they use. A canon fact whose text the prompt held is not said again (D3, ADR 0047). With `aliases`
     (`name_variants`, ADR 0058) the characters the user's message names come first: a given name in the previous
-    reply brings more characters into the scene, and the one asked about must keep its group."""
+    reply brings more characters into the scene, and the one asked about must keep its group.
+
+    `pins` (packet-v20, PHASE-60 S8, ADR 0087 item 2): the request's pinned characters' keys, in pin order; `added`,
+    those in `cast` only because they are pinned. The cast's own groups are chosen as before without them; then each
+    pinned character without one of those gets a group of the same shape, at most PIN_EXTRA, in pin order."""
     persona = scene.key(r, scene.PERSONA)
     said = norm(query)
     left_out = frozenset(view.get("excluded") or ())  # PHASE-47: not a character, so no <Cast> group
-    order = [k for k in cast if k != persona and str(k) not in left_out]
+    order = [k for k in cast if k != persona and str(k) not in left_out and k not in added]
     if aliases is not None:
         order.sort(key=lambda k: not any(n in said for n in scene.names({k: cast[k]}, r, aliases)))  # stable
     order = order[:CAST_MAX]
@@ -1483,17 +1515,25 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
             mine.setdefault(scene.key(r, f["subject"]), []).append(f)
     groups: list[tuple[str, list[Line]]] = []
     used: set[Any] = set()
-    for k in order:
+
+    def lines_of(k: str) -> list[Line]:
         pick = cast_facts(mine.get(k, []), lambda f: scene.key(r, f["object"]) == persona)
         named = any(n in said for n in scene.names({k: cast[k]}, r, aliases))
         goals = [t for t in view["threads"] if named and t.get("kind") == "goal" and t["status"] == "open"
                  and scene.key(r, t["by"]) == k and shown(t)]
         goals.sort(key=lambda t: (similarity(query, t.get("text")) if query else 0.0, t["position"]), reverse=True)
-        lines = [fact_entry(f, False, before, cause, options.history_marks) for f in pick] + [
+        return [fact_entry(f, False, before, cause, options.history_marks) for f in pick] + [
             thread_entry(t) for t in goals[:CAST_GOALS]]
+
+    extra = 0
+    for k in [*order, *(k for k in pins if k not in order)]:
+        if k not in order and (extra >= PIN_EXTRA or k not in cast or k == persona or str(k) in left_out):
+            continue
+        lines = lines_of(k)
         if lines:
             groups.append((cast[k], lines))
             used |= {line.ref.get("assertion") for line in lines}
+            extra += k not in order
     return groups, used
 
 
