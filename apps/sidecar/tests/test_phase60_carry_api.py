@@ -149,6 +149,19 @@ def test_a_second_link_replaces_the_first_and_delete_removes_it(migrated: str) -
         assert res.status_code == 404 and res.json()["detail"] == "no link in force"
 
 
+def test_cors_preflight_allows_the_unlink_delete_from_an_allowed_origin_only(migrated: str) -> None:
+    """The panel unlinks a carried chat with a cross-origin DELETE when the sidecar is reached directly."""
+    headers = {"Access-Control-Request-Method": "DELETE", "Access-Control-Request-Headers": "authorization"}
+    path = f"/v1/conversations/{uuid7()}/carry"
+    with make_client(migrated, **ON) as c:
+        ok = c.options(path, headers={"Origin": "http://localhost:6101", **headers})
+        assert ok.status_code == 200
+        assert ok.headers["access-control-allow-origin"] == "http://localhost:6101"
+        assert "DELETE" in ok.headers["access-control-allow-methods"]
+        denied = c.options(path, headers={"Origin": "http://evil.example", **headers})
+        assert "access-control-allow-origin" not in denied.headers
+
+
 def test_deleting_the_source_chat_deletes_its_links(migrated: str) -> None:
     with make_client(migrated, **ON) as c:
         _, src, tgt = _pair(c, migrated)
