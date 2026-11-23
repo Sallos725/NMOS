@@ -97,13 +97,18 @@ def read(
     known_at: datetime | None = None,
     served: frozenset[int] | None = None,
     latest_replied: int | None = None,
+    read_view: bool = True,
 ) -> Coverage:
-    """Read extraction and summary coverage for `head` up to `upto` (as of `known_at` for a replay)."""
+    """Read extraction and summary coverage for `head` up to `upto` (as of `known_at` for a replay).
+
+    With `read_view=False` (the request path once its packet is compiled) and no `secrets` at hand, no memory view
+    is read to tell held summaries apart: no summary counts as covering, so coverage is under-reported, never over.
+    """
     if served is None:
         served, latest_replied = extraction_state(conn, head, upto=upto, known_at=known_at)
     recorded = max(served) if served else None
     summarized: set[int] = set()
-    if summarize_key and served:
+    if summarize_key and served and (read_view or secrets is not None):
         view = summaries.current(conn, conv_id, head, summarize_key, None, upto=upto, known_at=known_at)
         have = [x for x in view["scenes"] if x["summary"] is not None]
         if have:

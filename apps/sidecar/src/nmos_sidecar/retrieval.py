@@ -6,6 +6,7 @@ Also assembles the packet sections: state (Phase 1), facts (Phase 2), excerpts.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import math
 import re
 import threading
@@ -2216,6 +2217,10 @@ def read_carry(conn: psycopg.Connection, conversation: UUID, policy: str) -> tup
     return (carry.target_rows(link), carry_record(link)) if link is not None else (None, None)
 
 
+_log = logging.getLogger("nmos.retrieval")
+NULL_COVERAGE = {"recorded_through_turn": None, "covered_through_turn": None}
+
+
 def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> dict[str, Any]:
     started = time.perf_counter()
     trim_req = getattr(request, "trim", None)
@@ -2252,6 +2257,24 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     cov_for_gather: dict[str, int | None] | None = None
     trim_out: dict[str, Any] | None = None
     trim_trace: dict[str, Any] | None = None
+    # Coverage reads fail open (PHASE-60 S1 review): any error leaves the request its packet, with null coverage and,
+    # for a trim request, no boundary. Each read runs in a savepoint so a database error cannot spoil the trace
+    # insert, and its time is counted (`latency_ms.coverage`).
+    cov_ms = 0.0
+    cov_error: str | None = None
+
+    def guarded(read: Callable[[], Any]) -> Any:
+        nonlocal cov_ms, cov_error
+        t0 = time.perf_counter()
+        try:
+            with conn.transaction():
+                return read()
+        except Exception as exc:  # noqa: BLE001  (fail open)
+            cov_error = cov_error or type(exc).__name__
+            return None
+        finally:
+            cov_ms += (time.perf_counter() - t0) * 1000
+
     if trim_req is not None:
         now_turn = _head_turn(conn, head, upto)
         if not fresh:
@@ -2259,36 +2282,48 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             trim_trace = {"keep_recent_turns": trim_req.keep_recent_turns, "step": trim_req.step,
                           "now": now_turn, "cut": None, "keep_from_id": None, "reason": "stale"}
         else:
-            cov = coverage.read(conn, conv.id, head, options.summarize_key,
-                                extractor_key=options.extractor_key, upto=upto)
-            if options.policy in COVERAGE_POLICIES:
-                cov_for_gather = cov.recorded_dict()
-            last_id = _head_last(conn, head, upto)
-            window_ids = original_in_context | ({last_id} if last_id is not None else set())
-            w_turns = coverage.window_turns(conn, head, window_ids, upto)
-            decision = coverage.decide_trim(
-                now_turn, trim_req.keep_recent_turns, trim_req.step,
-                [(t, t in cov.covered_turns) for t in w_turns], bool(options.summarize_key),
-            )
-            keep_from_id: str | None = None
-            keep_from_turn: int | None = None
-            reason: str | None = decision.reason
-            if decision.cut is not None:
-                keep_from_id, before_ids = coverage.trim_boundary(conn, head, decision.cut, upto)
-                if keep_from_id is not None:
-                    keep_from_turn = decision.cut
-                    in_context = original_in_context - before_ids
-                else:
-                    reason = "short"
+            def decide() -> tuple[coverage.Coverage, str | None, int | None, str | None, set[str]]:
+                # the trim decision tells held summaries apart, so it reads the memory view (secrets) it needs
+                c = coverage.read(conn, conv.id, head, options.summarize_key,
+                                  extractor_key=options.extractor_key, upto=upto)
+                last_id = _head_last(conn, head, upto)
+                window_ids = original_in_context | ({last_id} if last_id is not None else set())
+                w_turns = coverage.window_turns(conn, head, window_ids, upto)
+                decision = coverage.decide_trim(
+                    now_turn, trim_req.keep_recent_turns, trim_req.step,
+                    [(t, t in c.covered_turns) for t in w_turns], bool(options.summarize_key),
+                )
+                kid: str | None = None
+                kturn: int | None = None
+                why: str | None = decision.reason
+                before: set[str] = set()
+                if decision.cut is not None:
+                    kid, before = coverage.trim_boundary(conn, head, decision.cut, upto)
+                    if kid is not None:
+                        kturn = decision.cut
+                    else:
+                        why, before = "short", set()
+                return c, kid, kturn, why, before
+
+            decided = guarded(decide)
+            if decided is not None:
+                cov, keep_from_id, keep_from_turn, reason, before_ids = decided
+                in_context = original_in_context - before_ids
+                if options.policy in COVERAGE_POLICIES:
+                    cov_for_gather = cov.recorded_dict()
+            else:  # coverage unknown: nothing is known covered, so no boundary and nothing left out
+                keep_from_id, keep_from_turn, reason = None, None, "uncovered"
             trim_out = {"keep_from_id": keep_from_id, "keep_from_turn": keep_from_turn, "reason": reason}
             trim_trace = {"keep_recent_turns": trim_req.keep_recent_turns, "step": trim_req.step,
                           "now": now_turn, "cut": keep_from_turn, "keep_from_id": keep_from_id, "reason": reason}
     elif fresh and options.policy in COVERAGE_POLICIES:
-        served, latest_replied = coverage.extraction_state(conn, head, upto)
-        cov_for_gather = {
-            "recorded_through_turn": max(served) if served else None,
-            "latest_replied_turn": latest_replied,
-        }
+        state = guarded(lambda: coverage.extraction_state(conn, head, upto))
+        if state is not None:
+            served, latest_replied = state
+            cov_for_gather = {
+                "recorded_through_turn": max(served) if served else None,
+                "latest_replied_turn": latest_replied,
+            }
     served_now = cov.served_turns if cov is not None else served  # read once; the return gap reuses it (PHASE-60 S4)
     history = (overuse.recent(conn, conv.id, head, n=options.rest_after + 1)
                if options.policy in REST_POLICIES and fresh else None)
@@ -2321,7 +2356,14 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     memory = {"offered": sum(1 for e in compiled.ledger if e["kind"] in MEMORY_KINDS
                             and e["why"] != "restates" and e.get("label") != "hidden"),
               "cut": cut, "fits_at": fit}
-    timings = {**g.timings, "fit": round((time.perf_counter() - fit_started) * 1000, 2),
+    fit_ms = round((time.perf_counter() - fit_started) * 1000, 2)
+    if cov is None and fresh and cov_error is None:
+        # Read only, after the packet: never a memory view of its own (no view at hand -> summaries not counted, so
+        # coverage is under-reported, never over). A stale request reads nothing and answers null coverage.
+        cov = guarded(lambda: coverage.read(conn, conv.id, head, options.summarize_key,
+                                            extractor_key=options.extractor_key, secrets=g.secrets, upto=upto,
+                                            served=served, latest_replied=latest_replied, read_view=False))
+    timings = {**g.timings, "fit": fit_ms, "coverage": round(cov_ms, 2),
                "sidecar_total": round((time.perf_counter() - started) * 1000, 2)}
 
     def brief(c: dict[str, Any]) -> dict[str, Any]:
@@ -2333,16 +2375,14 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             out["rerank"] = float(c["rerank"])
         return out
 
-    if cov is None:
-        cov = coverage.read(conn, conv.id, head, options.summarize_key, extractor_key=options.extractor_key,
-                            secrets=g.secrets if fresh else None, upto=upto,
-                            served=served, latest_replied=latest_replied)
     trace_options: dict[str, Any] = {
         **recorded_options(options), "canon_names": g.canon_names, "canon_facts": g.canon_facts,
         "fill": fill(request.budget_tokens, options.policy),  # the growth its budget bought (ADR 0049)
     }
-    if fresh and options.policy in COVERAGE_POLICIES:
-        trace_options["coverage"] = cov.recorded_dict()
+    if fresh and options.policy in COVERAGE_POLICIES and cov_for_gather is not None:
+        # what gather was fed (its Note sentence), so the replay compiles the same packet whatever the tail read did
+        trace_options["coverage"] = {**cov_for_gather,
+                                     "covered_through_turn": cov.covered_through_turn if cov is not None else None}
     if fresh and options.policy in PIN_POLICIES and g.pins:  # the names its pins resolved to (ADR 0087 item 4)
         trace_options["pins"] = recorded_pins(g.pins)
     if fresh and options.policy in SEM_QUERY_POLICIES:  # ADR 0084 item 1: recorded only under SEM_QUERY_POLICIES
@@ -2356,6 +2396,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         trace_options["carry"] = carry_record
     placed = [e for e in compiled.ledger if e["placed"]]
     trace_id: UUID = uuid7()
+    if cov_error is not None:  # the type only: a database message may quote chat text
+        _log.warning("coverage read failed trace=%s error=%s; answered null coverage", trace_id, cov_error)
     conn.execute(
         "INSERT INTO retrieval_trace (id, conversation_id, commit_id, query, candidates, selected, excluded_in_context,"
         " token_estimate, latency_ms, freshness, policy, budget_tokens, upto_position, previous_ai, in_context,"
@@ -2398,7 +2440,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         "freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": compiled.text,
         "tokens": compiled.tokens, "count": len(compiled.excerpts), "memory": memory, "conversation_id": conv.id,
         "vectors": ("fallback" if g.vector_note.startswith("fallback") else g.vector_note) if fresh else None,
-        "coverage": cov.response_dict(),
+        "coverage": cov.response_dict() if cov is not None else dict(NULL_COVERAGE),
     }
     if trim_out is not None:
         result["trim"] = trim_out

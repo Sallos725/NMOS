@@ -200,7 +200,8 @@ def test_retrieve_always_returns_coverage(migrated):
         })
         assert stale.status_code == 200
         assert stale.json()["freshness"] == "stale"
-        assert stale.json()["coverage"] == {"recorded_through_turn": 15, "covered_through_turn": 7}
+        # A stale request reads no coverage (it serves no packet for the head it named): nulls, as for an unknown chat.
+        assert stale.json()["coverage"] == {"recorded_through_turn": None, "covered_through_turn": None}
 
 
 def test_coverage_note_pure():
@@ -613,3 +614,121 @@ def test_without_trim_v19_and_v20_omit_trim_and_match_null_trim(migrated):
             assert absent["coverage"] == explicit_null["coverage"] == {
                 "recorded_through_turn": 15, "covered_through_turn": 7,
             }
+
+
+# --- the coverage read on the request path: fail open, no memory read of its own, counted (PHASE-60 S1 review) ---
+
+TRIM_4 = {"keep_recent_turns": 4, "step": 4}
+
+
+def _covered_chat(client, migrated) -> SimChat:
+    """16 replied turns extracted, scene window 0..7 summarized, a question at turn 16."""
+    chat = story_chat(16)
+    chat.user("Question about Turn 0?")
+    sync(client, chat)
+    extract(migrated)
+    assert drain_summaries(migrated) >= 1
+    return chat
+
+
+def _ask(client, chat: SimChat, **extra) -> dict:
+    res = client.post("/v1/retrieve", json={
+        "chat_id": chat.id, "query": "Question about Turn 0?",
+        "in_context_ids": [m["chatId"] for m in chat.messages], "budget_tokens": 2000, **extra,
+    })
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def _sql_error(conn, *_args, **_kwargs):
+    conn.execute("SELECT 1/0")  # a real database error: the request's transaction must survive it
+
+
+@pytest.mark.parametrize("policy", ["packet-v19", "packet-v20"])
+def test_a_failed_coverage_read_leaves_the_packet_answer_intact(migrated, monkeypatch, caplog, policy):
+    from nmos_sidecar import audit
+    from nmos_sidecar.retrieval import RecallOptions
+
+    with make_client(migrated, **{**SUMMARIES_ON, "packet_policy": policy}) as client:
+        chat = _covered_chat(client, migrated)
+        before = _ask(client, chat)
+        trimmed = _ask(client, chat, trim=TRIM_4)
+        assert before["coverage"] == {"recorded_through_turn": 15, "covered_through_turn": 7}
+        assert trimmed["trim"]["keep_from_turn"] == 8
+
+        monkeypatch.setattr(coverage, "read", _sql_error)
+        monkeypatch.setattr(coverage, "extraction_state", _sql_error)
+        with caplog.at_level("WARNING"):
+            failed = _ask(client, chat)
+            failed_trim = _ask(client, chat, trim=TRIM_4)
+        monkeypatch.undo()
+
+        nulls = {"recorded_through_turn": None, "covered_through_turn": None}
+        assert failed["freshness"] == "fresh" and failed["coverage"] == nulls
+        if policy == "packet-v19":  # the coverage read comes after the v19 packet: it is the same packet
+            assert failed["packet"] == before["packet"]
+        assert failed["packet"]["text"]
+        # a trim request: no boundary, as when nothing is known covered; nothing left out of the prompt
+        assert failed_trim["coverage"] == nulls
+        assert failed_trim["trim"] == {"keep_from_id": None, "keep_from_turn": None, "reason": "uncovered"}
+        for res in (failed, failed_trim):
+            trace = client.get(f"/v1/trace/{res['trace_id']}").json()
+            assert "coverage" in trace["latency_ms"]
+            assert trace["in_context"] == sorted(m["chatId"] for m in chat.messages)
+            with db(migrated) as conn:  # its replay compiles the same packet
+                out = audit.replay(conn, trace["id"], RecallOptions())
+            assert out["status"] == "ok" and out.get("reproduced") is True, out
+        warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING" and "coverage" in r.getMessage()]
+        assert len(warnings) == 2
+        for msg, res in zip(warnings, (failed, failed_trim)):
+            assert str(res["trace_id"]) in msg and "DivisionByZero" in msg
+            assert "division by zero" not in msg
+
+
+def test_a_stale_request_reads_no_coverage_and_a_fresh_one_counts_its_time(migrated, monkeypatch):
+    from nmos_sidecar import facts
+
+    with make_client(migrated, **{**SUMMARIES_ON, "packet_policy": "packet-v19"}) as client:
+        chat = story_chat(16)
+        chat.user("Question about Turn 0?")
+        first = sync(client, chat)
+        extract(migrated)
+        assert drain_summaries(migrated) >= 1
+        fresh = _ask(client, chat)
+        trace = client.get(f"/v1/trace/{fresh['trace_id']}").json()
+        lat = trace["latency_ms"]
+        assert isinstance(lat["coverage"], (int, float)) and 0 <= lat["coverage"] <= lat["sidecar_total"]
+
+        chat.reply("New reply.")
+        chat.user("Another question.")
+        sync(client, chat)
+        calls: list[str] = []
+        real_read, real_view, real_state = coverage.read, facts.memory_view, coverage.extraction_state
+        monkeypatch.setattr(coverage, "read", lambda *a, **k: calls.append("read") or real_read(*a, **k))
+        monkeypatch.setattr(coverage, "extraction_state",
+                            lambda *a, **k: calls.append("extraction_state") or real_state(*a, **k))
+        monkeypatch.setattr(facts, "memory_view", lambda *a, **k: calls.append("memory_view") or real_view(*a, **k))
+        for extra in ({}, {"trim": TRIM_4}):
+            stale = _ask(client, chat, active_commit=first["active_commit"], manifest_hash=first["manifest_hash"],
+                         **extra)
+            assert stale["freshness"] == "stale"
+            assert stale["coverage"] == {"recorded_through_turn": None, "covered_through_turn": None}
+        assert stale["trim"] == {"keep_from_id": None, "keep_from_turn": None, "reason": "stale"}
+        assert calls == []
+
+
+def test_without_a_view_at_hand_coverage_reads_no_memory_and_counts_no_summary(migrated, monkeypatch):
+    from nmos_sidecar import facts
+
+    with make_client(migrated, **SUMMARIES_ON) as client:
+        chat = _covered_chat(client, migrated)
+        cid, head = _head(migrated, client, chat)
+        with db(migrated) as conn:
+            ex_key = active_generation(conn, "extract").key
+            sm_key = active_generation(conn, "summarize").key
+            assert coverage.read(conn, cid, head, sm_key, extractor_key=ex_key).covered_through_turn == 7
+            monkeypatch.setattr(facts, "memory_view", lambda *a, **k: pytest.fail("memory_view read for coverage"))
+            cov = coverage.read(conn, cid, head, sm_key, extractor_key=ex_key, read_view=False)
+            assert cov.recorded_through_turn == 15 and cov.covered_through_turn is None  # under-reported, not read
+            with_view = coverage.read(conn, cid, head, sm_key, extractor_key=ex_key, secrets=[], read_view=False)
+            assert with_view.covered_through_turn == 7  # a view at hand (no secrets) still counts its summaries
