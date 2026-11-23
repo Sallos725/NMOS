@@ -649,7 +649,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             view = (view_of(conn, conv["head_commit_id"])
                     if conv["head_commit_id"] else {"entities": []})
-        return view["entities"]
+        pinned = {str(p["entity_id"]): str(p["repair"]) for p in view.get("pins") or ()}  # PHASE-60 S8: the pin's id
+        return [{**e, "pinned": pinned[str(e["id"])]} if str(e["id"]) in pinned else e for e in view["entities"]]
 
     @app.get("/v1/conversations/{conv_id}/memory-mode", dependencies=[Depends(auth)])
     def get_memory_mode(conv_id: UUID, request: Request):
@@ -1011,7 +1012,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def add_repair(conv_id: UUID, body: RepairRequest, request: Request):
         """The owner repairs one item of this chat's memory (ADR 0044): `item` is the id the Inspector shows for a
         thread or a secret. The repair stores what the item says, not the id, so it survives rebuilds and new
-        extractor generations; it applies on every read until the owner takes it back."""
+        extractor generations; it applies on every read until the owner takes it back. A pin (`entity_pin`, PHASE-60
+        S8) names a character as an exclusion names its entity, and needs no preview."""
         with request.app.state.pool.connection() as conn:
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
@@ -1969,7 +1971,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
                          "turns": last},
                 "entity": {"id": eid, "name": e.get("name"), "names": list(e.get("names") or []),
-                           "persona": bool(e.get("persona")), "excluded": e.get("excluded")},
+                           "persona": bool(e.get("persona")), "excluded": e.get("excluded"),
+                           "pinned": next((str(p["repair"]) for p in view.get("pins") or ()  # PHASE-60 S8
+                                           if str(p["entity_id"]) == eid), None)},
                 "now": views.now_said(view["facts"], str(e.get("name") or "")),
                 "pairs": [p for p in inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING],
                                                      excluded_ids(view)) if eid in {str(i) for i in p["ids"]}],

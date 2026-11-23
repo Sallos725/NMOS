@@ -173,3 +173,72 @@ def test_a_rebuild_keeps_the_pin_and_deleting_the_chat_deletes_it(migrated):
         assert c.post(f"/v1/conversations/{cid}/delete").status_code == 200
     with psycopg.connect(migrated) as conn:
         assert conn.execute("SELECT count(*) FROM owner_repair WHERE conversation_id = %s", (cid,)).fetchone()[0] == 0
+
+
+# The API (step 3): the repair route takes a pin as it takes an exclusion, with no preview; undo is the plain removal.
+
+def pin(c, cid: str, item: str, **kw):
+    return c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "entity_pin", "item": item, **kw})
+
+
+def entities(c, cid: str) -> dict[str, dict]:
+    return {e["name"]: e for e in c.get(f"/v1/conversations/{cid}/entities").json()}
+
+
+def test_the_api_pins_lists_marks_and_takes_a_pin_back(migrated):
+    with make_client(migrated, **LLM) as c:
+        cid = setup(c, migrated)
+        kaito = entity_id(view(migrated, cid), "Kaito")
+        assert not any("pinned" in e for e in entities(c, cid).values())
+        res = pin(c, cid, "Kaito", note="every scene")
+        assert res.status_code == 200, res.text
+        made = res.json()
+        assert made["repair"]["kind"] == "entity_pin" and made["repair"]["value"] == {}
+        assert made["repair"]["target"] == {"entity_type": "character", "name": "Kaito"}
+        assert str(made["applied"]) == kaito
+        rid = str(made["repair"]["id"])
+        row = next(r for r in c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"] if str(r["id"]) == rid)
+        assert str(row["applied"]) == kaito and row["removed_at"] is None and "hidden" not in row
+        marked = entities(c, cid)
+        assert marked["Kaito"]["pinned"] == rid and not any("pinned" in e for n, e in marked.items() if n != "Kaito")
+        assert [(p["name"], str(p["repair"])) for p in view(migrated, cid)["pins"]] == [("Kaito", rid)]
+        assert c.get(f"/v1/views/c/{cid}/person/{kaito}").status_code == 200
+        by_id = pin(c, cid, entity_id(view(migrated, cid), "Hana"))  # the panel names it by its id
+        assert by_id.status_code == 200 and by_id.json()["repair"]["target"]["name"] == "Hana"
+        # a pin has no preview of its own: it is made, and taken back, at once
+        assert c.post(f"/v1/conversations/{cid}/repairs/preview",
+                      json={"kind": "entity_pin", "item": "Kaito"}).status_code == 422
+        assert c.post(f"/v1/conversations/{cid}/repairs/{rid}/remove").status_code == 200
+        assert [p["name"] for p in view(migrated, cid)["pins"]] == ["Hana"] and "pinned" not in entities(c, cid)["Kaito"]
+        row = next(r for r in c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"] if str(r["id"]) == rid)
+        assert row["removed_at"] is not None
+        assert pin(c, cid, "Kaito").status_code == 200  # pinned again after the undo
+
+
+def test_the_api_refuses_what_a_pin_cannot_name(migrated):
+    with make_client(migrated, **LLM) as c:
+        cid = setup(c, migrated)
+        assert exclude(c, cid, "Gloomfang").status_code == 200
+        assert pin(c, cid, "Kaito").status_code == 200
+        for item, why, kw in (("Rowan", "persona", {}), ("Nobody", "not mentioned", {}),
+                              ("Gloomfang", "not a character", {}), ("Kaito", "already", {}),
+                              ("village", "only a character", {"entity_type": "place"})):
+            res = pin(c, cid, item, **kw)
+            assert res.status_code == 422 and why in res.json()["detail"], (item, res.text)
+        with psycopg.connect(migrated) as conn:
+            assert conn.execute("SELECT count(*) FROM owner_repair WHERE kind = 'entity_pin'").fetchone()[0] == 1
+
+
+def test_a_pin_in_a_batch_and_a_pin_ages_a_preview_as_any_repair_does(migrated):
+    with make_client(migrated, **LLM) as c:
+        cid = setup(c, migrated)
+        done = c.post(f"/v1/conversations/{cid}/repairs/batch", json={"items": [{"kind": "entity_pin", "item": "Hana"}]})
+        assert done.status_code == 200 and done.json()["counts"] == {"entity_pin": 1}, done.text
+        assert [p["name"] for p in view(migrated, cid)["pins"]] == ["Hana"]
+        assert c.post(f"/v1/conversations/{cid}/repairs/batch/{done.json()['batch']}/remove").status_code == 200
+        assert view(migrated, cid)["pins"] == []
+        # memory changed since a preview: the repair ids its fingerprint holds now include the pin
+        seen = c.post(f"/v1/conversations/{cid}/repairs/preview",
+                      json={"kind": "entity_exclude", "item": "Gloomfang"}).json()["fingerprint"]
+        assert pin(c, cid, "Kaito").status_code == 200
+        assert exclude(c, cid, "Gloomfang", expect=seen).status_code == 409

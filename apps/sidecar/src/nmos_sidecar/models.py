@@ -222,9 +222,10 @@ class RepairRequest(BaseModel):
     a secret's character, a correction's new object or value, a split's other name, and the turn it takes effect.
     `fact_lock` keeps a canon fact or a correction current against the story (ADR 0047); `fact_restore` adds back a fact
     a re-extraction dropped (PHASE-22 Q7); `state_dismiss` dismisses a status flag (PHASE-39 Q4); `entity_exclude`
-    leaves a name (`item`) out of the cast, or with `scope` "memory" out of memory too (PHASE-47)."""
+    leaves a name (`item`) out of the cast, or with `scope` "memory" out of memory too (PHASE-47); `entity_pin` pins a
+    character (`item`, a name or an entity id) for every request of the chat (PHASE-60 S8, ADR 0087)."""
     kind: Literal["thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-                  "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude"]
+                  "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude", "entity_pin"]
     item: Text = Field(min_length=1, max_length=120)
     outcome: Text | None = Field(default=None, max_length=32)
     character: Text | None = Field(default=None, max_length=120)
