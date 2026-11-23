@@ -1481,7 +1481,7 @@ def summed(*usages: dict[str, Any] | None) -> dict[str, Any] | None:
 ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic",
                      "confidence", "evidence", "status", "reason", "knowledge", "known_by", "hidden_from",
                      "polarity", "modality", "source", "asserted_by", "salience", "participants", "outcome", "because",
-                     "feeling")
+                     "feeling", "when_happened")
 JSON_COLUMNS = frozenset({"participants", "feeling"})  # jsonb columns of ASSERTION_COLUMNS
 
 
