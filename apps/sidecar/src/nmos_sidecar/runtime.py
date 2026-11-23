@@ -20,13 +20,15 @@ from urllib.parse import urlsplit
 import psycopg
 from psycopg.types.json import Jsonb
 
-from .config import RERANK_TIMEOUT_MS, Settings
+from .config import RERANK_TIMEOUT_MS, Settings, extra_body_error
 from . import rerank, vertex
 from .llm import ChatModel, Embedder, LLMError, chat_headers
 from .parsers import RuleSet, compile_rules, load_rules
 
 EDITABLE: dict[str, type] = {
     "llm_url": str, "llm_model": str, "llm_api_key": str, "llm_json_mode": bool,
+    # PHASE-61 S1/S1b (ADR 0088): the extra request body (a JSON object, stored as one JSONB value) and the switch
+    "llm_extra_body": dict, "llm_no_temperature": bool,
     "embed_url": str, "embed_model": str, "embed_api_key": str, "embed_query_instruction": str,
     "embed_timeout_ms": int,  # a slow or remote embedder needs more than the 300 ms default (K34)
     "recall_threshold": float, "vector_min_sim": float, "recall_top_k": int, "facts_limit": int,
@@ -49,7 +51,8 @@ RERANK_NOTE = ("When a URL and a model are set, each request sends the user's me
                " plugin's request deadline (3 s by default).")
 # Saved settings `Settings` checks at startup (PHASE-60 S5): a saved value it would refuse (a restored row, a downgrade)
 # is ignored, so the environment's value applies and the sidecar still starts. The panel refuses such a value (422).
-STARTUP_CHECKED = ("rerank_format", "rerank_timeout_ms")
+# PHASE-61 S3: the extra request body and the temperature switch too.
+STARTUP_CHECKED = ("rerank_format", "rerank_timeout_ms", "llm_extra_body", "llm_no_temperature")
 PARSERS_KEY = "parsers"
 PRESETS_KEY = "parser_presets"
 STATUS_PINS_KEY = "status_pins"  # PHASE-43: {card: [status keys told every time]}
@@ -133,7 +136,8 @@ def _refused(key: str, value: Any) -> bool:
     """A saved value of a STARTUP_CHECKED key that `Settings` would refuse."""
     coerced = _typed(EDITABLE[key], value)
     return (coerced is None or (key in RANGES and not RANGES[key][0] <= coerced <= RANGES[key][1])
-            or (key in CHOICES and coerced not in CHOICES[key]))
+            or (key in CHOICES and coerced not in CHOICES[key])
+            or (EDITABLE[key] is dict and extra_body_error(coerced) is not None))
 
 
 def effective(base: Settings, overrides: dict[str, Any]) -> Settings:
@@ -209,7 +213,7 @@ def ruleset(base: Settings, overrides: dict[str, Any]) -> RuleSet:
     return load_rules(base.parsers_file)
 
 
-_TYPE_NAMES = {bool: "a JSON boolean", int: "an integer", float: "a number", str: "a string"}
+_TYPE_NAMES = {bool: "a JSON boolean", int: "an integer", float: "a number", str: "a string", dict: "a JSON object"}
 
 
 def _typed(kind: type, value: Any) -> Any:
@@ -217,6 +221,8 @@ def _typed(kind: type, value: Any) -> Any:
     integer, any number as a float), else None. No truthiness or string parsing (#19)."""
     if kind is bool:
         return value if isinstance(value, bool) else None
+    if kind is dict:
+        return value if isinstance(value, dict) else None
     if isinstance(value, bool):
         return None  # bool is an int subclass: true is not 1 here
     if kind is int:
@@ -257,6 +263,12 @@ def validate_update(update: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             continue
         if value is None:
             clean[key] = None  # reset to the environment default
+            continue
+        if kind is dict:  # the extra request body (PHASE-61 S1): the reason names a key path, never the value
+            if (reason := extra_body_error(value)) is not None:
+                errors.append(f"{key}: {reason}")
+            else:
+                clean[key] = value
             continue
         coerced = _typed(kind, value)
         if coerced is None:
@@ -304,7 +316,8 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
     return {
         "install": settings.install or None,  # `bundle` from the portable launcher: the panel's Ollama address
         "llm": {"url": settings.llm_url, "model": settings.llm_model, "api_key_set": bool(settings.llm_api_key),
-                "json_mode": settings.llm_json_mode},
+                "json_mode": settings.llm_json_mode, "extra_body": settings.llm_extra_body,
+                "no_temperature": settings.llm_no_temperature},
         "embeddings": {"url": settings.embed_url, "model": settings.embed_model,
                        "api_key_set": bool(settings.embed_api_key),
                        "query_instruction": settings.embed_query_instruction},

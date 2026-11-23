@@ -2,12 +2,92 @@
 
 from __future__ import annotations
 
+import json
+import math
 import os
 from dataclasses import dataclass, field
+from typing import Any
 
 from . import rerank
 
 RERANK_TIMEOUT_MS = (50, 5000)  # PHASE-60 S5: the reranker's own wait, in milliseconds, inclusive
+
+# PHASE-61 S1 (ADR 0088 item 1): the extra request body merged into every chat-completions body of the extraction model.
+EXTRA_BODY_MAX_BYTES = 2048  # as canonical JSON (`canonical_body`), UTF-8
+EXTRA_BODY_MAX_DEPTH = 16  # nesting of objects and lists; deeper is refused before anything recurses into it
+# The request's own fields: JSON mode owns `response_format`, `llm_no_temperature` owns `temperature` (S1b).
+RESERVED_BODY_KEYS = frozenset({"model", "messages", "stream", "response_format", "temperature", "n", "tools",
+                                "tool_choice", "functions", "function_call"})
+# A key is credential-like when its name, lower-cased with `-` and `_` removed, contains one of these, or is one of
+# the token names. `token` alone is not a substring rule: `max_tokens` and `max_completion_tokens` are legitimate.
+CREDENTIAL_PARTS = ("apikey", "authorization", "secret", "password")
+CREDENTIAL_TOKENS = frozenset({"token", "accesstoken", "authtoken", "apitoken", "bearertoken", "refreshtoken",
+                               "idtoken", "sessiontoken"})
+
+
+def canonical_body(body: Any) -> str:
+    """The body as canonical JSON: sorted keys, no spaces, non-ASCII kept (the size limit is counted on it)."""
+    return json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+
+def credential_like(key: str) -> bool:
+    name = key.lower().replace("-", "").replace("_", "")
+    return any(part in name for part in CREDENTIAL_PARTS) or name in CREDENTIAL_TOKENS
+
+
+def _unstorable(text: str) -> bool:
+    """A NUL or a lone surrogate: PostgreSQL's JSONB refuses both, and neither belongs in a request."""
+    return "\x00" in text or any(0xD800 <= ord(ch) <= 0xDFFF for ch in text)
+
+
+def extra_body_error(body: Any) -> str | None:
+    """Why `body` may not be the extra request body (PHASE-61 S1), or None when it may. One check for the panel's save,
+    the settings test, a saved value read back and the environment. The reason names a key path, never a value."""
+    if not isinstance(body, dict):
+        return "must be a JSON object"
+    for key in body:
+        if key in RESERVED_BODY_KEYS:
+            return f"may not set {key!r}: the request sets it itself"
+    stack: list[tuple[Any, str, int]] = [(body, "", 1)]
+    while stack:  # iterative: a deeply nested value is refused, never a RecursionError
+        value, path, depth = stack.pop()
+        if isinstance(value, (dict, list)) and depth > EXTRA_BODY_MAX_DEPTH:
+            return f"is nested deeper than {EXTRA_BODY_MAX_DEPTH} levels"
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if not isinstance(key, str):
+                    return f"has a key that is not text{f' in {path}' if path else ''}"
+                if _unstorable(key):
+                    return f"has a key with a NUL or an unpaired surrogate{f' in {path}' if path else ''}"
+                where = f"{path}.{key}" if path else key
+                if credential_like(key):
+                    return (f"may not hold a credential-like key ({where}): an API key belongs in the key field, which"
+                            " is never shown or archived")
+                stack.append((item, where, depth + 1))
+        elif isinstance(value, list):
+            stack.extend((item, f"{path}[{i}]", depth + 1) for i, item in enumerate(value))
+        elif isinstance(value, float):
+            if not math.isfinite(value):
+                return f"holds a number JSON cannot carry at {path}"
+        elif isinstance(value, str):
+            if _unstorable(value):
+                return f"holds text with a NUL or an unpaired surrogate at {path}"
+        elif not (value is None or isinstance(value, (bool, int))):
+            return f"holds a value that is not JSON at {path}"
+    if len(canonical_body(body).encode("utf-8")) > EXTRA_BODY_MAX_BYTES:
+        return f"must be at most {EXTRA_BODY_MAX_BYTES} bytes as compact JSON"
+    return None
+
+
+def _env_extra_body() -> Any:
+    """`NMOS_LLM_EXTRA_BODY` as JSON text; unset or empty (as the compose files pass an unset variable) is `{}`."""
+    text = os.environ.get("NMOS_LLM_EXTRA_BODY", "").strip()
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except (ValueError, RecursionError):
+        raise ValueError("NMOS_LLM_EXTRA_BODY must be a JSON object: it is not valid JSON") from None
 
 
 @dataclass(frozen=True)
@@ -35,6 +115,13 @@ class Settings:
     llm_api_key: str = field(default_factory=lambda: os.environ.get("NMOS_LLM_API_KEY", ""))
     llm_json_mode: bool = field(default_factory=lambda: os.environ.get("NMOS_LLM_JSON_MODE", "1") != "0")
     llm_timeout_s: float = field(default_factory=lambda: float(os.environ.get("NMOS_LLM_TIMEOUT_S", "120")))
+    # PHASE-61 S1 (ADR 0088): a JSON object merged at the top level into every request to the extraction model (a
+    # reasoning effort, a provider preference); `{}` sends nothing more. Part of those generations only when not empty.
+    llm_extra_body: dict[str, Any] = field(default_factory=_env_extra_body, hash=False)
+    # PHASE-61 S1b: send no `temperature` (for a model that refuses one); off sends `temperature: 0` as before. Off when
+    # unset, empty or "0". Part of those generations (`temperature: null`) only when on.
+    llm_no_temperature: bool = field(
+        default_factory=lambda: os.environ.get("NMOS_LLM_NO_TEMPERATURE", "0") not in ("", "0"))
     # Previous turns an extraction sees as context (ADR 0008); part of the extractor generation.
     extract_turns: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_TURNS", "3")))
     # Known entity names shown to extraction (ADR 0012); 0 turns hints off. Part of the extractor generation.
@@ -130,3 +217,8 @@ class Settings:
         if not RERANK_TIMEOUT_MS[0] <= self.rerank_timeout_ms <= RERANK_TIMEOUT_MS[1]:
             raise ValueError(f"NMOS_RERANK_TIMEOUT_MS must be between {RERANK_TIMEOUT_MS[0]} and {RERANK_TIMEOUT_MS[1]},"
                              f" not {self.rerank_timeout_ms}")
+        # A body the panel would refuse (PHASE-61 S3): the message names the setting and the reason, never the value.
+        if (reason := extra_body_error(self.llm_extra_body)) is not None:
+            raise ValueError(f"NMOS_LLM_EXTRA_BODY {reason}")
+        if not isinstance(self.llm_no_temperature, bool):
+            raise ValueError("NMOS_LLM_NO_TEMPERATURE must be a boolean")
