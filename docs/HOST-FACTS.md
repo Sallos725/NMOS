@@ -608,6 +608,22 @@ length and SHA-256. Probe, scripts and output: `fixtures/host/upload-v1.13.0-202
 Conclusion: H23. What NMOS does with it: the panel's restore uploads an archive in 8 MB chunks as base64 in JSON, the
 form every panel call already uses (PHASE-38 Q3).
 
+## Keys on a prompt message (2026-11-23, Phase 60 S1)
+
+**Source reading only**, not a runtime observation (PocketRisu v1.17.0, the version the owner's
+`ghcr.io/pocketrisu/pocketrisu:latest` reports; `src/ts/process/index.svelte.ts`, the `OpenAIChat` type and the
+loop that builds the chat part of the prompt): each chat message is built as `{role, content, memo, attr,
+thoughts}`, where `memo` is the message's `chatId`, `attr` a list of strings and `thoughts` the reasoning text the
+host split out of that same message; `multimodals` is present only when the message carries images. The type also
+allows `name`, `removable` and `cachePoint`. `requestChatData` passes that list (`arg.formated`) to each
+`beforeRequest` replacer (`src/ts/process/request/request.ts`).
+
+Used for: the trim (PHASE-60 S1) drops a prompt message only when its keys are within `role`, `content`, `memo`,
+`attr`, `thoughts`; anything else (`multimodals`, `name`, tool calls, a cache point) refuses the whole trim as
+`format`. Allowing the three bookkeeping keys is safe whether or not the host sends them: a message is dropped
+together with its own bookkeeping. Not used: `memo` as the message's identity (the pointer match of `inContextIds`
+still matches by text); that needs a runtime observation first.
+
 ## Scenario evidence index
 
 | Scenario | Before fixture | After fixture | Other logs | Done |
