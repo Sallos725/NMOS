@@ -568,6 +568,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             packet=Packet(text=out["text"], token_estimate=out["tokens"], excerpt_count=out["count"]),
             memory=out.get("memory"),
             vectors=out.get("vectors"),
+            coverage=out.get("coverage"),
         )
 
     @app.post("/v1/output", status_code=202, dependencies=[Depends(auth)])

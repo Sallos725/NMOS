@@ -148,3 +148,56 @@ def test_coverage_reader_counts_older_extractor_generation(migrated):
         assert own == 0
         assert cov.recorded_through_turn == 5
         assert cov.served_turns == frozenset(range(6))
+
+
+def test_retrieve_always_returns_coverage(migrated):
+    with make_client(migrated, **SUMMARIES_ON) as client:
+        # Unknown conversation
+        unknown = client.post("/v1/retrieve", json={
+            "chat_id": "missing-chat", "query": "hello", "in_context_ids": [], "budget_tokens": 600,
+        })
+        assert unknown.status_code == 200
+        assert unknown.json()["freshness"] == "unknown_conversation"
+        assert unknown.json()["coverage"] == {"recorded_through_turn": None, "covered_through_turn": None}
+
+        # Unextracted chat
+        chat = story_chat(16)
+        chat.user("Question about Turn 0?")
+        first = sync(client, chat)
+        res = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "Question about Turn 0?",
+            "in_context_ids": [m["chatId"] for m in chat.messages[-4:]], "budget_tokens": 600,
+        })
+        assert res.status_code == 200
+        assert res.json()["coverage"] == {"recorded_through_turn": None, "covered_through_turn": None}
+
+        # Extracted, not yet summarized
+        extract(migrated)
+        res = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "Question about Turn 0?",
+            "in_context_ids": [m["chatId"] for m in chat.messages[-4:]], "budget_tokens": 600,
+        })
+        assert res.status_code == 200
+        assert res.json()["coverage"] == {"recorded_through_turn": 15, "covered_through_turn": None}
+
+        # Summarized (window 0..7 covered)
+        assert drain_summaries(migrated) >= 1
+        res = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "Question about Turn 0?",
+            "in_context_ids": [m["chatId"] for m in chat.messages[-4:]], "budget_tokens": 600,
+        })
+        assert res.status_code == 200
+        assert res.json()["coverage"] == {"recorded_through_turn": 15, "covered_through_turn": 7}
+
+        # Stale request still carries coverage
+        chat.reply("New reply.")
+        chat.user("Another question.")
+        sync(client, chat)
+        stale = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "Another question.",
+            "active_commit": first["active_commit"], "manifest_hash": first["manifest_hash"],
+            "in_context_ids": [m["chatId"] for m in chat.messages[-4:]], "budget_tokens": 600,
+        })
+        assert stale.status_code == 200
+        assert stale.json()["freshness"] == "stale"
+        assert stale.json()["coverage"] == {"recorded_through_turn": 15, "covered_through_turn": 7}

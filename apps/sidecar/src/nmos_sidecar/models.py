@@ -151,6 +151,12 @@ class MemoryFit(BaseModel):
     fits_at: int | None = None
 
 
+class CoverageResponse(BaseModel):
+    """Extraction and scene-summary coverage of the head as of the request (PHASE-60 S1)."""
+    recorded_through_turn: int | None = None
+    covered_through_turn: int | None = None
+
+
 class RetrieveResponse(BaseModel):
     trace_id: UUID
     freshness: Literal["fresh", "stale", "unknown_conversation"]
@@ -159,6 +165,7 @@ class RetrieveResponse(BaseModel):
     # Whether vector search ran (PHASE-15 Q5, K34): "on", "off" (no embedder, or nothing to search), or "fallback" (the
     # embedder failed or did not answer in time, so recall was lexical only). None: not recalled (stale or unknown).
     vectors: Literal["on", "off", "fallback"] | None = None
+    coverage: CoverageResponse | None = None
 
 
 class OutputRequest(BaseModel):

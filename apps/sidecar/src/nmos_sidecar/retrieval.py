@@ -23,7 +23,7 @@ from psycopg.types.json import Jsonb
 
 from .entities import PERSONA, norm
 from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, lexically_related, memory_view, relevant_facts, thread_entry
-from . import overuse, quotes, scene, spans, statechange, summaries, variants, source_time
+from . import coverage, overuse, quotes, scene, spans, statechange, summaries, variants, source_time
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
@@ -916,6 +916,7 @@ class Gathered:
     secret_pairs: set[tuple[frozenset[str], frozenset[str]]] = field(default_factory=set)  # (holders, absent) given a Secret line
     story: list[Line] = field(default_factory=list)  # summaries (packet-v8, ADR 0043)
     cast_lines: list[tuple[str, list[Line]]] = field(default_factory=list)  # each scene character's state (packet-v8)
+    secrets: list[dict[str, Any]] | None = None  # head secrets from view, reused by coverage without a second read
 
 
 def persona_question_names(r: Any) -> frozenset[str]:
@@ -1320,6 +1321,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                  for _, value, _ in clock.fields)}
         g.source_clocks = clocks
         g.timings["source_clock"] = round((time.perf_counter() - started_clock) * 1000, 2)
+    if view is not None:
+        g.secrets = view["secrets"]
     return g
 
 
@@ -1696,7 +1699,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     started = time.perf_counter()
     conv = find_conversation(conn, request.host, request.chat_id)
     if conv is None or conv.head_commit_id is None:
-        return {"freshness": "unknown_conversation", "trace_id": None, "text": "", "tokens": 0, "count": 0}
+        return {"freshness": "unknown_conversation", "trace_id": None, "text": "", "tokens": 0, "count": 0,
+                "coverage": {"recorded_through_turn": None, "covered_through_turn": None}}
     # The head, its manifest hash and its end in one statement, and every read below bounded by that end: recall
     # takes no conversation lock, and a concurrent sync's append extends the head commit in place (D4).
     snap = conn.execute(
@@ -1781,6 +1785,9 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             Jsonb(sorted(set(getattr(request, "canon_held", None) or []))),
         ),
     )
+    cov = coverage.read(conn, conv.id, head, options.summarize_key, extractor_key=options.extractor_key,
+                        secrets=g.secrets if fresh else None, upto=upto)
     return {"freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": compiled.text,
             "tokens": compiled.tokens, "count": len(compiled.excerpts), "memory": memory, "conversation_id": conv.id,
-            "vectors": ("fallback" if g.vector_note.startswith("fallback") else g.vector_note) if fresh else None}
+            "vectors": ("fallback" if g.vector_note.startswith("fallback") else g.vector_note) if fresh else None,
+            "coverage": cov.response_dict()}
