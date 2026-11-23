@@ -23,6 +23,11 @@ import type { BulkMark, BulkRequest, EntityRow, ExcludePreview, Preview, RepairA
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
 import { coverageLine, trimStatusLine } from './trimtext';
+import {
+  CARRY_MAX_NAMES, carryCountsLine, carryCutoffLabel, carryErrorText, carrySourceLabel,
+  isCarryConflict, isCarryNotFound, parseCutoffTurn,
+  type CarryMode, type CarryPreview, type CarryRequestBody, type CarryState,
+} from './carrytext';
 import { uploadArchive, waitFor, type ArchiveSummary, type Method } from './restore';
 import { usageText, type UsageTotal } from './usage';
 
@@ -3067,10 +3072,373 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('div', { class: 'maint-list' }, ...maintRows),
       actionMsg);
     const pinsCard = el('div', { class: 'card' }, el('h2', { text: L('pins.title') }), el('p', { class: 'sub', text: L('pin.sub') }));
-    chatPage.replaceChildren(switchSlot, modeCard, statusCard, pinsCard, maintCard);
+    const carryCard = el('div', { class: 'card', style: 'display:none' });
+    chatPage.replaceChildren(switchSlot, modeCard, statusCard, pinsCard, carryCard, maintCard);
     void showPins(cid, pinsCard);
+    void showCarry(cid, carryCard);
     void showMode(cid, loads);
     void showStatusWindows(cid, loads);
+  }
+  /** Carry another chat's memory (PHASE-60 S6, ADR 0085): preview before linking, 409 refresh, read again, two-tap unlink. */
+  async function showCarry(conversation: string, card: HTMLElement, said?: StringKey): Promise<void> {
+    let state: CarryState;
+    try {
+      const res = await deps.api<CarryState>('GET', `/v1/conversations/${conversation}/carry`, undefined, 15_000);
+      if (!res || typeof res !== 'object' || !('in_force' in res)) {
+        card.style.display = 'none';
+        card.replaceChildren();
+        return;
+      }
+      state = res;
+    } catch (error) {
+      if (!card.isConnected || actionConversation !== conversation) return;
+      if (isCarryNotFound(error)) {
+        card.style.display = 'none';
+        card.replaceChildren();
+        return;
+      }
+      const errMsg = el('div', { class: 'msg', role: 'status' });
+      say(errMsg, carryErrorText(lang, error, errorText), 'err');
+      card.replaceChildren(el('h2', { text: L('carry.title') }), el('p', { class: 'sub', text: L('carry.sub') }), errMsg);
+      card.style.display = '';
+      return;
+    }
+    if (!card.isConnected || actionConversation !== conversation) return;
+
+    const msg = el('div', { class: 'msg', role: 'status' });
+    if (said) say(msg, L(said), 'ok');
+    const previewSpot = el('div');
+
+    async function openPreview(
+      trigger: HTMLButtonElement,
+      req: { source_conversation_id: string; mode: CarryMode; entity_names: string[]; cutoff_turn: number | null },
+      changed = false,
+    ): Promise<void> {
+      const round = nextRound(previewSpot);
+      say(msg, '');
+      trigger.disabled = true;
+      // Regression needs 1-8 names; when none are picked yet, preview in continue mode first to list the source's characters.
+      const discover = req.mode === 'regression' && req.entity_names.length === 0;
+      const body: CarryRequestBody = {
+        source_conversation_id: req.source_conversation_id,
+        mode: discover ? 'continue' : req.mode,
+        entity_names: discover ? [] : [...req.entity_names],
+        cutoff_turn: req.cutoff_turn,
+      };
+      let first: CarryPreview;
+      try {
+        first = await deps.api<CarryPreview>('POST', `/v1/conversations/${conversation}/carry/preview`, body, 15_000);
+      } catch (error) {
+        if (previewRound.get(previewSpot) !== round) return;
+        say(msg, carryErrorText(lang, error, errorText), 'err');
+        trigger.disabled = false;
+        return;
+      }
+      if (previewRound.get(previewSpot) !== round) return;
+
+      let active: CarryPreview | null = discover ? null : first;
+      let pickedNames: string[] = discover ? [] : [...req.entity_names];
+      const detailsSpot = el('div');
+      const ok = el('button', { class: 'primary', text: L('carry.link_btn') });
+      const cancel = el('button', { text: L('cancel') });
+      ok.disabled = active === null;
+
+      function renderDetails(pv: CarryPreview | null, loading = false): void {
+        if (loading) {
+          detailsSpot.replaceChildren(el('div', { class: 'muted', text: L('carry.loading') }));
+          return;
+        }
+        if (!pv) {
+          const hint = first.characters.length ? L('carry.pv_chars_pick') : L('carry.pv_chars_none');
+          detailsSpot.replaceChildren(el('div', { class: 'muted', text: hint }));
+          return;
+        }
+        const modeText = L(pv.mode === 'regression' ? 'carry.mode_regression' : 'carry.mode_continue');
+        const headLine = L('carry.pv_source', {
+          source: carrySourceLabel(pv.source),
+          mode: modeText,
+          cutoff: carryCutoffLabel(lang, pv.cutoff.turn),
+        });
+        const items: HTMLElement[] = [
+          el('div', { text: headLine }),
+          el('div', { text: carryCountsLine(lang, pv.counts) }),
+        ];
+        if (pv.first_lines.length) {
+          items.push(
+            el('div', { class: 'muted', style: 'margin-top:6px', text: L('carry.pv_lines') }),
+            ...pv.first_lines.map((line) => el('div', { text: `· ${line}` })),
+          );
+        } else {
+          items.push(el('div', { class: 'muted', text: L('carry.pv_lines_empty') }));
+        }
+        if (pv.replaces) items.push(el('div', { class: 'warn', style: 'margin-top:6px', text: L('carry.pv_replaces') }));
+        detailsSpot.replaceChildren(...items);
+      }
+
+      const box = el('div', { class: 'preview' }, el('b', { text: L('carry.pv_title') }));
+      if (changed) box.append(el('div', { class: 'warn', text: L('carry.changed') }));
+
+      if (req.mode === 'regression') {
+        const chars = first.characters ?? [];
+        const allChars = [...chars, ...pickedNames.filter((n) => !chars.includes(n))];
+        box.append(el('div', { style: 'margin-top:6px;font-weight:500', text: L('carry.pv_chars') }));
+        if (allChars.length) {
+          const boxes: HTMLInputElement[] = [];
+          const syncCap = () => {
+            const count = boxes.filter((b) => b.checked).length;
+            for (const b of boxes) b.disabled = !b.checked && count >= CARRY_MAX_NAMES;
+          };
+          const charList = el('div', { class: 'pins' }, ...allChars.map((name) => {
+            const cb = el('input', { type: 'checkbox', value: name });
+            cb.checked = pickedNames.includes(name);
+            boxes.push(cb);
+            cb.addEventListener('change', async () => {
+              syncCap();
+              const chosen = boxes.filter((b) => b.checked).map((b) => b.value);
+              pickedNames = chosen;
+              say(msg, '');
+              if (chosen.length === 0) {
+                nextRound(previewSpot);
+                active = null;
+                ok.disabled = true;
+                renderDetails(null);
+                return;
+              }
+              const subRound = nextRound(previewSpot);
+              active = null;
+              ok.disabled = true;
+              renderDetails(null, true);
+              try {
+                const pv = await deps.api<CarryPreview>('POST', `/v1/conversations/${conversation}/carry/preview`, {
+                  source_conversation_id: req.source_conversation_id,
+                  mode: 'regression',
+                  entity_names: chosen,
+                  cutoff_turn: req.cutoff_turn,
+                }, 15_000);
+                if (previewRound.get(previewSpot) !== subRound) return;
+                active = pv;
+                renderDetails(pv);
+                ok.disabled = false;
+              } catch (error) {
+                if (previewRound.get(previewSpot) !== subRound) return;
+                renderDetails(null);
+                say(msg, carryErrorText(lang, error, errorText), 'err');
+              }
+            });
+            return el('label', { class: 'check' }, cb, el('span', { text: name }));
+          }));
+          syncCap();
+          box.append(charList);
+        }
+      }
+
+      renderDetails(active);
+      cancel.addEventListener('click', () => {
+        nextRound(previewSpot);
+        previewSpot.replaceChildren();
+        trigger.disabled = false;
+        say(msg, '');
+      });
+      ok.addEventListener('click', async () => {
+        if (!active) return;
+        const chosenNames = req.mode === 'regression' ? [...pickedNames] : [];
+        if (req.mode === 'regression' && chosenNames.length === 0) return;
+        ok.disabled = true;
+        say(msg, '');
+        const linkBody: CarryRequestBody = {
+          source_conversation_id: req.source_conversation_id,
+          mode: req.mode,
+          entity_names: chosenNames,
+          cutoff_turn: req.cutoff_turn,
+          expect: active.fingerprint,
+        };
+        try {
+          await deps.api('POST', `/v1/conversations/${conversation}/carry`, linkBody, 15_000);
+          previewSpot.replaceChildren();
+          await showCarry(conversation, card, 'carry.linked');
+        } catch (error) {
+          if (isCarryConflict(error)) {
+            void openPreview(trigger, {
+              source_conversation_id: req.source_conversation_id,
+              mode: req.mode,
+              entity_names: chosenNames,
+              cutoff_turn: req.cutoff_turn,
+            }, true);
+            return;
+          }
+          say(msg, carryErrorText(lang, error, errorText), 'err');
+          ok.disabled = false;
+        }
+      });
+
+      box.append(
+        detailsSpot,
+        el('p', { class: 'sub', style: 'margin-top:8px', text: L('carry.pv_notice') }),
+        el('div', { class: 'btns' }, ok, cancel),
+      );
+      previewSpot.replaceChildren(box);
+    }
+
+    if (state.in_force) {
+      const link = state.in_force;
+      const modeText = L(link.mode === 'regression' ? 'carry.mode_regression' : 'carry.mode_continue');
+      const lt = localTime(link.created_at, lang);
+      const takenEl = el('div', { class: 'muted', text: L('carry.taken_at', { time: lt ? lt.text : link.created_at }) });
+      if (lt) takenEl.title = lt.title;
+      const summaryLines: HTMLElement[] = [
+        el('div', { class: 'line' },
+          el('span', { class: 'badge b-info', text: L('carry.linked_badge') }),
+          el('strong', { text: carrySourceLabel(link.source) })),
+        el('div', { text: `${modeText} · ${carryCutoffLabel(lang, link.cutoff_turn)}` }),
+      ];
+      if (link.mode === 'regression' && link.entity_names.length) {
+        summaryLines.push(el('div', { text: L('carry.only_remember', { names: link.entity_names.join(', ') }) }));
+      }
+      summaryLines.push(takenEl);
+
+      const readAgainBtn = el('button', { text: L('carry.read_again') });
+      const unlinkBtn = el('button', { text: L('carry.unlink') });
+      let unlinkArmed = false;
+      let unlinkTimer = 0;
+      const disarmUnlink = () => {
+        window.clearTimeout(unlinkTimer);
+        unlinkArmed = false;
+        unlinkBtn.textContent = L('carry.unlink');
+        unlinkBtn.className = '';
+      };
+
+      readAgainBtn.addEventListener('click', () => {
+        disarmUnlink();
+        void openPreview(readAgainBtn, {
+          source_conversation_id: link.source_conversation_id,
+          mode: link.mode,
+          entity_names: [...link.entity_names],
+          cutoff_turn: link.cutoff_turn,
+        });
+      });
+
+      unlinkBtn.addEventListener('click', async () => {
+        if (!unlinkArmed) {
+          unlinkArmed = true;
+          unlinkBtn.textContent = L('carry.unlink_confirm');
+          unlinkBtn.className = 'danger';
+          unlinkTimer = window.setTimeout(disarmUnlink, 6000);
+          return;
+        }
+        disarmUnlink();
+        nextRound(previewSpot);
+        previewSpot.replaceChildren();
+        readAgainBtn.disabled = true;
+        unlinkBtn.disabled = true;
+        say(msg, '');
+        try {
+          await deps.api('DELETE', `/v1/conversations/${conversation}/carry`, undefined, 15_000);
+          await showCarry(conversation, card, 'carry.unlinked');
+        } catch (error) {
+          readAgainBtn.disabled = false;
+          unlinkBtn.disabled = false;
+          say(msg, carryErrorText(lang, error, errorText), 'err');
+        }
+      });
+
+      card.replaceChildren(
+        el('h2', { text: L('carry.title') }),
+        el('p', { class: 'sub', text: L('carry.sub') }),
+        ...summaryLines,
+        el('div', { class: 'btns' }, readAgainBtn, unlinkBtn),
+        previewSpot,
+        msg,
+      );
+      card.style.display = '';
+      return;
+    }
+
+    if (!knownChats.length) {
+      try {
+        const rows = await deps.api<{
+          id: string; host_character_name?: string | null; host_chat_name?: string | null;
+          title?: string | null; messages?: number; message_count?: number;
+        }[]>('GET', '/v1/conversations?host=pocketrisu', undefined, 5000);
+        if (Array.isArray(rows) && rows.length) {
+          knownChats = rows.map((r) => {
+            const ch = (r.host_character_name ?? '').trim();
+            const ti = (r.host_chat_name ?? r.title ?? '').trim();
+            const name = ch && ti && ti !== ch ? `${ch} · ${ti}` : (ch || ti || r.id.slice(0, 8));
+            const turns = typeof r.messages === 'number' ? r.messages
+              : (typeof r.message_count === 'number' ? r.message_count : undefined);
+            return { id: r.id, name, character: ch, title: ti, turns };
+          });
+        }
+      } catch { /* keep empty list if chat listing fails */ }
+      if (!card.isConnected || actionConversation !== conversation) return;
+    }
+
+    const choices = knownChats.filter((c) => c.id !== conversation);
+    if (!choices.length) {
+      card.replaceChildren(
+        el('h2', { text: L('carry.title') }),
+        el('p', { class: 'sub', text: L('carry.sub') }),
+        el('div', { class: 'muted', text: L('carry.no_other') }),
+        msg,
+      );
+      card.style.display = '';
+      return;
+    }
+
+    const sourceSelect = el('select', { 'aria-label': L('carry.source') },
+      ...choices.map((c) => el('option', { value: c.id, text: c.name })));
+    const radioName = `nmos-carry-mode-${conversation}`;
+    const continueRadio = el('input', { type: 'radio', name: radioName, value: 'continue' });
+    continueRadio.checked = true;
+    const regressionRadio = el('input', { type: 'radio', name: radioName, value: 'regression' });
+    const cutoffInput = el('input', {
+      type: 'number', min: '0', step: '1',
+      placeholder: L('carry.cutoff_placeholder'),
+      'aria-label': L('carry.cutoff'),
+    });
+    const previewBtn = el('button', { class: 'primary', text: L('carry.preview_btn') });
+
+    const resetPreview = () => {
+      nextRound(previewSpot);
+      previewSpot.replaceChildren();
+      previewBtn.disabled = false;
+      say(msg, '');
+    };
+    sourceSelect.addEventListener('change', resetPreview);
+    continueRadio.addEventListener('change', resetPreview);
+    regressionRadio.addEventListener('change', resetPreview);
+    cutoffInput.addEventListener('input', resetPreview);
+
+    previewBtn.addEventListener('click', () => {
+      const parsed = parseCutoffTurn(cutoffInput.value);
+      if (cutoffInput.validity?.badInput || !parsed.ok) {
+        say(msg, L('carry.cutoff_invalid'), 'err');
+        return;
+      }
+      const mode: CarryMode = regressionRadio.checked ? 'regression' : 'continue';
+      void openPreview(previewBtn, {
+        source_conversation_id: sourceSelect.value,
+        mode,
+        entity_names: [],
+        cutoff_turn: parsed.value,
+      });
+    });
+
+    card.replaceChildren(
+      el('h2', { text: L('carry.title') }),
+      el('p', { class: 'sub', text: L('carry.sub') }),
+      field(L('carry.source'), sourceSelect),
+      el('label', { text: L('carry.mode') }),
+      el('label', { class: 'check' }, continueRadio, el('strong', { text: L('carry.mode_continue') })),
+      el('p', { class: 'sub', text: L('carry.mode_continue_desc') }),
+      el('label', { class: 'check' }, regressionRadio, el('strong', { text: L('carry.mode_regression') })),
+      el('p', { class: 'sub', text: L('carry.mode_regression_desc') }),
+      field(L('carry.cutoff'), cutoffInput),
+      el('div', { class: 'btns' }, previewBtn),
+      previewSpot,
+      msg,
+    );
+    card.style.display = '';
   }
   /** This chat's pinned characters (ADR 0087), each with its Unpin; a list that fails is said in the card only. */
   async function showPins(conversation: string, card: HTMLElement, said?: StringKey): Promise<void> {
