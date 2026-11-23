@@ -15,12 +15,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import summaries
+from . import canonfacts, summaries
 from .ids import uuid7
 from .entities import PERSONA, Resolution
 from .facts import fact_text, memory_view
@@ -30,6 +30,8 @@ MAX_ROWS = 2000
 MAX_NAMES = 8
 FIRST_LINES = 8
 MODES: tuple[str, ...] = ("continue", "regression")
+# Carried rows sort after the target's canon (canonfacts.POSITION_BASE + i) and before turn 0 (positions start at 0).
+CARRY_BASE = canonfacts.POSITION_BASE // 2
 
 # The fields a snapshot row keeps. No verbatim message text (`evidence`, an owner correction's note) is stored: a
 # row's provenance is the ids in its `from`, and a reader that shows a quote reads it from the source through `from`.
@@ -493,6 +495,75 @@ def preview_of(
         "fingerprint": reading["fingerprint"],
         "replaces": str(replaces) if replaces is not None else None,
     })
+
+
+@dataclass(frozen=True)
+class Carried:
+    """What a target chat's read takes from its link in force (`target_rows`). Pure data, never changed by a read."""
+
+    link: str  # the link id
+    source: str  # the source conversation id
+    mode: str  # "continue" | "regression"
+    names: tuple[str, ...]
+    rows: tuple[dict[str, Any], ...]  # continue: assertion-like rows for the fold and the target's Resolution
+    regression: tuple[dict[str, Any], ...]  # regression: the stored rows, each with "line": "fact" | "thread"
+    story: dict[str, Any] | None  # continue: the snapshot's story, else None
+
+
+def _carried_id(link_id: str, kind: str, index: int) -> int:
+    """A stable negative row id, unique per (link, kind, index): never an assertion's (those are positive)."""
+    return -(uuid5(UUID(link_id), f"{kind}:{index}").int % 2**62) - 1
+
+
+def _carried_row(stored: Mapping[str, Any], link_id: str, kind: str, index: int, position: int,
+                 provenance: Any) -> dict[str, Any]:
+    """A new assertion-like row from a stored snapshot row: before turn 0 at `position`, flagged `carried`."""
+    row = {k: _plain(v) for k, v in stored.items() if k not in ("from", "opening")}
+    participants = row.get("participants")
+    row.update(
+        id=_carried_id(link_id, kind, index), position=position, turn=-1,
+        turn_hash=f"carried:{link_id}", host_logical_id=f"carried:{link_id}", listed_hash=None,
+        generation=(provenance or {}).get("generation"), compiler=stored.get("compiler"), evidence="",
+        participants=tuple(dict(p) for p in participants) if participants else None,
+        known_by=list(row["known_by"]) if row.get("known_by") else None,
+        hidden_from=list(row["hidden_from"]) if row.get("hidden_from") else None,
+        modality=row.get("modality") or "actual", source=row.get("source") or "narration",
+        carried=link_id, carried_from=_plain(provenance),
+    )
+    for field in ("subject", "subject_type", "object", "object_type", "value", "polarity"):
+        row.setdefault(field, None)
+    return row
+
+
+def target_rows(link: Mapping[str, Any]) -> Carried:
+    """What a target's read carries from `link`, a link row with its `snapshot` (as `in_force` or `by_id` return it).
+
+    `continue`: the snapshot's facts oldest first, then each open thread's opening, then the aliases as `also_called`
+    rows, each a new row before turn 0 (position CARRY_BASE + i, turn -1) with a negative id and `carried` set to the
+    link id. `regression`: no rows; copies of the stored facts and threads, kept apart. Pure."""
+    link_id, source = str(link["id"]), str(link["source_conversation_id"])
+    snap: Mapping[str, Any] = link.get("snapshot") or {}
+    mode = str(link.get("mode") or snap.get("mode"))
+    names = tuple(str(n) for n in (snap.get("names") or link.get("entity_names") or ()))
+    if mode == "regression":
+        kept = [{**_plain(dict(f)), "line": "fact"} for f in snap.get("facts") or ()]
+        kept += [{**_plain(dict(t)), "line": "thread"} for t in snap.get("threads") or ()]
+        for row in kept:
+            row["carried"], row["carried_from"] = link_id, row.get("from")
+        return Carried(link_id, source, mode, names, (), tuple(kept), None)
+    rows: list[dict[str, Any]] = []
+    for i, f in enumerate(reversed(list(snap.get("facts") or ()))):  # stored newest first
+        rows.append(_carried_row(f, link_id, "fact", i, CARRY_BASE + len(rows), f.get("from")))
+    for i, t in enumerate(snap.get("threads") or ()):
+        if t.get("opening"):
+            rows.append(_carried_row(t["opening"], link_id, "thread", i, CARRY_BASE + len(rows), t.get("from")))
+    for i, a in enumerate(snap.get("aliases") or ()):
+        alias = {"subject": a.get("name"), "subject_type": a.get("entity_type"), "value": a.get("alias"),
+                 "predicate": "also_called", "modality": "actual", "source": "narration", "polarity": "positive",
+                 "object": None, "object_type": None}
+        rows.append(_carried_row(alias, link_id, "alias", i, CARRY_BASE + len(rows), a.get("from")))
+    story = snap.get("story")
+    return Carried(link_id, source, mode, names, tuple(rows), (), _plain(dict(story)) if story else None)
 
 
 # --- database reading -------------------------------------------------------------------------------------------
