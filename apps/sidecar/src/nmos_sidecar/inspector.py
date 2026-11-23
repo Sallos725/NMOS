@@ -80,6 +80,12 @@ details.meta{margin:6px 0 0;font-size:13px;background:var(--sunken);border:1px s
 LANGS = ("ko", "en")
 
 T: dict[str, tuple[str, str]] = {  # key: (ko, en)
+    "told": ("누가 누구에게 들었나", "Who told whom"),
+    "toc.told": ("누가 누구에게 들었나", "Who told whom"),
+    "h.told_chain": ("누가 누구에게", "Who to whom"),
+    "h.told_what": ("내용", "What"),
+    "h.told_about": ("관련 인물", "About"),
+    "h.told_turn": ("턴", "Turn"),
     "title": ("NMOS 인스펙터", "NMOS inspector"),
     "new_views": ("새 화면으로 보기 (채팅 목록 · 허브 · 기억)", "Open the new screens (chats · hub · memory)"),
     "intro": ("원장(source ledger) 읽기 전용 화면입니다. 백그라운드 작업:", "Read-only view of the source ledger. Background jobs:"),
@@ -1873,6 +1879,10 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
             [t(k) for k in ("h.secret", "h.holders", "h.turn", "h.found", "h.evidence")],
             [[_v(s["text"]), _v(", ".join(s["holders"])), _turn(s), _turn(when(s)), _v(when(s).get("evidence") or "")]
              for s in found[:100]]), True))
+    if told_rows := view.get("told"):
+        from .memorymap import told_chains
+        if chains := told_chains(told_rows):
+            parts.append(("told", t("told"), len(chains), _told_table(chains, lang), True))
     if claims:
         parts.append(("claims", t("who_claims"), len(claims), _claims_table(claims, lang), True))
     if other:
@@ -1957,3 +1967,26 @@ def source_turn(conv: dict[str, Any], turn: int, messages: list[dict[str, Any]],
                                 ("used", t("toc.used"), len(uses), used, True)]
         body = head + sections(lang, parts)
     return body if embed else page(f"NMOS · {title}", body, lang, token)
+
+
+def _told_table(chains: list[list[dict[str, Any]]], lang: str) -> str:
+    """Render grouped `told` chains as an Inspector table (PHASE-60 S8), oldest first."""
+    t = lambda k: _t(lang, k)
+    table_rows = []
+    for chain in chains:
+        people = [chain[0]["teller"], *(link["hearer"] for link in chain)]
+        who = " → ".join(_v(name) for name in people)
+        about = list(dict.fromkeys(w for link in chain for w in link.get("about") or ()))
+        turns = [turn_link(link["turn"]) for link in chain
+                 if isinstance(link.get("turn"), int) and not isinstance(link.get("turn"), bool)]
+        table_rows.append([who, _v(chain[0]["what"]), _v(", ".join(about)), " → ".join(turns)])
+    return table([t("h.told_chain"), t("h.told_what"), t("h.told_about"), t("h.told_turn")], table_rows)
+
+
+def told_section(rows: list[dict[str, Any]] | None, lang: str = "ko") -> str:
+    """Who told whom chains as an Inspector section body (PHASE-60 S8), oldest first; empty without rows."""
+    if not rows:
+        return ""
+    from .memorymap import told_chains
+    chains = told_chains(rows)
+    return _told_table(chains, lang) if chains else ""

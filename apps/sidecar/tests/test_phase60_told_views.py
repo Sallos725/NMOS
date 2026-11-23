@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 import re
 
-from nmos_sidecar import memorymap, views
+from nmos_sidecar import inspector, memorymap, views
 
 CID = "0190f3a4-1b2c-7d3e-8f40-60000000c0de"
 SERA, KAITO, HANA, YUNA = (f"0190f3a4-1b2c-7d3e-8f40-0000000000{i:02x}" for i in range(1, 5))
@@ -211,3 +211,55 @@ def test_memory_map_without_told_is_unchanged():
     assert 'id="s-told"' not in base_ko and 'id="s-told"' not in base_en
     assert views.memory_map(_map_data(told=[]), "ko") == base_ko
     assert views.memory_map(_map_data(told=[]), "en") == base_en
+
+
+# --- inspector.told_section and inspector.character -------------------------------------------------------------------
+
+def test_inspector_told_section_empty_lines_turn_links_and_escaping():
+    assert inspector.told_section([], "ko") == ""
+    assert inspector.told_section(None, "en") == ""
+
+    rows = [
+        told_row("세라", "카이토", "<b>지도는 가짜다</b>", turn=5, about=["<b>유나</b>"]),
+        told_row("카이토", "하나", "<b>지도는 가짜다</b>", turn=12),
+    ]
+    with inspector.turn_links(CID, None, "ko"):
+        ko = inspector.told_section(rows, "ko")
+    assert "<th>누가 누구에게</th><th>내용</th><th>관련 인물</th><th>턴</th>" in ko
+    assert "세라 → 카이토 → 하나" in ko
+    assert "&lt;b&gt;지도는 가짜다&lt;/b&gt;" in ko and "<b>" not in ko
+    assert "&lt;b&gt;유나&lt;/b&gt;" in ko
+    assert f'<a href="/inspector/c/{CID}/t/5">5</a> → <a href="/inspector/c/{CID}/t/12">12</a>' in ko
+    assert "mono" not in ko
+
+    with inspector.turn_links(CID, "tok", "en"):
+        en = inspector.told_section(rows, "en")
+    assert "<th>Who to whom</th><th>What</th><th>About</th><th>Turn</th>" in en
+    assert f'<a href="/inspector/c/{CID}/t/5?token=tok&lang=en">5</a>' in en
+
+
+def test_inspector_character_page_includes_told_section_only_when_present():
+    conv = {"id": CID, "host_chat_ref": "chat-1", "head_commit_id": "head-1",
+            "host_character_name": "세라", "host_chat_name": "등대"}
+    base_view: dict[str, Any] = {
+        "entities": [
+            {"id": SERA, "type": "character", "name": "세라", "names": ["세라"], "mentions": 3,
+             "aliases": [], "links": [], "persona": False},
+            {"id": KAITO, "type": "character", "name": "카이토", "names": ["카이토"], "mentions": 2,
+             "aliases": [], "links": [], "persona": False},
+        ],
+        "facts": [], "claims": [], "other": [], "conflicts": [], "threads": [], "secrets": [],
+    }
+    rows = [told_row("세라", "카이토", "종이 사라졌다", turn=8, about=["하나"])]
+    with inspector.turn_links(CID, None, "ko"):
+        without = inspector.character(conv, SERA, base_view, None, lang="ko", embed=True)
+        empty = inspector.character(conv, SERA, {**base_view, "told": []}, None, lang="ko", embed=True)
+        shown = inspector.character(conv, SERA, {**base_view, "told": rows}, None, lang="ko", embed=True)
+    assert 'id="s-told"' not in without and empty == without
+    assert 'id="s-told"' in shown and 'href="#s-told"' in shown
+    assert "누가 누구에게 들었나" in shown and "세라 → 카이토" in shown and "종이 사라졌다" in shown
+    assert f'<a href="/inspector/c/{CID}/t/8">8</a>' in shown
+
+    with inspector.turn_links(CID, None, "en"):
+        shown_en = inspector.character(conv, SERA, {**base_view, "told": rows}, None, lang="en", embed=True)
+    assert "Who told whom" in shown_en and f'<a href="/inspector/c/{CID}/t/8?lang=en">8</a>' in shown_en
