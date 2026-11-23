@@ -136,6 +136,15 @@ def test_the_worker_formats_v18_as_before(migrated):
         assert P.registry_prompt() in system
 
 
+@pytest.mark.parametrize("roles", [True, False])
+def test_a7_v19_grows_the_prompt_by_at_most_15_percent(roles):
+    v18, v19 = X.prompt_of("extract-v18", roles), X.prompt_of("extract-v19", roles)
+    assert len(v19) <= 1.15 * len(v18)
+    formatted18 = v18.format(registry=P.registry_prompt())
+    formatted19 = v19.format(registry=P.registry_prompt(compiler="extract-v19"))
+    assert len(formatted19) <= 1.15 * len(formatted18)
+
+
 def test_settings_accept_v19_and_refuse_a_later_name():
     assert Settings(database_url="", extract_compiler="extract-v19").extract_compiler == "extract-v19"
     with pytest.raises(ValueError, match="extract-v19"):
