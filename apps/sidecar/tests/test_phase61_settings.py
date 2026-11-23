@@ -76,6 +76,47 @@ def test_a_credential_like_key_is_refused_at_any_depth(key):
         assert CREDENTIAL not in reason
 
 
+@pytest.mark.parametrize("key", [
+    # other separators, and names outside the first list (review F1)
+    "api.key", "API.Key", "oauth_token", "x_token", "xToken", "bearer", "Bearer", "auth", "AUTH", "key",
+    "access_key", "accessKey", "private_key", "privateKey", "credentials", "credential", "cookie", "set-cookie",
+    "passwd", "subscription_key", "Ocp-Apim-Subscription-Key",
+])
+def test_more_credential_like_names_are_refused_at_any_depth(key):
+    for body in ({key: CREDENTIAL}, {"provider": {key: 1}}, {"list": [{"deeper": [{key: None}]}]}):
+        reason = extra_body_error(body)
+        assert reason is not None and "credential-like" in reason, body
+        assert CREDENTIAL not in reason
+
+
+@pytest.mark.parametrize("key", [
+    "ａｐｉ＿ｋｅｙ",  # full-width
+    "api‐key",  # a hyphen that is not ASCII
+    "аpi_key",  # a Cyrillic letter that looks like `a`
+    "tokеn",  # a Cyrillic `e`
+    "ﬁeld",  # a compatibility ligature
+    "세라", "api key", "a/b", "a:b", "a b\n", "key$",
+])
+def test_a_key_name_that_is_not_plain_ascii_is_refused_at_any_depth(key):
+    for body in ({key: 1}, {"provider": {key: 1}}, {"list": [{"deeper": [{key: 1}]}]}):
+        reason = extra_body_error(body)
+        assert reason is not None and "plain ASCII" in reason, body
+
+
+LEGITIMATE_KEYS = [
+    "max_tokens", "max_completion_tokens", "reasoning", "effort", "provider", "order", "allow_fallbacks", "top_p",
+    "top_k", "seed", "stop", "verbosity", "thinking", "budget_tokens", "include_reasoning", "usage", "include",
+    "transforms", "route", "models", "plugins", "id", "sort", "require_parameters", "data_collection", "quantizations",
+    "only", "ignore", "tokenizer", "tokens_per_second", "exclude", "enabled", "type", "x.y-z_1", "",
+]
+
+
+@pytest.mark.parametrize("key", LEGITIMATE_KEYS)
+def test_provider_parameter_names_stay_accepted_at_any_depth(key):
+    for body in ({key: 1}, {"provider": {key: "low"}}, {"plugins": [{"deeper": [{key: True}]}]}):
+        assert extra_body_error(body) is None, body
+
+
 def test_the_credential_rule_is_on_the_key_not_the_value():
     assert extra_body_error({"user": "token"}) is None
     assert extra_body_error({"note": CREDENTIAL}) is None  # a value is not inspected (the key field is the place)

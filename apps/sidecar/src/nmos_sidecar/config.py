@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,11 +19,14 @@ EXTRA_BODY_MAX_DEPTH = 16  # nesting of objects and lists; deeper is refused bef
 # The request's own fields: JSON mode owns `response_format`, `llm_no_temperature` owns `temperature` (S1b).
 RESERVED_BODY_KEYS = frozenset({"model", "messages", "stream", "response_format", "temperature", "n", "tools",
                                 "tool_choice", "functions", "function_call"})
-# A key is credential-like when its name, lower-cased with `-` and `_` removed, contains one of these, or is one of
-# the token names. `token` alone is not a substring rule: `max_tokens` and `max_completion_tokens` are legitimate.
-CREDENTIAL_PARTS = ("apikey", "authorization", "secret", "password")
-CREDENTIAL_TOKENS = frozenset({"token", "accesstoken", "authtoken", "apitoken", "bearertoken", "refreshtoken",
-                               "idtoken", "sessiontoken"})
+# A key name is plain ASCII: letters, digits, `_`, `-` and `.` (provider parameters are), so no look-alike letter or
+# compatibility form can hide a credential's name. Such a name is credential-like when, lower-cased with everything
+# but letters and digits removed, it contains one of CREDENTIAL_PARTS, is one of CREDENTIAL_NAMES, or ends with
+# `token` (`token`, `access_token`, `oauth_token`; `max_tokens` and `tokenizer` are legitimate).
+PLAIN_KEY = re.compile(r"[A-Za-z0-9_.\-]*")
+CREDENTIAL_PARTS = ("apikey", "authorization", "secret", "password", "passwd", "bearer", "credential", "privatekey",
+                    "accesskey", "subscriptionkey", "cookie")
+CREDENTIAL_NAMES = frozenset({"auth", "key"})
 
 
 def canonical_body(body: Any) -> str:
@@ -30,9 +34,14 @@ def canonical_body(body: Any) -> str:
     return json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
 
 
+def plain_key(key: str) -> bool:
+    return PLAIN_KEY.fullmatch(key) is not None
+
+
 def credential_like(key: str) -> bool:
-    name = key.lower().replace("-", "").replace("_", "")
-    return any(part in name for part in CREDENTIAL_PARTS) or name in CREDENTIAL_TOKENS
+    name = re.sub(r"[^a-z0-9]", "", key.lower())
+    return (any(part in name for part in CREDENTIAL_PARTS) or name in CREDENTIAL_NAMES
+            or name.endswith("token"))
 
 
 def _unstorable(text: str) -> bool:
@@ -59,6 +68,9 @@ def extra_body_error(body: Any) -> str | None:
                     return f"has a key that is not text{f' in {path}' if path else ''}"
                 if _unstorable(key):
                     return f"has a key with a NUL or an unpaired surrogate{f' in {path}' if path else ''}"
+                if not plain_key(key):
+                    return (f"has a key that is not plain ASCII{f' in {path}' if path else ''}: key names are plain"
+                            " ASCII letters, digits, '_', '-' and '.'")
                 where = f"{path}.{key}" if path else key
                 if credential_like(key):
                     return (f"may not hold a credential-like key ({where}): an API key belongs in the key field, which"

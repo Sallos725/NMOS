@@ -46,9 +46,11 @@ the author's-note calls and the settings test).
 - **What it may not hold.** The request's own fields stay the request's: `model`, `messages`, `stream`,
   `response_format` (JSON mode owns it), `temperature` (0, or not sent: S1b), `n`, `tools`,
   `tool_choice`, `functions`, `function_call`. A body naming one of them is refused. So is a body that is not an
-  object, one over 2,048 bytes as canonical JSON **(proposal)**, and one with a key that looks like a credential at
-  any depth (`api_key`, `apikey`, `authorization`, `token`, `secret`, `password`, case-insensitive): a credential
-  belongs in the key field, which is write-only and never archived (D60).
+  object, one over 2,048 bytes as canonical JSON **(proposal)**, one with a key name that is not plain ASCII
+  (letters, digits, `_`, `-`, `.`), and one with a key that looks like a credential at any depth (lower-cased with
+  all but letters and digits removed, the name contains `apikey`, `authorization`, `secret`, `password`, `passwd`,
+  `bearer`, `credential`, `privatekey`, `accesskey`, `subscriptionkey` or `cookie`, is `auth` or `key`, or ends with
+  `token`): a credential belongs in the key field, which is write-only and never archived (D60).
 - **Empty is today.** `{}` adds nothing: the request body is byte-identical to today's.
 
 ### S1b — The temperature: 0, or not sent (Q4, owner)
