@@ -2128,7 +2128,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 text = " → ".join(str(x) for x in (h.get("object"), h.get("value")) if x)
                 if text and (turn, f["predicate"], text) not in seen:
                     seen.add((turn, f["predicate"], text))
-                    marks.append((turn, event_major or changed, text, f["predicate"]))
+                    mark = (turn, event_major or changed, text, f["predicate"])
+                    # PHASE-60 S7: when it happened rides as a fifth element, only when the row has one
+                    marks.append((*mark, when) if (when := h.get("when_happened")) else mark)
         open_ = [th for th in view["threads"] if th["status"] == "open" and not inspector.stale(th, last)
                  and (norm(th.get("by")) in names or norm(th.get("to")) in names)]
         data = {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),

@@ -288,5 +288,46 @@ def test_end_to_end_when_happened_reaches_inspector_and_views(migrated):
             assert want in char.text and f'data-s="t1 · {want}"' in char.text
 
 
+def test_person_sheet_timeline_event_shows_happened_mark_through_person_data(migrated):
+    """The person sheet built by the real `person_data` carries `when_happened` to its timeline event lines; an event
+    without one shows no mark."""
+    import re
+
+    import psycopg
+    from conftest import make_client
+    from memeval import stub_extractor
+    from simchat import SimChat
+    from test_extraction import drain
+    from test_generations import LLM
+    from test_sidecar_integration import sync
+
+    chat = SimChat("phase60-happened-person")
+    for line in ("Hana is in the harbor.", "Hana betrayed Kaito.", "Hana betrayed Yuna."):
+        chat.user(line)
+        chat.reply("Noted.")
+    chat.user("next")
+
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain(migrated, stub_extractor)
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            rows = conn.execute("SELECT id, value FROM assertion WHERE predicate = 'event' ORDER BY id").fetchall()
+            dated = next(r for r in rows if "Kaito" in str(r[1]))
+            assert any("Yuna" in str(r[1]) for r in rows)
+            conn.execute("UPDATE assertion SET when_happened = %s WHERE id = %s", ("4월 11일", dated[0]))
+        cid = c.get("/v1/views/hub", params={"chat": chat.id}).json()["conversation"]
+        hana = next(e["id"] for e in c.get(f"/v1/conversations/{cid}/entities").json() if e["name"] == "Hana")
+
+        for lang, mark, word in (("ko", "[일어난 때: 4월 11일; t", "[일어난 때:"), ("en", "[happened: 4월 11일; told t", "[happened:")):
+            person = c.get(f"/v1/views/c/{cid}/person/{hana}", params={"lang": lang})
+            assert person.status_code == 200
+            events = re.findall(r'<div class="v-ev[^"]*">.*?</div>', person.json()["html"])
+            kaito = [e for e in events if "betrayed Kaito" in e]
+            yuna = [e for e in events if "betrayed Yuna" in e]
+            assert kaito and yuna
+            assert all(mark in e for e in kaito)
+            assert not any(word in e for e in yuna)
+
+
 
 
