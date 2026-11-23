@@ -341,6 +341,10 @@ Whole
   `packet-v20`: **0 jobs queued** before any worker runs; row counts and id hashes of source revisions, assertions,
   extractions, summaries, owner repairs, conversations and generations unchanged; `/v1/health` and `/v1/retrieve`
   answer.
+  **Amended 2026-11-23 (as done):** the copy's model rows were kept as production has them, because pointing them at
+  stubs would change the generation keys, and the switch checked would no longer be the one production makes (as
+  Phase 58's check did); only the stored embed key was blanked. Safety is by isolation instead: every sidecar on the
+  copy runs in a docker network created `--internal` (no route out), with no worker and empty API keys.
 - C2. On the copy, every gone pin and every return-gap annotation of every chat is listed and read before the
   deployment; a wrong one is fixed first.
 - C3. **Rollback rehearsal.** Migrations are forward-only, so rollback is the old image and the old `.env`, not a
