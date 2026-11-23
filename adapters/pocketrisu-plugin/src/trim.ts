@@ -158,6 +158,21 @@ export function trimPrompt(
       savedTokens += estimateTokens(m.content);
     }
 
+    // A boundary message too short to anchor, merged by a preset into the prompt message before it, passes the size
+    // allowance and would be dropped with it. Refuse when the newest dropped message, after its own host message's
+    // text, still holds the boundary's text (a merged later message follows the own text). When the own text is not
+    // there verbatim, the remainder cannot be isolated, so the whole message is searched.
+    const boundary = cleanText(selectedContent(hostMessages[b]));
+    if (boundary) {
+      let newest = -1;
+      for (const k of run.keys()) if (k > newest) newest = k;
+      const sent = cleanText(prompt[newest]?.content);
+      const own = cleanText(selectedContent(hostMessages[run.get(newest) as number]));
+      const at = own ? sent.lastIndexOf(own) : -1;
+      const tail = at >= 0 ? sent.slice(at + own.length) : sent;
+      if (tail.includes(boundary)) return refuse();
+    }
+
     const out = prompt.filter((_, idx) => !run.has(idx));
     return { prompt: out, dropped: run.size, savedTokens, reason: null };
   } catch {

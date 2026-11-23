@@ -307,6 +307,43 @@ describe('trimPrompt (Phase 60 S1 / A15)', () => {
     expect(resQuoted).toEqual({ prompt: quoted, dropped: 0, savedTokens: 0, reason: 'format' });
   });
 
+  it('refuses with format when a short boundary message is merged into the message before it', () => {
+    const long = (tag: string) => `${tag} 세라는 창가에서 ${tag} 번째 편지를 읽었다 ${tag.repeat(3)} 바깥에는 비가 내리고 ${tag} 있었다 ${tag}.`;
+    const host: HostMessage[] = [
+      { role: 'user', data: long('U0'), chatId: 'm0' },
+      { role: 'char', data: long('C1'), chatId: 'm1' },
+      { role: 'user', data: long('U2'), chatId: 'm2' },
+      { role: 'user', data: '응 알았어', chatId: 'm3' },
+      { role: 'char', data: long('C4'), chatId: 'm4' },
+      { role: 'user', data: long('U5'), chatId: 'm5' },
+    ];
+    // A preset merged the two consecutive user messages (m2, m3) into one prompt message.
+    const merged: PromptMessage[] = [
+      { role: 'system', content: 'Narrator.' },
+      { role: 'user', content: host[0]!.data },
+      { role: 'assistant', content: host[1]!.data },
+      { role: 'user', content: `${host[2]!.data}\n${host[3]!.data}` },
+      { role: 'assistant', content: host[4]!.data },
+      { role: 'user', content: host[5]!.data },
+    ];
+    const res = runTrim(merged, host, 'm3');
+    expect(res).toEqual({ prompt: merged, dropped: 0, savedTokens: 0, reason: 'format' });
+    expect(res.prompt).toBe(merged);
+
+    // The boundary's short text inside the dropped message's own text is no merge: the trim goes ahead.
+    const ownHolds: HostMessage[] = host.map((m) => (m.chatId === 'm2'
+      ? { ...m, data: `${long('U2')} 응 알았어 하고 웃었다.` }
+      : { ...m }));
+    const separate: PromptMessage[] = [
+      { role: 'system', content: 'Narrator.' },
+      ...ownHolds.map((m) => ({ role: toPromptRole(m.role), content: m.data })),
+    ];
+    const resSeparate = runTrim(separate, ownHolds, 'm3');
+    expect(resSeparate.reason).toBeNull();
+    expect(resSeparate.dropped).toBe(3);
+    expect(resSeparate.prompt.map((m) => m.content)).toEqual(['Narrator.', ...ownHolds.slice(3).map((m) => m.data)]);
+  });
+
   it('refuses with format when keep_from_id is unknown or inactive', () => {
     const { host, prompt } = baseFixture();
 
