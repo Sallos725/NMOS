@@ -8,12 +8,14 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 
+import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 from nmos_sidecar import entities, extraction as X, generations, predicates as P
 from nmos_sidecar.config import Settings
 from conftest import make_client
-from test_extract_v18 import USED, chat_of
+from test_extract_v18 import FEELING, USED, WARM, chat_of, feels
 from test_extraction import drain
 from test_generations import LLM
 from test_phase60_pins import BASE, PINNED_EXTRACT_SPEC_FIELDS
@@ -160,6 +162,126 @@ def test_when_happened_reads_a_trimmed_phrase_on_event_and_promised_only():
     assert one("가" * 120) == "가" * 80
     assert one("  어 제", limit=2) == "어"  # stripped, cut to "어 ", stripped again
     assert P.when_happened({"predicate": "event"}, 80) is None
+
+
+TOLD_QUOTE = "유나가 왕녀라는 사실을 조용히 털어놓았다"
+EVENT_QUOTE = "3년 전 겨울, 유나는 성을 떠났다"
+SCENE = f"세라는 카이토에게 {TOLD_QUOTE}. 하나는 그 자리에 없었다. {EVENT_QUOTE}. {WARM}"
+MARKS = {"knowledge": "limited", "known_by": ["세라", "카이토"], "hidden_from": ["하나"]}
+ACTUAL = {"polarity": "positive", "modality": "actual", "source": "narration"}
+
+
+def told_row(**extra):
+    """세라 told 카이토 a secret about 유나, kept from 하나, with its quote."""
+    return {"subject": "세라", "subject_type": "character", "predicate": "told", "object": "카이토",
+            "object_type": "character", "value": "유나가 왕녀라는 사실", "with": [{"name": "유나", "type": "character"}],
+            **MARKS, **ACTUAL, "evidence": TOLD_QUOTE, **extra}
+
+
+def event_row(**extra):
+    return {"subject": "유나", "subject_type": "character", "predicate": "event", "value": "성을 떠났다",
+            "when_happened": "3년 전 겨울", **ACTUAL, "evidence": EVENT_QUOTE, **extra}
+
+
+def happened_of(item, compiler="extract-v19"):
+    [row] = X.normalize([item], SCENE, compiler=compiler)
+    return row["when_happened"]
+
+
+def test_a6_when_happened_is_kept_on_event_and_promised_under_v19_only():
+    promised = {"subject": "세라", "subject_type": "character", "predicate": "promised", "object": "카이토",
+                "object_type": "character", "value": "다시 돌아오겠다", "when_happened": "다음 보름날", **ACTUAL}
+    assert happened_of(event_row()) == "3년 전 겨울" and happened_of(promised) == "다음 보름날"
+    [row] = X.normalize([event_row()], SCENE, compiler="extract-v19")
+    assert row["status"] == "valid" and list(row)[list(row).index("feeling") + 1] == "when_happened"
+    others = [{"subject": "하나", "subject_type": "character", "predicate": "knows", "value": "유나의 비밀"},
+              {**feels("고마움", None, ""), "when_happened": "3년 전 겨울"},
+              {"subject": "하나", "subject_type": "character", "predicate": "goal", "value": "성으로 돌아가기"}]
+    for item in others:
+        assert happened_of({**item, "when_happened": "3년 전 겨울", **ACTUAL}) is None
+    for compiler in ("extract-v18", "extract-v16", None):
+        assert happened_of(event_row(), compiler) is None and happened_of(promised, compiler) is None
+        assert "when_happened" in X.normalize([event_row()], SCENE, compiler=compiler)[0]
+    for value in ("null", "", "  ", 3, {"when": "어제"}):
+        assert happened_of(event_row(when_happened=value)) is None
+    assert happened_of(event_row(when_happened="가" * 79 + " " + "나" * 40)) == "가" * 79
+    assert happened_of(event_row(when_happened="가" * 120)) == "가" * 80
+    assert happened_of(event_row(when_happened="  어젯밤  ")) == "어젯밤"
+
+
+def test_told_is_valid_under_v19_only_and_keeps_its_marks():
+    def one(item, compiler="extract-v19", shown=None):
+        [row] = X.normalize([item], SCENE, shown=shown, compiler=compiler)
+        return row
+
+    row = one(told_row())
+    assert (row["status"], row["reason"]) == ("valid", None)
+    assert row["participants"] == [{"name": "유나", "type": "character"}]
+    assert (row["knowledge"], row["known_by"], row["hidden_from"]) == ("limited", ["세라", "카이토"], ["하나"])
+    assert row["evidence"] == TOLD_QUOTE and row["when_happened"] is None
+    for compiler in ("extract-v18", None):
+        row = one(told_row(), compiler)
+        assert (row["status"], row["reason"]) == ("pending", "unknown predicate") and row["participants"] is None
+        assert (row["knowledge"], row["known_by"], row["hidden_from"]) == ("limited", ["세라", "카이토"], ["하나"])
+    for missing in ({"evidence": ""}, {"evidence": None}, {"evidence": "null"}, {"evidence": "  "}):
+        row = one(told_row(**missing))
+        assert (row["status"], row["reason"]) == ("pending", "told without its quote")
+    no_key = told_row()
+    del no_key["evidence"]
+    assert (one(no_key)["status"], one(no_key)["reason"]) == ("pending", "told without its quote")
+    absent = told_row(evidence="카이토는 하나에게 바다 건너 왕국의 전설을 길게 들려주었다")
+    assert (one(absent, shown=SCENE)["status"], one(absent, shown=SCENE)["reason"]) == ("pending", "evidence not in the turn")
+    assert one(told_row(), shown=SCENE)["status"] == "valid"
+    place = one(told_row(object="왕성", object_type="place"))
+    assert place["status"] == "pending" and place["reason"].startswith("object_type must be")
+
+
+def test_v19_keeps_the_feeling_as_v18_does():
+    item = feels("고마움", FEELING, "고마운 마음이 가득했지만")
+    v18 = X.normalize([item], WARM, feelings=True, compiler="extract-v18")
+    v19 = X.normalize([item], WARM, feelings=True, compiler="extract-v19")
+    assert v19[0]["feeling"] == FEELING and v19 == v18
+
+
+def stub(predicate="told"):
+    """The model: for SCENE, the told row (as `predicate`), the event with when_happened and a feeling."""
+    def complete(system, user):
+        target = user.split("TARGET turn", 1)[1] if "TARGET turn" in user else ""
+        if SCENE in target:
+            return {"assertions": [told_row(predicate=predicate), event_row(),
+                                   feels("고마움", FEELING, "고마운 마음이 가득했지만")]}, "{}", USED
+        return {"assertions": []}, "{}", USED
+    return complete
+
+
+def stored(url: str) -> dict[str, dict]:
+    """The extraction rows stored, by predicate (one each in these chats)."""
+    with psycopg.connect(url, row_factory=dict_row) as conn:
+        assert conn.execute("SELECT count(*) AS n FROM job WHERE last_error IS NOT NULL").fetchone()["n"] == 0
+        rows = conn.execute("SELECT predicate, status, reason, knowledge, known_by, hidden_from, participants,"
+                            " when_happened, feeling FROM assertion").fetchall()
+    assert len(rows) == len({r["predicate"] for r in rows})
+    return {r["predicate"]: r for r in rows}
+
+
+@pytest.mark.parametrize("compiler", ["extract-v19", "extract-v18"])
+def test_the_worker_stores_told_and_when_happened_under_v19_only(migrated, compiler):
+    with make_client(migrated, **LLM, extract_compiler=compiler) as c:
+        sync(c, chat_of(SCENE))
+        drain(migrated, stub())
+    rows = stored(migrated)
+    assert set(rows) == {"told", "event", "feels_toward"}
+    told = rows["told"]
+    assert (told["knowledge"], told["known_by"], told["hidden_from"]) == ("limited", ["세라", "카이토"], ["하나"])
+    assert rows["feels_toward"]["feeling"] == FEELING
+    if compiler == "extract-v19":
+        assert (told["status"], told["reason"]) == ("valid", None)
+        assert told["participants"] == [{"name": "유나", "type": "character"}]
+        assert rows["event"]["when_happened"] == "3년 전 겨울"
+        assert told["when_happened"] is None and rows["feels_toward"]["when_happened"] is None
+    else:
+        assert (told["status"], told["reason"]) == ("pending", "unknown predicate")
+        assert all(r["when_happened"] is None for r in rows.values())
 
 
 def test_settings_accept_v19_and_refuse_a_later_name():

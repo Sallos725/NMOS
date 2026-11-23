@@ -26,8 +26,9 @@ from .entities import PERSONA, UNNAMED, node, norm, resolve
 from .facts import _versions, fact_text, links_of, persona_of, served_assertions, version_key
 from . import canon
 from .repairs import repairs_of, splits_of
-from .predicates import (DERIVED, REGISTRY, alias_evidenced, because, feeling, fill_types, knowledge, outcome,
-                         participants, horizon, registry_prompt, salience, semantics, validate)
+from .predicates import (DERIVED, EXTENSION_PARTICIPANTS, REGISTRY, alias_evidenced, because, feeling, fill_types,
+                         knowledge, outcome, participants, horizon, registry_for, registry_prompt, salience, semantics,
+                         validate, when_happened)
 from .secrets import fold as fold_secrets, reveal_value
 from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity
 from .reconcile import Entry, RevKey, turn_layout
@@ -1525,19 +1526,21 @@ def assertion_values(a: dict[str, Any]) -> tuple[Any, ...]:
 
 def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
               shown: str | None = None, apart: bool = False, horizons: bool = False,
-              feelings: bool = False) -> list[dict[str, Any]]:
+              feelings: bool = False, compiler: str | None = None) -> list[dict[str, Any]]:
     """Model output → assertion rows (at most 40): missing entity types filled from the reply or the
     hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
     (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). `shown` (the turn worker, since extract-v14,
     ADR 0054: the target turn as the model saw it, `shown_target`): a quote of EVIDENCE_MIN_CHARS or more that is
     not in it parks the row. `feelings` (extract-v18, PHASE-58 S2) keeps a feeling's strength, sign and the feeling
-    under it. Pure,
+    under it. `compiler` (extract-v19, PHASE-60 S7, S8): its extension predicates (`told`) validate, and a
+    `when_happened` is kept. Pure,
     so the real-model evaluation (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
     out = []
+    also = EXTENSION_PARTICIPANTS.get(compiler or "", frozenset())
     for item, inferred in fill_types(items[:40], hints):
         if not isinstance(item, dict):
             continue
-        status, reason = validate(item)
+        status, reason = validate(item, registry_for(compiler))
 
         def text(key: str, limit: int = 300) -> str | None:
             value = item.get(key)
@@ -1563,6 +1566,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
         if status == "valid" and item.get("predicate") == "resolved" and outcome(item) is None:
             status, reason = "pending", "resolved without an outcome"
         quote = text("evidence")
+        if status == "valid" and item.get("predicate") == "told" and not quote:  # PHASE-60 S8: it needs its quote
+            status, reason = "pending", "told without its quote"
         if (status == "valid" and shown is not None and quote and len(quote) >= EVIDENCE_MIN_CHARS
                 and similarity(quote, shown) < EVIDENCE_MIN):
             status, reason = "pending", "evidence not in the turn"
@@ -1577,9 +1582,10 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
                     "knowledge": scope, "known_by": known_by, "hidden_from": hidden_from, "polarity": polarity,
                     "modality": modality, "source": source, "asserted_by": asserted_by,
                     "salience": salience(item) or (horizon(item) if horizons else None),  # PHASE-51 S2
-                    "participants": participants(item) if status == "valid" else None,
+                    "participants": participants(item, also) if status == "valid" else None,
                     "outcome": outcome(item), "because": because(item),
-                    "feeling": feeling(item) if feelings else None})
+                    "feeling": feeling(item) if feelings else None,
+                    "when_happened": when_happened(item, HAPPENED_MAX) if compiler in HAPPENED else None})
     return out
 
 
@@ -1667,7 +1673,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
             return "done"
         rows = [(extraction_id, revision_id, *assertion_values(a))
                 for a in normalize(items, turn_text, hints, shown_target(ctx), compiler in PARTS_APART,
-                                  compiler in HORIZONS, compiler in FEELINGS)]
+                                  compiler in HORIZONS, compiler in FEELINGS, compiler=compiler)]
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(
