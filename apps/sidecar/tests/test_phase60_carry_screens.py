@@ -404,3 +404,27 @@ def test_the_renderer_reads_what_the_routes_send_and_unlinking_restores_every_fr
         assert c.delete(f"/v1/conversations/{tgt}/carry").status_code == 200
         after = {(u, lang): _fragment(c, u, lang) for u in urls for lang in ("ko", "en")}
         assert after == before  # byte for byte, in both languages
+
+
+def test_a_carried_open_thread_is_listed_without_the_close_that_would_be_refused(
+    migrated: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = Seen(monkeypatch)
+    with make_client(migrated, **ON) as c:
+        src, tgt = _setup(c, migrated)
+        sera = _entity_id(c, tgt, "세라")
+        _link(c, tgt, src, "continue")
+        for url in (f"/v1/views/c/{tgt}/memory", f"/v1/views/c/{tgt}/person/{sera}"):
+            html = _fragment(c, url, "ko")
+            d = seen.memory if "/memory" in url else seen.person
+            assert d is not None
+            carried = [th for th in d["threads"] if th.get("carried")]
+            assert carried and all(int(th["id"]) < 0 for th in carried), url
+            outside = html.replace(_carry_section(html), "")
+            # still listed outside the carry section (open threads / promises and goals), with its carried mark
+            assert "내일 새벽 등대 열쇠를 찾아주기" in outside and '<span class="v-tag">이어받음</span>' in outside
+            assert 'data-repair="thread_close:' not in html, url
+        for th in carried:  # what the button would have sent (the plugin sends the id as a string)
+            res = c.post(f"/v1/conversations/{tgt}/repairs",
+                         json={"kind": "thread_close", "item": str(th["id"]), "outcome": "kept"})
+            assert res.status_code == 422, res.text

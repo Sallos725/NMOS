@@ -495,6 +495,12 @@ def thread_meta(th: dict[str, Any], lang: str) -> str:
     return " · ".join(x for x in (kind, horizon, since, happened_text(_own(th), lang)) if x)
 
 
+def _close_own(th: dict[str, Any]) -> str:
+    """The thread's close button, or "" for a carried thread (PHASE-60 S6): it is the other chat's, and closing it
+    here answers 422, so the row stays readable with its carried mark and offers nothing."""
+    return "" if th.get("carried") else _close(th)
+
+
 def _thread_meta(th: dict[str, Any], lang: str) -> str:
     """`thread_meta` escaped, with the carried mark when the thread came through a link."""
     m = carried_mark(th, lang)
@@ -635,7 +641,7 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     threads = d.get("threads") or []
     opened = [line(f"{_kind_tag(th.get('kind'), lang)}{nm(th['by'])}{' → ' + nm(th['to']) if th.get('to') else ''}: {_v(th['text'])}",
                    _thread_meta(th, lang),
-                   _close(th)) for th in threads]
+                   _close_own(th)) for th in threads]
     stale = f'<p class="v-note">{_v(t(lang, "stale", n=d["stale"]))}</p>' if d.get("stale") else ""
     people = []
     for p in d.get("pairs") or []:
@@ -772,7 +778,7 @@ def person(d: dict[str, Any], lang: str) -> str:
         rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), " · ".join(_pair_bits(p, lang))))
     threads = [line(f"{_v(th['text'])}" + (f" → {nm(th['to'])}" if th.get("to") and th.get("by") == e.get("name") else ""),
                     _thread_meta(th, lang),
-                    _close(th)) for th in d.get("threads") or []]
+                    _close_own(th)) for th in d.get("threads") or []]
     knows = [line(_v(content(s)), _v(t(lang, "knows") + f" · t{s.get('turn')}")) for s in d.get("knows") or []]
     knows += [line(_v(content(s)), _v(t(lang, "unaware", who=", ".join(s.get("holders") or [])) + f" · t{s.get('turn')}"))
               for s in d.get("kept") or []]

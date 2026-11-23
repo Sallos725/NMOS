@@ -341,6 +341,45 @@ def test_person_sheet_marks_carried_threads():
     assert f"· {MARK_EN}</div>" in views.person(d, "en")
 
 
+# --- no edit controls on carried rows ----------------------------------------------------------------------------
+# Closing a carried thread answers 422 (it is the other chat's): the panel does not offer it. The row stays, marked.
+
+def closes(html: str) -> list[str]:
+    """The thread ids a fragment offers a close button for."""
+    return re.findall(r'data-repair="thread_close:(-?[0-9]+):', html)
+
+
+def test_memory_document_offers_no_close_on_a_carried_thread():
+    d = marked_memory()
+    carried_id, own_ids = d["threads"][0]["id"], [str(th["id"]) for th in d["threads"][1:]]
+    for lang in ("ko", "en"):
+        html = views.memory(d, lang)
+        assert str(carried_id) not in closes(html)
+        assert closes(html) == own_ids  # the chat's own threads keep theirs
+        assert closes(views.memory(memory_input(), lang)) == [str(carried_id), *own_ids]
+    ko = views.memory(d, "ko")
+    assert f"<div class='v-meta'>약속 · 이야기 줄기 · {MARK_KO}</div></div>" in ko  # still listed, marked
+    # a carried negative id as the data side makes them: no close either
+    d["threads"][0]["id"] = -4330507502052238750
+    assert closes(views.memory(d, "ko")) == own_ids
+
+
+def test_person_sheet_offers_no_close_on_a_carried_thread():
+    d = copy.deepcopy(person_input())
+    d["threads"][1]["carried"], d["threads"][1]["turn"] = LINK, -1
+    for lang in ("ko", "en"):
+        before = closes(views.person(person_input(), lang))
+        assert str(d["threads"][1]["id"]) in before
+        assert closes(views.person(d, lang)) == [i for i in before if i != str(d["threads"][1]["id"])]
+    assert f"· {MARK_KO}</div></div>" in views.person(d, "ko")
+
+
+def test_carry_section_lines_offer_no_control():
+    for html in (views.memory({**memory_input(), "carry": carry()}, "ko"),
+                 views.person({**person_input(), "carry": carry()}, "ko")):
+        assert "data-repair" not in sec(html) and "data-bulk" not in sec(html)
+
+
 def test_rows_without_a_link_render_as_before():
     for lang in ("ko", "en"):
         assert views.memory(marked_memory(None), lang) == views.memory(memory_input(), lang)
