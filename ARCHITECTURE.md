@@ -803,8 +803,8 @@ itself; `memory_view` keeps reading `REGISTRY` alone, while `facts.served_told` 
 whose extension declares it, oldest first, as of `upto` / `known_at` (`packet-v20`'s `happened` and `told` lines:
 D87). `extract-v19` joins `generations.ADDS` with `extract-v16` and `extract-v18`, so switching among them
 with the same model and endpoint is classified `adds` in both directions and queues no already-served turns.
-`fact_restore` keeps `when_happened` beside `repairs.RESTORED`, as it keeps `feeling` (the dropped-facts listing reads
-it too). Known limits: a `told` row kept from someone keeps its knowledge marks but is in `secrets.NOT_SECRETS`, so it
+`fact_restore` keeps `when_happened` beside `repairs.RESTORED` (the dropped-facts listing reads it; it does not read
+`feeling`, so a restored `feels_toward` loses its feeling detail, since Phase 58). Known limits: a `told` row kept from someone keeps its knowledge marks but is in `secrets.NOT_SECRETS`, so it
 is not tracked as a secret and no reveal check ends it. No owner repair retracts a `told` row: it is never a fact of the
 view. `told` rows take no part in entity resolution, so a teller or hearer named only in them has no entity.
 
@@ -816,11 +816,10 @@ the story and `turn` when it was told. Under `TOLD_POLICIES`, with `facts_limit`
 `told` rows (`facts.served_told`, D86) follow the facts as `<Fact kind="told">` lines (teller told hearer: what, and whom
 it is about when it names them), only when the teller or the hearer (never the persona) is in the scene or named in the
 user's message under any name they go by: ranked as facts are, then the scene's newest; not said again while its
-message is in the prompt (D3); resting as any line does (D77); never a carried row. A line whose value or quote says a
+message is in the prompt (D3); a tired one rests (D77's rest key); never a carried row. A line whose value or quote says a
 secret still kept from someone is left out as a keyword-only excerpt is (D62, a hidden `secret_gate` entry), and the
 next may take its place; the rest is any fact line's: private in its scene, strict and narrator modes (D44, D45). The
-Note says a told Fact does not show that the hearer believed it. Older policies emit neither. Kept apart from D84,
-which already holds four reads. Known limit: the pages that draw told chains (the person sheet, the Inspector's
+Note says a told Fact does not show that the hearer believed it. Older policies emit neither. Known limit: the pages that draw told chains (the person sheet, the Inspector's
 character page, the memory map) show them as they show facts, the owner's view, not filtered by strict or narrator
 mode; only a row whose teller or hearer the owner left out is dropped.
 
