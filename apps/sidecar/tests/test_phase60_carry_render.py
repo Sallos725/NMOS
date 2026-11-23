@@ -176,6 +176,17 @@ def test_memory_document_shows_continue_lines_after_now_in_ko_and_en():
     panel_safe(en)
 
 
+def test_a_carry_line_marked_thread_shows_its_kind_by_its_predicate():
+    """Track 4's thread line has kind "thread" (not a word to show) and the opening's predicate: the tag is the kind
+    that predicate opens (promised: 약속), never the bare word "thread"."""
+    line = {"kind": "thread", "predicate": "promised", "subject": "세라", "object": "카이토", "value": "부두에서 만나기",
+            "carried": "link-1", "carried_from": {"conversation": SRC, "turn": 14}}
+    ko = views.carry_line(line, "ko")
+    assert '<span class="v-tag k-promise">약속</span>' in ko and ">thread<" not in ko
+    assert '<span class="v-tag k-goal">' in views.carry_line({**line, "predicate": "goal"}, "ko")
+    assert "v-tag" not in views.carry_line({**line, "predicate": "unknown"}, "ko")  # no word: no tag
+
+
 def test_memory_document_with_carry_only_adds_its_section_and_chip():
     for lang in ("ko", "en"):
         base = views.memory(memory_input(), lang)

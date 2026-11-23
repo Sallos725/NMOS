@@ -20,6 +20,7 @@ from . import tokens
 from .facts import symmetric
 from .inspector import _act, _close, _v, feeling_detail, feeling_dot, happened_mark, happened_text
 from .summaries import content
+from .threads import KINDS as THREAD_KINDS
 
 # The hub's blocks are flex rows that always end flush: each block grows to fill what its row leaves (PHASE-52 D1, PHASE-59).
 STYLE = """
@@ -584,8 +585,9 @@ def carry_line(row: dict[str, Any], lang: str) -> str:
     text = _v(carry_text(row, lang))
     href = carry_href(row)
     main = f'<a class="v-src" href="{_v(href)}">{text}</a>' if href else text
-    if _is_thread(row):
-        main = _kind_tag(row.get("kind"), lang) + main
+    if _is_thread(row):  # a carry line's kind is the mark "thread": its opening's predicate names the kind
+        kind = THREAD_KINDS.get(str(row.get("predicate"))) if row.get("kind") == "thread" else row.get("kind")
+        main = _kind_tag(kind, lang) + main
     h = happened_mark({k: v for k, v in row.items() if k != "turn"}, lang)
     src = row.get("carried_from")
     turn = _turn_of(src.get("turn")) if isinstance(src, dict) else None
