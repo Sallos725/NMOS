@@ -287,6 +287,45 @@ describe('in-context detection (D3)', () => {
   it('returns nothing when the prompt shares no text', () => {
     expect(inContextIds([{ role: 'user', content: 'unrelated' }], host)).toEqual([]);
   });
+
+  it('pins inContextIds output across every fixture before matchPromptToHost refactor', () => {
+    const continuePrompt: PromptMessage[] = [...mainPrompt, { role: 'system', content: 'Continue the last response.' }];
+    const wrapped: PromptMessage[] = [
+      { role: 'user', content: '<user_input>Where did we hide the lantern?</user_input>\n(OOC: stay in character)' },
+    ];
+    const inSystem: PromptMessage[] = [
+      { role: 'system', content: 'Chat log:\nUser: Where did we hide the lantern?\nReply now.' },
+    ];
+    const echoed: PromptMessage[] = [
+      { role: 'system', content: 'Narrate.' },
+      { role: 'assistant', content: 'Where did we hide the lantern?' },
+    ];
+    const withDisabled: HostMessage[] = [
+      ...host,
+      { role: 'user', data: 'hidden', chatId: 'u3', disabled: true },
+    ];
+    const quoted: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      { role: 'assistant', content: `As the notes say: ${PACKET_TAG} …` },
+      { role: 'user', content: `What is ${PACKET_TAG}?` },
+    ];
+    const onePrefill: PromptMessage[] = [
+      ...mainPrompt,
+      { role: 'assistant', content: '세라 stepped forward.' },
+    ];
+
+    expect(inContextIds(mainPrompt, host)).toEqual(['u1', 'c1', 'u2']);
+    expect(inContextIds(presetPrompt, host)).toEqual(['u1', 'c1', 'u2']);
+    expect(inContextIds(continuePrompt, host)).toEqual(['u1', 'c1', 'u2']);
+    expect(inContextIds(wrapped, host)).toEqual(['u2']);
+    expect(inContextIds(inSystem, host)).toEqual(['u2']);
+    expect(inContextIds(echoed, host)).toEqual(['u2']);
+    expect(inContextIds(mainPrompt, withDisabled)).toEqual(['u1', 'c1', 'u2', 'u3']);
+    expect(inContextIds(quoted, host)).toEqual(['u1', 'c1', 'u2']);
+    expect(inContextIds(onePrefill, host)).toEqual(['u1', 'c1', 'u2']);
+    expect(inContextIds([], host)).toEqual([]);
+    expect(inContextIds(mainPrompt, [])).toEqual([]);
+  });
 });
 
 describe('query texts', () => {
