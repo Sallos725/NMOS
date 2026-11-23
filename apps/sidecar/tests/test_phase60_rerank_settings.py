@@ -12,8 +12,11 @@ import pytest
 from conftest import make_client
 from nmos_sidecar import canonfacts, extraction, rerank, reveals, summaries, vectors
 from nmos_sidecar.config import Settings
+from nmos_sidecar.retrieval import RECORDED, RecallOptions
+from simchat import SimChat
 from test_generations import LLM
 from test_phase60_pins import BASE, PINNED
+from test_sidecar_integration import recall, sync
 
 RERANK_ENV = ("NMOS_RERANK_URL", "NMOS_RERANK_MODEL", "NMOS_RERANK_API_KEY", "NMOS_RERANK_TIMEOUT_MS",
               "NMOS_RERANK_FORMAT")
@@ -189,3 +192,61 @@ def test_no_log_record_holds_the_key(client, caplog):
     client.get("/v1/config")
     assert caplog.records  # the capture is live
     assert not [r for r in caplog.records if SAVED_KEY in r.getMessage() or SAVED_KEY in repr(r.args)]
+
+
+# --- the request's recall options carry the configured reranker; nothing reads it yet --------------------------------
+
+def captured_options(monkeypatch) -> list:
+    from nmos_sidecar import api
+
+    seen: list = []
+    original = api.retrieve
+
+    def spy(conn, body, options, *args, **kwargs):
+        seen.append(options)
+        return original(conn, body, options, *args, **kwargs)
+
+    monkeypatch.setattr(api, "retrieve", spy)
+    return seen
+
+
+def one_recall(c) -> dict:
+    chat = SimChat()
+    chat.user("하나 keeps the brass key.")
+    chat.reply("Noted.")
+    chat.user("Where is the key?")
+    sync(c, chat)
+    return recall(c, chat, "Where is the key?")
+
+
+def test_the_options_default_to_no_reranker_and_never_record_one():
+    assert RecallOptions().reranker is None
+    assert "reranker" not in RECORDED
+
+
+def test_unconfigured_a_request_has_no_reranker(client, monkeypatch):
+    seen = captured_options(monkeypatch)
+    one_recall(client)
+    assert seen and seen[-1].reranker is None
+
+
+def test_a_configured_reranker_reaches_the_request_and_stays_out_of_its_trace(client, monkeypatch):
+    seen = captured_options(monkeypatch)
+    client.put("/v1/config", json={"rerank_url": URL, "rerank_model": MODEL, "rerank_api_key": SAVED_KEY,
+                                   "rerank_timeout_ms": 900})
+    out = one_recall(client)
+    assert seen[-1].reranker == rerank.Reranker(url=URL, model=MODEL, api_key=SAVED_KEY, timeout_ms=900,
+                                                format="standard")
+    trace = client.get(f"/v1/trace/{out['trace_id']}")
+    assert trace.status_code == 200 and SAVED_KEY not in trace.text
+    client.put("/v1/config", json={"rerank_model": None})  # a URL alone is off again
+    one_recall(client)
+    assert seen[-1].reranker is None
+
+
+def test_a_blank_model_from_the_environment_is_off(migrated, monkeypatch):
+    seen = captured_options(monkeypatch)
+    with make_client(migrated, rerank_url=URL, rerank_model="  ") as c:
+        one_recall(c)
+        assert c.get("/v1/config").json()["rerank"]["configured"] is False
+    assert seen[-1].reranker is None

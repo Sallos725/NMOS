@@ -157,6 +157,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             policy=cur.packet_policy if cur.packet_policy in POLICIES else DEFAULT_POLICY,
             summarize_key=sm.key if sm else None, canon_key=rt.get("active_canon") if cur.canon_facts else None,
             pins_by_card=runtime.pins_by_card(overrides), pin_at_mentions=cur.pin_at_mentions,
+            reranker=runtime.reranker(cur),
         ))
 
     def rebuild(overrides: dict[str, Any]) -> None:

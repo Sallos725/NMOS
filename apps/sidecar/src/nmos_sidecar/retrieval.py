@@ -29,6 +29,7 @@ from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
+from .rerank import Reranker
 from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
                      CHANGE_POLICIES, CONTENTS, COVERAGE_POLICIES, GONE_POLICIES, LABEL_POLICIES, STATE_HISTORY_KEYS,
                      STATE_HISTORY_MAX, STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES,
@@ -282,6 +283,8 @@ class RecallOptions:
     name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
     # PHASE-60 S8: `@name` pins a character for the request (packet-v20). Not recorded: a request records its pins.
     pin_at_mentions: bool = False
+    # PHASE-60 S5 (ADR 0084): the configured reranker, None when off. Never recorded: it holds a credential.
+    reranker: Reranker | None = None
     # packet-v11's tie-break anchor for the excerpt's best sentence (PHASE-27 Q1b, ADR 0063): "keywords", the question's
     # keywords alone — the question itself when it has none — (the prototype's; the default since step 3, measured: with
     # "focus" the forbidden total rose 93 → 96 over twelve sets, with "keywords" it fell to 87), or "focus", the question
