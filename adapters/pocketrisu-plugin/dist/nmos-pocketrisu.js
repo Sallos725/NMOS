@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:5a803b19475d".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:870d9e00b6f7".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -5950,9 +5950,11 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("div", { class: "check" }, noTemp, el("span", { text: L("extra.no_temp") })),
       el("p", { class: "sub", text: L("extra.no_temp_sub") })
     );
-    effort.addEventListener("change", () => {
+    const writeEffort = () => {
       if (effort.value !== "custom") extraText.value = withEffort(extraText.value, effort.value || null);
-    });
+    };
+    effort.addEventListener("input", writeEffort);
+    effort.addEventListener("change", writeEffort);
     function syncExtra() {
       extraBox.style.display = extraKnown ? "" : "none";
       effortRow.style.display = isOpenRouter(llm.values().url) ? "" : "none";
