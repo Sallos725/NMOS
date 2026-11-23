@@ -408,7 +408,8 @@ LIVE: Any = object()  # `canon_facts` of a live read: decided from the manifest 
 def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None, upto: int | None = None,
                 known_at: datetime | None = None, canon_manifest: str | None = None,
                 canon_exact: bool = False, canon_key: str | None = None,
-                canon_facts: Any = LIVE, what_if: dict[str, Any] | None = None) -> dict[str, list[dict[str, Any]]]:
+                canon_facts: Any = LIVE, what_if: dict[str, Any] | None = None,
+                told: bool = False) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -439,12 +440,17 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     They come from the manifest a request names only: while the sidecar lacks it (its upload is under way), the read
     has none, as it cannot tell which of the canon in force still holds. `canon_facts` (a replay) names the manifest
     exactly, None for none; the view's `canon_facts_manifest` says which one a read used.
+
+    With `told` (packet-v20 and the pages that draw chains, PHASE-60 S8, ADR 0086), the view also has `told`: who told
+    whom (`told_view`), from the same read, a list of its own. It is never a fact, claim, thread or assertion of the
+    view and never shapes its resolution, so nothing else in the view changes; without `told` the key is absent.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
                 "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "repairs": [],
-                "assertions": [], "resolution": None}
-    rows = [r for r in served_assertions(conn, head, extractor_key, upto, known_at) if r["predicate"] in REGISTRY]
+                "assertions": [], "resolution": None, **({"told": []} if told else {})}
+    served = served_assertions(conn, head, extractor_key, upto, known_at)
+    rows = [r for r in served if r["predicate"] in REGISTRY]
     # The conversation, the owner's repairs as of the read (ADR 0044) and the read's last turn, in one query.
     found = conn.execute(
         "SELECT w.conversation_id, c.host_persona_name, c.canon_manifest_id, r.id, r.kind, r.target, r.value, r.note,"
@@ -594,13 +600,33 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     entities = [{**e, "excluded": excluded[str(e["id"])]["scope"]} if str(e["id"]) in excluded else e
                 for e in r.entities()]
     pinned = pins(in_force, r)  # PHASE-60 S8: the characters the owner pinned, newest first; an exclusion wins
-    return {"facts": facts, "claims": claims, "other": other, "entities": entities, "excluded": excluded,
+    view = {"facts": facts, "claims": claims, "other": other, "entities": entities, "excluded": excluded,
             "pins": pinned,
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
             "repairs": [_report(rep, applied, r, excluded, pinned) for rep in repairs], "assertions": rows,
             "resolution": r,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
+    if told:
+        view["told"] = told_view(told_rows(served), r, excluded)
+    return view
+
+
+def told_view(rows: list[dict[str, Any]], r: Resolution, excluded: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Who told whom (PHASE-60 S8), oldest first: the served told rows (`told_rows`) taken as facts are (narrated,
+    actual, positive), each annotated with the view's entities (`_annotate`). A tie between two characters, as a pair
+    is: a row whose teller or hearer the owner left out, either scope (PHASE-47 S2, `excluded_ids`), is left out. The
+    knowledge marks are the row's own: a told row is no secret and infers no knowledge (ADR 0086 item 4)."""
+    out = []
+    for row in rows:
+        if ((row.get("source") or "narration") != "narration" or (row.get("modality") or "actual") != "actual"
+                or row.get("polarity") == "negative"):
+            continue
+        _annotate(row, r)
+        if any(str((row.get(f"{side}_entity") or {}).get("id")) in excluded for side in ("subject", "object")):
+            continue
+        out.append(row)
+    return out
 
 
 # Predicates whose story statement, replacing a canon one, is listed as a conflict (PHASE-14 Q4, ADR 0047 amendment 1):
@@ -1142,7 +1168,7 @@ def happened_attr(a: dict[str, Any]) -> str:
 
 
 def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, marks: bool = False,
-              gone: bool = False, happened: bool = False) -> str:
+              gone: bool = False, happened: bool = False, body: str | None = None) -> str:
     """One <Fact> with its knowledge marks exactly as stored (D19): knowledge="public", or known_by /
     hidden_from for limited facts, or no mark at all when who knows is unknown. A negated fact is
     explicitly not (or no longer) true (ADR 0013). A disputed fact carries what contradicts it in the same
@@ -1150,7 +1176,8 @@ def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, mark
     replaced another names it and its turn (ADR 0038); with `cause` (packet-v6), the cause the story states (ADR 0040).
     A canon fact says so in place of a turn, and a fact the owner locked says that (ADR 0047). With `gone` (packet-v20,
     PHASE-60 S3), the status line of a character who is dead or gone is marked so (ADR 0082 item 3). With `happened`
-    (packet-v20, PHASE-60 S7), a fact that says when it happened carries it right after its turn."""
+    (packet-v20, PHASE-60 S7), a fact that says when it happened carries it right after its turn. `body`: the line's
+    text in place of `fact_text` (a told line, `told_entry`)."""
     turn = f["turn"] if f.get("turn") is not None else f["position"]
     attrs = f" kind={quoteattr(f['predicate'])}" + (' source="canon"' if f.get("canon") else f" turn=\"{turn}\"")
     if happened:
@@ -1166,7 +1193,7 @@ def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, mark
     if f.get("epistemic") == "implied":
         attrs += ' certainty="implied"'
     attrs += _knowledge_attrs(f)
-    text = fact_text(f)
+    text = fact_text(f) if body is None else body
     if against := f.get("disputed_by"):
         when = against["turn"] if against.get("turn") is not None else against["position"]
         text += f"; but turn {when}: {fact_text(against)}"
@@ -1248,6 +1275,20 @@ def fact_entry(f: dict[str, Any], private: bool = False, before: bool = False, c
     PHASE-60 S7)."""
     return Line("fact", fact_line(f, before, cause, marks, gone, happened), _ref(f), f.get("turn"), fact_text(f),
                 f.get("value") or f.get("object") or "", {**_marks(f), "gone": True} if gone else _marks(f), private)
+
+
+def told_text(t: dict[str, Any]) -> str:
+    """A told row as a line says it (PHASE-60 S8): teller told hearer: what, and whom it is about when it names them."""
+    about = [p["name"] for p in t.get("participants") or () if p.get("name")]
+    return fact_text(t) + (f"; about: {', '.join(about)}" if about else "")
+
+
+def told_entry(t: dict[str, Any], private: bool = False, happened: bool = False) -> Line:
+    """packet-v20 (PHASE-60 S8, ADR 0086): who told whom as a <Fact kind="told"> line, its knowledge marks as stored, the
+    words a reply can echo its value. Ledger kind `fact`, like any fact line."""
+    text = told_text(t)
+    return Line("fact", fact_line(t, happened=happened, body=text), _ref(t), t.get("turn"), text,
+                t.get("value") or "", _marks(t), private)
 
 
 def claim_entry(c: dict[str, Any], private: bool = False, cause: bool = False) -> Line:

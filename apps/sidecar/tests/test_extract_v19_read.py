@@ -16,7 +16,7 @@ from psycopg.rows import dict_row
 
 from conftest import active_generation, make_client
 from nmos_sidecar.facts import memory_view, served_assertions, served_told, told_rows
-from nmos_sidecar.packet import HAPPENED_MARK, HAPPENED_NOTE
+from nmos_sidecar.packet import HAPPENED_MARK, HAPPENED_NOTE, PRIVATE_NOTE, TOLD_MARK, TOLD_NOTE
 from simchat import SimChat
 from test_extract_v18 import FEELING, USED, chat_of, feels
 from test_extract_v19 import EVENT_QUOTE, SCENE, TOLD_QUOTE, event_row, told_row
@@ -154,5 +154,10 @@ def test_a3_the_packet_is_the_same_with_or_without_told_rows_and_when_happened(m
     happened = '<Fact kind="event" turn="0" happened="3년 전 겨울">유나 event: 성을 떠났다</Fact>'
     assert happened in with_rows["text"] and HAPPENED_NOTE in with_rows["text"]
     assert plain in without["text"] and HAPPENED_MARK not in without["text"] and HAPPENED_NOTE not in without["text"]
-    assert TOLD_VALUE not in with_rows["text"] and 'predicate="told"' not in with_rows["text"]
-    assert with_rows["text"].replace(happened, plain).replace(HAPPENED_NOTE, "") == without["text"]
+    # the told line, private here (유나 and the persona are in the scene and not shown to know it), as its own section
+    told = ("\n  <Private>\n    <Fact kind=\"told\" turn=\"0\" known_by=\"세라, 카이토\" hidden_from=\"하나\">"
+            f"세라 told 카이토: {TOLD_VALUE}; about: 유나</Fact>\n  </Private>")
+    assert told in with_rows["text"] and TOLD_NOTE in with_rows["text"] and PRIVATE_NOTE in with_rows["text"]
+    assert TOLD_VALUE not in without["text"] and TOLD_MARK not in without["text"] and TOLD_NOTE not in without["text"]
+    assert with_rows["text"].replace(happened, plain).replace(told, "").replace(HAPPENED_NOTE, "").replace(
+        TOLD_NOTE, "").replace(PRIVATE_NOTE, "") == without["text"]

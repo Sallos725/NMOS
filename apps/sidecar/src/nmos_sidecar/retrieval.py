@@ -22,7 +22,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .entities import PERSONA, norm
-from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, excluded_ids, fact_entry, lexically_related, memory_view, relevant_facts, settled_entry, thread_entry
+from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, excluded_ids, fact_entry, lexically_related, memory_view, relevant_facts, settled_entry, thread_entry, told_entry
 from . import absence, coverage, mentions, overuse, quotes, rerank, scene, spans, statechange, summaries, variants, source_time
 from .gone import is_gone_place, is_gone_status
 from .ids import uuid7
@@ -35,7 +35,7 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      STATE_HISTORY_MAX, STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES,
                      SOURCE_CLOCK_POLICIES, STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, RETURN_GAP_POLICIES, SETTLED_POLICIES,
-                     PIN_POLICIES, SEM_QUERY_POLICIES, HAPPENED_POLICIES, EXCERPT_FLOOR,
+                     PIN_POLICIES, SEM_QUERY_POLICIES, HAPPENED_POLICIES, TOLD_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
@@ -304,6 +304,7 @@ CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
 GONE_MAX = 8  # packet-v20: gone characters pinned at most (PHASE-60 S3)
+TOLD_MAX = 2  # packet-v20: lines of who told whom at most (PHASE-60 S8, proposal)
 PIN_EXTRA = 3  # packet-v20: <Cast> groups for pinned characters beyond the cast's own CAST_MAX (PHASE-60 S8)
 
 
@@ -1065,7 +1066,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     selected: list[dict[str, Any]] = []  # the facts offered (facts, <Cast>), for packet-v12's replaced values
     if options.facts_limit > 0 or options.threads_limit > 0:
         view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                           options.canon_key, canon_facts)
+                           options.canon_key, canon_facts,
+                           told=options.policy in TOLD_POLICIES and options.facts_limit > 0)  # PHASE-60 S8
         g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"]
         persona = r.persona_names if r else frozenset()
@@ -1155,6 +1157,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                               for f in facts if f["predicate"] not in STANDING]
                              + [claim_entry(c, scene.private(c, g.cast, r), cause) for c in claims], facts + claims, g, r,
                              options)
+            # packet-v20 (PHASE-60 S8): who told whom, after the ordinary facts and claims; chosen after them, so it
+            # changes neither their selection nor the fill decision
+            g.facts += told_lines(g, view, r, query, previous_ai, in_context, options, aliases, rest)
         if options.narrator:
             who = scene.display(r, options.narrator) if r is not None else options.narrator
             g.note = f" The story is told in the first person by {who}: only what they know is listed."
@@ -1768,6 +1773,58 @@ def settled_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, now: in
     own = [t for t in view["threads"] if not t.get("carried")]
     picked = absence.settled(own, now, lambda t: involved(t) and bool(_rested([t], "thread", rest, g)))
     return _moded([settled_entry(t, scene.private(t, g.cast, r)) for t in picked], view["threads"], g, r, options)
+
+
+def told_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_ai: str, in_context: set[str],
+               options: RecallOptions, aliases: dict[str, frozenset[str]] | None = None,
+               rest: frozenset[tuple[str, str]] = frozenset()) -> list[Line]:
+    """packet-v20 (PHASE-60 S8, ADR 0086): at most TOLD_MAX lines of who told whom (`view["told"]`, read only under
+    TOLD_POLICIES), as <Fact kind="told">.
+
+    A told row is a candidate when its teller or hearer (not the persona, who is in every scene) is in the scene or
+    named in the user's message, under any name they go by (`aliases`), as for a settled thread. The candidates are
+    ranked as facts are (`relevant_facts`: what the message names or its words point at first); one only the scene
+    brings follows, newest first. Neither is said again while its message is in the prompt (D3), and a tired one rests
+    (`_rested`). A line whose value or quote says a secret still kept from someone (`summaries.leaks`, stricter with
+    such a someone in the scene) is left out as a keyword-only excerpt is (D62), recorded as a hidden ledger entry
+    (`secret_gate`); the next candidate may take its place. The rest is any fact line's: private as such in this scene,
+    through this chat's memory mode (`_moded`: strict, narrator). Every other policy: none."""
+    if options.policy not in TOLD_POLICIES or r is None or not view.get("told"):
+        return []
+    persona = scene.key(r, scene.PERSONA)
+    present = set(g.cast) - {persona}
+    said = norm(query)
+
+    def involved(t: dict[str, Any]) -> bool:
+        for name in (t.get("subject"), t.get("object")):
+            if not name or scene.is_persona(r, name):
+                continue
+            k = scene.key(r, name)
+            if k != persona and (k in present or any(n in said for n in scene.names({k: name}, r, aliases))):
+                return True
+        return False
+
+    candidates = [t for t in view["told"] if not t.get("carried") and involved(t)]
+    if not candidates:
+        return []
+    names = scene.names(g.cast, r, aliases)
+    ranked = relevant_facts(candidates, query, previous_ai, in_context, len(candidates), persona=r.persona_names,
+                            present=names, aliases=aliases, named=g.named,
+                            named_by_words=options.policy in NAMED_POLICIES)
+    chosen = {id(t) for t in ranked}
+    ranked += sorted((t for t in candidates if id(t) not in chosen and t["host_logical_id"] not in in_context),
+                     key=lambda t: t["position"], reverse=True)
+    picked: list[dict[str, Any]] = []
+    for t in _rested(ranked, "fact", rest, g):
+        if len(picked) >= TOLD_MAX:
+            break
+        if any(summaries.leaks(form, view["secrets"], names) for form in (t.get("value"), t.get("evidence")) if form):
+            if options.policy in LABEL_POLICIES:
+                g.hidden_entries.append(hidden_entry("fact", {"assertion": t["id"]}, t.get("turn"), "secret_gate"))
+            continue
+        picked.append(t)
+    happened = options.policy in HAPPENED_POLICIES
+    return _moded([told_entry(t, scene.private(t, g.cast, r), happened) for t in picked], picked, g, r, options)
 
 
 def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
