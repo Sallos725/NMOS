@@ -143,3 +143,15 @@ export function connArgs(v: FormValues['conn']): Record<string, string | number>
     auth_token: v.token.trim(),
   };
 }
+
+/** Plugin args for leaving out old dialogue (PHASE-60 S1, ADR 0083; stored in PocketRisu, not the sidecar): the switch
+ *  as 1 or 0, and the recent turns always sent, a whole number within 4..200 that is 20 when empty or not positive.
+ *  `host.ts` reads every value this returns back as it is. */
+export function trimArgs(v: { on: boolean; keep: string }): { trim_old_turns: 0 | 1; keep_recent_turns: number } {
+  const n = Math.floor(Number(v.keep.trim()));
+  const keep = Number.isFinite(n) && n > 0 ? n : DEFAULT_KEEP_RECENT_TURNS;
+  return {
+    trim_old_turns: v.on ? 1 : 0,
+    keep_recent_turns: Math.min(MAX_KEEP_RECENT_TURNS, Math.max(MIN_KEEP_RECENT_TURNS, keep)),
+  };
+}

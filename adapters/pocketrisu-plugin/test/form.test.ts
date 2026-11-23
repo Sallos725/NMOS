@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { configBody, connArgs, dirtySections, embedWaitTooLong, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, VERTEX_URL,
+import { configBody, connArgs, dirtySections, embedWaitTooLong, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, trimArgs, VERTEX_URL,
   type FormValues } from '../src/form';
+import { risuHost } from '../src/host';
 import { STRING_KEYS, langOf, t } from '../src/i18n';
 
 const base: FormValues = {
@@ -80,6 +81,30 @@ describe('batch save', () => {
     const deadline = (value: string) => connArgs({ ...base.conn, deadline: value }).deadline_ms;
     expect([deadline(''), deadline('abc'), deadline('50'), deadline('4500.7'), deadline('99999')])
       .toEqual([3000, 3000, 200, 4500, 30000]);
+  });
+});
+
+describe('leaving out old dialogue (PHASE-60 S1)', () => {
+  it('stores the switch as 1 or 0 and keeps the recent turns within 4..200, 20 by default', () => {
+    const keep = (value: string) => trimArgs({ on: true, keep: value }).keep_recent_turns;
+    expect([keep(''), keep('abc'), keep('0'), keep('-5'), keep('0.5'), keep('3'), keep('4'), keep('30.9'), keep(' 40 '),
+      keep('200'), keep('500')]).toEqual([20, 20, 20, 20, 20, 4, 4, 30, 40, 200, 200]);
+    expect(trimArgs({ on: true, keep: '30' })).toEqual({ trim_old_turns: 1, keep_recent_turns: 30 });
+    expect(trimArgs({ on: false, keep: '' })).toEqual({ trim_old_turns: 0, keep_recent_turns: 20 });
+  });
+
+  it('stores what the plugin reads back', async () => {
+    try {
+      for (const v of [{ on: true, keep: '30' }, { on: false, keep: '' }, { on: true, keep: '500' }, { on: true, keep: '2' }]) {
+        const args: Record<string, number> = trimArgs(v);
+        (globalThis as { risuai?: unknown }).risuai = { getArgument: async (key: string) => args[key.split('::').pop()!] };
+        const s = await risuHost.settings();
+        expect([s.trimOldTurns ? 1 : 0, s.keepRecentTurns], JSON.stringify(v))
+          .toEqual([args.trim_old_turns, args.keep_recent_turns]);
+      }
+    } finally {
+      delete (globalThis as { risuai?: unknown }).risuai;
+    }
   });
 });
 
