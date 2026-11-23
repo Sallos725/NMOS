@@ -7,15 +7,13 @@ candidate's trace entry carries `"rerank": <score>`, and `recall_options` record
 timeout, an error status or a malformed answer leaves the fused order with `rerank_used` False. Unconfigured, nothing
 is called and no `rerank*` key is in the trace. A replay never calls: it applies the recorded scores.
 
-Written before the code (the tests are the contract). The settings slice (`NMOS_RERANK_*`) is not on this branch, so a
-test configures the reranker by handing `/v1/retrieve` its options with `reranker` set (`configure`): the real route,
-the real `retrieval.retrieve`, the real HTTP client against the local stub (tests/rerank_stub.py). The archive refusal
-of A8 waits for that slice and is not here.
+Written before the code (the tests are the contract). Configures the reranker through `PUT /v1/config`
+(`NMOS_RERANK_*` runtime settings) so every test exercises the real `/v1/retrieve`, `retrieval.retrieve`,
+`GET /v1/trace/{id}/replay`, and HTTP client against the local stub (tests/rerank_stub.py).
 """
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import logging
 import re
@@ -27,7 +25,7 @@ from psycopg.rows import dict_row
 
 from conftest import make_client
 from memeval import settings_for
-from nmos_sidecar import audit, rerank, retrieval
+from nmos_sidecar import audit, rerank
 from nmos_sidecar.canonical import normalize_text
 from nmos_sidecar.packet import clean_text
 from nmos_sidecar.retrieval import RecallOptions
@@ -70,16 +68,17 @@ def settings() -> dict[str, Any]:
     return {**settings_for("lexical"), "packet_policy": "packet-v20"}
 
 
-def configure(monkeypatch, reranker: rerank.Reranker) -> None:
-    """The app's recall options with `reranker` set, for every /v1/retrieve the route serves (see the docstring)."""
-    from nmos_sidecar import api
-
-    real = retrieval.retrieve
-
-    def with_reranker(conn, request, options):
-        return real(conn, request, dataclasses.replace(options, reranker=reranker))
-
-    monkeypatch.setattr(api, "retrieve", with_reranker)
+def configure(client, cfg: rerank.Reranker) -> None:
+    """Configure the live app's reranker through `PUT /v1/config` (runtime settings)."""
+    res = client.put("/v1/config", json={
+        "rerank_url": cfg.url,
+        "rerank_model": cfg.model,
+        "rerank_api_key": cfg.api_key,
+        "rerank_timeout_ms": cfg.timeout_ms,
+        "rerank_format": cfg.format,
+    })
+    assert res.status_code == 200, res.text
+    assert res.json()["rerank"]["configured"] is True
 
 
 def ask(client, chat: SimChat) -> dict[str, Any]:
@@ -148,7 +147,7 @@ def test_unconfigured_nothing_is_called_and_the_trace_has_no_rerank_key(migrated
     assert keys_named_rerank(trace) == []
 
 
-def test_configured_the_30_eligible_are_sent_once_and_reordered_by_score(migrated, rerank_server, monkeypatch):
+def test_configured_the_30_eligible_are_sent_once_and_reordered_by_score(migrated, rerank_server):
     rerank_server.score = score_of
     with make_client(migrated, **settings()) as client:
         chat = build(client)
@@ -168,7 +167,7 @@ def test_configured_the_30_eligible_are_sent_once_and_reordered_by_score(migrate
         assert [c["revision_id"] for c in expected] != [c["revision_id"] for c in before]
         best = expected[0]["revision_id"]
         assert best not in {s["revision_id"] for s in fused["selected"]}  # the fused packet did not place it
-        configure(monkeypatch, reranker(rerank_server))
+        configure(client, reranker(rerank_server))
         trace = ask(client, chat)
 
     # one call: the message as the query, the key as a Bearer token, the 30 eligible in fused order, each cut
@@ -202,7 +201,7 @@ def test_configured_the_30_eligible_are_sent_once_and_reordered_by_score(migrate
 
 
 @pytest.mark.parametrize("failure", ["timeout", "status_500", "malformed", "not_json"])
-def test_a_failed_rerank_leaves_the_fused_order(migrated, rerank_server, monkeypatch, failure):
+def test_a_failed_rerank_leaves_the_fused_order(migrated, rerank_server, failure):
     rerank_server.score = score_of
     kw: dict[str, Any] = {}
     if failure == "timeout":
@@ -217,7 +216,7 @@ def test_a_failed_rerank_leaves_the_fused_order(migrated, rerank_server, monkeyp
     with make_client(migrated, **settings()) as client:
         chat = build(client)
         fused = ask(client, chat)
-        configure(monkeypatch, reranker(rerank_server, **kw))
+        configure(client, reranker(rerank_server, **kw))
         trace = ask(client, chat)
     assert rerank_server.calls == 1  # it was asked, once
     assert trace["recall_options"]["rerank_used"] is False
@@ -229,17 +228,21 @@ def test_a_failed_rerank_leaves_the_fused_order(migrated, rerank_server, monkeyp
     assert out["status"] == "ok" and out.get("reproduced") is True and rerank_server.calls == 1
 
 
-def test_a_replay_of_a_reranked_request_calls_nothing_and_reproduces_its_packet(migrated, rerank_server, monkeypatch):
+def test_a_replay_of_a_reranked_request_calls_nothing_and_reproduces_its_packet(migrated, rerank_server):
     rerank_server.score = score_of
     with make_client(migrated, **settings()) as client:
         chat = build(client)
         fused = ask(client, chat)
-        configure(monkeypatch, reranker(rerank_server))
+        configure(client, reranker(rerank_server))
         trace = ask(client, chat)
-    assert rerank_server.calls == 1 and trace["recall_options"]["rerank_used"] is True
-    # the scores changed what was placed, so a replay in fused order could not reproduce it
-    assert {s["revision_id"] for s in trace["selected"]} != {s["revision_id"] for s in fused["selected"]}
-    rerank_server.score = lambda doc: -score_of(doc)  # a reranker asked again now would answer otherwise
+        assert rerank_server.calls == 1 and trace["recall_options"]["rerank_used"] is True
+        # the scores changed what was placed, so a replay in fused order could not reproduce it
+        assert {s["revision_id"] for s in trace["selected"]} != {s["revision_id"] for s in fused["selected"]}
+        rerank_server.score = lambda doc: -score_of(doc)  # a reranker asked again now would answer otherwise
+        http_replay = client.get(f"/v1/trace/{trace['id']}/replay")
+        assert http_replay.status_code == 200
+        http_out = http_replay.json()
+        assert http_out["status"] == "ok" and http_out.get("reproduced") is True and rerank_server.calls == 1
     with db(migrated) as conn:
         for options in (RecallOptions(reranker=reranker(rerank_server)), RecallOptions()):
             out = audit.replay(conn, trace["id"], options)
@@ -251,12 +254,12 @@ def test_a_replay_of_a_reranked_request_calls_nothing_and_reproduces_its_packet(
     assert rerank_server.calls == 1  # no replay called the reranker
 
 
-def test_the_key_is_in_no_trace_and_no_log_record(migrated, rerank_server, monkeypatch, caplog):
+def test_the_key_is_in_no_trace_and_no_log_record(migrated, rerank_server, caplog):
     caplog.set_level(logging.DEBUG)
     rerank_server.score = score_of
     with make_client(migrated, **settings()) as client:
         chat = build(client)
-        configure(monkeypatch, reranker(rerank_server))
+        configure(client, reranker(rerank_server))
         ok = ask(client, chat)
         rerank_server.status = 500
         failed = ask(client, chat)
