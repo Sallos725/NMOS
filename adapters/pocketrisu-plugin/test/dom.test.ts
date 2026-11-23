@@ -701,6 +701,221 @@ describe('panel', () => {
     });
   });
 
+  describe('extra request values on the extraction model (PHASE-61 S4)', () => {
+    const OR = 'https://openrouter.ai/api/v1';
+    const labels = {
+      en: { body: 'Extra request values (JSON)', effort: 'Reasoning effort', noTemp: 'Do not send a temperature',
+        invalid: 'Not a JSON object', title: 'Fact extraction LLM' },
+      ko: { body: '추가 요청 값 (JSON)', effort: '추론 강도', noTemp: 'temperature 보내지 않기',
+        invalid: 'JSON 객체가 아닙니다', title: '사실 추출 LLM' },
+    } as const;
+    const open = async (language: 'ko' | 'en', llm: Record<string, unknown>, preview = true) => {
+      const h = deps();
+      h.args.language = language;
+      const state = { llm: { ...config.llm, ...llm } as Record<string, unknown> };
+      const snapshot = () => ({ ...config, llm: { ...state.llm } });
+      h.d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => {
+        h.calls.push([method, path, body]);
+        if (path.startsWith('/v1/conversations?')) return [] as T;
+        if (path === '/v1/config/test') return { ok: true, ms: 12 } as T;
+        if (path === '/v1/config/preview') {
+          return (preview ? { model_change: true, queued: { continue: { extract: 0 }, recent: { extract: 40 } } }
+            : { model_change: false, queued: {} }) as T;
+        }
+        if (method === 'PUT' && path === '/v1/config') {
+          const b = body as Record<string, unknown>;
+          if ('llm_url' in b) state.llm.url = b.llm_url;
+          if ('llm_model' in b) state.llm.model = b.llm_model;
+          if ('llm_extra_body' in b) state.llm.extra_body = b.llm_extra_body;
+          if ('llm_no_temperature' in b) state.llm.no_temperature = b.llm_no_temperature;
+          return { ...snapshot(), queued_jobs: 0 } as T;
+        }
+        return snapshot() as T;
+      };
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      const L = labels[language];
+      const card = [...panel.querySelectorAll<HTMLElement>('.card')].find((c) => c.querySelector('h2')?.textContent === L.title)!;
+      const button = (text: string) => [...panel.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === text)!;
+      return { ...h, panel, card, L,
+        text: card.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${L.body}"]`)!,
+        effort: card.querySelector<HTMLSelectElement>(`select[aria-label="${L.effort}"]`)!,
+        noTemp: card.querySelector<HTMLInputElement>('input[type="checkbox"]')!,
+        endpoint: card.querySelector<HTMLInputElement>('input[placeholder="https://…/v1"]')!,
+        error: [...card.querySelectorAll<HTMLElement>('.msg.err')].find((e) => e.textContent === L.invalid)!,
+        save: panel.querySelector<HTMLButtonElement>('.bar button.primary')!,
+        bar: panel.querySelector('.bar .text')!,
+        button };
+    };
+    const shown = (node: HTMLElement | null): boolean => {
+      for (let n = node; n; n = n.parentElement) if (n.style.display === 'none') return false;
+      return Boolean(node);
+    };
+    const type = (input: HTMLInputElement | HTMLTextAreaElement, value: string) => {
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const choose = (select: HTMLSelectElement, value: string) => {
+      select.value = value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    const puts = (calls: [string, string, unknown][]) => calls.filter(([m, p]) => m === 'PUT' && p === '/v1/config').map(([, , b]) => b);
+
+    it('loads the body and the switch, with every label in both languages', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const body = { provider: { sort: 'price' }, reasoning: { effort: 'low' } };
+        const h = await open(language, { url: OR, extra_body: body, no_temperature: true });
+        expect(shown(h.text)).toBe(true);
+        expect(h.text.value).toBe(JSON.stringify(body, null, 2));
+        expect(shown(h.effort)).toBe(true);
+        expect(h.effort.value).toBe('low');
+        expect([...h.effort.options].map((o) => o.value)).toEqual(['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+        expect(h.effort.options[0]!.text).toBe('—');
+        expect(h.noTemp.checked).toBe(true);
+        expect(h.card.textContent).toContain(h.L.noTemp);
+        expect(h.card.textContent).toContain(h.L.effort);
+        expect(shown(h.error)).toBe(false);
+        expect(h.save.disabled).toBe(true);  // loading is no change
+        h.panel.remove();
+        const empty = await open(language, { url: OR, extra_body: {}, no_temperature: false });
+        expect(empty.text.value).toBe('');
+        expect(empty.effort.value).toBe('');
+        expect(empty.noTemp.checked).toBe(false);
+        empty.panel.remove();
+      }
+    });
+
+    it('writes the chosen effort into the text and saves it beside the other keys through the model-change preview', async () => {
+      const h = await open('en', { url: OR, extra_body: { provider: { sort: 'price' } }, no_temperature: false });
+      choose(h.effort, 'high');
+      expect(JSON.parse(h.text.value)).toEqual({ provider: { sort: 'price' }, reasoning: { effort: 'high' } });
+      expect(h.bar.textContent).toBe('Unsaved changes: Fact extraction LLM');
+      h.save.click();
+      await vi.waitFor(() => expect(h.panel.querySelector('.bar .model-change')).not.toBeNull());
+      const sent = { llm_url: OR, llm_model: 'm', llm_extra_body: { provider: { sort: 'price' }, reasoning: { effort: 'high' } } };
+      expect(h.calls.filter(([, p]) => p === '/v1/config/preview').map(([, , b]) => b)).toEqual([sent]);
+      expect(puts(h.calls)).toEqual([]);  // nothing saved before the answer
+      h.button('Save').click();
+      await vi.waitFor(() => expect(h.bar.textContent).toBe('Saved.'));
+      expect(puts(h.calls)).toEqual([{ ...sent, on_model_change: { mode: 'continue', canon: false } }]);
+      // "—" takes it out again, and reasoning with it
+      choose(h.effort, '');
+      expect(JSON.parse(h.text.value)).toEqual({ provider: { sort: 'price' } });
+      h.panel.remove();
+    });
+
+    it('moves the dropdown when the JSON is typed by hand: a value, custom, or disabled while not an object', async () => {
+      const h = await open('ko', { url: OR, extra_body: {}, no_temperature: false });
+      const values = () => [...h.effort.options].map((o) => o.value);
+      type(h.text, '{"reasoning": {"effort": "medium"}, "max_tokens": 900}');
+      expect([h.effort.value, h.effort.disabled, values().includes('custom')]).toEqual(['medium', false, false]);
+      type(h.text, '{"reasoning": {"effort": "turbo"}}');
+      expect([h.effort.value, h.effort.disabled]).toEqual(['custom', false]);
+      expect(h.effort.selectedOptions[0]!.text).toBe('직접 입력');
+      type(h.text, '{"reasoning": {"effort": "medium"');
+      expect(h.effort.disabled).toBe(true);
+      expect(values().includes('custom')).toBe(false);
+      expect(shown(h.error)).toBe(true);
+      type(h.text, '{"a": 1}');
+      expect([h.effort.value, h.effort.disabled, shown(h.error)]).toEqual(['', false, false]);
+      h.panel.remove();
+    });
+
+    it('shows the dropdown only for an OpenRouter address, following the address field and the preset', async () => {
+      const h = await open('en', { url: 'https://llm.example/v1', extra_body: {}, no_temperature: false });
+      expect(shown(h.text)).toBe(true);
+      expect(shown(h.noTemp)).toBe(true);
+      expect(shown(h.effort)).toBe(false);
+      type(h.endpoint, 'https://openrouter.ai/api/v1');
+      expect(shown(h.effort)).toBe(true);
+      type(h.endpoint, 'https://openrouter.ai.example.com/v1');
+      expect(shown(h.effort)).toBe(false);
+      const preset = h.card.querySelector('select')!;
+      choose(preset, String([...preset.options].findIndex((o) => o.text === 'OpenRouter')));
+      expect(h.endpoint.value).toBe(OR);
+      expect(shown(h.effort)).toBe(true);
+      choose(preset, String([...preset.options].findIndex((o) => o.text === 'OpenAI')));
+      expect(shown(h.effort)).toBe(false);
+      h.panel.remove();
+    });
+
+    it('sends neither field when they did not change, and the switch alone as a model change', async () => {
+      const h = await open('en', { url: OR, extra_body: { b: 2, a: 1 }, no_temperature: false });
+      type(h.text, '{"a":1,"b":2}');  // same object, other text
+      expect(h.save.disabled).toBe(true);
+      const model = [...h.card.querySelectorAll('input')].find((i) => i.value === 'm')!;
+      type(model, 'm2');
+      h.save.click();
+      await vi.waitFor(() => expect(h.panel.querySelector('.bar .model-change')).not.toBeNull());
+      h.button('Save').click();
+      await vi.waitFor(() => expect(h.bar.textContent).toBe('Saved.'));
+      expect(puts(h.calls).at(-1)).toEqual({ llm_url: OR, llm_model: 'm2', on_model_change: { mode: 'continue', canon: false } });
+      h.noTemp.click();
+      h.save.click();
+      await vi.waitFor(() => expect(h.panel.querySelector('.bar .model-change')).not.toBeNull());
+      expect(h.calls.filter(([, p]) => p === '/v1/config/preview').at(-1)![2])
+        .toEqual({ llm_url: OR, llm_model: 'm2', llm_no_temperature: true });
+      h.button('Save').click();
+      await vi.waitFor(() => expect(h.bar.textContent).toBe('Saved.'));
+      expect(puts(h.calls).at(-1)).toEqual({ llm_url: OR, llm_model: 'm2', llm_no_temperature: true,
+        on_model_change: { mode: 'continue', canon: false } });
+      expect(h.noTemp.checked).toBe(true);
+      h.panel.remove();
+    });
+
+    it('sends nothing while the text is not a JSON object, neither the save nor the test', async () => {
+      const h = await open('en', { url: OR, extra_body: {}, no_temperature: false });
+      h.args.trim_old_turns = '0';
+      const trim = [...h.panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((i) =>
+        i.nextElementSibling?.textContent?.startsWith('Leave out old dialogue'))!;
+      type(h.text, '[1, 2]');
+      trim.click();  // another unsaved change: still nothing is written
+      h.save.click();
+      await settle(); await settle();
+      expect(h.bar.textContent).toBe('Not a JSON object');
+      expect(h.calls.filter(([m, p]) => m !== 'GET' && p.startsWith('/v1/config'))).toEqual([]);
+      expect(h.args.trim_old_turns).toBe('0');
+      expect(h.save.disabled).toBe(false);
+      h.button('Test').click();
+      await settle();
+      expect(h.calls.some(([, p]) => p === '/v1/config/test')).toBe(false);
+      expect(h.card.querySelector('.btns ~ .msg')!.textContent).toBe('Not a JSON object');
+      h.panel.remove();
+    });
+
+    it("sends the form's body and switch with the extraction model's test", async () => {
+      const h = await open('en', { url: OR, extra_body: {}, no_temperature: false });
+      choose(h.effort, 'minimal');
+      h.noTemp.click();
+      h.button('Test').click();
+      await vi.waitFor(() => expect(h.calls.some(([, p]) => p === '/v1/config/test')).toBe(true));
+      expect(h.calls.find(([, p]) => p === '/v1/config/test')![2]).toEqual({ kind: 'llm', url: OR, model: 'm',
+        api_key: undefined, extra_body: { reasoning: { effort: 'minimal' } }, no_temperature: true });
+      h.panel.remove();
+    });
+
+    it('shows none of the three and sends neither field to a sidecar from before the setting (KO and EN)', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const h = await open(language, { url: OR });
+        expect(shown(h.text)).toBe(false);
+        expect(shown(h.effort)).toBe(false);
+        expect(shown(h.noTemp)).toBe(false);
+        h.button(language === 'en' ? 'Test' : '연결 테스트').click();
+        await vi.waitFor(() => expect(h.calls.some(([, p]) => p === '/v1/config/test')).toBe(true));
+        expect(h.calls.find(([, p]) => p === '/v1/config/test')![2]).toEqual({ kind: 'llm', url: OR, model: 'm', api_key: undefined });
+        type(h.endpoint, 'https://openrouter.ai/api/v2');
+        h.save.click();
+        await vi.waitFor(() => expect(h.panel.querySelector('.bar .model-change')).not.toBeNull());
+        h.panel.querySelector<HTMLButtonElement>('.bar .model-change button.primary')!.click();
+        await vi.waitFor(() => expect(puts(h.calls)).toHaveLength(1));
+        expect(puts(h.calls)[0]).toEqual({ llm_url: 'https://openrouter.ai/api/v2', llm_model: 'm',
+          on_model_change: { mode: 'continue', canon: false } });
+        h.panel.remove();
+      }
+    });
+  });
+
   it('says when no chat is open', async () => {
     const { d, open } = deps();
     open.chat = null;

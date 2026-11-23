@@ -9,8 +9,9 @@ import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_RESERVED_TOKENS, dirtySections, embedWaitTooLong,
   endpointForKey, fillProject, isVertexEndpoint, MAX_DEADLINE_MS, MAX_KEEP_RECENT_TURNS, MAX_RERANK_TIMEOUT_MS,
-  MIN_KEEP_RECENT_TURNS, MIN_RERANK_TIMEOUT_MS, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl,
+  MIN_KEEP_RECENT_TURNS, MIN_RERANK_TIMEOUT_MS, modelChange, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl,
   serviceAccountProject, trimArgs, VERTEX_URL, type FormValues, type Section } from './form';
+import { bodyOf, EFFORTS, effortOf, isOpenRouter, showBody, withEffort } from './extrabody';
 import { failureKind } from './failure';
 import { parserBindings, parserDraft, presetRules, type ParserPreset } from './parser-form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
@@ -69,7 +70,9 @@ export interface PanelDeps {
 }
 
 interface ServerConfig {
-  llm: { url: string; model: string; api_key_set: boolean; json_mode: boolean };
+  /** `extra_body` and `no_temperature` from PHASE-61 on (ADR 0088). */
+  llm: { url: string; model: string; api_key_set: boolean; json_mode: boolean; extra_body?: Record<string, unknown>;
+    no_temperature?: boolean };
   embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string };
   rerank?: { url: string; model: string; timeout_ms: number; format: string; key_set: boolean; configured: boolean;
     note?: string };
@@ -1881,7 +1884,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('p', { class: 'sub', text: L('conn.hint') }), el('p', { class: 'sub', text: L('conn.deadline_hint') })));
 
   function modelSection(kind: 'llm' | 'embeddings', title: StringKey, sub: StringKey, presets: Preset[],
-    onPreset?: (p: Preset) => void) {
+    onPreset?: (p: Preset) => void, extra?: { nodes: Node[]; test(): Record<string, unknown> | null }) {
     const preset = el('select', {}, ...presets.map((p, i) => el('option', { value: String(i),
       text: p.label.includes('.') ? L(p.label as StringKey) : p.label })));
     const endpoint = el('input', { placeholder: 'https://…/v1', spellcheck: 'false' });
@@ -1942,11 +1945,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       } catch (error) { say(msg, errorText(lang, error), 'err'); }
     });
     test.addEventListener('click', async () => {
+      const more = extra ? extra.test() : {};  // what the requests carry, as in the form (PHASE-61 S4)
+      if (!more) return say(msg, L('extra.invalid'), 'err');
       test.disabled = true;
       say(msg, L('model.testing'));
       try {
         const r = await deps.api<{ ok: boolean; ms: number; dimensions?: number; error?: string }>('POST', '/v1/config/test',
-          { kind, url: endpoint.value.trim(), model: model.value.trim(), api_key: key.value.trim() || undefined });
+          { kind, url: endpoint.value.trim(), model: model.value.trim(), api_key: key.value.trim() || undefined, ...more });
         say(msg, r.ok ? L('model.test_ok', { ms: r.ms }) + (r.dimensions ? L('model.dims', { n: r.dimensions }) : '')
           : L('model.test_failed', { e: r.error ?? '' }), r.ok ? 'ok' : 'err');
       } catch (error) { say(msg, errorText(lang, error), 'err'); } finally { test.disabled = false; }
@@ -1954,7 +1959,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     settingsView.append(el('div', { class: 'card' },
       el('h2', { text: L(title) }), el('p', { class: 'sub', text: L(sub) }),
       field(L('model.provider'), preset), field(L('model.endpoint'), endpoint),
-      field(L('model.model'), model), list, field(L('model.key'), key),
+      field(L('model.model'), model), list, field(L('model.key'), key), ...(extra?.nodes ?? []),
       el('div', { class: 'btns' }, pickKey, load, test), keyFile, msg));
     return {
       values: () => ({ url: endpoint.value, model: model.value, key: key.value }),
@@ -1968,7 +1973,40 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       },
     };
   }
-  const llm = modelSection('llm', 'llm.title', 'llm.sub', LLM_PRESETS);
+  // What the extraction model's requests carry (PHASE-61 S4, ADR 0088): one stored body, and the effort dropdown as a
+  // view of it; hidden when the sidecar does not report `llm.extra_body`.
+  let extraKnown = false;
+  const extraText = el('textarea', { rows: 4, spellcheck: 'false', placeholder: '{}', style: 'min-height:96px',
+    'aria-label': L('extra.body') });
+  const extraErr = el('div', { class: 'msg err', text: L('extra.invalid'), style: 'display:none' });
+  const effortCustom = el('option', { value: 'custom', text: L('extra.custom') });  // in the list only while custom
+  const effort = el('select', { 'aria-label': L('extra.effort') }, el('option', { value: '', text: '—' }),
+    ...EFFORTS.map((e) => el('option', { value: e, text: e })));
+  const effortRow = el('div', {}, field(L('extra.effort'), effort), el('p', { class: 'sub', text: L('extra.effort_sub') }));
+  const noTemp = el('input', { type: 'checkbox' });
+  const extraBox = el('div', { style: 'display:none' }, field(L('extra.body'), extraText), extraErr,
+    el('p', { class: 'sub', text: L('extra.body_sub') }), effortRow,
+    el('div', { class: 'check' }, noTemp, el('span', { text: L('extra.no_temp') })),
+    el('p', { class: 'sub', text: L('extra.no_temp_sub') }));
+  effort.addEventListener('change', () => {
+    if (effort.value !== 'custom') extraText.value = withEffort(extraText.value, effort.value || null);
+  });
+  /** The dropdown follows the text and the address; called from `update`, since loads and presets set them without an event. */
+  function syncExtra(): void {
+    extraBox.style.display = extraKnown ? '' : 'none';
+    effortRow.style.display = isOpenRouter(llm.values().url) ? '' : 'none';
+    const s = effortOf(extraText.value);
+    if (s.state === 'custom') effort.append(effortCustom); else effortCustom.remove();
+    effort.value = s.state === 'value' ? s.effort : s.state === 'custom' ? 'custom' : '';
+    effort.disabled = s.state === 'invalid';
+    extraErr.style.display = s.state === 'invalid' ? '' : 'none';
+  }
+  const extraValues = () => (extraKnown ? { extra: extraText.value, noTemp: noTemp.checked } : {});
+  const llm = modelSection('llm', 'llm.title', 'llm.sub', LLM_PRESETS, undefined, { nodes: [extraBox], test: () => {
+    if (!extraKnown) return {};
+    const body = bodyOf(extraText.value);
+    return body && { extra_body: body, no_temperature: noTemp.checked };
+  } });
   // Similarity scores differ by embedding model, so a preset measured with its own bar brings it (AGE-40).
   const emb = modelSection('embeddings', 'emb.title', 'emb.sub', EMBED_PRESETS,
     (p) => { if (p.minSim !== undefined) minSim.value = String(p.minSim); });
@@ -2296,7 +2334,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     return {
       conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value,
         token: token.value },
-      llm: llm.values(), emb: emb.values(), rerank: rerank.values(),
+      llm: { ...llm.values(), ...extraValues() }, emb: emb.values(), rerank: rerank.values(),
       tune: { threshold: threshold.value, minSim: minSim.value, embedWait: embedWait.value, topK: topK.value,
         facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked,
         pinAt: pinAt.checked },
@@ -2310,6 +2348,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   function update(message?: { text: string; kind: 'ok' | 'err' | 'warn' | 'muted' }): void {
     const d = dirty();
     syncTrimWarn();  // here, since loading and saving set the boxes without an event
+    syncExtra();
     save.disabled = d.length === 0;
     revert.disabled = d.length === 0;
     if (message) say(barText, message.text, message.kind);
@@ -2340,6 +2379,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   function fillServer(cfg: ServerConfig): void {
     install = cfg.install ?? null;
     llm.fill(cfg.llm); emb.fill(cfg.embeddings); rerank.fill(cfg.rerank);
+    extraKnown = typeof cfg.llm.extra_body === 'object' && cfg.llm.extra_body !== null;
+    extraText.value = extraKnown ? showBody(cfg.llm.extra_body as Record<string, unknown>) : '';
+    noTemp.checked = cfg.llm.no_temperature === true;
     threshold.value = String(cfg.recall.threshold);
     minSim.value = String(cfg.recall.vector_min_sim);
     embedWait.value = cfg.recall.embed_timeout_ms === undefined ? '' : String(cfg.recall.embed_timeout_ms);
@@ -2403,6 +2445,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   async function saveAll(): Promise<boolean> {
     const d = dirty();
     if (!d.length) { update({ text: L('no_changes'), kind: 'muted' }); return true; }
+    // before anything is written: the sidecar would refuse it, and the field says why (PHASE-61 S4)
+    if (extraKnown && !bodyOf(extraText.value)) { update({ text: L('extra.invalid'), kind: 'err' }); return false; }
     save.disabled = true;
     say(barText, L('saving'));
     const v = values();
@@ -2437,7 +2481,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         deadline.value = String(args.deadline_ms);
         baseline = { ...baseline, conn: values().conn };
       }
-      const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown });
+      const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown }, baseline);
       // Said with any save that touches either value; the save itself goes ahead (audit F20).
       const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
         ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
@@ -2448,8 +2492,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         update({ text: L('saved') + tight, kind: tight ? 'warn' : 'ok' });
         return true;
       }
-      const modelChanged = d.includes('llm') && (v.llm.url.trim() !== baseline.llm.url.trim()
-        || v.llm.model.trim() !== baseline.llm.model.trim());
+      const modelChanged = d.includes('llm') && modelChange(baseline, v);  // a body or switch change too (PHASE-61 S2)
       if (modelChanged) {  // a sidecar older than PHASE-57 has no preview: it saves as before
         const p = await deps.api<ModelPreview>('POST', '/v1/config/preview', body, 10000).catch(() => null);
         if (p?.model_change) {
