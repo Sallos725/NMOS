@@ -63,6 +63,15 @@ class CarryChanged(CarryError):
         self.preview = preview
 
 
+class TooManyRows(CarryError):
+    """The reading holds more rows than a link may carry (the API answers 422 with a structured detail)."""
+
+    def __init__(self, rows: int, max_rows: int) -> None:
+        super().__init__(f"the reading holds {rows} rows; a link carries at most {max_rows}")
+        self.rows = rows
+        self.max = max_rows
+
+
 @dataclass(frozen=True)
 class Keys:
     """Generation keys the reader uses when taking a frozen reading of the source chat."""
@@ -698,7 +707,7 @@ def take_reading(
     snap = snapshot_of(view, story_info, mode, raw_names, src, revisions)
     total = len(snap["facts"]) + len(snap["aliases"]) + len(snap["threads"])
     if total > MAX_ROWS:
-        raise CarryError(f"the reading holds {total} rows; a link carries at most {MAX_ROWS}")
+        raise TooManyRows(total, MAX_ROWS)
 
     gens = {
         "extractor": keys.extractor,

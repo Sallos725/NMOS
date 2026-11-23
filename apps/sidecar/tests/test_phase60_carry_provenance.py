@@ -7,6 +7,7 @@ from __future__ import annotations
 from uuid import UUID
 
 import psycopg
+import pytest
 from psycopg.rows import dict_row
 
 from conftest import make_client
@@ -175,3 +176,66 @@ def test_db_take_reading_and_linked_views_record_source_turn_provenance(migrated
         carried_rep = next(f for f in tgt_facts if f["subject"] == "세라" and f["predicate"] == "has_status")
         assert carried_rep["carried_from"]["repair"] == repair_id
         assert carried_rep["carried_from"]["turn"] is None
+
+
+def test_too_many_rows_exception_shape() -> None:
+    err = carry.TooManyRows(2005, 2000)
+    assert isinstance(err, carry.CarryError)
+    assert err.rows == 2005
+    assert err.max == 2000
+    assert str(err) == "the reading holds 2005 rows; a link carries at most 2000"
+
+
+def test_row_cap_refusal_returns_structured_422_on_preview_and_link(
+    migrated: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exceeding `carry.MAX_ROWS` raises `TooManyRows` and answers 422 with a stable structured detail on both
+    preview and link, while other `CarryError` refusals keep their plain string detail."""
+    with make_client(migrated, **ON) as c:
+        src_sim = _build_source_chat(4)
+        sync(c, src_sim, character_name="세라", chat_name="항구의 밤", persona_name="도현")
+        drain_extract(migrated, _stub_extract)
+        src_id = conv_id(c, src_sim)
+
+        tgt_sim = SimChat("tgt-cap-chat")
+        tgt_sim.user("새 이야기를 시작한다.")
+        tgt_sim.reply("아침 햇살이 비춘다.")
+        sync(c, tgt_sim, character_name="세라", chat_name="새 이야기", persona_name="유찬")
+        tgt_id = conv_id(c, tgt_sim)
+
+        prev = c.post(f"/v1/conversations/{tgt_id}/carry/preview",
+                      json={"source_conversation_id": src_id, "mode": "continue"}).json()
+        counts = prev["counts"]
+        total = counts["facts"] + counts["aliases"] + counts["threads"]
+        assert total > 2
+
+        monkeypatch.setattr(carry, "MAX_ROWS", 2)
+
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            keys = _keys(conn, with_summary=False)
+            with pytest.raises(carry.TooManyRows) as caught:
+                carry.take_reading(conn, src_id, "continue", [], keys)
+            assert caught.value.rows == total
+            assert caught.value.max == 2
+            assert str(caught.value) == f"the reading holds {total} rows; a link carries at most 2"
+
+        expected = {
+            "code": "too_many_rows",
+            "rows": total,
+            "max": 2,
+            "message": f"the reading holds {total} rows; a link carries at most 2",
+        }
+        for path in (f"/v1/conversations/{tgt_id}/carry/preview", f"/v1/conversations/{tgt_id}/carry"):
+            res = c.post(path, json={"source_conversation_id": src_id, "mode": "continue"})
+            assert res.status_code == 422, res.text
+            assert res.json()["detail"] == expected
+
+        # Other CarryErrors stay plain strings.
+        other = c.post(f"/v1/conversations/{src_id}/carry/preview",
+                       json={"source_conversation_id": src_id, "mode": "continue"})
+        assert other.status_code == 422
+        assert isinstance(other.json()["detail"], str) and "never carries itself" in other.json()["detail"]
+
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            assert conn.execute("SELECT count(*) AS n FROM conversation_carry").fetchone()["n"] == 0
+
