@@ -498,6 +498,9 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "p.fulfilled": ("약속 이행", "fulfilled"),
     "e.character": ("인물", "character"), "e.item": ("아이템", "item"), "e.place": ("장소", "place"),
     "e.group": ("집단", "group"), "e.concept": ("개념", "concept"),
+    # when it happened, apart from when the turn told it (PHASE-60 S7)
+    "happened_told": ("[일어난 때: {when}; t{turn}에 말함]", "[happened: {when}; told t{turn}]"),
+    "happened_only": ("[일어난 때: {when}]", "[happened: {when}]"),
 }
 
 
@@ -956,6 +959,30 @@ def _turn(a: dict[str, Any]) -> str:
     if a.get("canon"):  # before turn 0 (ADR 0047): the canon text it came from
         return f"<span class=\"chip\" title=\"{_v(a['canon'])}\">canon</span>"
     return turn_link(a["turn"]) if a.get("turn") is not None else _v(a["position"])
+
+
+def happened_text(row: dict[str, Any], lang: str) -> str:
+    """When a fact or thread happened, apart from when its turn told it (PHASE-60 S7), plain text; "" when absent."""
+    raw = row.get("when_happened")
+    when = raw.strip() if isinstance(raw, str) else ""
+    if not when:
+        return ""
+    turn = row.get("turn")
+    if isinstance(turn, int) and not isinstance(turn, bool) and not row.get("canon"):
+        return _t(lang, "happened_told").format(when=when, turn=turn)
+    return _t(lang, "happened_only").format(when=when)
+
+
+def happened_mark(row: dict[str, Any], lang: str) -> str:
+    """HTML-escaped `[happened: …; told tN]` mark for a row with `when_happened` (PHASE-60 S7), or ""."""
+    text = happened_text(row, lang)
+    return _v(text) if text else ""
+
+
+def _happened_span(row: dict[str, Any], lang: str) -> str:
+    """Plain-text muted span for the Inspector's turn cells and history steps; never monospace."""
+    mark = happened_mark(row, lang)
+    return f' <span class="muted">{mark}</span>' if mark else ""
 
 
 def with_participants(view: dict[str, Any]) -> dict[str, Any]:

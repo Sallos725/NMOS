@@ -18,7 +18,7 @@ from typing import Any
 
 from . import tokens
 from .facts import symmetric
-from .inspector import _act, _close, _v, feeling_detail, feeling_dot
+from .inspector import _act, _close, _v, feeling_detail, feeling_dot, happened_mark, happened_text
 from .summaries import content
 
 # The hub's blocks are flex rows that always end flush: each block grows to fill what its row leaves (PHASE-52 D1, PHASE-59).
