@@ -35,6 +35,7 @@ from uuid import UUID
 import psycopg
 
 from . import overuse, spans
+from .facts import LIVE
 from .packet import POLICIES, REST_POLICIES, clean_text
 from .retrieval import RECORDED, RecallOptions, compile_gathered, filled, gather, rested
 
@@ -189,11 +190,14 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     # PHASE-60 S8 (ADR 0087 item 4): the pins it recorded, never the message's `@name`s or the pins in force again; a
     # trace without them had none
     recorded_pins = list((t.get("recall_options") or {}).get("pins") or [])
+    # PHASE-60 S5 (ADR 0084 item 1): embed the recorded sem_query; a trace without the key replays with it off.
+    raw_sem = (t.get("recall_options") or {}).get("sem_query")
+    recorded_sem: Any = LIVE if query is not None else (raw_sem if isinstance(raw_sem, str) and raw_sem.strip() else None)
     g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
                set(t["in_context"] or []), filled(opts, t["budget_tokens"] if budget is None else budget),
                upto=kept, known_at=known_at or t["created_at"],
                canon_held=t.get("canon_held") or (), vectors_now=other, recent=recent,
-               coverage_info=recorded_coverage, pins=recorded_pins, **_canon_of(t))
+               coverage_info=recorded_coverage, pins=recorded_pins, recorded_sem_query=recorded_sem, **_canon_of(t))
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     if budget is not None:

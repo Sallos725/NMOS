@@ -35,7 +35,7 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      STATE_HISTORY_MAX, STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES,
                      SOURCE_CLOCK_POLICIES, STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, RETURN_GAP_POLICIES, SETTLED_POLICIES,
-                     PIN_POLICIES, EXCERPT_FLOOR,
+                     PIN_POLICIES, SEM_QUERY_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
@@ -343,6 +343,19 @@ def _grown(base: list[dict[str, Any]], ranked: list[dict[str, Any]], extra: int)
             and f["predicate"] != "event"][:extra]
     order = {id(f): i for i, f in enumerate(ranked)}
     return sorted(base + more, key=lambda f: order.get(id(f), -1))
+
+
+SEM_QUERY_MAX_CHARS = 40  # packet-v20 (PHASE-60 S5, ADR 0084): messages shorter than this embed with the previous reply
+SEM_QUERY_REPLY_TAIL = 400
+
+
+def sem_query(query: str, previous_ai: str) -> str | None:
+    """Embedding text for a short message under packet-v20 (PHASE-60 S5, ADR 0084): the previous reply's last
+    400 characters, a line break, and the message when the stripped message is shorter than 40 characters and
+    there is a previous reply; None otherwise. Both inputs are already `clean_text`-normalized."""
+    if not query.strip() or len(query.strip()) >= SEM_QUERY_MAX_CHARS or not previous_ai.strip():
+        return None
+    return f"{previous_ai[-SEM_QUERY_REPLY_TAIL:]}\n{query}"
 
 
 def query_prefix(model: str, setting: str) -> str:
@@ -934,6 +947,7 @@ class Gathered:
     pins: list[dict[str, Any]] = field(default_factory=list)
     pin_only: set[str] = field(default_factory=set)
     pin_named: set[str] = field(default_factory=set)
+    sem_query: str | None = None  # packet-v20 (PHASE-60 S5, ADR 0084): reply tail + short message for embedding only
 
 
 def persona_question_names(r: Any) -> frozenset[str]:
@@ -958,7 +972,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
            recent: list[overuse.Recent] | None = None,
            coverage_info: Mapping[str, int | None] | None = None,
            served_turns: frozenset[int] | None = None,
-           pins: list[dict[str, Any]] | None = None) -> Gathered:
+           pins: list[dict[str, Any]] | None = None,
+           recorded_sem_query: Any = LIVE) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time. The canon keys the
     prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047).
@@ -989,9 +1004,11 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     focus = f"{query} {previous_ai}"
     # The turn the packet shows: the message's turn index since packet-v7, as facts have it (ADR 0041).
     by_turn = options.policy in TURN_POLICIES
+    if options.policy in SEM_QUERY_POLICIES:
+        g.sem_query = sem_query(query, previous_ai) if recorded_sem_query is LIVE else recorded_sem_query
     if query.strip():
         if options.embedder is not None:  # asked for first, answered while the reads below run (ADR 0061)
-            text = options.query_prefix + query
+            text = options.query_prefix + (g.sem_query if g.sem_query is not None else query)
             # A live request takes the embedding its sync asked for (item 7); a replay compiles from its own reads.
             pending = (prefetched.take(options.embedder, options.embed_projection, text) if known_at is None
                        else None)
@@ -2128,6 +2145,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         trace_options["coverage"] = cov.recorded_dict()
     if fresh and options.policy in PIN_POLICIES and g.pins:  # the names its pins resolved to (ADR 0087 item 4)
         trace_options["pins"] = recorded_pins(g.pins)
+    if fresh and options.policy in SEM_QUERY_POLICIES:  # ADR 0084 item 1: recorded only under SEM_QUERY_POLICIES
+        trace_options["sem_query"] = g.sem_query
     if trim_trace is not None:
         trace_options["trim"] = trim_trace
     placed = [e for e in compiled.ledger if e["placed"]]
