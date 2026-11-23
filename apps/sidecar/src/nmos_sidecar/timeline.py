@@ -104,9 +104,12 @@ def segments(fact: dict[str, Any], now: int,
             end = max(start, now)
         else:
             end = closed - 1 if isinstance(closed, int) and closed > start else start
-        out.append({"start": start, "end": end, "outcome": outcome, "canon": bool(h.get("canon")),
-                    "negative": h.get("polarity") == "negative", "value": h.get("value") or h.get("object") or "",
-                    "turn": h.get("turn")})
+        seg = {"start": start, "end": end, "outcome": outcome, "canon": bool(h.get("canon")),
+               "negative": h.get("polarity") == "negative", "value": h.get("value") or h.get("object") or "",
+               "turn": h.get("turn")}
+        if h.get("when_happened"):
+            seg["when_happened"] = h["when_happened"]
+        out.append(seg)
     if out and fact.get("owner") and out[-1]["outcome"] == "current":
         out[-1]["owner"] = True  # only the current version carries the owner's mark (PHASE-32 Q10)
     return _merged(out)
@@ -119,7 +122,8 @@ def _merged(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for s in spans:
         last = out[-1] if out else None
         if (last is not None and s["value"] == last["value"] and s["negative"] == last["negative"]
-                and s["canon"] == last["canon"] and s["start"] <= last["end"] + 1):
+                and s["canon"] == last["canon"] and s.get("when_happened") == last.get("when_happened")
+                and s["start"] <= last["end"] + 1):
             last.update(end=max(last["end"], s["end"]), outcome=s["outcome"], owner=s.get("owner", False))
             continue
         out.append(dict(s))
@@ -182,8 +186,25 @@ def _cut(text: str) -> str:
     return text if len(text) <= DATA_MAX else text[:DATA_MAX - 1] + "…"
 
 
+def _happened(t: T, row: dict[str, Any]) -> str:
+    """When a timeline entry happened, apart from when its turn told it (PHASE-60 S7), plain text; "" when absent."""
+    raw = row.get("when_happened")
+    when = raw.strip() if isinstance(raw, str) else ""
+    if not when:
+        return ""
+    turn = row.get("turn")
+    if isinstance(turn, int) and not isinstance(turn, bool) and not row.get("canon"):
+        return t("happened_told").format(when=when, turn=turn)
+    return t("happened_only").format(when=when)
+
+
+def _with_happened(t: T, when: str, row: dict[str, Any]) -> str:
+    mark = _happened(t, row)
+    return f"{when} · {mark}" if mark else when
+
+
 def _data(value: str, when: str, outcome: str, head: str | None = None, who: str | None = None) -> str:
-    value, head, who = _cut(value), head and _cut(head), who and _cut(who)
+    value, when, head, who = _cut(value), _cut(when), head and _cut(head), who and _cut(who)
     return (f" data-v=\"{_v(value)}\" data-s=\"{_v(when)}\" data-o=\"{_v(outcome)}\""
             + (f" data-k=\"{_v(head)}\"" if head else "") + (f" data-p=\"{_v(who)}\"" if who else ""))
 
@@ -193,7 +214,7 @@ def _bars(p: _Page, lane: str, fact: dict[str, Any], segs: list[dict[str, Any]],
     """A lane's bars. Each links to its fact's row, or with `link` to where that span says (a status value's turn)."""
     out, row = [], f"#a-{_v(fact['id'])}"
     drawn = [s for s in segs if s["end"] >= p.lo]
-    whens = [p.span_text(s["start"], s["end"], s["outcome"] == "current") for s in drawn]
+    whens = [_with_happened(p.t, p.span_text(s["start"], s["end"], s["outcome"] == "current"), s) for s in drawn]
     for s, when in zip(drawn, whens):
         a, cur = max(s["start"], p.lo), s["outcome"] == "current"
         href = _v(link(s)) if link else row
@@ -367,7 +388,7 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
         left, width = p.pct(a), round(p.pct(stop + 1) - p.pct(a), 3)
         state_word = t(f"t.{th.get('status')}")
         lane = th.get("text") or t(f"k.{th.get('kind', 'promise')}")
-        when = p.span_text(start, stop, current)
+        when = _with_happened(t, p.span_text(start, stop, current), th)
         who = (th.get("by") or "") + (f" → {th['to']}" if th.get("to") else "")
         pressed = "" if p.panel else " aria-pressed=\"false\""
         thread_rows.append(_row(lane, p.mark(
@@ -387,7 +408,7 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
         k = same[f["turn"]] = same[f["turn"]] + 1  # events of one turn step aside instead of covering each other
         size += f" n{min(k - 1, 3)}" if k > 1 else ""
         weight = t("s." + f["salience"]) if f.get("salience") in SALIENCE else ""
-        when = f"t{f['turn']}"
+        when = _with_happened(t, f"t{f['turn']}", f)
         title = f"{when} · {f.get('value') or ''}"
         pressed = "" if p.panel else " aria-pressed=\"false\""
         dots.append(p.mark(f"tl-dot {size}", f"#a-{_v(f['id'])}",

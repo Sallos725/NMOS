@@ -183,3 +183,70 @@ def test_views_person_shows_happened_mark_on_threads_and_timeline_events():
     assert views._event((12, True, "등대 화재", "event", {}), True, "ko") == views._event((12, True, "등대 화재", "event"), True, "ko")
 
 
+def test_timeline_shows_happened_mark_in_existing_attributes_and_card_only():
+    import re
+    from test_inspector_timeline import CONV, HANA, fact, panel_safe, step, view
+
+    plain_state = fact(10, HANA, "has_status", [step(2, "건강함", "superseded", closed_turn=7),
+                                                step(7, "부상", "current")], value="부상", turn=7)
+    plain_event = fact(12, HANA, "event", None, value="등대 화재", turn=9, salience="major")
+    plain_thread = {"id": 14, "kind": "promise", "by": "Hana", "to": "Kaito", "text": "등대에서 만나기",
+                    "turn": 5, "position": 5, "status": "open", "closed_by": None, "restated": []}
+
+    dated_state = fact(10, HANA, "has_status", [step(2, "건강함", "superseded", closed_turn=7),
+                                                step(7, "부상", "current", when_happened="4월 11일")],
+                       value="부상", turn=7)
+    dated_event = fact(12, HANA, "event", None, value="등대 화재", turn=9, salience="major",
+                       when_happened="the night of the fire")
+    dated_thread = {**plain_thread, "when_happened": "<b>4월 12일</b>"}
+
+    plain_view = view([plain_state, plain_event], [plain_thread])
+    none_view = view(
+        [fact(10, HANA, "has_status", [step(2, "건강함", "superseded", closed_turn=7),
+                                       step(7, "부상", "current", when_happened=None)], value="부상", turn=7),
+         fact(12, HANA, "event", None, value="등대 화재", turn=9, salience="major", when_happened="")],
+        [{**plain_thread, "when_happened": None}],
+    )
+    dated_view = view([dated_state, dated_event], [dated_thread])
+
+    for lang in ("ko", "en"):
+        base_browser = inspector.character(CONV, "e1", plain_view, None, lang=lang, now=12)
+        base_panel = inspector.character_timeline(CONV, "e1", plain_view, lang, now=12)
+        assert inspector.character(CONV, "e1", none_view, None, lang=lang, now=12) == base_browser
+        assert inspector.character_timeline(CONV, "e1", none_view, lang, now=12) == base_panel
+
+        browser = inspector.character(CONV, "e1", dated_view, None, lang=lang, now=12)
+        panel = inspector.character_timeline(CONV, "e1", dated_view, lang, now=12)
+        panel_safe(panel)  # fixed MARK_TEXT allowlist: no new data-* attribute
+
+        state_mark = "[일어난 때: 4월 11일; t7에 말함]" if lang == "ko" else "[happened: 4월 11일; told t7]"
+        event_mark = ("[일어난 때: the night of the fire; t9에 말함]" if lang == "ko"
+                      else "[happened: the night of the fire; told t9]")
+        thread_mark = ("[일어난 때: &lt;b&gt;4월 12일&lt;/b&gt;; t5에 말함]" if lang == "ko"
+                       else "[happened: &lt;b&gt;4월 12일&lt;/b&gt;; told t5]")
+        now_word = "현재" if lang == "ko" else "now"
+
+        # Selected state bar card + data-s
+        card = browser.split('class="tl-card"', 1)[1].split("</div>", 1)[0]
+        assert f"t7 – {now_word} · {state_mark}" in card
+        assert f'data-s="t7 – {now_word} · {state_mark}"' in browser
+        assert f'data-s="t7 – {now_word} · {state_mark}"' in panel
+
+        # Event dot data-s
+        assert f'data-s="t9 · {event_mark}"' in browser
+        assert f'data-s="t9 · {event_mark}"' in panel
+
+        # Thread bar data-s (escaped)
+        assert "<b>4월 12일</b>" not in browser and "<b>4월 12일</b>" not in panel
+        assert f'data-s="t5 – {now_word} · {thread_mark}"' in browser
+        assert f'data-s="t5 – {now_word} · {thread_mark}"' in panel
+
+    # Oversized when_happened in data-s stays within DATA_MAX so the panel sanitizer never drops it.
+    long_ev = fact(13, HANA, "event", None, value="화재", turn=9, when_happened="가" * 500)
+    long_panel = inspector.character_timeline(CONV, "e1", view([long_ev]), "ko", now=12)
+    panel_safe(long_panel)
+    data_s = re.search(r'data-s="([^"]+)"', long_panel).group(1)
+    assert len(data_s) <= 300
+
+
+
