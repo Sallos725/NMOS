@@ -1,6 +1,6 @@
 // Settings form model: which sections changed, and the single sidecar update they add up to.
 
-export type Section = 'conn' | 'llm' | 'emb' | 'tune' | 'trim';
+export type Section = 'conn' | 'llm' | 'emb' | 'rerank' | 'tune' | 'trim';
 
 /** Request-path deadline when the plugin arg is unset (0). 3 s: on PocketRisu v1.12.0 a warm
  *  generation needs ≈1.5 s at 5,000 messages and ≈2.7 s at 10,000 (docs/perf/scale.md). */
@@ -22,9 +22,13 @@ export const PANEL_MAX_RESERVED_TOKENS = 8000;
 export const DEFAULT_KEEP_RECENT_TURNS = 20;
 export const MIN_KEEP_RECENT_TURNS = 4;
 export const MAX_KEEP_RECENT_TURNS = 200;
+/** Optional reranker wait (PHASE-60 S5, ADR 0084): 600 ms default, accepted within 50..5000 ms by the sidecar. */
+export const DEFAULT_RERANK_TIMEOUT_MS = 600;
+export const MIN_RERANK_TIMEOUT_MS = 50;
+export const MAX_RERANK_TIMEOUT_MS = 5000;
 /** `trim` is plugin args only, apart from `conn`: a connection save resets what the sidecar can do, and it has no
  *  part in the sidecar update `configBody` builds. */
-export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'trim'];
+export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'rerank', 'tune', 'trim'];
 
 /** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0022). */
 export const VERTEX_URL = 'https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi';
@@ -84,6 +88,8 @@ export interface FormValues {
   conn: { url: string; route: string; enabled: boolean; reserved: string; deadline: string; token: string };
   llm: ModelValues;
   emb: ModelValues;
+  /** Optional reranker (PHASE-60 S5, ADR 0084); sent only when the sidecar reported it. */
+  rerank: { url: string; model: string; key: string; timeout: string };
   tune: { threshold: string; minSim: string; embedWait: string; topK: string; facts: string; backfill: string;
     summaries: boolean; canonFacts: boolean;
     /** Pin a character with @name in a message (PHASE-60 S8, ADR 0087); sent only when the sidecar has the setting. */
@@ -105,7 +111,7 @@ function num(value: string): number | string {
 }
 
 /** Settings a sidecar reports only from the version that has them; one it did not report is never sent. */
-export interface KnownSettings { pinAt?: boolean }
+export interface KnownSettings { pinAt?: boolean; rerank?: boolean }
 
 /** One PUT /v1/config body for every changed server-side section (validated and saved atomically). */
 export function configBody(dirty: Section[], v: FormValues, known: KnownSettings = {}): Record<string, unknown> {
@@ -115,6 +121,12 @@ export function configBody(dirty: Section[], v: FormValues, known: KnownSettings
     body[`${prefix}_url`] = v[section].url.trim();
     body[`${prefix}_model`] = v[section].model.trim();
     if (v[section].key.trim()) body[`${prefix}_api_key`] = v[section].key.trim();
+  }
+  if (dirty.includes('rerank') && known.rerank) {
+    body.rerank_url = v.rerank.url.trim();
+    body.rerank_model = v.rerank.model.trim();
+    body.rerank_timeout_ms = num(v.rerank.timeout);
+    if (v.rerank.key.trim()) body.rerank_api_key = v.rerank.key.trim();
   }
   if (dirty.includes('tune')) {
     Object.assign(body, {

@@ -52,6 +52,33 @@ describe('batch save', () => {
     expect(dirtySections(before, { ...before, tune: { ...before.tune, pinAt: true } })).toEqual(['tune']);
   });
 
+  it('sends reranker settings only when dirty and reported by the sidecar, and the key only when typed (PHASE-60 S5)', () => {
+    const before = { ...structuredClone(base), rerank: { url: '', model: '', key: '', timeout: '600' } };
+    const edited = structuredClone(before);
+    expect(dirtySections(before, edited)).toEqual([]);
+    edited.rerank = { url: ' https://rerank.example/v1 ', model: ' rr-1 ', key: '   ', timeout: '800' };
+    expect(dirtySections(before, edited)).toEqual(['rerank']);
+    expect(configBody(['rerank'], edited, { rerank: true })).toEqual({
+      rerank_url: 'https://rerank.example/v1', rerank_model: 'rr-1', rerank_timeout_ms: 800,
+    });
+    edited.rerank.key = ' rk-secret ';
+    expect(configBody(['rerank'], edited, { rerank: true })).toEqual({
+      rerank_url: 'https://rerank.example/v1', rerank_model: 'rr-1', rerank_timeout_ms: 800, rerank_api_key: 'rk-secret',
+    });
+    expect(configBody(['rerank'], edited, { rerank: true })).not.toHaveProperty('rerank_format');
+    // bad timeout passes through so the sidecar refuses it with a message
+    edited.rerank = { url: '', model: '', key: '', timeout: '' };
+    expect(configBody(['rerank'], edited, { rerank: true })).toEqual({
+      rerank_url: '', rerank_model: '', rerank_timeout_ms: '',
+    });
+    edited.rerank.timeout = 'abc';
+    expect(configBody(['rerank'], edited, { rerank: true })).toMatchObject({ rerank_timeout_ms: 'abc' });
+    // absent on an older sidecar, or not dirty: nothing sent
+    expect(configBody(['rerank'], edited, { rerank: false })).toEqual({});
+    expect(configBody(['rerank'], edited)).toEqual({});
+    expect(configBody(['llm'], edited, { rerank: true })).not.toHaveProperty('rerank_url');
+  });
+
   it('sends an API key only when one was typed and never includes status rules', () => {
     const edited = structuredClone(base);
     edited.emb = { url: 'http://emb/v1', model: 'e', key: ' sk-1 ' };

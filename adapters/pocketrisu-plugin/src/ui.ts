@@ -8,9 +8,9 @@ import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_RESERVED_TOKENS, dirtySections, embedWaitTooLong,
-  endpointForKey, fillProject, isVertexEndpoint, MAX_DEADLINE_MS, MAX_KEEP_RECENT_TURNS, MIN_KEEP_RECENT_TURNS, OLLAMA_DOCKER,
-  PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl, serviceAccountProject, trimArgs, VERTEX_URL, type FormValues,
-  type Section } from './form';
+  endpointForKey, fillProject, isVertexEndpoint, MAX_DEADLINE_MS, MAX_KEEP_RECENT_TURNS, MAX_RERANK_TIMEOUT_MS,
+  MIN_KEEP_RECENT_TURNS, MIN_RERANK_TIMEOUT_MS, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl,
+  serviceAccountProject, trimArgs, VERTEX_URL, type FormValues, type Section } from './form';
 import { failureKind } from './failure';
 import { parserBindings, parserDraft, presetRules, type ParserPreset } from './parser-form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
@@ -71,6 +71,8 @@ export interface PanelDeps {
 interface ServerConfig {
   llm: { url: string; model: string; api_key_set: boolean; json_mode: boolean };
   embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string };
+  rerank?: { url: string; model: string; timeout_ms: number; format: string; key_set: boolean; configured: boolean;
+    note?: string };
   recall: { threshold: number; vector_min_sim: number; embed_timeout_ms?: number; top_k: number; facts_limit: number;
     pin_at_mentions?: boolean };
   extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean };
@@ -122,7 +124,7 @@ const PARSER_EXAMPLE = {
 };
 
 const SECTION_TITLE: Record<Section, StringKey> = {
-  conn: 'conn.title', llm: 'llm.title', emb: 'emb.title', tune: 'tune.title', trim: 'trimset.title',
+  conn: 'conn.title', llm: 'llm.title', emb: 'emb.title', rerank: 'rerank.title', tune: 'tune.title', trim: 'trimset.title',
 };
 
 // Opaque on purpose: the host settings page behind the full-screen frame must not show through.
@@ -1971,6 +1973,52 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const emb = modelSection('embeddings', 'emb.title', 'emb.sub', EMBED_PRESETS,
     (p) => { if (p.minSim !== undefined) minSim.value = String(p.minSim); });
 
+  // Optional reranker (PHASE-60 S5, ADR 0084): hidden when the sidecar does not report `rerank`; no test action,
+  // and `rerank_format` (only `standard`) is neither shown nor sent.
+  let rerankKnown = false;
+  const rerankUrl = el('input', { placeholder: 'https://…/v1', spellcheck: 'false' });
+  const rerankModel = el('input', { placeholder: L('rerank.model_placeholder'), spellcheck: 'false' });
+  const rerankKey = el('input', { type: 'password', placeholder: L('model.key_placeholder'), autocomplete: 'off' });
+  const rerankTimeout = el('input', { type: 'number', min: MIN_RERANK_TIMEOUT_MS, max: MAX_RERANK_TIMEOUT_MS, step: 50 });
+  const rerankDot = el('span', { class: 'dot' });
+  const rerankStateText = el('span', { text: L('rerank.off') });
+  const rerankState = el('div', { class: 'line muted' }, rerankDot, rerankStateText);
+  const rerankCard = el('div', { class: 'card', style: 'display:none' },
+    el('h2', { text: L('rerank.title') }),
+    rerankState,
+    el('p', { class: 'sub', text: L('rerank.sub') }),
+    field(L('rerank.url'), rerankUrl),
+    field(L('model.model'), rerankModel),
+    field(L('model.key'), rerankKey),
+    field(L('rerank.timeout'), rerankTimeout));
+  settingsView.append(rerankCard);
+  const rerank = {
+    values: () => ({ url: rerankUrl.value, model: rerankModel.value, key: rerankKey.value, timeout: rerankTimeout.value }),
+    fill(cfg: ServerConfig['rerank']): void {
+      rerankKnown = Boolean(cfg);
+      if (cfg) {
+        rerankUrl.value = cfg.url;
+        rerankModel.value = cfg.model;
+        rerankKey.value = '';
+        rerankKey.placeholder = L(cfg.key_set ? 'model.key_saved' : 'model.key_placeholder');
+        rerankTimeout.value = String(cfg.timeout_ms);
+        rerankState.className = cfg.configured ? 'line ok' : 'line muted';
+        rerankDot.className = cfg.configured ? 'dot ok' : 'dot';
+        rerankStateText.textContent = L(cfg.configured ? 'rerank.on' : 'rerank.off');
+      } else {
+        rerankUrl.value = '';
+        rerankModel.value = '';
+        rerankKey.value = '';
+        rerankKey.placeholder = L('model.key_placeholder');
+        rerankTimeout.value = '';
+        rerankState.className = 'line muted';
+        rerankDot.className = 'dot';
+        rerankStateText.textContent = L('rerank.off');
+      }
+      rerankCard.style.display = rerankKnown && (!viewsOn || currentGroup === 'models') ? '' : 'none';
+    },
+  };
+
   const threshold = el('input', { type: 'number', step: 0.05, min: 0.05, max: 1 });
   const minSim = el('input', { type: 'number', step: 0.01, min: 0, max: 1 });
   const embedWait = el('input', { type: 'number', step: 100, min: 100, max: 5000 });  // NMOS_EMBED_TIMEOUT_MS (K34)
@@ -2248,7 +2296,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     return {
       conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value,
         token: token.value },
-      llm: llm.values(), emb: emb.values(),
+      llm: llm.values(), emb: emb.values(), rerank: rerank.values(),
       tune: { threshold: threshold.value, minSim: minSim.value, embedWait: embedWait.value, topK: topK.value,
         facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked,
         pinAt: pinAt.checked },
@@ -2291,7 +2339,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   function fillServer(cfg: ServerConfig): void {
     install = cfg.install ?? null;
-    llm.fill(cfg.llm); emb.fill(cfg.embeddings);
+    llm.fill(cfg.llm); emb.fill(cfg.embeddings); rerank.fill(cfg.rerank);
     threshold.value = String(cfg.recall.threshold);
     minSim.value = String(cfg.recall.vector_min_sim);
     embedWait.value = cfg.recall.embed_timeout_ms === undefined ? '' : String(cfg.recall.embed_timeout_ms);
@@ -2389,7 +2437,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         deadline.value = String(args.deadline_ms);
         baseline = { ...baseline, conn: values().conn };
       }
-      const body = configBody(d, v, { pinAt: pinAtKnown });
+      const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown });
       // Said with any save that touches either value; the save itself goes ahead (audit F20).
       const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
         ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
@@ -2996,6 +3044,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   function groupSettings(): void {
     const byTitle: Record<string, Group> = {
       [L('hud.title')]: 'display', [L('conn.title')]: 'connection', [L('llm.title')]: 'models', [L('emb.title')]: 'models',
+      [L('rerank.title')]: 'models',
       [L('tune.title')]: 'memory', [L('trimset.title')]: 'memory', [L('rules.title')]: 'rules', [L('exp.title')]: 'backup', [L('rst.title')]: 'backup',
     };
     const existingCards = Array.from(settingsView.children) as HTMLElement[];
@@ -3031,7 +3080,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     for (const btn of Array.from(groupList.querySelectorAll<HTMLButtonElement>('button[data-group]'))) {
       btn.classList.toggle('on', btn.dataset.group === group);
     }
-    for (const page of pages()) page.style.display = page.dataset.group === group ? '' : 'none';
+    for (const page of pages()) {
+      page.style.display = page.dataset.group === group && (page !== rerankCard || rerankKnown) ? '' : 'none';
+    }
     if (group === 'connection') void refreshStatus();
     if (group === 'chat') showChatPage();
   }
