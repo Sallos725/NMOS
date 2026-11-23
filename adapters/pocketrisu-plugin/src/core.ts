@@ -12,7 +12,7 @@ import { DEFAULT_DEADLINE_MS, DEFAULT_KEEP_RECENT_TURNS, MAX_KEEP_RECENT_TURNS, 
 import { t, type Lang, type StringKey } from './i18n';
 import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
 import type { ActivityEvent } from './hud';
-import { findMarker, holdsText, resolvePlaceholders, stripMarkers } from './placement';
+import { findMarker, holdsText, MEMORY_MARKER, resolvePlaceholders, stripMarkers } from './placement';
 import { GUARD_RESERVE_TOKENS, hasPacket, inContextIds, injectPacket, landsAfterUserTurn, queryTexts, userTurnIndex,
   withGuard, type InjectPosition } from './prompt';
 import { trimPrompt } from './trim';
@@ -555,8 +555,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // `at`: the latest user turn's index in `p` (the trimmed prompt's, once old dialogue is left out).
       const place = (p: PromptMessage[], packet: string, at: number): { out: PromptMessage[]; placed: boolean } => {
         if (!packet) return { out: stripMarkers(p), placed: false };
-        // The prompt already holds this packet (a retry).
-        if (holdsText(p, packet)) return { out: stripMarkers(p), placed: false };
+        // The prompt already holds this packet (a retry), as placed: literal markers are removed from it on placement.
+        if (holdsText(p, packet.split(MEMORY_MARKER).join(''))) return { out: stripMarkers(p), placed: false };
         const text = after ? withGuard(packet) : packet;
         return { out: marker ? resolvePlaceholders(p, text) : stripMarkers(injectPacket(p, text, position, at)),
           placed: true };

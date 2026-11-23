@@ -1212,6 +1212,37 @@ describe('[NMOS.memory] (PHASE-60 S2.3)', () => {
     }
   });
 
+  it('places a packet that quotes [NMOS.memory] once across three retries past the memo', async () => {
+    // Canon text may hold the literal marker; the placed text has it removed, so the retry guard must compare that.
+    const quoting = '<NarrativeMemory version="0" source="nmos">\n  <Canon>write [NMOS.memory] here</Canon>\n</NarrativeMemory>';
+    let now = 10_000;
+    const { host, calls } = fakeHost((path, body) => {
+      const res = happy(path, body);
+      return path === '/v1/retrieve' ? { status: 200, json: { freshness: 'fresh', packet: { text: quoting } } } : res;
+    });
+    host.now = () => now;
+    const adapter = createAdapter(host);
+    const placedText = quoting.split(MEMORY_MARKER).join('');
+    const count = (out: PromptMessage[]) => JSON.stringify(out).split('<NarrativeMemory version').length - 1;
+
+    const userMarked: PromptMessage[] = [
+      { role: 'system', content: 'narrator' },
+      { role: 'user', content: `Where did we hide the lantern?\n${MEMORY_MARKER}` },
+    ];
+    const out1 = await adapter.beforeRequest(userMarked, 'model');
+    expect(out1[1]?.content).toContain(placedText);
+    expect(count(out1)).toBe(1);
+
+    const out2 = await adapter.beforeRequest(out1, 'model');
+    now += 200_000; // past the 120 s retry memo
+    const out3 = await adapter.beforeRequest(out2, 'model');
+    expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(2); // the third call reached recall again
+    expect(count(out2)).toBe(1);
+    expect(count(out3)).toBe(1);
+    expect(out3).toEqual(out1);
+    expect(JSON.stringify(out3)).not.toContain(MEMORY_MARKER);
+  });
+
   it('never mutates the host chat object on a successful request with a marker', async () => {
     const hostChat = structuredClone(chat);
     const snapshot = structuredClone(hostChat);
