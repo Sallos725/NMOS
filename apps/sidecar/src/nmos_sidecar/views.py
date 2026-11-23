@@ -577,6 +577,22 @@ def carry_lines(c: dict[str, Any], lang: str, empty: str) -> str:
     return body
 
 
+def _person_carry(c: dict[str, Any] | None, e: dict[str, Any], lang: str, empty: str) -> str:
+    """The person sheet's carried lines (only theirs, chosen by the data side). Without any: for `continue` no section;
+    for `regression`, where from and nothing yet when they are one of those who remember, else a note that they do not."""
+    if not c:
+        return ""
+    n = len(c.get("lines") or [])
+    if n:
+        return section("s-carry", lang, carry_lines(c, lang, empty), n)
+    if c.get("mode") != "regression":
+        return ""
+    names = {str(x).casefold() for x in [e.get("name"), *(e.get("names") or [])] if x}
+    if names & {str(x).casefold() for x in c.get("names") or []}:
+        return section("s-carry", lang, carry_lines(c, lang, empty))
+    return section("s-carry", lang, f'<p class="v-note">{_v(t(lang, "carry_forgot"))}</p>')
+
+
 def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     """A chat's memory as one document (PHASE-52 D2, PHASE-59 D3): now, open threads, people, so far, secrets, changed
     from the setting; sticky desktop TOC + mobile jump pills; at the foot, the way into everything else."""
@@ -730,7 +746,8 @@ def person(d: dict[str, Any], lang: str) -> str:
     body = (section("s-now", lang, now) + section("s-rels", lang, more(rels, lang) or nothing, len(rels))
             + section("s-threads", lang, more(threads, lang) or nothing, len(threads))
             + section("s-knows", lang, more(knows, lang) or nothing, len(knows))
-            + _told_section(cid, d.get("told"), ents, lang) + section("s-time", lang, time))
+            + _told_section(cid, d.get("told"), ents, lang) + _person_carry(d.get("carry"), e, lang, nothing)
+            + section("s-time", lang, time))
     cap = t(lang, "aka", names=", ".join(aka)) if aka else ""
     if not e.get("persona"):  # PHASE-47 S6: the button, behind a tap like every repair here
         body += (f'<p class="v-note">{_v(t(lang, "is_not_char"))}</p>' if e.get("excluded")

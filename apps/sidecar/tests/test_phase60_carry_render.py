@@ -217,3 +217,57 @@ def test_memory_document_escapes_carried_values_and_source_names():
         assert "&lt;b&gt;세라&lt;/b&gt;: &lt;b&gt;종&lt;/b&gt;" in s
     reg = {**memory_input(), "carry": carry("regression", [], names=["<b>세라</b>"])}
     assert "<b>" not in sec(views.memory(reg, "ko")) and "&lt;b&gt;세라&lt;/b&gt;만 기억" in sec(views.memory(reg, "ko"))
+
+
+# --- the person sheet ---------------------------------------------------------------------------------------------
+
+def test_person_sheet_shows_carried_lines_before_the_timeline_in_ko_and_en():
+    d = {**person_input(), "carry": carry()}
+    ko = views.person(d, "ko")
+    assert re.findall(r'class="v-sec" id="(s-[a-z]+)"', ko) == [
+        "s-now", "s-rels", "s-threads", "s-knows", "s-carry", "s-time"]
+    s = sec(ko)
+    assert '<h2 class="v-h2">이전 채팅에서 이어받은 기억<span class="v-n">3</span></h2>' in s
+    assert '<p class="v-text">세라 · 옛 항구에서 이어받음 · 이 채팅의 턴이 아님</p>' in s
+    assert f'<a class="v-src" href="/inspector/c/{SRC}/t/7">세라 위치 등대</a>' in s
+    assert f'<a class="v-src" href="/inspector/c/{SRC}">카이토 상태 지침</a>' in s
+    panel_safe(ko)
+    en = views.person(d, "en")
+    assert "Carried from an earlier chat" in sec(en) and f'href="/inspector/c/{SRC}/t/12"' in sec(en)
+    panel_safe(en)
+    for lang in ("ko", "en"):
+        assert without_section(views.person(d, lang), "s-carry", "s-time") == views.person(person_input(), lang)
+
+
+def test_person_sheet_places_carried_lines_after_who_told_whom():
+    told = [{"predicate": "told", "subject": "세라", "object": "카이토", "value": "지도는 가짜다", "turn": 5}]
+    html = views.person({**person_input(), "told": told, "carry": carry()}, "ko")
+    assert re.findall(r'class="v-sec" id="(s-[a-z]+)"', html)[-3:] == ["s-told", "s-carry", "s-time"]
+
+
+def test_person_sheet_continue_without_lines_has_no_section():
+    for lang in ("ko", "en"):
+        assert views.person({**person_input(), "carry": carry(lines=[])}, lang) == views.person(person_input(), lang)
+
+
+def test_person_sheet_regression_says_when_this_person_does_not_remember():
+    d = {**person_input(), "carry": carry("regression", [], names=["카이토"])}
+    ko, en = views.person(d, "ko"), views.person(d, "en")
+    assert ('<div class="v-sec" id="s-carry"><h2 class="v-h2">이전 채팅에서 이어받은 기억</h2>'
+            '<p class="v-note">이 채팅은 이전 타임라인을 이어받았지만, 이 인물은 그것을 기억하지 않습니다</p></div>') in ko
+    assert "This chat carries an earlier timeline, which this person does not remember" in sec(en)
+    assert "v-src" not in sec(ko) and "카이토만 기억" not in ko
+    panel_safe(ko)
+
+
+def test_person_sheet_regression_for_one_who_remembers_lists_their_lines():
+    lines = [{**cfact("세라", "located_in", "등대"), "line": "fact"},
+             {**cthread("promise", "세라", "등대에서 만나기", to="카이토"), "line": "thread"}]
+    s = sec(views.person({**person_input(), "carry": carry("regression", lines, names=["세라", "카이토"])}, "ko"))
+    assert '<p class="v-text">이전 타임라인 · 세라, 카이토만 기억</p>' in s
+    assert "세라 위치 등대" in s and "세라 → 카이토: 등대에서 만나기" in s and "기억하지 않습니다" not in s
+    # one of the names who has no line of their own: where from, and nothing yet (not "does not remember");
+    # the person's other names count ("Sera" is one of 세라's)
+    s = sec(views.person({**person_input(), "carry": carry("regression", [], names=["sera"])}, "ko"))
+    assert '<p class="v-text">이전 타임라인 · sera만 기억</p>' in s and "아직 없어요" in s
+    assert "기억하지 않습니다" not in s
