@@ -310,3 +310,47 @@ def test_coverage_sentence_in_v20_absent_in_v19_and_replays_exact(migrated):
         assert legacy["status"] == "ok"
         assert "Memory is recorded through" not in legacy["text"]
         assert "Memory has not recorded" not in legacy["text"]
+
+
+def test_trim_request_and_response_models():
+    from pydantic import ValidationError
+    from uuid import uuid4
+
+    from nmos_sidecar.models import CoverageResponse, MemoryFit, Packet, RetrieveRequest, RetrieveResponse, TrimRequest, TrimResponse
+
+    base = {"chat_id": "c1", "query": "hi", "budget_tokens": 600}
+    assert RetrieveRequest(**base).trim is None
+    assert RetrieveRequest(**base, trim=None).trim is None
+    req = RetrieveRequest(**base, trim={"keep_recent_turns": 20, "step": 20})
+    assert req.trim == TrimRequest(keep_recent_turns=20, step=20)
+    assert RetrieveRequest(**base, trim={"keep_recent_turns": 16}).trim == TrimRequest(keep_recent_turns=16, step=16)
+    assert RetrieveRequest(**base, trim={"keep_recent_turns": 4, "step": 1}).trim.keep_recent_turns == 4
+    assert RetrieveRequest(**base, trim={"keep_recent_turns": 200, "step": 200}).trim.keep_recent_turns == 200
+
+    for bad in (
+        {"keep_recent_turns": 3, "step": 3},
+        {"keep_recent_turns": 201, "step": 201},
+        {"keep_recent_turns": 20, "step": 0},
+        {"keep_recent_turns": 20, "step": -5},
+    ):
+        with pytest.raises(ValidationError):
+            RetrieveRequest(**base, trim=bad)
+
+    resp_no_trim = RetrieveResponse(
+        trace_id=uuid4(), freshness="fresh", packet=Packet(text="", token_estimate=0, excerpt_count=0),
+        memory=MemoryFit(offered=1, cut=0, fits_at=None),
+        coverage=CoverageResponse(recorded_through_turn=None, covered_through_turn=None),
+    )
+    dumped_no_trim = resp_no_trim.model_dump()
+    assert "trim" not in dumped_no_trim
+    assert dumped_no_trim["memory"] == {"offered": 1, "cut": 0, "fits_at": None}
+    assert dumped_no_trim["coverage"] == {"recorded_through_turn": None, "covered_through_turn": None}
+
+    resp_with_trim = RetrieveResponse(
+        trace_id=uuid4(), freshness="fresh", packet=Packet(text="", token_estimate=0, excerpt_count=0),
+        coverage=CoverageResponse(recorded_through_turn=10, covered_through_turn=7),
+        trim=TrimResponse(keep_from_id=None, keep_from_turn=None, reason="short"),
+    )
+    assert resp_with_trim.model_dump()["trim"] == {
+        "keep_from_id": None, "keep_from_turn": None, "reason": "short",
+    }

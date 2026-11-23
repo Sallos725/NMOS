@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, BeforeValidator, Field, PlainValidator
+from pydantic import BaseModel, BeforeValidator, Field, PlainValidator, model_serializer, model_validator
 
 from .canonical import storable
 
@@ -122,6 +122,18 @@ class CanonSyncResponse(BaseModel):
     in_force: int | None = None
 
 
+class TrimRequest(BaseModel):
+    """Opt-in step-quantized old-turn trim parameters (PHASE-60 S1, ADR 0083 item 5)."""
+    keep_recent_turns: int = Field(default=20, ge=4, le=200)
+    step: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _default_step(self) -> TrimRequest:
+        if self.step is None:
+            self.step = self.keep_recent_turns
+        return self
+
+
 class RetrieveRequest(BaseModel):
     host: Literal["pocketrisu"] = "pocketrisu"
     chat_id: str
@@ -134,6 +146,7 @@ class RetrieveRequest(BaseModel):
     client_timings_ms: dict[str, float] = Field(default_factory=dict)
     canon_manifest_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")  # the canon this prompt was built with
     canon_held: list[str] = Field(default_factory=list, max_length=5000)  # canon keys this prompt holds (ADR 0045)
+    trim: TrimRequest | None = None
 
 
 class Packet(BaseModel):
@@ -157,6 +170,13 @@ class CoverageResponse(BaseModel):
     covered_through_turn: int | None = None
 
 
+class TrimResponse(BaseModel):
+    """The sidecar's step-quantized trim boundary decision (PHASE-60 S1, ADR 0083 item 5)."""
+    keep_from_id: str | None = None
+    keep_from_turn: int | None = None
+    reason: Literal["off", "short", "uncovered", "no_summaries", "stale", "empty_packet"] | None = None
+
+
 class RetrieveResponse(BaseModel):
     trace_id: UUID
     freshness: Literal["fresh", "stale", "unknown_conversation"]
@@ -166,6 +186,14 @@ class RetrieveResponse(BaseModel):
     # embedder failed or did not answer in time, so recall was lexical only). None: not recalled (stale or unknown).
     vectors: Literal["on", "off", "fallback"] | None = None
     coverage: CoverageResponse | None = None
+    trim: TrimResponse | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        if self.trim is None:
+            data.pop("trim", None)
+        return data
 
 
 class OutputRequest(BaseModel):
