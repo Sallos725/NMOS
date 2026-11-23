@@ -455,7 +455,9 @@ def restore_target(f: dict[str, Any]) -> dict[str, Any]:
     and its line and quote to show it."""
     return {"turn": f["turn"], "turn_hash": f["turn_hash"], "predicate": f["predicate"], "subject": f["subject"],
             "object": f.get("object"), "text": f["text"], "evidence": f.get("evidence"),
-            "fact": {k: f.get(k) for k in RESTORED} | ({"feeling": f["feeling"]} if f.get("feeling") else {})}
+            "fact": ({k: f.get(k) for k in RESTORED}
+                     | ({"feeling": f["feeling"]} if f.get("feeling") else {})
+                     | ({"when_happened": f["when_happened"]} if f.get("when_happened") else {}))}
 
 
 def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied: dict[str, str | None],
@@ -476,6 +478,8 @@ def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied:
     new["participants"] = tuple(fact["participants"]) if fact.get("participants") else None
     if fact.get("feeling"):  # PHASE-58: a restored feeling keeps how it felt
         new["feeling"] = fact["feeling"]
+    if fact.get("when_happened"):  # PHASE-60 S7: a restored event or promise keeps when it happened
+        new["when_happened"] = fact["when_happened"]
     new.update({"id": _owner_id(rep), "turn": t["turn"], "turn_hash": t["turn_hash"], "position": at[0],
                 "host_logical_id": None, "generation": None, "compiler": None, "listed_hash": None,
                 "source": "narration", "owner": True, "repair": str(rep["id"])})
