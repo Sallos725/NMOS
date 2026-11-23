@@ -1,0 +1,479 @@
+"""A chat that carries another chat's memory (PHASE-60 S6, ADR 0085).
+
+A `conversation_carry` link is owner input: archived, kept by rebuilds, deleted with either chat. At link time the
+source chat is read once as of its head and a cutoff position, and the carried rows are stored with the link as a
+frozen plain-JSON `snapshot` with each row's provenance. Nothing is re-read from the source later.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+from .entities import PERSONA, Resolution
+from .facts import fact_text
+
+SHAPE = 1
+MAX_ROWS = 2000
+MAX_NAMES = 8
+FIRST_LINES = 8
+MODES: tuple[str, ...] = ("continue", "regression")
+
+FACT_KEYS: tuple[str, ...] = (
+    "predicate", "subject", "subject_type", "object", "object_type", "value",
+    "epistemic", "confidence", "evidence", "knowledge", "known_by", "hidden_from",
+    "polarity", "modality", "source", "asserted_by", "salience", "participants",
+    "outcome", "because", "feeling", "when_happened", "turn", "position", "compiler",
+)
+THREAD_KEYS: tuple[str, ...] = (
+    "kind", "by", "to", "text", "status", "horizon", "turn", "position",
+    "source", "modality", "evidence", "knowledge", "known_by", "hidden_from", "names",
+)
+
+
+class CarryError(ValueError):
+    """A carry request that cannot be carried out now (the API answers 422 with its message)."""
+
+
+class NoSuchChat(CarryError):
+    """A source or target conversation does not exist (the API answers 404)."""
+
+
+class CarryChanged(CarryError):
+    """The source changed between preview and link (the API answers 409 with the fresh preview)."""
+
+    def __init__(self, preview: dict[str, Any], message: str = "the source changed since the preview") -> None:
+        super().__init__(message)
+        self.preview = preview
+
+
+@dataclass(frozen=True)
+class Keys:
+    """Generation keys the reader uses when taking a frozen reading of the source chat."""
+
+    extractor: str | None = None
+    summarize: str | None = None
+    canon: str | None = None
+
+
+# --- pure helpers (no database) ---------------------------------------------------------------------------------
+
+def _plain(value: Any) -> Any:
+    """Recursively convert values into plain JSON-serializable Python primitives."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {str(k): _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_plain(v) for v in value]
+    return str(value)
+
+
+def _positive_int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def _is_persona(r: Resolution | None, entity_type: str | None, name: str | None) -> bool:
+    """Whether (entity_type, name) names the source chat's persona, including full-name spellings."""
+    if not name or r is None or entity_type != "character":
+        return False
+    return r.is_persona(entity_type, name) or r.node(entity_type, name) == ("character", PERSONA)
+
+
+def _map_char_name(name: str, r: Resolution | None) -> str:
+    return PERSONA if _is_persona(r, "character", name) else name
+
+
+def _map_name_list(names: Sequence[str], r: Resolution | None) -> list[str]:
+    return list(dict.fromkeys(_map_char_name(str(n), r) for n in names))
+
+
+def persona_mapped(row: Mapping[str, Any], r: Resolution | None) -> dict[str, Any]:
+    """Return a plain-JSON copy of a fact, thread or alias row with every source-persona name mapped to {{user}}."""
+    out: dict[str, Any] = _plain(dict(row))
+    if r is None:
+        return out
+    # Fact row fields
+    if out.get("subject") and _is_persona(r, out.get("subject_type"), out["subject"]):
+        out["subject"] = PERSONA
+    if out.get("object") and _is_persona(r, out.get("object_type"), out["object"]):
+        out["object"] = PERSONA
+    if out.get("participants"):
+        out["participants"] = [
+            {**p, "name": PERSONA if _is_persona(r, p.get("type"), p.get("name")) else p.get("name")}
+            for p in out["participants"]
+        ]
+    if out.get("asserted_by") and _is_persona(r, "character", out["asserted_by"]):
+        out["asserted_by"] = PERSONA
+    # Knowledge marks (facts and threads)
+    for field in ("known_by", "hidden_from"):
+        if field in out and out[field] is not None:
+            out[field] = _map_name_list(out[field], r)
+    # Thread row fields
+    if "predicate" not in out:
+        if out.get("by") and _is_persona(r, "character", out["by"]):
+            out["by"] = PERSONA
+        if out.get("to") and _is_persona(r, "character", out["to"]):
+            out["to"] = PERSONA
+        if "names" in out and out["names"] is not None:
+            out["names"] = _map_name_list(out["names"], r)
+    # Alias row field (`name` only, never `alias`)
+    if "alias" in out and out.get("name") and _is_persona(r, out.get("entity_type"), out["name"]):
+        out["name"] = PERSONA
+    return out
+
+
+def _char_entity_id(r: Resolution, name: str | None) -> str | None:
+    if not name:
+        return None
+    ent = r.entity("character", name)
+    return str(ent["id"]) if ent is not None else None
+
+
+def _involved_ids(row: Mapping[str, Any], r: Resolution, *, is_thread: bool) -> set[str]:
+    """Source character entity ids involved in a fact (subject/object/participants) or thread (by/to/names)."""
+    ids: set[str] = set()
+    if is_thread:
+        for name in (row.get("by"), row.get("to"), *(row.get("names") or ())):
+            if (eid := _char_entity_id(r, name)) is not None:
+                ids.add(eid)
+        return ids
+    if row.get("subject_type") == "character":
+        if (eid := _char_entity_id(r, row.get("subject"))) is not None:
+            ids.add(eid)
+    if row.get("object_type") == "character" and row.get("object"):
+        if (eid := _char_entity_id(r, row.get("object"))) is not None:
+            ids.add(eid)
+    for p in row.get("participants") or ():
+        if p.get("type") == "character":
+            if (eid := _char_entity_id(r, p.get("name"))) is not None:
+                ids.add(eid)
+    return ids
+
+
+def _resolve_named(names: Sequence[str], r: Resolution) -> list[tuple[str, str]]:
+    """Resolve character spellings to deduplicated (entity_id, first_spelling) pairs preserving order."""
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for name in names:
+        eid = _char_entity_id(r, name)
+        if eid is not None and eid not in seen:
+            seen.add(eid)
+            out.append((eid, name))
+    return out
+
+
+def rememberers(
+    row: Mapping[str, Any],
+    names: Sequence[str],
+    r: Resolution,
+    *,
+    is_thread: bool | None = None,
+) -> list[str]:
+    """Named characters (in the order of `names`) who remember `row` under regression's epistemic rules.
+
+    A row is a candidate only when it involves at least one named character. For candidates:
+      (a) knowledge == 'public': all named;
+      (b) knowledge == 'limited' with non-empty known_by: named in known_by;
+      (c) otherwise (unknown, missing, or limited with empty known_by): only named involved in the row;
+    always minus any named in hidden_from.
+    """
+    thread_row = ("by" in row and "predicate" not in row) if is_thread is None else is_thread
+    named = _resolve_named(names, r)
+    if not named:
+        return []
+    named_ids = {eid for eid, _ in named}
+    involved = _involved_ids(row, r, is_thread=thread_row)
+    if not (involved & named_ids):
+        return []
+
+    raw_known = row.get("known_by") or ()
+    known_ids = {eid for n in raw_known if (eid := _char_entity_id(r, n)) is not None}
+    hidden_ids = {eid for n in (row.get("hidden_from") or ()) if (eid := _char_entity_id(r, n)) is not None}
+
+    knowledge = row.get("knowledge")
+    if knowledge == "public":
+        base_ids = named_ids
+    elif knowledge == "limited" and len(raw_known) > 0:
+        base_ids = named_ids & known_ids
+    else:
+        base_ids = named_ids & involved
+
+    kept_ids = base_ids - hidden_ids
+    return [spelling for eid, spelling in named if eid in kept_ids]
+
+
+def _memory_excluded_ids(view: Mapping[str, Any]) -> set[str]:
+    excluded = view.get("excluded") or {}
+    out = {str(eid) for eid, info in excluded.items() if (info or {}).get("scope") == "memory"}
+    for ent in view.get("entities") or ():
+        if ent.get("excluded") == "memory":
+            out.add(str(ent["id"]))
+    return out
+
+
+def _characters(view: Mapping[str, Any]) -> list[str]:
+    r: Resolution | None = view.get("resolution")
+    ents = view.get("entities") if view.get("entities") is not None else (r.entities() if r is not None else [])
+    gone = _memory_excluded_ids(view)
+    ordered = sorted(ents, key=lambda e: -int(e.get("mentions") or 0))
+    return [
+        str(e["name"])
+        for e in ordered
+        if e.get("type") == "character" and not e.get("persona") and str(e["id"]) not in gone
+    ]
+
+
+def _validate_mode_and_names(
+    mode: str,
+    names: Sequence[str] | None,
+    r: Resolution | None,
+    mem_excluded: set[str],
+) -> list[str]:
+    if mode not in MODES:
+        raise CarryError(f"mode must be one of: {', '.join(MODES)}")
+    raw = [str(n).strip() for n in (names or ())]
+    if mode == "continue":
+        if raw:
+            raise CarryError("continue mode takes no character names")
+        return []
+    if not raw or len(raw) > MAX_NAMES:
+        raise CarryError(f"regression mode needs 1 to {MAX_NAMES} character names")
+    seen: set[str] = set()
+    kept: list[str] = []
+    for name in raw:
+        ent = r.entity("character", name) if (name and r is not None) else None
+        if (
+            ent is None
+            or ent.get("persona")
+            or (r is not None and r.is_persona("character", name))
+            or str(ent["id"]) in mem_excluded
+        ):
+            raise CarryError(f"{name} is no character of the source")
+        eid = str(ent["id"])
+        if eid not in seen:
+            seen.add(eid)
+            kept.append(name)
+    return kept
+
+
+def _provenance(
+    source_id: UUID | str,
+    row: Mapping[str, Any],
+    revisions: Mapping[int, UUID | str],
+    *,
+    generation: str | None = None,
+) -> dict[str, Any]:
+    aid = _positive_int(row.get("id"))
+    rev = revisions.get(aid) if aid is not None else None
+    repair = row.get("repair")
+    gen = generation if generation is not None else row.get("generation")
+    return {
+        "conversation": str(source_id),
+        "assertion": aid,
+        "revision": str(rev) if rev is not None else None,
+        "generation": str(gen) if gen is not None else None,
+        "repair": str(repair) if repair is not None else None,
+    }
+
+
+def _apply_regression_marks(mapped: dict[str, Any], rems: list[str]) -> dict[str, Any]:
+    mapped["orig_knowledge"] = mapped.get("knowledge")
+    mapped["orig_known_by"] = mapped.get("known_by")
+    mapped["knowledge"] = "limited"
+    mapped["known_by"] = rems
+    return mapped
+
+
+def served_generations(snapshot: Mapping[str, Any]) -> list[str]:
+    """Sorted distinct generation keys that served the stored rows in `snapshot`."""
+    gens: set[str] = set()
+    for bucket in ("facts", "aliases", "threads"):
+        for row in snapshot.get(bucket) or ():
+            gen = (row.get("from") or {}).get("generation")
+            if gen:
+                gens.add(str(gen))
+    story = snapshot.get("story")
+    if isinstance(story, Mapping):
+        gen = (story.get("from") or {}).get("generation")
+        if gen:
+            gens.add(str(gen))
+    return sorted(gens)
+
+
+def snapshot_of(
+    view: Mapping[str, Any],
+    story_info: Mapping[str, Any] | None,
+    mode: str,
+    names: Sequence[str] | None,
+    source_id: UUID | str,
+    revisions: Mapping[int, UUID | str] | None = None,
+) -> dict[str, Any]:
+    """Build the frozen plain-JSON `snapshot` from a source memory view and optional summary info."""
+    r: Resolution | None = view.get("resolution")
+    mem_excluded = _memory_excluded_ids(view)
+    resolved_names = _validate_mode_and_names(mode, names, r, mem_excluded)
+    rev_map: Mapping[int, UUID | str] = revisions or {}
+
+    # Facts: newest first (source position descending), canon rows left out.
+    source_facts = sorted(
+        (f for f in (view.get("facts") or ()) if not f.get("canon")),
+        key=lambda f: f.get("position") or 0,
+        reverse=True,
+    )
+    fact_rows: list[dict[str, Any]] = []
+    for row in source_facts:
+        if mode == "regression":
+            assert r is not None
+            rems = rememberers(row, resolved_names, r, is_thread=False)
+            if not rems:
+                continue
+        else:
+            rems = []
+        trimmed = {k: row[k] for k in FACT_KEYS if k in row}
+        mapped = persona_mapped(trimmed, r)
+        if mode == "regression":
+            _apply_regression_marks(mapped, rems)
+        mapped["from"] = _provenance(source_id, row, rev_map)
+        fact_rows.append(mapped)
+
+    # Aliases (continue only): stored assertion rows only, canon aliases left out.
+    alias_rows: list[dict[str, Any]] = []
+    if mode == "continue" and r is not None:
+        for _, _, row in r.alias_rows:
+            if row.get("canon") or _positive_int(row.get("id")) is None:
+                continue
+            entry = {
+                "entity_type": row.get("subject_type"),
+                "name": row.get("subject"),
+                "alias": row.get("value"),
+                "turn": row.get("turn"),
+            }
+            mapped = persona_mapped(entry, r)
+            mapped["from"] = _provenance(source_id, row, rev_map)
+            alias_rows.append(mapped)
+
+    # Threads: open only for continue; any status (filtered by rememberers) for regression.
+    assertions_by_id: dict[Any, Mapping[str, Any]] = {
+        a["id"]: a for a in (view.get("assertions") or ()) if "id" in a
+    }
+    thread_rows: list[dict[str, Any]] = []
+    for t in view.get("threads") or ():
+        if mode == "continue" and t.get("status") != "open":
+            continue
+        if mode == "regression":
+            assert r is not None
+            rems = rememberers(t, resolved_names, r, is_thread=True)
+            if not rems:
+                continue
+        else:
+            rems = []
+        trimmed = {k: t[k] for k in THREAD_KEYS if k in t}
+        mapped = persona_mapped(trimmed, r)
+        closed_by = t.get("closed_by")
+        mapped["closed_turn"] = closed_by.get("turn") if (t.get("status") != "open" and isinstance(closed_by, Mapping)) else None
+        if mode == "regression":
+            _apply_regression_marks(mapped, rems)
+        opening = assertions_by_id.get(t.get("id"))
+        gen = opening.get("generation") if opening is not None else t.get("generation")
+        mapped["from"] = _provenance(source_id, t, rev_map, generation=gen)
+        thread_rows.append(mapped)
+
+    # Story (continue only): held if it repeats or omits a kept secret.
+    story_row: dict[str, Any] | None = None
+    story_left_out: str | None = None
+    if mode == "continue" and story_info:
+        s = story_info.get("story")
+        if isinstance(s, Mapping) and s.get("text"):
+            if story_info.get("story_held"):
+                story_left_out = "secret"
+            else:
+                story_row = _plain({
+                    "text": s["text"],
+                    "first_turn": s.get("first_turn"),
+                    "last_turn": s.get("last_turn"),
+                    "from": {
+                        "conversation": str(source_id),
+                        "summary": str(s["id"]),
+                        "generation": s.get("generation"),
+                    },
+                })
+
+    return _plain({
+        "shape": SHAPE,
+        "mode": mode,
+        "names": resolved_names,
+        "facts": fact_rows,
+        "aliases": alias_rows,
+        "threads": thread_rows,
+        "story": story_row,
+        "story_left_out": story_left_out,
+        "characters": _characters(view),
+    })
+
+
+def fingerprint(reading: Mapping[str, Any]) -> str:
+    """Stable sha256 hex digest of everything a carry link would store (no link id or timestamp)."""
+    cutoff = reading["cutoff"]
+    payload = _plain({
+        "source": str(reading["source"]),
+        "mode": reading["mode"],
+        "names": list(reading["names"]),
+        "cutoff": {
+            "commit": str(cutoff["commit"]),
+            "position": cutoff["position"],
+            "turn": cutoff["turn"],
+        },
+        "generations": reading["generations"],
+        "snapshot": reading["snapshot"],
+    })
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def preview_of(
+    reading: Mapping[str, Any],
+    labels: Mapping[str, Any],
+    replaces: UUID | str | None = None,
+) -> dict[str, Any]:
+    """Summarize a frozen reading for the owner before linking."""
+    snap = reading["snapshot"]
+    lines: list[str] = [fact_text(f) for f in snap["facts"][:FIRST_LINES]]
+    if len(lines) < FIRST_LINES:
+        for t in snap["threads"]:
+            if len(lines) >= FIRST_LINES:
+                break
+            text = t.get("text")
+            if text:
+                lines.append(str(text))
+    return _plain({
+        "mode": reading["mode"],
+        "source": {
+            "id": str(reading["source"]),
+            "character": labels.get("character"),
+            "chat": labels.get("chat"),
+        },
+        "cutoff": reading["cutoff"],
+        "counts": {
+            "facts": len(snap["facts"]),
+            "aliases": len(snap["aliases"]),
+            "threads": len(snap["threads"]),
+            "story": snap["story"] is not None,
+        },
+        "first_lines": lines,
+        "characters": list(snap["characters"]),
+        "fingerprint": reading["fingerprint"],
+        "replaces": str(replaces) if replaces is not None else None,
+    })
