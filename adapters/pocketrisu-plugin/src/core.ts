@@ -12,6 +12,7 @@ import { DEFAULT_DEADLINE_MS } from './form';
 import { t, type Lang, type StringKey } from './i18n';
 import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
 import type { ActivityEvent } from './hud';
+import { findMarker, resolvePlaceholders, stripMarkers } from './placement';
 import { hasPacket, inContextIds, injectPacket, queryTexts, userTurnIndex, type InjectPosition } from './prompt';
 import type { HostChat, HostMessage, HostPersonas, PromptMessage, ReconcileRequest } from './types';
 import { failureKind, INSECURE_ERROR, secureContext } from './failure';
@@ -392,7 +393,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return { ...result, rewritten };
   }
 
-  async function beforeRequest(prompt: PromptMessage[], mode: unknown): Promise<PromptMessage[]> {
+  async function prepare(prompt: PromptMessage[], mode: unknown): Promise<PromptMessage[]> {
     const started = host.now();
     const since = epoch;
     let settings: Settings | null = null;
@@ -441,6 +442,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         return prompt;
       }
 
+      const marker = findMarker(prompt);
+      const position = settings.injectPosition;
+      const place = (p: PromptMessage[], packet: string): PromptMessage[] => {
+        if (!packet) return stripMarkers(p);
+        return marker ? resolvePlaceholders(p, packet) : injectPacket(p, packet, position, turn);
+      };
+
       // Cache key = exact chat state (every message id + revision hash) + prompt shape and the messages it holds + the
       // sidecar, route, token and budget it was asked with, so a cached packet is reused only for the same state (host retries, reroll of an unchanged
       // chat) and never survives an edit anywhere in the chat or a switch to another sidecar. The canon is checked
@@ -473,7 +481,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
           memory: cached.memory ?? null, vectors: cached.vectors ?? null };
         emit({ type: 'request-end', outcome, chars: cached.packet.length, reused: true, vectors: cached.vectors ?? null,
           conversationId: conversations.get(chat.id) ?? null });
-        return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
+        return place(prompt, cached.packet);
       }
 
       const t1 = host.now();
@@ -515,7 +523,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         deadlineMs: settings.deadlineMs, budgetTokens: settings.reservedMemoryTokens, memory, vectors };
       emit({ type: 'request-end', outcome, chars: packet.length, vectors, conversationId: synced.conversation_id ?? null,
         ...(synced.rewritten > 0 ? { rewritten: synced.rewritten } : {}) });
-      return injectPacket(prompt, packet, settings.injectPosition, turn);
+      return place(prompt, packet);
     } catch (error) {
       // Cache the miss briefly so host retries of this request (H2) do not wait out the deadline again.
       if (key && epoch === since) remember(key, '', FAILURE_TTL_MS, true);
@@ -526,6 +534,15 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         deadlineMs: last.deadlineMs, conversationId: (chatId && conversations.get(chatId)) || null });
       host.warn('[NMOS] memory skipped for this request (fail open):', error instanceof Error ? error.message : error);
       return prompt;
+    }
+  }
+
+  /** Every path out of `beforeRequest` strips any remaining `[NMOS.memory]` literal (ADR 0083). */
+  async function beforeRequest(prompt: PromptMessage[], mode: unknown): Promise<PromptMessage[]> {
+    try {
+      return stripMarkers(await prepare(prompt, mode));
+    } catch {
+      return stripMarkers(prompt);
     }
   }
 

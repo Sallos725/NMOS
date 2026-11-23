@@ -3,6 +3,7 @@ import { createAdapter, personaOf, type HostPort, type HttpResult, type Settings
 import { deadlineAdvice } from '../src/deadline';
 import { DEFAULT_DEADLINE_MS } from '../src/form';
 import type { ActivityEvent } from '../src/hud';
+import { MEMORY_MARKER } from '../src/placement';
 import { hasPacket } from '../src/prompt';
 import type { HostChat, PromptMessage } from '../src/types';
 
@@ -769,5 +770,143 @@ describe('activity events (progress display)', () => {
     events.length = 0;
     adapter.onOutput({ chat, messageIndex: 1 });
     await vi.waitFor(() => expect(events).toEqual([{ type: 'background', conversationId: 'conv-1' }]));
+  });
+});
+
+describe('[NMOS.memory] (PHASE-60 S2.3)', () => {
+  const markedPrompt = (): PromptMessage[] => [
+    { role: 'system', content: `narrator\n${MEMORY_MARKER}\nend` },
+    { role: 'user', content: `Where did we hide the lantern? ${MEMORY_MARKER}` },
+  ];
+  const strippedPrompt: PromptMessage[] = [
+    { role: 'system', content: 'narrator\n\nend' },
+    { role: 'user', content: 'Where did we hide the lantern? ' },
+  ];
+
+  it('strips [NMOS.memory] on every skip, early return, and failure path without placing a packet', async () => {
+    // mode !== 'model'
+    {
+      const { host, calls } = fakeHost(happy);
+      const out = await createAdapter(host).beforeRequest(markedPrompt(), 'submodel');
+      expect(out).toEqual(strippedPrompt);
+      expect(hasPacket(out)).toBe(false);
+      expect(calls).toEqual([]);
+    }
+    // hasPacket retry with a stray marker
+    {
+      const { host, calls } = fakeHost(happy);
+      const retryPrompt: PromptMessage[] = [
+        { role: 'system', content: PACKET },
+        { role: 'user', content: `Where did we hide the lantern? ${MEMORY_MARKER}` },
+      ];
+      const out = await createAdapter(host).beforeRequest(retryPrompt, 'model');
+      expect(out).toEqual([
+        { role: 'system', content: PACKET },
+        { role: 'user', content: 'Where did we hide the lantern? ' },
+      ]);
+      expect(calls).toEqual([]);
+    }
+    // enabled: false
+    {
+      const { host, calls } = fakeHost(happy, { enabled: false });
+      const out = await createAdapter(host).beforeRequest(markedPrompt(), 'model');
+      expect(out).toEqual(strippedPrompt);
+      expect(hasPacket(out)).toBe(false);
+      expect(calls).toEqual([]);
+    }
+    // sidecarUrl: ''
+    {
+      const { host, calls } = fakeHost(happy, { sidecarUrl: '' });
+      const out = await createAdapter(host).beforeRequest(markedPrompt(), 'model');
+      expect(out).toEqual(strippedPrompt);
+      expect(hasPacket(out)).toBe(false);
+      expect(calls).toEqual([]);
+    }
+    // insecure page (crypto.subtle missing)
+    {
+      const { host, calls } = fakeHost(happy);
+      const own = Object.getOwnPropertyDescriptor(globalThis.crypto, 'subtle');
+      Object.defineProperty(globalThis.crypto, 'subtle', { value: undefined, configurable: true });
+      try {
+        const out = await createAdapter(host).beforeRequest(markedPrompt(), 'model');
+        expect(out).toEqual(strippedPrompt);
+        expect(hasPacket(out)).toBe(false);
+        expect(calls).toEqual([]);
+      } finally {
+        if (own) Object.defineProperty(globalThis.crypto, 'subtle', own);
+        else delete (globalThis.crypto as unknown as Record<string, unknown>).subtle;
+      }
+    }
+    // currentChat returning { message: [] } without id
+    {
+      const { host, calls } = fakeHost(happy);
+      host.currentChat = async () => ({ message: [] });
+      const out = await createAdapter(host).beforeRequest(markedPrompt(), 'model');
+      expect(out).toEqual(strippedPrompt);
+      expect(hasPacket(out)).toBe(false);
+      expect(calls).toEqual([]);
+    }
+    // chat in offChats
+    {
+      const { host, calls } = fakeHost(happy, { offChats: ['chat-1'] });
+      const out = await createAdapter(host).beforeRequest(markedPrompt(), 'model');
+      expect(out).toEqual(strippedPrompt);
+      expect(hasPacket(out)).toBe(false);
+      expect(calls).toEqual([]);
+    }
+    // user turn not found in prompt
+    {
+      const { host, calls } = fakeHost(happy);
+      const unmatched: PromptMessage[] = [
+        { role: 'system', content: `narrator ${MEMORY_MARKER}` },
+        { role: 'user', content: `unrelated ${MEMORY_MARKER}` },
+      ];
+      const out = await createAdapter(host).beforeRequest(unmatched, 'model');
+      expect(out).toEqual([
+        { role: 'system', content: 'narrator ' },
+        { role: 'user', content: 'unrelated ' },
+      ]);
+      expect(hasPacket(out)).toBe(false);
+      expect(calls).toEqual([]);
+    }
+    // /v1/retrieve answering 500
+    {
+      const { host } = fakeHost((path, body) => (path === '/v1/retrieve' ? { status: 500, json: null } : happy(path, body)));
+      const out = await createAdapter(host).beforeRequest(markedPrompt(), 'model');
+      expect(out).toEqual(strippedPrompt);
+      expect(hasPacket(out)).toBe(false);
+    }
+    // request throwing (sidecar down)
+    {
+      const { host } = fakeHost(() => Promise.reject(new TypeError('Failed to fetch')));
+      const out = await createAdapter(host).beforeRequest(markedPrompt(), 'model');
+      expect(out).toEqual(strippedPrompt);
+      expect(hasPacket(out)).toBe(false);
+    }
+    // recall slower than the deadline
+    {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+      try {
+        const { host } = fakeHost(slowRecall(150), { deadlineMs: 50 });
+        const pending = createAdapter(host).beforeRequest(markedPrompt(), 'model');
+        await vi.advanceTimersByTimeAsync(50);
+        const out = await pending;
+        expect(out).toEqual(strippedPrompt);
+        expect(hasPacket(out)).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  });
+
+  it('replaces the first [NMOS.memory] in a system message, removes later markers, and inserts no extra message', async () => {
+    const { host } = fakeHost(happy);
+    const input = markedPrompt();
+    const out = await createAdapter(host).beforeRequest(input, 'model');
+    expect(out).toHaveLength(input.length);
+    expect(out).toEqual([
+      { role: 'system', content: `narrator\n${PACKET}\nend` },
+      { role: 'user', content: 'Where did we hide the lantern? ' },
+    ]);
   });
 });
