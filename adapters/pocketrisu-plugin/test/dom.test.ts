@@ -508,6 +508,177 @@ describe('panel', () => {
     });
   });
 
+  describe('optional reranker settings (PHASE-60 S5)', () => {
+    const titles = { ko: '재정렬 모델 (선택)', en: 'Reranker (optional)' } as const;
+    const sentences = {
+      ko: '주소와 모델을 모두 넣으면, 매 요청마다 사용자 메시지와 찾은 기억 후보 최대 30개의 글을 그 주소로 보내 더 알맞은 순서로 다시 매깁니다(임베딩 모델에 대화 글을 보내는 것과 같습니다). 유료 서비스는 요청마다 비용이 들 수 있습니다. 응답이 늦거나 오류가 나면 기억은 원래 순서 그대로 들어갑니다. 끄려면 주소나 모델을 비워 두세요.',
+      en: 'With both an address and a model set, each request sends your message and the text of up to 30 recalled memory candidates to that address to put them in a better order, just as chat text goes to the embedder. Paid services may charge for each request. If it is slow or fails, memory goes out in its usual order. Leave the address or model empty to turn it off.',
+    } as const;
+    const states = {
+      on: { ko: '켜짐: 요청마다 순서를 다시 매깁니다', en: 'On: reorders memory candidates on every request' },
+      off: { ko: '꺼짐: 주소와 모델이 비어 있습니다', en: 'Off: address and model are empty' },
+    } as const;
+    type RerankCfg = { url: string; model: string; timeout_ms: number; format: string; key_set: boolean;
+      configured: boolean; note: string };
+    const defaultRerank = (over: Partial<RerankCfg> = {}): RerankCfg => ({
+      url: '', model: '', timeout_ms: 600, format: 'standard', key_set: false, configured: false,
+      note: 'SIDECAR_ENGLISH_NOTE_NOT_SHOWN', ...over,
+    });
+    const open = async (language: 'ko' | 'en', initial: RerankCfg | null, views = false) => {
+      const h = deps(views ? { features: { extraction: true, views: true } } : {});
+      h.args.language = language;
+      let rr = initial ? { ...initial } : null;
+      const snapshot = () => (rr ? { ...config, rerank: { ...rr } } : { ...config });
+      h.d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => {
+        h.calls.push([method, path, body]);
+        if (path.startsWith('/v1/views/')) return { html: '<div class="v"></div>' } as T;
+        if (path.startsWith('/v1/conversations?')) return [] as T;
+        if (path === '/v1/config/preview') return { model_change: false, queued: {} } as T;
+        if (method === 'PUT' && path === '/v1/config' && rr && body && typeof body === 'object') {
+          const b = body as Record<string, unknown>;
+          if ('rerank_url' in b) rr.url = String(b.rerank_url);
+          if ('rerank_model' in b) rr.model = String(b.rerank_model);
+          if ('rerank_timeout_ms' in b) rr.timeout_ms = Number(b.rerank_timeout_ms);
+          if ('rerank_api_key' in b && String(b.rerank_api_key)) rr.key_set = true;
+          if (!rr.url.trim()) rr.key_set = false;
+          rr.configured = Boolean(rr.url.trim() && rr.model.trim());
+          return { ...snapshot(), queued_jobs: 0 } as T;
+        }
+        return (method === 'PUT' ? { ...snapshot(), queued_jobs: 0 } : snapshot()) as T;
+      };
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      if (views) {
+        panel.querySelector<HTMLButtonElement>('.groups button[data-group="models"]')!.click();
+        await settle();
+      }
+      const card = [...panel.querySelectorAll<HTMLElement>('.card')]
+        .find((c) => c.querySelector('h2')?.textContent === titles[language])!;
+      const inputs = [...card.querySelectorAll<HTMLInputElement>('input')];
+      return { ...h, panel, card,
+        save: panel.querySelector<HTMLButtonElement>('.bar button.primary')!,
+        bar: panel.querySelector('.bar .text')!,
+        state: card.querySelector<HTMLElement>('.line')!,
+        url: inputs[0]!, model: inputs[1]!, key: inputs[2]!, wait: inputs[3]! };
+    };
+    const type = (input: HTMLInputElement, value: string) => {
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    it('renders in the models group right after embeddings with the plain sentence and on/off state (KO and EN)', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        for (const configured of [false, true]) {
+          const initial = configured
+            ? defaultRerank({ url: 'https://rr.example/v1', model: 'rerank-1', timeout_ms: 800, configured: true, key_set: true })
+            : defaultRerank();
+          const { panel, card, state, key, wait } = await open(language, initial, true);
+          expect(card.dataset.group).toBe('models');
+          expect(card.style.display).toBe('');
+          const visibleModels = [...panel.querySelectorAll<HTMLElement>('[data-group="models"]')]
+            .filter((c) => !c.closest('.groups') && c.style.display !== 'none')
+            .map((c) => c.querySelector('h2')?.textContent);
+          expect(visibleModels).toEqual(language === 'en'
+            ? ['Fact extraction LLM', 'Semantic recall embeddings', 'Reranker (optional)']
+            : ['사실 추출 LLM', '의미 검색 임베딩', '재정렬 모델 (선택)']);
+          expect(card.querySelector('p.sub')!.textContent).toBe(sentences[language]);
+          expect(card.textContent).not.toContain('SIDECAR_ENGLISH_NOTE_NOT_SHOWN');
+          expect(state.textContent).toBe(states[configured ? 'on' : 'off'][language]);
+          expect(state.classList.contains(configured ? 'ok' : 'muted')).toBe(true);
+          expect(state.querySelector('.dot')!.classList.contains('ok')).toBe(configured);
+          expect(state.classList.contains('mono')).toBe(false);
+          expect([key.type, key.getAttribute('autocomplete'), key.value]).toEqual(['password', 'off', '']);
+          expect(key.placeholder).toBe(configured
+            ? (language === 'en' ? 'saved — type only to change' : '저장됨 — 바꿀 때만 입력')
+            : (language === 'en' ? 'only if needed' : '필요할 때만 입력'));
+          expect(wait.previousElementSibling!.textContent).toBe(language === 'en' ? 'Reranker wait (ms)' : '재정렬 대기(ms)');
+          expect([wait.type, wait.min, wait.max, wait.value]).toEqual(['number', '50', '5000', configured ? '800' : '600']);
+          // no test action, no format control
+          expect(card.querySelectorAll('button')).toHaveLength(0);
+          expect(card.querySelectorAll('select')).toHaveLength(0);
+          panel.remove();
+        }
+      }
+    });
+
+    it('saves URL, model and wait through the single Save bar, sends the key only when typed, and clears URL and model to turn off', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const { panel, calls, url, model, key, wait, state, save, bar } = await open(language, defaultRerank());
+        // 1. Save URL, model, wait without typing a key
+        type(url, ' https://rr.example/v1 ');
+        type(model, ' rerank-1 ');
+        type(wait, '900');
+        expect(bar.textContent).toBe(language === 'en'
+          ? 'Unsaved changes: Reranker (optional)'
+          : '저장하지 않은 변경: 재정렬 모델 (선택)');
+        const saved = language === 'en' ? 'Saved.' : '저장했습니다.';
+        save.click();
+        await vi.waitFor(() => expect(bar.textContent).toBe(saved));
+        expect(save.disabled).toBe(true);
+        expect(calls.filter(([m]) => m === 'PUT')).toEqual([['PUT', '/v1/config', {
+          rerank_url: 'https://rr.example/v1', rerank_model: 'rerank-1', rerank_timeout_ms: 900,
+        }]]);
+        expect(calls.some(([, p]) => p === '/v1/config/preview')).toBe(false);
+        expect(state.textContent).toBe(states.on[language]);
+        expect(key.value).toBe('');
+        expect(key.placeholder).toBe(language === 'en' ? 'only if needed' : '필요할 때만 입력');
+
+        // 2. Type a key and save: key is sent, then emptied with the saved placeholder
+        type(key, ' rk-live-1 ');
+        save.click();
+        await vi.waitFor(() => expect(bar.textContent).toBe(saved));
+        expect(save.disabled).toBe(true);
+        expect(calls.filter(([m]) => m === 'PUT').at(-1)).toEqual(['PUT', '/v1/config', {
+          rerank_url: 'https://rr.example/v1', rerank_model: 'rerank-1', rerank_timeout_ms: 900, rerank_api_key: 'rk-live-1',
+        }]);
+        expect(key.value).toBe('');
+        expect(key.placeholder).toBe(language === 'en' ? 'saved — type only to change' : '저장됨 — 바꿀 때만 입력');
+
+        // 3. Clear URL and model to turn off: empty strings sent, no key sent, state line returns to off
+        type(url, '');
+        type(model, '');
+        save.click();
+        await vi.waitFor(() => expect(bar.textContent).toBe(saved));
+        expect(save.disabled).toBe(true);
+        expect(calls.filter(([m]) => m === 'PUT').at(-1)).toEqual(['PUT', '/v1/config', {
+          rerank_url: '', rerank_model: '', rerank_timeout_ms: 900,
+        }]);
+        expect(state.textContent).toBe(states.off[language]);
+        expect(state.classList.contains('muted')).toBe(true);
+        expect(key.value).toBe('');
+        panel.remove();
+      }
+    });
+
+    it('shows no reranker card and sends no rerank keys when /v1/config omits rerank (KO and EN)', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        for (const views of [false, true]) {
+          const { panel, card, calls, save, bar } = await open(language, null, views);
+          expect(card.style.display).toBe('none');
+          if (views) {
+            const visibleModels = [...panel.querySelectorAll<HTMLElement>('[data-group="models"]')]
+              .filter((c) => !c.closest('.groups') && c.style.display !== 'none')
+              .map((c) => c.querySelector('h2')?.textContent);
+            expect(visibleModels).toEqual(language === 'en'
+              ? ['Fact extraction LLM', 'Semantic recall embeddings']
+              : ['사실 추출 LLM', '의미 검색 임베딩']);
+          }
+          // saving another section sends no rerank_* keys
+          const llmEndpoint = [...panel.querySelectorAll<HTMLInputElement>('input')]
+            .find((i) => i.value === 'https://llm.example/v1')!;
+          type(llmEndpoint, 'https://llm.example/v2');
+          save.click();
+          await vi.waitFor(() => expect(bar.textContent).toBe(language === 'en' ? 'Saved.' : '저장했습니다.'));
+          expect(save.disabled).toBe(true);
+          const put = calls.filter(([m]) => m === 'PUT').at(-1)![2] as Record<string, unknown>;
+          expect(Object.keys(put).filter((k) => k.startsWith('rerank_'))).toEqual([]);
+          panel.remove();
+        }
+      }
+    });
+  });
+
   it('says when no chat is open', async () => {
     const { d, open } = deps();
     open.chat = null;
