@@ -584,3 +584,53 @@ def test_strict_and_narrator_change_the_told_data_no_more_than_the_facts(migrate
         for k in plain:
             assert data[k].get("told") == plain[k].get("told"), k
     assert plain[("person", who["세라"])]["told"]
+
+
+# --- a v20 request with a placed told line and a gated one: replay and the pages read its trace ------------------------
+
+
+SECRET_VALUE = "유나가 왕녀라는 사실"
+PLAIN_TOLD = "하나가 그 자리에 없었다는 것"
+
+
+def gate_stub(system, user):
+    """The model: a secret 세라 and 카이토 keep from 하나, a told row that repeats it (unmarked) and another that does
+    not, both 세라 → 카이토."""
+    target = user.split("TARGET turn", 1)[1] if "TARGET turn" in user else ""
+    if SCENE in target:
+        actual = {"polarity": "positive", "modality": "actual", "source": "narration"}
+        unmarked = {"knowledge": None, "known_by": None, "hidden_from": None}
+        return {"assertions": [
+            {"subject": "세라", "subject_type": "character", "predicate": "knows", "value": SECRET_VALUE, **actual,
+             "knowledge": "limited", "known_by": ["세라", "카이토"], "hidden_from": ["하나"],
+             "evidence": "유나가 왕녀라는 사실을 조용히 털어놓았다"},
+            told_row(**unmarked),
+            told_row(value=PLAIN_TOLD, evidence="하나는 그 자리에 없었다", **unmarked)]}, "{}", USED
+    return {"assertions": []}, "{}", USED
+
+
+def test_a_v20_trace_with_told_lines_replays_and_the_pages_read_it(migrated):
+    from uuid import UUID
+
+    from nmos_sidecar import audit
+    with extracted(migrated, stub=gate_stub, packet_policy="packet-v20") as (client, chat):
+        query = "하나야, 세라가 카이토에게 뭐라고 했지?"
+        chat.user(query)
+        sync(client, chat)
+        out = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": query, "previous_ai": "", "budget_tokens": 2000,
+            "in_context_ids": [m["chatId"] for m in chat.messages[-6:]]}).json()
+        text = out["packet"]["text"]
+        trace = client.get(f"/v1/trace/{out['trace_id']}").json()
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            again = audit.replay(conn, UUID(out["trace_id"]), RecallOptions(), policy=None)
+        conv = conv_id(client, chat)
+        pages = [client.get(u) for u in (f"/v1/inspector/c/{conv}", f"/v1/views/c/{conv}/working",
+                                         f"/inspector/c/{conv}")]
+    assert trace["policy"] == "packet-v20"
+    assert f'<Fact kind="told" turn="8">세라 told 카이토: {PLAIN_TOLD}; about: 유나</Fact>' in text
+    assert f"세라 told 카이토: {SECRET_VALUE}" not in text  # 하나 is in the scene: the secret it repeats keeps it out
+    gated = [e for e in trace["lines"] if e.get("why") == "secret_gate" and e["kind"] == "fact"]
+    assert len(gated) == 1 and gated[0]["label"] == "hidden" and gated[0]["text"] == ""
+    assert again["status"] == "ok" and again["reproduced"] is True and again["text"] == text
+    assert all(p.status_code == 200 for p in pages)
