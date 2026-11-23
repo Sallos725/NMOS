@@ -2,7 +2,8 @@
 
 A `conversation_carry` link is owner input: archived, kept by rebuilds, deleted with either chat. At link time the
 source chat is read once as of its head and a cutoff position, and the carried rows are stored with the link as a
-frozen plain-JSON `snapshot` with each row's provenance. Nothing is re-read from the source later.
+frozen plain-JSON `snapshot` with each row's provenance (ids only, no verbatim message text). Nothing is re-read
+from the source later.
 """
 
 from __future__ import annotations
@@ -24,21 +25,23 @@ from .ids import uuid7
 from .entities import PERSONA, Resolution
 from .facts import fact_text, memory_view
 
-SHAPE = 1
+SHAPE = 2
 MAX_ROWS = 2000
 MAX_NAMES = 8
 FIRST_LINES = 8
 MODES: tuple[str, ...] = ("continue", "regression")
 
+# The fields a snapshot row keeps. No verbatim message text (`evidence`, an owner correction's note) is stored: a
+# row's provenance is the ids in its `from`, and a reader that shows a quote reads it from the source through `from`.
 FACT_KEYS: tuple[str, ...] = (
     "predicate", "subject", "subject_type", "object", "object_type", "value",
-    "epistemic", "confidence", "evidence", "knowledge", "known_by", "hidden_from",
+    "epistemic", "confidence", "knowledge", "known_by", "hidden_from",
     "polarity", "modality", "source", "asserted_by", "salience", "participants",
     "outcome", "because", "feeling", "when_happened", "turn", "position", "compiler",
 )
 THREAD_KEYS: tuple[str, ...] = (
     "kind", "by", "to", "text", "status", "horizon", "turn", "position",
-    "source", "modality", "evidence", "knowledge", "known_by", "hidden_from", "names",
+    "source", "modality", "knowledge", "known_by", "hidden_from", "names",
 )
 
 

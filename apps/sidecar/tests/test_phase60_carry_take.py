@@ -136,7 +136,13 @@ def test_take_reading_and_preview_with_provenance_and_story(migrated: str) -> No
             assert len(reading["fingerprint"]) == 64
 
             snap = reading["snapshot"]
-            assert snap["shape"] == carry.SHAPE
+            assert snap["shape"] == carry.SHAPE == 2
+            # No verbatim message text: the stub extractor's quotes are nowhere in the stored rows.
+            for bucket in ("facts", "aliases", "threads"):
+                for row in snap[bucket]:
+                    assert "evidence" not in row
+                    assert "evidence" not in (row.get("opening") or {})
+            assert all(t["opening"] is not None for t in snap["threads"])
             preds = {(f["subject"], f["predicate"], f.get("object"), f.get("value")) for f in snap["facts"]}
             assert ("세라", "located_in", "등대", None) in preds
             assert ("세라", "has_status", None, "피곤함") in preds

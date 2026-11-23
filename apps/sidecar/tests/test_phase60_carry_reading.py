@@ -622,6 +622,49 @@ def test_a_regression_thread_opening_carries_the_same_marks_as_the_thread() -> N
     assert by_id[40]["opening"]["orig_known_by"] == [PERSONA, "세라"]
 
 
+def _evidence_keys(snap: dict) -> list[str]:
+    """Where a snapshot row (fact, alias, thread, a thread's opening) holds an `evidence` key."""
+    found: list[str] = []
+    for bucket in ("facts", "aliases", "threads"):
+        for i, row in enumerate(snap[bucket]):
+            if "evidence" in row:
+                found.append(f"{bucket}[{i}]")
+            if bucket == "threads" and row.get("opening") is not None and "evidence" in row["opening"]:
+                found.append(f"threads[{i}].opening")
+    return found
+
+
+def test_a_snapshot_keeps_no_verbatim_message_text_and_has_shape_2() -> None:
+    """No snapshot row stores `evidence` (provenance is the ids in `from`), an owner-corrected row included."""
+    view = _thread_view()
+    owner_fact = _row(-123456789, "세라", "located_in", obj="등대", object_type="place", turn=4, position=8,
+                      owner=True, repair=str(REP_ID), generation=None, evidence="주인이 남긴 메모")
+    plain_fact = _row(43, "카이토", "has_status", value="건강함", turn=3, position=7)
+    alias = _row(44, "세라", "also_called", value="세라 언니", turn=1, position=2)
+    all_rows = [*view["assertions"], owner_fact, plain_fact, alias]
+    r = resolve(SRC_ID, all_rows, persona=("도현",))
+    for row in all_rows:
+        _annotate(row, r)
+    threads, _, _ = fold_threads(view["assertions"], r)
+    assert threads and all(t.get("evidence") for t in threads)  # the source threads do hold a quote
+    view = {**view, "facts": [owner_fact, plain_fact], "threads": threads, "assertions": all_rows,
+            "resolution": r, "entities": r.entities()}
+
+    cont = carry.snapshot_of(view, None, "continue", [], SRC_ID, {40: REV_1, 41: REV_2, 43: REV_3})
+    assert cont["shape"] == carry.SHAPE == 2
+    assert cont["facts"] and cont["aliases"] and cont["threads"]
+    assert all(t["opening"] is not None for t in cont["threads"])
+    assert any(f["from"]["repair"] == str(REP_ID) for f in cont["facts"])
+    assert _evidence_keys(cont) == []
+
+    reg = carry.snapshot_of(view, None, "regression", ["세라"], SRC_ID, {40: REV_1, 41: REV_2})
+    assert reg["shape"] == 2
+    assert reg["facts"] and reg["threads"]
+    assert any(f["from"]["repair"] == str(REP_ID) for f in reg["facts"])
+    assert _evidence_keys(reg) == []
+    assert "evidence" not in carry.FACT_KEYS and "evidence" not in carry.THREAD_KEYS
+
+
 def test_a_thread_whose_opening_row_is_missing_carries_a_null_opening() -> None:
     view = _thread_view()
     view["assertions"] = []
