@@ -15,7 +15,7 @@ from psycopg.rows import dict_row
 
 from conftest import make_client
 from memeval import stub_extractor
-from nmos_sidecar import audit, overuse, packet, retrieval, scene
+from nmos_sidecar import audit, overuse, packet, retrieval, scene, threads
 from nmos_sidecar.entities import resolve
 from nmos_sidecar.facts import settled_entry, thread_entry
 from nmos_sidecar.packet import BACK_AFTER_NOTE, SETTLED_NOTE, Line, compile_lines
@@ -446,3 +446,16 @@ def test_a_broken_promise_is_a_settled_line_under_v20_only_and_replays(migrated,
         assert entry["placed"] and entry["label"] == "supportive" and entry["kind"] == "thread"
     else:
         assert "status=" not in text and SETTLED_NOTE not in text
+
+
+def test_a_similar_promise_opens_afresh_thirty_turns_after_it_broke():
+    """PHASE-60 S4: a restatement joins only an open thread; `threads.fold` is unchanged."""
+    words = "등대 앞에서 만나기"
+    base = {"subject_type": "character", "object_type": "character"}
+    rows = [row(10, "세라", "promised", "카이토", words, **base),
+            row(20, "세라", "promised", "카이토", words, polarity="negative", **base),
+            row(50, "세라", "promised", "카이토", words, **base)]
+    folded, unmatched, _ = threads.fold(rows, resolve(uuid.uuid4(), rows))
+    assert unmatched == []
+    assert [(t["id"], t["status"]) for t in folded] == [(50, "open"), (10, "broken")]
+    assert folded[1]["closed_by"]["turn"] == 20
