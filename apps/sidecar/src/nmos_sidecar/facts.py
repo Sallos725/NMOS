@@ -1134,17 +1134,27 @@ def first(f: dict[str, Any], marks: bool = False) -> dict[str, Any] | None:
     return prior[0] if len(prior) > 1 and _norm(prior[0]["value"]) != _norm(prior[-1]["value"]) else None
 
 
+def happened_attr(a: dict[str, Any]) -> str:
+    """packet-v20 (PHASE-60 S7, ADR 0086): ` happened="…"` for an assertion that says when it happened, else nothing.
+    Always in double quotes (the Note's mark), the value escaped as attribute text."""
+    when = a.get("when_happened")
+    return f' happened="{escape(when, {chr(34): "&quot;"})}"' if when else ""
+
+
 def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, marks: bool = False,
-              gone: bool = False) -> str:
+              gone: bool = False, happened: bool = False) -> str:
     """One <Fact> with its knowledge marks exactly as stored (D19): knowledge="public", or known_by /
     hidden_from for limited facts, or no mark at all when who knows is unknown. A negated fact is
     explicitly not (or no longer) true (ADR 0013). A disputed fact carries what contradicts it in the same
     line, and neither side is presented as certain (PHASE-6 Q1). With `before` (packet-v5), a standing fact that
     replaced another names it and its turn (ADR 0038); with `cause` (packet-v6), the cause the story states (ADR 0040).
     A canon fact says so in place of a turn, and a fact the owner locked says that (ADR 0047). With `gone` (packet-v20,
-    PHASE-60 S3), the status line of a character who is dead or gone is marked so (ADR 0082 item 3)."""
+    PHASE-60 S3), the status line of a character who is dead or gone is marked so (ADR 0082 item 3). With `happened`
+    (packet-v20, PHASE-60 S7), a fact that says when it happened carries it right after its turn."""
     turn = f["turn"] if f.get("turn") is not None else f["position"]
     attrs = f" kind={quoteattr(f['predicate'])}" + (' source="canon"' if f.get("canon") else f" turn=\"{turn}\"")
+    if happened:
+        attrs += happened_attr(f)
     if f.get("locked"):
         attrs += ' locked="true"'
     if gone:
@@ -1229,13 +1239,14 @@ def _marks(f: dict[str, Any]) -> dict[str, Any]:
 
 
 def fact_entry(f: dict[str, Any], private: bool = False, before: bool = False, cause: bool = False,
-               marks: bool = False, gone: bool = False) -> Line:
+               marks: bool = False, gone: bool = False, happened: bool = False) -> Line:
     """A fact as a packet line with its provenance (ADR 0027): the assertion, and the words a reply can
     echo (its value, else its object). `private`: only some characters in the scene know it (ADR 0034).
     `before`: name the version a standing fact replaced (packet-v5, ADR 0038); `cause`: the stated cause (ADR 0040);
     `marks`: only versions the line's knowledge marks cover (ADR 0038 amendment 1); `gone`: a gone character's status
-    line (packet-v20), marked in its XML and its ledger marks."""
-    return Line("fact", fact_line(f, before, cause, marks, gone), _ref(f), f.get("turn"), fact_text(f),
+    line (packet-v20), marked in its XML and its ledger marks; `happened`: when it happened, in its XML only (packet-v20,
+    PHASE-60 S7)."""
+    return Line("fact", fact_line(f, before, cause, marks, gone, happened), _ref(f), f.get("turn"), fact_text(f),
                 f.get("value") or f.get("object") or "", {**_marks(f), "gone": True} if gone else _marks(f), private)
 
 

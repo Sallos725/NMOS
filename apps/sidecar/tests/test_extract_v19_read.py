@@ -16,6 +16,7 @@ from psycopg.rows import dict_row
 
 from conftest import active_generation, make_client
 from nmos_sidecar.facts import memory_view, served_assertions, served_told, told_rows
+from nmos_sidecar.packet import HAPPENED_MARK, HAPPENED_NOTE
 from simchat import SimChat
 from test_extract_v18 import FEELING, USED, chat_of, feels
 from test_extract_v19 import EVENT_QUOTE, SCENE, TOLD_QUOTE, event_row, told_row
@@ -142,6 +143,16 @@ def test_a3_the_packet_is_the_same_with_or_without_told_rows_and_when_happened(m
         without = retrieve(client, chat, QUESTION)
     assert with_rows["policy"] == without["policy"] == (policy or "packet-v19")
     assert "고마움" in with_rows["text"]  # the packet does carry facts of the told turn: the feeling and the event
-    assert '<Fact kind="event" turn="0">유나 event: 성을 떠났다</Fact>' in with_rows["text"]
+    plain = '<Fact kind="event" turn="0">유나 event: 성을 떠났다</Fact>'
+    if policy is None:
+        assert plain in with_rows["text"]
+        assert TOLD_VALUE not in with_rows["text"] and 'predicate="told"' not in with_rows["text"]
+        assert with_rows["text"] == without["text"]
+        return
+    # packet-v20 shows what the rows add (PHASE-60 S7, S8; tests/test_phase60_lines.py): the event says when it
+    # happened and the Note says which is which; without the rows the packet holds neither, and nothing else differs
+    happened = '<Fact kind="event" turn="0" happened="3년 전 겨울">유나 event: 성을 떠났다</Fact>'
+    assert happened in with_rows["text"] and HAPPENED_NOTE in with_rows["text"]
+    assert plain in without["text"] and HAPPENED_MARK not in without["text"] and HAPPENED_NOTE not in without["text"]
     assert TOLD_VALUE not in with_rows["text"] and 'predicate="told"' not in with_rows["text"]
-    assert with_rows["text"] == without["text"]
+    assert with_rows["text"].replace(happened, plain).replace(HAPPENED_NOTE, "") == without["text"]

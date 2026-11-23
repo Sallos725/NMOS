@@ -35,7 +35,7 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      STATE_HISTORY_MAX, STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES,
                      SOURCE_CLOCK_POLICIES, STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, RETURN_GAP_POLICIES, SETTLED_POLICIES,
-                     PIN_POLICIES, SEM_QUERY_POLICIES, EXCERPT_FLOOR,
+                     PIN_POLICIES, SEM_QUERY_POLICIES, HAPPENED_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
@@ -1147,11 +1147,12 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             # How the cast stand with each other takes the budget before threads (ADR 0026).
             before, cause = options.policy in BEFORE_POLICIES, causes
             marks = options.history_marks
-            g.lead = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause, marks) for f in facts
-                             if f["predicate"] in STANDING],
+            happened = options.policy in HAPPENED_POLICIES  # packet-v20 (PHASE-60 S7)
+            g.lead = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause, marks, happened=happened)
+                             for f in facts if f["predicate"] in STANDING],
                             facts, g, r, options)
-            g.facts = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause, marks) for f in facts
-                              if f["predicate"] not in STANDING]
+            g.facts = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause, marks, happened=happened)
+                              for f in facts if f["predicate"] not in STANDING]
                              + [claim_entry(c, scene.private(c, g.cast, r), cause) for c in claims], facts + claims, g, r,
                              options)
         if options.narrator:
@@ -1553,6 +1554,7 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
         order.sort(key=lambda k: not any(n in said for n in scene.names({k: cast[k]}, r, aliases)))  # stable
     order = order[:CAST_MAX]
     before, cause = options.policy in BEFORE_POLICIES, options.policy in CAUSE_POLICIES
+    happened = options.policy in HAPPENED_POLICIES  # packet-v20 (PHASE-60 S7)
 
     def shown(row: dict[str, Any]) -> bool:
         if scene.private(row, cast, r) or (row.get("canon") and row["host_logical_id"] in in_context
@@ -1576,7 +1578,7 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
         goals = [t for t in view["threads"] if named and t.get("kind") == "goal" and t["status"] == "open"
                  and scene.key(r, t["by"]) == k and shown(t)]
         goals.sort(key=lambda t: (similarity(query, t.get("text")) if query else 0.0, t["position"]), reverse=True)
-        return [fact_entry(f, False, before, cause, options.history_marks) for f in pick] + [
+        return [fact_entry(f, False, before, cause, options.history_marks, happened=happened) for f in pick] + [
             thread_entry(t) for t in goals[:CAST_GOALS]]
 
     extra = 0
@@ -1658,8 +1660,8 @@ def gone_lines(view: dict[str, Any], r: Any, cast: dict[str, str], now: int | No
     if options.policy not in GONE_POLICIES:
         return []
     before, cause = options.policy in BEFORE_POLICIES, options.policy in CAUSE_POLICIES
-    return [fact_entry(f, scene.private(f, cast, r), before, cause, options.history_marks, gone=True)
-            for f in gone_rows(view, r, now)]
+    return [fact_entry(f, scene.private(f, cast, r), before, cause, options.history_marks, gone=True,
+                       happened=options.policy in HAPPENED_POLICIES) for f in gone_rows(view, r, now)]
 
 
 def pin_gone(g: Gathered, view: dict[str, Any], r: Any, now: int | None, options: RecallOptions) -> list[dict[str, Any]]:

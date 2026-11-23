@@ -31,6 +31,9 @@ BACK_AFTER_NOTE = (" back_after on a Character marks one who has just come back 
 SETTLED_MARK = '<Thread status="'
 SETTLED_NOTE = (" A Thread with a status has ended in the story at closed_turn, as its status says: it is no longer"
                 " open.")
+# packet-v20 (PHASE-60 S7, ADR 0086): a line whose assertion says when it happened carries it beside its turn
+HAPPENED_MARK = ' happened="'
+HAPPENED_NOTE = " happened says when it happened in the story; turn says when it was told."
 # Added to the Note only when a kept line uses the mark (ADR 0013), so other packets stay as they were.
 NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly not, or no longer, true."),
                ("<Claim ", " A Claim is what that character said, not established truth."),
@@ -56,7 +59,8 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                # packet-v20 only (`_V20_MARKS`): an older policy never adds them, whatever a value spells
                (GONE_MARK, GONE_NOTE),
                (BACK_AFTER_MARK, BACK_AFTER_NOTE),
-               (SETTLED_MARK, SETTLED_NOTE))
+               (SETTLED_MARK, SETTLED_NOTE),
+               (HAPPENED_MARK, HAPPENED_NOTE))
 MAX_EXCERPT_CHARS = 480
 # packet-v10 grows an excerpt to at most this many sentences (owner, 2026-09-30): growing to the whole length brought
 # back more values the story had since replaced (docs/perf/lexical-recall.md, "Step 4"); packet-v11 lifts the cap for a
@@ -332,8 +336,10 @@ RETURN_GAP_POLICIES = frozenset({"packet-v20"})  # a <Cast> character back after
 SETTLED_POLICIES = frozenset({"packet-v20"})  # threads closed lately, after the open ones (PHASE-60 S4, ADR 0082 item 5)
 PIN_POLICIES = frozenset({"packet-v20"})  # a character the owner or an `@name` pins is present (PHASE-60 S8, ADR 0087)
 SEM_QUERY_POLICIES = frozenset({"packet-v20"})  # a short message embeds with the previous reply's tail (PHASE-60 S5, ADR 0084)
+HAPPENED_POLICIES = frozenset({"packet-v20"})  # when it happened, beside the turn that told it (PHASE-60 S7, ADR 0086)
 # The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
-_V20_MARKS = {GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES}
+_V20_MARKS = {GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES,
+              HAPPENED_MARK: HAPPENED_POLICIES}
 STATE_HISTORY_MAX = 6  # changes on one <StateHistory> line
 STATE_HISTORY_KEYS = 2  # keys one message gets a line for
 EXCERPT_FLOOR = 0.5  # packet-v14: an excerpt after the first needs this share of the best fused score, or a word hit
