@@ -17,14 +17,15 @@ export function contentText(content: unknown): string {
 
 const norm = (value: unknown): string => normalizeText(value).trim();
 
-function isActive(message: HostMessage): boolean {
-  return message.disabled !== true && !message.isComment;
+export function isActive(message: HostMessage | null | undefined): boolean {
+  return message != null && message.disabled !== true && !message.isComment;
 }
 
 export function latestUserIndex(messages: HostMessage[]): number {
+  if (!Array.isArray(messages)) return -1;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const m = messages[i] as HostMessage;
-    if (m.role === 'user' && isActive(m)) return i;
+    const m = messages[i];
+    if (m && m.role === 'user' && isActive(m)) return i;
   }
   return -1;
 }
@@ -84,19 +85,24 @@ export function anchorOf(text: string, size = 48): string {
 }
 
 /**
- * Host message ids whose text is already in the outgoing prompt. PocketRisu sends a contiguous tail
- * of the chat in order, so match host messages newest→oldest against prompt messages newest→oldest
- * with a moving pointer: an older duplicate line can never claim a prompt slot a newer copy used.
- * Stops after a few anchorable misses (the start of the sent window).
+ * Pointer-matches active, anchorable host messages newest→oldest against outgoing prompt messages
+ * newest→oldest, returning a map of host index → prompt index. An older duplicate line can never
+ * claim a prompt slot a newer copy used; stops after `maxMisses` consecutive anchorable misses.
  */
-export function inContextIds(prompt: PromptMessage[], hostMessages: HostMessage[], minAnchor = 16, maxMisses = 3): string[] {
+export function matchPromptToHost(
+  prompt: PromptMessage[],
+  hostMessages: HostMessage[],
+  minAnchor = 16,
+  maxMisses = 3,
+): Map<number, number> {
+  const matches = new Map<number, number>();
+  if (!Array.isArray(prompt) || !Array.isArray(hostMessages)) return matches;
   const texts = prompt.map((m) => cleanText(contentText(m?.content)));
   let pointer = texts.length - 1;
-  let boundary = hostMessages.length;
   let misses = 0;
   for (let i = hostMessages.length - 1; i >= 0 && pointer >= 0; i -= 1) {
-    const m = hostMessages[i] as HostMessage;
-    if (!isActive(m)) continue;
+    const m = hostMessages[i];
+    if (!m || !isActive(m)) continue;
     const text = cleanText(selectedContent(m));
     if (text.length < minAnchor) continue;
     const anchor = anchorOf(text);
@@ -108,12 +114,27 @@ export function inContextIds(prompt: PromptMessage[], hostMessages: HostMessage[
       }
     }
     if (found >= 0) {
-      boundary = i;
+      matches.set(i, found);
       pointer = found - 1;
       misses = 0;
     } else if (++misses >= maxMisses) {
       break;
     }
+  }
+  return matches;
+}
+
+/**
+ * Host message ids whose text is already in the outgoing prompt. PocketRisu sends a contiguous tail
+ * of the chat in order, so `matchPromptToHost` finds the smallest matched host index and every
+ * message from there to the end of `hostMessages` is reported as in context.
+ */
+export function inContextIds(prompt: PromptMessage[], hostMessages: HostMessage[], minAnchor = 16, maxMisses = 3): string[] {
+  const matches = matchPromptToHost(prompt, hostMessages, minAnchor, maxMisses);
+  if (matches.size === 0) return [];
+  let boundary = hostMessages.length;
+  for (const i of matches.keys()) {
+    if (i < boundary) boundary = i;
   }
   return hostMessages.slice(boundary).map((m) => String(m.chatId ?? '')).filter(Boolean);
 }

@@ -6,8 +6,10 @@ import {
   hasPacket,
   inContextIds,
   injectPacket,
+  isActive,
   isMainGeneration,
   landsAfterUserTurn,
+  matchPromptToHost,
   PACKET_TAG,
   queryTexts,
   userTurnAnchor,
@@ -325,6 +327,65 @@ describe('in-context detection (D3)', () => {
     expect(inContextIds(onePrefill, host)).toEqual(['u1', 'c1', 'u2']);
     expect(inContextIds([], host)).toEqual([]);
     expect(inContextIds(mainPrompt, [])).toEqual([]);
+  });
+
+  it('maps host indices to prompt indices directly with matchPromptToHost', () => {
+    expect(matchPromptToHost(mainPrompt, host)).toEqual(new Map([
+      [4, 3],
+      [3, 2],
+      [2, 1],
+    ]));
+    expect(matchPromptToHost(presetPrompt, host)).toEqual(new Map([
+      [4, 6],
+      [3, 3],
+      [2, 1],
+    ]));
+    expect(matchPromptToHost([{ role: 'user', content: 'unrelated' }], host)).toEqual(new Map());
+    expect(matchPromptToHost([], host)).toEqual(new Map());
+    expect(matchPromptToHost(mainPrompt, [])).toEqual(new Map());
+  });
+
+  it('skips short and inactive messages in matchPromptToHost and respects maxMisses', () => {
+    const withShortAndDisabled: HostMessage[] = [
+      { role: 'user', data: '세라 found the bronze compass under the stone bench.', chatId: 'u0' },
+      { role: 'char', data: '응', chatId: 'c0' },
+      { role: 'user', data: 'hidden commentary about the compass', chatId: 'u1', disabled: true },
+      { role: 'char', data: 'author comment line that is ignored', chatId: 'c1', isComment: true },
+      { role: 'user', data: '카이토 checked the clocktower stairs before dusk.', chatId: 'u2' },
+    ];
+    const prompt: PromptMessage[] = [
+      { role: 'system', content: 'Narrator.' },
+      { role: 'user', content: '세라 found the bronze compass under the stone bench.' },
+      { role: 'assistant', content: '응' },
+      { role: 'user', content: '카이토 checked the clocktower stairs before dusk.' },
+    ];
+    expect(matchPromptToHost(prompt, withShortAndDisabled)).toEqual(new Map([
+      [4, 3],
+      [0, 1],
+    ]));
+
+    // Three consecutive misses stop the walk before reaching the older matching message.
+    const withMisses: HostMessage[] = [
+      { role: 'user', data: '하나 kept the silver ring inside her coat pocket.', chatId: 'u0' },
+      { role: 'char', data: 'missed line one long enough to anchor properly.', chatId: 'c1' },
+      { role: 'user', data: 'missed line two long enough to anchor properly.', chatId: 'u2' },
+      { role: 'char', data: 'missed line three long enough to anchor properly.', chatId: 'c3' },
+      { role: 'user', data: '유나 opened the archive door at midnight.', chatId: 'u4' },
+    ];
+    const missedPrompt: PromptMessage[] = [
+      { role: 'user', content: '하나 kept the silver ring inside her coat pocket.' },
+      { role: 'user', content: '유나 opened the archive door at midnight.' },
+    ];
+    expect(matchPromptToHost(missedPrompt, withMisses)).toEqual(new Map([[4, 1]]));
+    expect(matchPromptToHost(missedPrompt, withMisses, 16, 4)).toEqual(new Map([[4, 1], [0, 0]]));
+  });
+
+  it('exports isActive matching disabled and comment semantics', () => {
+    expect(isActive({ role: 'user', data: 'hello' })).toBe(true);
+    expect(isActive({ role: 'user', data: 'hello', disabled: false })).toBe(true);
+    expect(isActive({ role: 'user', data: 'hello', disabled: 'allBefore' })).toBe(true);
+    expect(isActive({ role: 'user', data: 'hello', disabled: true })).toBe(false);
+    expect(isActive({ role: 'char', data: 'note', isComment: true })).toBe(false);
   });
 });
 
