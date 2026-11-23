@@ -131,6 +131,8 @@ STYLE = """
 """
 
 T: dict[str, tuple[str, str]] = {
+    "s-told": ("누가 누구에게 들었나", "Who told whom"),
+    "told_about": ("{who}에 대해", "about {who}"),
     "ok": ("작동 중", "Working"),
     "warn": ("확인이 필요해요", "Needs a look"),
     "err": ("작동하지 않아요", "Not working"),
@@ -607,7 +609,8 @@ def person(d: dict[str, Any], lang: str) -> str:
     time = (_timeline(d, lang) + f'<p class="v-note">{_v(t(lang, "tl_hint"))}</p>') if d.get("marks") else nothing
     body = (section("s-now", lang, now) + section("s-rels", lang, more(rels, lang) or nothing, len(rels))
             + section("s-threads", lang, more(threads, lang) or nothing, len(threads))
-            + section("s-knows", lang, more(knows, lang) or nothing, len(knows)) + section("s-time", lang, time))
+            + section("s-knows", lang, more(knows, lang) or nothing, len(knows))
+            + _told_section(cid, d.get("told"), ents, lang) + section("s-time", lang, time))
     cap = t(lang, "aka", names=", ".join(aka)) if aka else ""
     if not e.get("persona"):  # PHASE-47 S6: the button, behind a tap like every repair here
         body += (f'<p class="v-note">{_v(t(lang, "is_not_char"))}</p>' if e.get("excluded")
@@ -972,15 +975,37 @@ def memory_map(d: dict[str, Any], lang: str, focus: str | None = None, everyone:
         foot = (f'<div class="v-foot"><a href="/views/c/{cid}/map">{_v(t(lang, "whole_map"))}</a> · '
                 f'<a href="/views/c/{cid}/person/{focus}">{_v(t(lang, "sheet"))}</a></div>')
     else:
-        keys = ["s-src", "s-ties", "s-events", "s-depth"]
+        told = _told_section(cid, d.get("told"), ents, lang)
+        keys = ["s-src", "s-ties", "s-events", "s-depth"] + (["s-told"] if told else [])
         chips = '<div class="v-chips">' + "".join(f'<a href="#{k}">{_v(t(lang, k))}</a>' for k in keys) + "</div>"
         head = t(lang, "map")
         body = (chips + section("s-src", lang, _sources(m["sources"], lang)) + ties
                 + section("s-events", lang, _events(cid, m["events"], m["last"], ents, lang), len(m["events"]))
-                + section("s-depth", lang, _depth(m["depth"], lang)))
+                + section("s-depth", lang, _depth(m["depth"], lang)) + told)
         foot = (f'<div class="v-foot"><a href="/views/c/{cid}/memory">{_v(t(lang, "back_memory"))}</a> · '
                 f'<a href="/inspector/c/{cid}">{_v(t(lang, "details"))}</a></div>')
     cap = " · ".join(str(x) for x in (conv.get("name"), f"t{conv['turns']}" if conv.get("turns") is not None else None)
                      if x)
     return (f'<div class="v v-doc v-map"><div class="v-head"><h1 class="v-h1">{_v(head)}</h1>'
             f'<span class="v-cap">{_v(cap)}</span></div>{body}{foot}</div>')
+
+
+def _told_section(cid: str, rows: list[dict[str, Any]] | None, ents: dict[str, str], lang: str) -> str:
+    """Who told whom (PHASE-60 S8): chains oldest first, names linked to their sheet; empty without rows."""
+    if not rows:
+        return ""
+    from .memorymap import told_chains
+    chains = told_chains(rows)
+    if not chains:
+        return ""
+    items = []
+    for chain in chains:
+        people = [chain[0]["teller"], *(link["hearer"] for link in chain)]
+        who = " → ".join(name_link(cid, ents, name) for name in people)
+        turns = [f"t{link['turn']}" for link in chain
+                 if isinstance(link.get("turn"), int) and not isinstance(link.get("turn"), bool)]
+        when = f" ({' → '.join(turns)})" if turns else ""
+        about = list(dict.fromkeys(w for link in chain for w in link.get("about") or ()))
+        meta = _v(t(lang, "told_about", who=", ".join(about))) if about else ""
+        items.append(line(f"{who}: {_v(chain[0]['what'])}{when}", meta))
+    return section("s-told", lang, more(items, lang), len(items))

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from typing import Any
+import re
 
-from nmos_sidecar import memorymap
+from nmos_sidecar import memorymap, views
 
 CID = "0190f3a4-1b2c-7d3e-8f40-60000000c0de"
 SERA, KAITO, HANA, YUNA = (f"0190f3a4-1b2c-7d3e-8f40-0000000000{i:02x}" for i in range(1, 5))
@@ -106,3 +107,107 @@ def test_told_chains_orders_oldest_first_including_turn_zero():
     assert len(chains) == 2
     assert [(x["teller"], x["hearer"], x["turn"]) for x in chains[0]] == [("유나", "세라", 0)]
     assert [(x["teller"], x["hearer"], x["turn"]) for x in chains[1]] == [("세라", "카이토", 4), ("카이토", "하나", 9)]
+
+
+# --- views.person and views.memory_map --------------------------------------------------------------------------------
+
+def _person_data(**over: Any) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "conv": {"id": CID, "name": "등대 마을", "character": "세라", "turns": 20},
+        "entity": {"id": SERA, "name": "세라", "names": ["세라"]},
+        "now": ["등대"],
+        "pairs": [],
+        "threads": [],
+        "knows": [],
+        "kept": [],
+        "marks": [(2, False, "등대", "located_in")],
+        "first": 0,
+        "last": 20,
+        "entities": ENTITIES,
+    }
+    data.update(over)
+    return data
+
+
+def _map_data(**over: Any) -> dict[str, Any]:
+    v = {"facts": [], "entities": [], "excluded": {}, "assertions": [], "resolution": None}
+    data: dict[str, Any] = {
+        "conv": {"id": CID, "name": "등대 마을", "character": "세라", "turns": 20},
+        "map": memorymap.build(v, 20, []),
+        "entities": ENTITIES,
+    }
+    data.update(over)
+    return data
+
+
+def test_person_sheet_renders_told_chains_in_ko_and_en():
+    rows = [
+        told_row("세라", "카이토", "지도는 가짜다", turn=5, about=["유나"],
+                 subject_entity={"id": SERA, "name": "세라"}, object_entity={"id": KAITO, "name": "카이토"}),
+        told_row("카이토", "하나", "지도는 가짜다", turn=12,
+                 subject_entity={"id": KAITO, "name": "카이토"}, object_entity={"id": HANA, "name": "하나"}),
+        told_row("유나", "세라", "열쇠는 등대에 있다", turn=15),
+    ]
+    ko = views.person(_person_data(told=rows), "ko")
+    assert re.findall(r'class="v-sec" id="(s-[a-z]+)"', ko) == [
+        "s-now", "s-rels", "s-threads", "s-knows", "s-told", "s-time"
+    ]
+    sec_ko = ko.split('id="s-told"')[1].split('id="s-time"')[0]
+    assert "누가 누구에게 들었나" in sec_ko and '<span class="v-n">2</span>' in sec_ko
+    assert f'<a class="v-name" href="/views/c/{CID}/person/{SERA}">세라</a>' in sec_ko
+    assert f'<a class="v-name" href="/views/c/{CID}/person/{KAITO}">카이토</a>' in sec_ko
+    assert f'<a class="v-name" href="/views/c/{CID}/person/{HANA}">하나</a>' in sec_ko
+    assert ": 지도는 가짜다 (t5 → t12)" in sec_ko and "유나에 대해" in sec_ko
+    assert ": 열쇠는 등대에 있다 (t15)" in sec_ko
+    assert "mono" not in sec_ko and "<table" not in sec_ko
+
+    en = views.person(_person_data(told=rows), "en")
+    sec_en = en.split('id="s-told"')[1].split('id="s-time"')[0]
+    assert "Who told whom" in sec_en and "about 유나" in sec_en
+    assert ": 지도는 가짜다 (t5 → t12)" in sec_en
+
+
+def test_person_sheet_folds_more_than_three_told_chains_and_escapes_html():
+    rows = [told_row("세라", "카이토", f"<b>비밀 {i}</b>", turn=i + 1, about=["<b>유나</b>"]) for i in range(4)]
+    html = views.person(_person_data(told=rows), "ko")
+    sec = html.split('id="s-told"')[1].split('id="s-time"')[0]
+    assert '<details class="v-more">' in sec and "1개 더 보기" in sec
+    assert "<b>" not in sec and "&lt;b&gt;비밀 0&lt;/b&gt;" in sec and "&lt;b&gt;유나&lt;/b&gt;" in sec
+
+
+def test_person_sheet_without_told_is_unchanged():
+    base_ko = views.person(_person_data(), "ko")
+    base_en = views.person(_person_data(), "en")
+    assert 'id="s-told"' not in base_ko and 'id="s-told"' not in base_en
+    assert views.person(_person_data(told=[]), "ko") == base_ko
+    assert views.person(_person_data(told=[]), "en") == base_en
+
+
+def test_memory_map_renders_told_chains_and_stays_panel_safe():
+    from test_memorymap import panel_safe
+
+    rows = [
+        told_row("세라", "카이토", "<b>지도는 가짜다</b>", turn=12, about=["유나"]),
+    ]
+    ko = views.memory_map(_map_data(told=rows), "ko")
+    assert 'id="s-told"' in ko and 'href="#s-told"' in ko
+    assert "누가 누구에게 들었나" in ko and "&lt;b&gt;지도는 가짜다&lt;/b&gt; (t12)" in ko and "<b>" not in ko
+    assert f'href="/views/c/{CID}/person/{SERA}"' in ko
+    assert "유나에 대해" in ko
+    # verify panel sanitizer constraints (same tag/href allowlist as test_memorymap.panel_safe)
+    assert "<table" not in ko and "<svg" not in ko and "style=" not in ko
+    en = views.memory_map(_map_data(told=rows), "en")
+    assert "Who told whom" in en and "about 유나" in en
+    # use test_memorymap's fixture CID for panel_safe's href regex check
+    from test_memorymap import map_data as make_map_data
+    d_map = make_map_data()
+    d_map["told"] = rows
+    panel_safe(views.memory_map(d_map, "ko"))
+
+
+def test_memory_map_without_told_is_unchanged():
+    base_ko = views.memory_map(_map_data(), "ko")
+    base_en = views.memory_map(_map_data(), "en")
+    assert 'id="s-told"' not in base_ko and 'id="s-told"' not in base_en
+    assert views.memory_map(_map_data(told=[]), "ko") == base_ko
+    assert views.memory_map(_map_data(told=[]), "en") == base_en
