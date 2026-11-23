@@ -57,6 +57,8 @@ interface HarnessOpts {
   onPreview?: (body: Record<string, unknown>, count: number) => CarryPreview | Promise<CarryPreview>;
   onLink?: (body: Record<string, unknown>, count: number) => { link: CarryLink; replaced: string | null } | Promise<{ link: CarryLink; replaced: string | null }>;
   onDelete?: () => { removed: CarryLink } | Promise<{ removed: CarryLink }>;
+  /** `GET /v1/conversations/<another chat>/entities` (the regression fallback's character list); unset -> `{}`. */
+  onSourceEntities?: (conversation: string) => unknown | Promise<unknown>;
 }
 
 async function openThisChat(opts: HarnessOpts) {
@@ -87,6 +89,8 @@ async function openThisChat(opts: HarnessOpts) {
       if (path.startsWith('/v1/views/')) return { html: '<div class="v"></div>' } as T;
       if (path === '/v1/conversations' && address.includes('host=pocketrisu')) return chats as T;
       if (path === `/v1/conversations/${cid}/entities`) return [] as T;
+      const otherEntities = /^\/v1\/conversations\/([^/]+)\/entities$/.exec(path);
+      if (otherEntities && opts.onSourceEntities) return await opts.onSourceEntities(otherEntities[1]!) as T;
       if (path.endsWith('/memory-mode') || path.includes('/status/candidates')) throw new Error(`${path} -> HTTP 404: Not Found`);
       if (path === `/v1/conversations/${cid}/carry` && method === 'GET') {
         if (state === '404') throw new Error(`${path} -> HTTP 404: Not Found`);
@@ -426,6 +430,155 @@ describe("carry another chat's memory card in Settings -> This chat (PHASE-60 S6
           : "Invalid: turn 999 is not on the source's current head",
       );
       expect(otherMsg).not.toMatch(/\b422\b|HTTP/);
+      document.body.replaceChildren();
+    }
+  });
+
+  // The sidecar caps the continue reading the regression discover preview takes; a few names may still fit.
+  const sizeRefusal = () => new Error(
+    `/v1/conversations/${cid}/carry/preview -> HTTP 422: too_many_rows: rows=2345 max=2000 (the reading holds 2345 rows; a link carries at most 2000)`,
+  );
+  const TOO_LARGE = {
+    ko: '이 채팅의 기억이 너무 많아 이어받을 수 없습니다 (2345줄, 최대 2000줄). 더 이른 턴에서 끊어 보세요.',
+    en: 'This chat has too much memory to carry (2345 lines, maximum 2000). Try cutting off at an earlier turn.',
+  } as const;
+  // `carry._characters`: characters only, not the persona, not excluded from memory (a cast exclusion stays), most
+  // mentioned first, ties in the list's order.
+  const sourceEntities = [
+    { id: 'e1', type: 'character', name: '하나', names: ['하나'], mentions: 3 },
+    { id: 'e2', type: 'character', name: '세라', names: ['세라'], mentions: 9 },
+    { id: 'e3', type: 'character', name: '유나', names: ['유나'], mentions: 20, persona: true },
+    { id: 'e4', type: 'place', name: '항구', names: ['항구'], mentions: 15 },
+    { id: 'e5', type: 'character', name: '유준', names: ['유준'], mentions: 7, excluded: 'memory' },
+    { id: 'e6', type: 'character', name: '카이토', names: ['카이토'], mentions: 5, excluded: 'cast' },
+    { id: 'e7', type: 'character', name: '지호', names: ['지호'], mentions: 5 },
+  ];
+  const startRegression = (card: HTMLElement, lang: 'ko' | 'en') => {
+    const regRadio = card.querySelector<HTMLInputElement>('input[type="radio"][value="regression"]')!;
+    regRadio.checked = true;
+    regRadio.dispatchEvent(new Event('change'));
+    const previewBtn = [...card.querySelectorAll('button')].find((b) => b.textContent === (lang === 'ko' ? '미리 보기' : 'Preview'))!;
+    previewBtn.click();
+    return previewBtn;
+  };
+
+  it('lists the source characters from /entities when the regression discover preview is over the row cap, then previews the picked names', async () => {
+    for (const lang of ['ko', 'en'] as const) {
+      const { calls } = await openThisChat({
+        lang,
+        carry: { in_force: null, removed: [] },
+        onPreview: (body) => {
+          if (body.mode === 'continue') throw sizeRefusal();
+          return makePreview({
+            mode: 'regression',
+            characters: ['세라', '카이토', '지호', '하나'],
+            counts: { facts: 4, aliases: 0, threads: 0, story: false },
+            first_lines: ['하나는 등대의 약속을 기억한다'],
+            fingerprint: `fp-reg-${(body.entity_names as string[]).join(',')}`,
+          });
+        },
+        onSourceEntities: (conversation) => (conversation === srcA ? sourceEntities : []),
+      });
+      const card = carryCardOf(lang)!;
+      startRegression(card, lang);
+      await settle();
+
+      expect(calls.filter(([m, p]) => m === 'GET' && p === `/v1/conversations/${srcA}/entities`)).toHaveLength(1);
+      const pv = card.querySelector<HTMLElement>('.preview')!;
+      expect(pv).not.toBeNull();
+      expect(card.querySelector('.msg')!.textContent).toBe('');
+      const checkboxes = [...pv.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+      expect(checkboxes.map((c) => c.value)).toEqual(['세라', '카이토', '지호', '하나']);
+      expect(pv.textContent).toContain(lang === 'ko' ? '인물을 최소 1명 고르면' : 'Tick at least one character');
+      const linkBtn = [...pv.querySelectorAll('button')].find((b) => b.textContent === (lang === 'ko' ? '연결' : 'Link')) as HTMLButtonElement;
+      expect(linkBtn.disabled).toBe(true);
+
+      // Tick 하나 -> the real regression preview, capped by the sidecar on the regression reading
+      checkboxes[3]!.checked = true;
+      checkboxes[3]!.dispatchEvent(new Event('change'));
+      await settle();
+      const previews = calls.filter(([m, p]) => m === 'POST' && p.endsWith('/carry/preview'));
+      expect(previews).toHaveLength(2);
+      expect(previews[1]![2]).toEqual({
+        source_conversation_id: srcA,
+        mode: 'regression',
+        entity_names: ['하나'],
+        cutoff_turn: null,
+      });
+      expect(pv.textContent).toContain('하나는 등대의 약속을 기억한다');
+      expect(linkBtn.disabled).toBe(false);
+
+      linkBtn.click();
+      await settle();
+      const linkCall = calls.find(([m, p]) => m === 'POST' && p.endsWith('/carry'))!;
+      expect(linkCall[2]).toEqual({
+        source_conversation_id: srcA,
+        mode: 'regression',
+        entity_names: ['하나'],
+        cutoff_turn: null,
+        expect: 'fp-reg-하나',
+      });
+      document.body.replaceChildren();
+    }
+  });
+
+  it('shows the size refusal as before when the /entities fallback fails or answers no list, and never falls back on another error', async () => {
+    for (const lang of ['ko', 'en'] as const) {
+      for (const answer of ['throw', 'not-a-list'] as const) {
+        const { calls } = await openThisChat({
+          lang,
+          carry: { in_force: null, removed: [] },
+          onPreview: () => { throw sizeRefusal(); },
+          onSourceEntities: () => {
+            if (answer === 'throw') throw new Error(`/v1/conversations/${srcA}/entities -> HTTP 500: Internal Server Error`);
+            return { entities: sourceEntities };
+          },
+        });
+        const card = carryCardOf(lang)!;
+        const previewBtn = startRegression(card, lang);
+        await settle();
+        expect(calls.filter(([m, p]) => m === 'GET' && p === `/v1/conversations/${srcA}/entities`)).toHaveLength(1);
+        expect(card.querySelector('.msg')!.textContent).toBe(TOO_LARGE[lang]);
+        expect(card.querySelector('.preview')).toBeNull();
+        expect(previewBtn.disabled).toBe(false);
+        document.body.replaceChildren();
+      }
+
+      const { calls } = await openThisChat({
+        lang,
+        carry: { in_force: null, removed: [] },
+        onPreview: () => { throw new Error(`/v1/conversations/${cid}/carry/preview -> HTTP 422: the source has no messages`); },
+        onSourceEntities: () => sourceEntities,
+      });
+      const card = carryCardOf(lang)!;
+      const previewBtn = startRegression(card, lang);
+      await settle();
+      expect(calls.some(([, p]) => p === `/v1/conversations/${srcA}/entities`)).toBe(false);
+      expect(card.querySelector('.msg')!.textContent).toBe(
+        lang === 'ko' ? '입력 오류: the source has no messages' : 'Invalid: the source has no messages',
+      );
+      expect(card.querySelector('.preview')).toBeNull();
+      expect(previewBtn.disabled).toBe(false);
+      document.body.replaceChildren();
+    }
+  });
+
+  it('keeps the continue preview size refusal unchanged: the sentence, no /entities fallback, no preview box', async () => {
+    for (const lang of ['ko', 'en'] as const) {
+      const { calls } = await openThisChat({
+        lang,
+        carry: { in_force: null, removed: [] },
+        onPreview: () => { throw sizeRefusal(); },
+        onSourceEntities: () => sourceEntities,
+      });
+      const card = carryCardOf(lang)!;
+      const previewBtn = [...card.querySelectorAll('button')].find((b) => b.textContent === (lang === 'ko' ? '미리 보기' : 'Preview'))!;
+      previewBtn.click();
+      await settle();
+      expect(calls.some(([, p]) => p === `/v1/conversations/${srcA}/entities`)).toBe(false);
+      expect(card.querySelector('.msg')!.textContent).toBe(TOO_LARGE[lang]);
+      expect(card.querySelector('.preview')).toBeNull();
+      expect(previewBtn.disabled).toBe(false);
       document.body.replaceChildren();
     }
   });

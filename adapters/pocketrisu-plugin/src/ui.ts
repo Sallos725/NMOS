@@ -24,7 +24,7 @@ import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
 import { coverageLine, trimStatusLine } from './trimtext';
 import {
-  CARRY_MAX_NAMES, carryCountsLine, carryCutoffLabel, carryErrorText, carrySourceLabel,
+  CARRY_MAX_NAMES, carryCountsLine, carryCutoffLabel, carryErrorText, carryRefusal, carrySourceLabel,
   isCarryConflict, isCarryNotFound, parseCutoffTurn,
   type CarryMode, type CarryPreview, type CarryRequestBody, type CarryState,
 } from './carrytext';
@@ -3165,6 +3165,16 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (said) say(msg, L(said), 'ok');
     const previewSpot = el('div');
 
+    /** An `/entities` row as the regression fallback reads it; `excluded` is the exclusion's scope ('cast' | 'memory'). */
+    type CarryEntity = { type?: string; name?: string; mentions?: number; persona?: boolean; excluded?: string | null };
+    /** The sidecar's `carry._characters` over the source's entities: characters only, not the persona, not excluded from
+     *  memory (a cast exclusion stays), most mentioned first, ties in the list's order. */
+    const carryCharacters = (rows: CarryEntity[]): string[] => rows
+      .filter((e) => e && e.type === 'character' && !e.persona && e.excluded !== 'memory' && typeof e.name === 'string')
+      .map((e, i) => ({ name: String(e.name), mentions: Number(e.mentions) || 0, i }))
+      .sort((a, b) => b.mentions - a.mentions || a.i - b.i)
+      .map((e) => e.name);
+
     async function openPreview(
       trigger: HTMLButtonElement,
       req: { source_conversation_id: string; mode: CarryMode; entity_names: string[]; cutoff_turn: number | null },
@@ -3181,14 +3191,35 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         entity_names: discover ? [] : [...req.entity_names],
         cutoff_turn: req.cutoff_turn,
       };
-      let first: CarryPreview;
+      let first: CarryPreview | null = null;
+      let chars: string[] = [];
       try {
         first = await deps.api<CarryPreview>('POST', `/v1/conversations/${conversation}/carry/preview`, body, 15_000);
+        chars = first.characters ?? [];
       } catch (error) {
         if (previewRound.get(previewSpot) !== round) return;
-        say(msg, carryErrorText(lang, error, errorText), 'err');
-        trigger.disabled = false;
-        return;
+        const refused = () => {
+          say(msg, carryErrorText(lang, error, errorText), 'err');
+          trigger.disabled = false;
+        };
+        // The discover preview reads the whole source and the sidecar caps that reading; a few names may still fit
+        // under the cap, so a size refusal lists the source's characters from its entities instead.
+        if (!discover || !carryRefusal(error instanceof Error ? error.message : String(error))) {
+          refused();
+          return;
+        }
+        let rows: unknown;
+        try {
+          rows = await deps.api<unknown>('GET', `/v1/conversations/${req.source_conversation_id}/entities`, undefined, 15_000);
+        } catch {
+          rows = null;
+        }
+        if (previewRound.get(previewSpot) !== round) return;
+        if (!Array.isArray(rows)) {
+          refused();
+          return;
+        }
+        chars = carryCharacters(rows as CarryEntity[]);
       }
       if (previewRound.get(previewSpot) !== round) return;
 
@@ -3205,7 +3236,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
           return;
         }
         if (!pv) {
-          const hint = first.characters.length ? L('carry.pv_chars_pick') : L('carry.pv_chars_none');
+          const hint = chars.length ? L('carry.pv_chars_pick') : L('carry.pv_chars_none');
           detailsSpot.replaceChildren(el('div', { class: 'muted', text: hint }));
           return;
         }
@@ -3235,7 +3266,6 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (changed) box.append(el('div', { class: 'warn', text: L('carry.changed') }));
 
       if (req.mode === 'regression') {
-        const chars = first.characters ?? [];
         const allChars = [...chars, ...pickedNames.filter((n) => !chars.includes(n))];
         box.append(el('div', { style: 'margin-top:6px;font-weight:500', text: L('carry.pv_chars') }));
         if (allChars.length) {
