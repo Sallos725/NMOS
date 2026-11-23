@@ -85,7 +85,9 @@ export interface FormValues {
   llm: ModelValues;
   emb: ModelValues;
   tune: { threshold: string; minSim: string; embedWait: string; topK: string; facts: string; backfill: string;
-    summaries: boolean; canonFacts: boolean };
+    summaries: boolean; canonFacts: boolean;
+    /** Pin a character with @name in a message (PHASE-60 S8, ADR 0087); sent only when the sidecar has the setting. */
+    pinAt: boolean };
   /** Leaving out old dialogue (PHASE-60 S1): the switch and the recent turns always sent, as typed. */
   trim: { on: boolean; keep: string };
 }
@@ -102,8 +104,11 @@ function num(value: string): number | string {
   return value.trim() !== '' && Number.isFinite(n) ? n : value;
 }
 
+/** Settings a sidecar reports only from the version that has them; one it did not report is never sent. */
+export interface KnownSettings { pinAt?: boolean }
+
 /** One PUT /v1/config body for every changed server-side section (validated and saved atomically). */
-export function configBody(dirty: Section[], v: FormValues): Record<string, unknown> {
+export function configBody(dirty: Section[], v: FormValues, known: KnownSettings = {}): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   for (const [section, prefix] of [['llm', 'llm'], ['emb', 'embed']] as const) {
     if (!dirty.includes(section)) continue;
@@ -119,6 +124,7 @@ export function configBody(dirty: Section[], v: FormValues): Record<string, unkn
     });
     // empty when the sidecar is older than the setting: sending it would be refused as not editable
     if (v.tune.embedWait.trim() !== '') body.embed_timeout_ms = num(v.tune.embedWait);
+    if (known.pinAt) body.pin_at_mentions = v.tune.pinAt;  // likewise: an older sidecar has no such setting
   }
   return body;
 }

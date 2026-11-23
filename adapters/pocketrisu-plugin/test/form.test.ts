@@ -39,6 +39,19 @@ describe('batch save', () => {
     expect(embedWaitTooLong('', '1000')).toBe(false);  // an older sidecar: no wait to compare
   });
 
+  it('sends the @name pin setting only when the sidecar reported it (PHASE-60 S8)', () => {
+    const edited = structuredClone(base);
+    edited.tune = { ...edited.tune, pinAt: true };
+    expect(configBody(['tune'], edited, { pinAt: true })).toMatchObject({ pin_at_mentions: true });
+    edited.tune.pinAt = false;
+    expect(configBody(['tune'], edited, { pinAt: true })).toMatchObject({ pin_at_mentions: false });
+    expect(configBody(['tune'], edited, { pinAt: false })).not.toHaveProperty('pin_at_mentions');
+    expect(configBody(['tune'], edited)).not.toHaveProperty('pin_at_mentions');  // an older sidecar refuses the key
+    expect(configBody(['llm'], edited, { pinAt: true })).not.toHaveProperty('pin_at_mentions');  // only with tune
+    const before = { ...structuredClone(base), tune: { ...base.tune, pinAt: false } };
+    expect(dirtySections(before, { ...before, tune: { ...before.tune, pinAt: true } })).toEqual(['tune']);
+  });
+
   it('sends an API key only when one was typed and never includes status rules', () => {
     const edited = structuredClone(base);
     edited.emb = { url: 'http://emb/v1', model: 'e', key: ' sk-1 ' };

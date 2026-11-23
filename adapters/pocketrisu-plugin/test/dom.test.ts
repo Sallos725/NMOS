@@ -674,6 +674,67 @@ describe('panel', () => {
     expect((put[2] as Record<string, unknown>).summaries).toBe(false);
   });
 
+  describe('@name pins (PHASE-60 S8)', () => {
+    const labels = { ko: '메시지에서 @이름으로 인물 고정', en: 'Pin a character with @name in a message' } as const;
+    const hints = {
+      ko: '켜면 "@세라 어디 있어?"처럼 메시지에 @이름으로 쓴 인물은, 장면에 이름이 나오지 않아도 그 답장의 기억에 들어갑니다. 단어 안의 @(이메일 주소, 아이디)나 이 채팅의 인물이 아닌 이름 앞의 @는 아무 일도 하지 않습니다.',
+      en: 'On: a message like "@Sera where are you?" keeps Sera in memory for that reply even when the scene does not name her. An @ inside a word (an e-mail address, a handle) or before a name that is no character of this chat does nothing.',
+    } as const;
+    const open = async (language: 'ko' | 'en', reported?: boolean) => {
+      const h = deps();
+      h.args.language = language;
+      if (reported !== undefined) (config.recall as Record<string, unknown>).pin_at_mentions = reported;
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      const label = [...panel.querySelectorAll('.check')].find((c) => c.textContent === labels[language])!;
+      return { ...h, panel, label, box: label.querySelector('input') as HTMLInputElement,
+        save: panel.querySelector<HTMLButtonElement>('.bar button.primary')! };
+    };
+    const puts = (calls: [string, string, unknown][]) => calls.filter(([method]) => method === 'PUT').map(([, , body]) => body);
+    afterEach(() => { delete (config.recall as Record<string, unknown>).pin_at_mentions; });
+
+    it('shows the setting with its example in the recall tuning card', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const { panel, label } = await open(language, false);
+        expect(label.closest('.card')!.querySelector('h2')!.textContent).toBe(language === 'en' ? 'Recall tuning' : '검색 조정');
+        expect(label.nextElementSibling!.textContent).toBe(hints[language]);
+        expect(label.nextElementSibling!.classList.contains('mono')).toBe(false);
+        panel.remove();
+      }
+    });
+
+    it('loads what the sidecar reports and saves it as pin_at_mentions', async () => {
+      const on = await open('en', true);
+      expect([on.box.checked, on.box.disabled]).toEqual([true, false]);
+      on.box.checked = false;
+      on.box.dispatchEvent(new Event('change', { bubbles: true }));
+      on.save.click();
+      await vi.waitFor(() => expect(puts(on.calls)).toHaveLength(1));
+      expect(puts(on.calls)[0]).toMatchObject({ pin_at_mentions: false });
+      on.panel.remove();
+      const off = await open('ko', false);
+      expect([off.box.checked, off.box.disabled]).toEqual([false, false]);
+      off.box.checked = true;
+      off.box.dispatchEvent(new Event('change', { bubbles: true }));
+      off.save.click();
+      await vi.waitFor(() => expect(puts(off.calls)).toHaveLength(1));
+      expect(puts(off.calls)[0]).toMatchObject({ pin_at_mentions: true });
+    });
+
+    it('is disabled and never sent on a sidecar that has no such setting', async () => {
+      const { panel, box, save, calls } = await open('en');
+      expect([box.checked, box.disabled]).toEqual([false, true]);
+      const topK = [...panel.querySelectorAll<HTMLInputElement>('input[type="number"][max="20"]')][0]!;
+      topK.value = '3';
+      topK.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).toMatchObject({ recall_top_k: 3 });
+      expect(puts(calls)[0]).not.toHaveProperty('pin_at_mentions');
+    });
+  });
+
   it('turns canon facts off from the settings (ADR 0047)', async () => {
     const { d, calls } = deps();
     await openPanel(d, 'settings');

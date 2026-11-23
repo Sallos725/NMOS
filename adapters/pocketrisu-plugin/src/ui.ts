@@ -66,7 +66,8 @@ export interface PanelDeps {
 interface ServerConfig {
   llm: { url: string; model: string; api_key_set: boolean; json_mode: boolean };
   embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string };
-  recall: { threshold: number; vector_min_sim: number; embed_timeout_ms?: number; top_k: number; facts_limit: number };
+  recall: { threshold: number; vector_min_sim: number; embed_timeout_ms?: number; top_k: number; facts_limit: number;
+    pin_at_mentions?: boolean };
   extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean };
   parsers: { rules: unknown; source: string; active_rules: number; errors: string[];
     spec?: unknown; presets?: ParserPreset[] };
@@ -1919,6 +1920,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const backfill = el('input', { type: 'number', min: 0, max: 5000 });
   const summaries = el('input', { type: 'checkbox' });  // scene summaries and the story so far (ADR 0042, 0043)
   const canonFacts = el('input', { type: 'checkbox' });  // facts read from the canon (ADR 0047)
+  const pinAt = el('input', { type: 'checkbox', disabled: true });  // @name in a message pins a character for that reply (ADR 0087)
+  let pinAtKnown = false;  // the sidecar reported the setting: an older one refuses the key
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('tune.title') }), el('p', { class: 'sub', text: L('tune.sub') }),
     el('div', { class: 'row' }, field(L('tune.threshold'), threshold), field(L('tune.min_sim'), minSim),
@@ -1928,7 +1931,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('div', { class: 'check' }, summaries, el('span', { text: L('tune.summaries') })),
     el('p', { class: 'sub', text: L('tune.summaries_hint') }),
     el('div', { class: 'check' }, canonFacts, el('span', { text: L('tune.canon_facts') })),
-    el('p', { class: 'sub', text: L('tune.canon_facts_hint') })));
+    el('p', { class: 'sub', text: L('tune.canon_facts_hint') }),
+    el('div', { class: 'check' }, pinAt, el('span', { text: L('tune.pin_at') })),
+    el('p', { class: 'sub', text: L('tune.pin_at_hint') })));
 
   // Leaving out old dialogue (PHASE-60 S1, ADR 0083): two plugin args, saved on their own, never in the sidecar update.
   const trimOn = el('input', { type: 'checkbox' });
@@ -2186,7 +2191,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         token: token.value },
       llm: llm.values(), emb: emb.values(),
       tune: { threshold: threshold.value, minSim: minSim.value, embedWait: embedWait.value, topK: topK.value,
-        facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked },
+        facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked,
+        pinAt: pinAt.checked },
       trim: { on: trimOn.checked, keep: trimKeep.value },
     };
   }
@@ -2236,6 +2242,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     backfill.value = String(cfg.extraction.backfill);
     summaries.checked = cfg.extraction.summaries !== false;
     canonFacts.checked = cfg.extraction.canon_facts !== false;
+    pinAtKnown = typeof cfg.recall.pin_at_mentions === 'boolean';
+    pinAt.checked = cfg.recall.pin_at_mentions === true;
+    pinAt.disabled = !pinAtKnown;  // a sidecar older than the setting: nothing to show, nothing sent
     fillParsers(cfg);
   }
 
@@ -2321,7 +2330,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         deadline.value = String(args.deadline_ms);
         baseline = { ...baseline, conn: values().conn };
       }
-      const body = configBody(d, v);
+      const body = configBody(d, v, { pinAt: pinAtKnown });
       // Said with any save that touches either value; the save itself goes ahead (audit F20).
       const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
         ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
