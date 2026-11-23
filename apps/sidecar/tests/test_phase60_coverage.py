@@ -732,3 +732,26 @@ def test_without_a_view_at_hand_coverage_reads_no_memory_and_counts_no_summary(m
             assert cov.recorded_through_turn == 15 and cov.covered_through_turn is None  # under-reported, not read
             with_view = coverage.read(conn, cid, head, sm_key, extractor_key=ex_key, secrets=[], read_view=False)
             assert with_view.covered_through_turn == 7  # a view at hand (no secrets) still counts its summaries
+
+
+def test_a_narrator_chat_never_trims_since_its_packet_holds_no_story(migrated):
+    """Narrator mode writes no <Story> (ADR 0043), so no summary stands in for dialogue left out: summaries count as
+    off for the trim (no boundary, `no_summaries`); coverage itself is unchanged and the replay is exact."""
+    from nmos_sidecar import audit
+    from nmos_sidecar.retrieval import RecallOptions
+
+    with make_client(migrated, **{**SUMMARIES_ON, "packet_policy": "packet-v20"}) as client:
+        chat = _covered_chat(client, migrated)
+        plain = _ask(client, chat, trim=TRIM_4)
+        assert plain["trim"]["keep_from_turn"] == 8 and plain["trim"]["reason"] is None
+        cid = conv_id(client, chat)
+        assert client.put(f"/v1/conversations/{cid}/memory-mode", json={"narrator": "노엘"}).status_code == 200
+        told = _ask(client, chat, trim=TRIM_4)
+        assert told["trim"] == {"keep_from_id": None, "keep_from_turn": None, "reason": "no_summaries"}
+        assert told["coverage"] == plain["coverage"] == {"recorded_through_turn": 15, "covered_through_turn": 7}
+        trace = client.get(f"/v1/trace/{told['trace_id']}").json()
+        assert trace["recall_options"]["trim"]["reason"] == "no_summaries"
+        assert trace["in_context"] == sorted(m["chatId"] for m in chat.messages)
+        with db(migrated) as conn:
+            out = audit.replay(conn, trace["id"], RecallOptions())
+        assert out["status"] == "ok" and out.get("reproduced") is True, out

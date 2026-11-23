@@ -2291,7 +2291,9 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                 w_turns = coverage.window_turns(conn, head, window_ids, upto)
                 decision = coverage.decide_trim(
                     now_turn, trim_req.keep_recent_turns, trim_req.step,
-                    [(t, t in c.covered_turns) for t in w_turns], bool(options.summarize_key),
+                    [(t, t in c.covered_turns) for t in w_turns],
+                    # a narrator chat's packet carries no <Story> (gather), so no summary stands in for cut dialogue
+                    bool(options.summarize_key) and not options.narrator,
                 )
                 kid: str | None = None
                 kturn: int | None = None
