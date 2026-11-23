@@ -651,6 +651,28 @@ describe('panel', () => {
       }
     });
 
+    it('never logs the typed reranker key and never shows it again after the save', async () => {
+      const logged: unknown[][] = [];
+      const spies = (['log', 'info', 'warn', 'error', 'debug'] as const)
+        .map((m) => vi.spyOn(console, m).mockImplementation((...args: unknown[]) => { logged.push(args); }));
+      try {
+        const { panel, url, model, key, save, bar } = await open('en', defaultRerank());
+        type(url, 'https://rr.example/v1');
+        type(model, 'rerank-1');
+        type(key, 'rk-secret-7');
+        save.click();
+        await vi.waitFor(() => expect(bar.textContent).toBe('Saved.'));
+        expect(key.value).toBe('');
+        expect([...panel.querySelectorAll<HTMLInputElement>('input')].some((i) => i.value.includes('rk-secret-7')))
+          .toBe(false);
+        expect(panel.textContent).not.toContain('rk-secret-7');
+        expect(JSON.stringify(logged)).not.toContain('rk-secret-7');
+        panel.remove();
+      } finally {
+        for (const s of spies) s.mockRestore();
+      }
+    });
+
     it('shows no reranker card and sends no rerank keys when /v1/config omits rerank (KO and EN)', async () => {
       for (const language of ['ko', 'en'] as const) {
         for (const views of [false, true]) {
