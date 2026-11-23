@@ -1,5 +1,6 @@
 """PHASE-60 S6 review fixes on the link store (ADR 0085): a replaced link's `removed_at` is its successor's
-`created_at`, however links to one target race (F3). Stub extractor only; synthetic names only."""
+`created_at`, however links to one target race (F3); a link that loses a lock to another writer answers 409, try
+again, and writes nothing (F4). Stub extractor only; synthetic names only."""
 
 from __future__ import annotations
 
@@ -8,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
+import pytest
 from psycopg.rows import dict_row
 
 from conftest import make_client
@@ -76,3 +78,28 @@ def test_concurrent_links_to_one_target_keep_one_link_after_another(migrated: st
         rows = _intervals(conn, tgt)
     assert len(rows) == 12
     _assert_one_after_another(rows)
+
+
+@pytest.mark.parametrize("error", [psycopg.errors.DeadlockDetected, psycopg.errors.LockNotAvailable])
+def test_a_link_that_loses_a_lock_answers_409_try_again_and_writes_nothing(migrated: str, monkeypatch, error) -> None:
+    """A link racing another writer of the same chats (a delete of a branched chat) can lose a lock: the owner is
+    told to try again (409), and the link in force is the one before."""
+    with make_client(migrated, **ON) as c:
+        _, src = _source(c, migrated)
+        tgt = _target(c)
+        body = {"source_conversation_id": str(src), "mode": "continue"}
+        first = c.post(f"/v1/conversations/{tgt}/carry", json=body)
+        assert first.status_code == 200, first.text
+        with _connect(migrated) as conn:
+            before = _intervals(conn, tgt)
+
+        def lose(*args: Any, **kwargs: Any) -> None:  # inside the link's transaction, after its locks
+            raise error("lost a lock")
+
+        monkeypatch.setattr(carry, "take_reading", lose)
+        res = c.post(f"/v1/conversations/{tgt}/carry", json=body)
+        assert res.status_code == 409, res.text
+        assert "try again" in res.json()["detail"]
+        with _connect(migrated) as conn:
+            assert _intervals(conn, tgt) == before
+        assert c.get(f"/v1/conversations/{tgt}/carry").json()["in_force"]["id"] == first.json()["link"]["id"]

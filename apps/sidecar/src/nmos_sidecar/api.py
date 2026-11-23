@@ -1057,13 +1057,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def add_carry(conv_id: UUID, body: CarryRequest, request: Request):
         """The owner links this chat to carry the source's memory (ADR 0085): the source is read once now and the
         reading is stored with the link; a link in force before is replaced. With `expect`, the preview's
-        fingerprint: 409 with a fresh preview when the source's reading changed since."""
+        fingerprint: 409 with a fresh preview when the source's reading changed since. 409 "try again" when another
+        writer of the two chats (a delete of a branched chat) held a lock the link needed: nothing was written."""
         with request.app.state.pool.connection() as conn:
             try:
                 made = carry.link(conn, conv_id, body.source_conversation_id, body.mode, body.entity_names,
                                   carry_keys(), cutoff_turn=body.cutoff_turn, expect=body.expect)
             except carry.CarryError as error:
                 raise carry_refused(error) from None
+            except (psycopg.errors.DeadlockDetected, psycopg.errors.LockNotAvailable):
+                # The link's transaction rolled back (review F4); the locking itself is as it was.
+                raise HTTPException(status_code=409,
+                                    detail="the chats were busy: nothing was linked, try again") from None
         log.info("carry link conversation=%s link=%s source=%s mode=%s", conv_id, made["link"]["id"],
                  body.source_conversation_id, body.mode)
         return made
