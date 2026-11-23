@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -77,6 +78,24 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
 # `learned` comes from the `secrets` check, ADR 0033). They stay in REGISTRY, so stored rows validate and read.
 DERIVED = frozenset({"learned"})
 
+# Per-compiler predicates outside REGISTRY (PHASE-60 S7, ADR 0086 item 5): every extractor key hashes
+# repr(REGISTRY), so adding a predicate there would re-extract every earlier generation; an extension's
+# definition is hashed into its compiler's `prompt` fingerprint instead.
+TOLD = Predicate(
+    "told", ("character",), ("character",), True, "multi",
+    "the subject passed on to the object something that matters later, which the object did not have: a secret,"
+    " news of an event, a fact about someone, a warning or a rumour (value: what was passed on)",
+)
+EXTENSIONS: dict[str, dict[str, Predicate]] = {"extract-v19": {"told": TOLD}}
+# Predicates of a compiler extension that also keep `with` (PHASE-60 S8).
+EXTENSION_PARTICIPANTS: dict[str, frozenset[str]] = {"extract-v19": frozenset({"told"})}
+
+
+def registry_for(compiler: str | None) -> dict[str, Predicate]:
+    """REGISTRY plus any per-compiler extension; REGISTRY itself when the compiler has none."""
+    extra = EXTENSIONS.get(compiler) if compiler else None
+    return REGISTRY if not extra else {**REGISTRY, **extra}
+
 
 # Read-side supersession that REGISTRY's own fields do not express (ADR 0011). For these predicates an
 # item has one current holder: the subject of its latest assertion; earlier holders stay in its
@@ -94,10 +113,10 @@ def whereabouts(a: dict[str, Any]) -> bool:
             or (a["predicate"] == "located_in" and a.get("subject_type") == "item"))
 
 
-def registry_prompt(only: frozenset[str] | None = None) -> str:
+def registry_prompt(only: frozenset[str] | None = None, compiler: str | None = None) -> str:
     """The predicates a prompt allows, one per line; `only` narrows them (canon facts, ADR 0047)."""
     lines = []
-    for p in REGISTRY.values():
+    for p in registry_for(compiler).values():
         if p.name in DERIVED or (only is not None and p.name not in only):
             continue
         obj = f", object: {'|'.join(p.object_types)}" if p.object_types else ""
@@ -106,9 +125,9 @@ def registry_prompt(only: frozenset[str] | None = None) -> str:
     return "\n".join(lines)
 
 
-def validate(item: dict[str, Any]) -> tuple[str, str | None]:
+def validate(item: dict[str, Any], registry: Mapping[str, Predicate] | None = None) -> tuple[str, str | None]:
     """('valid', None) or ('pending', reason) for one raw assertion."""
-    pred = REGISTRY.get(str(item.get("predicate") or ""))
+    pred = (REGISTRY if registry is None else registry).get(str(item.get("predicate") or ""))
     if pred is None:
         return "pending", "unknown predicate"
     if not str(item.get("subject") or "").strip():
@@ -261,16 +280,17 @@ PARTICIPANT_TYPES = ("character", "group")
 MAX_PARTICIPANTS = 6
 
 
-def participants(item: dict[str, Any]) -> list[dict[str, str]] | None:
+def participants(item: dict[str, Any], also: frozenset[str] = frozenset()) -> list[dict[str, str]] | None:
     """The typed participants of one raw assertion (PHASE-8 Q2), or None.
 
     `with` is a list of {"name", "type"} objects, type `character` or `group`. Kept only on the
-    participant predicates; an entry without a name of at most 60 characters or with another type is
+    participant predicates (and any compiler extension predicates in `also`); an entry without a name of at most
+    60 characters or with another type is
     dropped, and so is the subject, the object and a repeat of the same (type, normalized name). At most
     MAX_PARTICIPANTS remain. Nothing here is inferred from the value text.
     """
     raw = item.get("with")
-    if item.get("predicate") not in PARTICIPANT_PREDICATES or not isinstance(raw, list):
+    if item.get("predicate") not in (PARTICIPANT_PREDICATES | also) or not isinstance(raw, list):
         return None
     taken = {node(item.get("subject_type"), item.get("subject"))}
     if item.get("object"):
