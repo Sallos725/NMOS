@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from conftest import make_client
-from nmos_sidecar import api, notes, views
+from nmos_sidecar import api, inspector, notes, views
 from simchat import SimChat
 from test_extraction import drain as drain_extract
 from test_generations import conv_id
@@ -24,6 +24,7 @@ from test_summaries import drain as drain_summaries
 SOURCE_LABELS = {"character_name": "세라", "chat_name": "항구의 밤", "persona_name": "도현"}
 TARGET_TURN_0 = "세라와 카이토는 아침 항구 광장에 도착했다."
 TARGET_TURNS = 13  # enough for the target's own scene summaries: the note's chronicle and custom part read them
+STALE_TARGET_TURNS = inspector.STALE_TURNS + 4
 SCENE = "세라와 카이토가 광장에서 조용한 아침을 보냈다."
 CARRIED_WORDS = ("등대", "항구 시장", "회복됨", "피곤함")  # what only the source chat says
 JOIN = {"entity_type": "character", "name": "카이토", "same_as": "세라"}
@@ -50,11 +51,11 @@ def _stub_scene(system: str, user: str) -> tuple[dict, str]:
     return {"summary": SCENE}, "{}"
 
 
-def _setup(c, migrated: str) -> tuple[str, str]:
+def _setup(c, migrated: str, turns: int = TARGET_TURNS) -> tuple[str, str]:
     src_sim = _build_source_chat(4)
     sync(c, src_sim, **SOURCE_LABELS)
     tgt_sim = SimChat("tgt-screens-chat")
-    for i in range(TARGET_TURNS):
+    for i in range(turns):
         tgt_sim.user(f"턴 {i}을 이어간다.")
         tgt_sim.reply(TARGET_TURN_0 if i == 0 else f"턴 {i}의 조용한 아침이 지나갔다.")
     tgt_sim.user("계속하자.")
@@ -259,7 +260,8 @@ def test_the_memory_screens_attention_count_is_the_chats_own(
 ) -> None:
     seen, calls = Seen(monkeypatch), Calls(monkeypatch)
     with make_client(migrated, **ON) as c:
-        src, tgt = _setup(c, migrated)
+        # past inspector.STALE_TURNS: the carried open promise (turn -1) is one a carried read would call stale
+        src, tgt = _setup(c, migrated, turns=STALE_TARGET_TURNS)
 
         def memory() -> dict[str, Any]:
             res = c.get(f"/v1/views/c/{tgt}/memory")
@@ -280,3 +282,8 @@ def test_the_memory_screens_attention_count_is_the_chats_own(
             assert d["attention"] == before["attention"], mode
             if mode == "continue":
                 assert d["facts"] > before["facts"]  # the screen does show the carried facts
+                last = d["conv"]["turns"]
+                carried_open = [t for t in c.get(f"/v1/conversations/{tgt}/threads").json()
+                                if t["status"] == "open" and "등대 열쇠" in (t.get("text") or "")]
+                # it would be a stale thread to close in a carried read: the attention count must not hold it
+                assert carried_open and all(inspector.stale(t, last) for t in carried_open)
