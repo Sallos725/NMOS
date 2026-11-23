@@ -28,6 +28,7 @@ immutable source ledger, without a model call:
 from __future__ import annotations
 
 import dataclasses
+import math
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -128,6 +129,19 @@ def _canon_of(t: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _recorded_rerank(t: dict[str, Any]) -> dict[str, float] | None:
+    """Recorded per-candidate rerank scores when the request used a reranker (ADR 0084 item 5); None otherwise."""
+    if not (t.get("recall_options") or {}).get("rerank_used"):
+        return None
+    scores: dict[str, float] = {}
+    for c in t.get("candidates") or ():
+        if isinstance(c, dict) and "rerank" in c and c.get("revision_id") is not None:
+            val = c["rerank"]
+            if isinstance(val, (int, float)) and not isinstance(val, bool) and math.isfinite(float(val)):
+                scores[str(c["revision_id"])] = float(val)
+    return scores or None
+
+
 def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, policy: str | None = None,
            known_at: datetime | None = None, query: str | None = None, budget: int | None = None,
            projection: str | None = None, recent: list[Any] | None = None, **overrides: Any) -> dict[str, Any] | None:
@@ -180,6 +194,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     if overrides:
         opts = dataclasses.replace(opts, **overrides)
         notes.append("options changed: " + ", ".join(sorted(overrides)))
+    opts = dataclasses.replace(opts, reranker=None)  # ADR 0084 item 5: a replay never calls a reranker
     if query is not None:
         query = clean_text(query)  # as the live request normalizes it
         notes.append("query replaced")
@@ -193,11 +208,13 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     # PHASE-60 S5 (ADR 0084 item 1): embed the recorded sem_query; a trace without the key replays with it off.
     raw_sem = (t.get("recall_options") or {}).get("sem_query")
     recorded_sem: Any = LIVE if query is not None else (raw_sem if isinstance(raw_sem, str) and raw_sem.strip() else None)
+    recorded_rerank = None if query is not None else _recorded_rerank(t)
     g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
                set(t["in_context"] or []), filled(opts, t["budget_tokens"] if budget is None else budget),
                upto=kept, known_at=known_at or t["created_at"],
                canon_held=t.get("canon_held") or (), vectors_now=other, recent=recent,
-               coverage_info=recorded_coverage, pins=recorded_pins, recorded_sem_query=recorded_sem, **_canon_of(t))
+               coverage_info=recorded_coverage, pins=recorded_pins, recorded_sem_query=recorded_sem,
+               rerank_scores=recorded_rerank, **_canon_of(t))
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     if budget is not None:

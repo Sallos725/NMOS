@@ -652,7 +652,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         if policy is not None and policy not in POLICIES:
             raise HTTPException(status_code=422, detail=f"policy must be one of {', '.join(POLICIES)}")
         with request.app.state.pool.connection() as conn:
-            out = audit.replay(conn, trace_id, rt["recall"], policy)
+            out = audit.replay(conn, trace_id, dataclasses.replace(rt["recall"], reranker=None), policy)
         if out is None:
             raise HTTPException(status_code=404, detail="trace not found")
         return out

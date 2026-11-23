@@ -974,7 +974,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
            coverage_info: Mapping[str, int | None] | None = None,
            served_turns: frozenset[int] | None = None,
            pins: list[dict[str, Any]] | None = None,
-           recorded_sem_query: Any = LIVE) -> Gathered:
+           recorded_sem_query: Any = LIVE,
+           rerank_scores: Mapping[str, float] | None = None) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time. The canon keys the
     prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047).
@@ -1239,6 +1240,18 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 g.candidates = [c if c["host_logical_id"] in in_context else next(it) for c in g.candidates]
                 g.rerank_used = True
         g.timings["rerank"] = round((time.perf_counter() - t0) * 1000, 2)
+    elif rerank_scores:
+        # Replay (ADR 0084 item 5): never calls a reranker; reapplies recorded scores to the same candidates.
+        scored = [c for c in eligible if str(c["id"]) in rerank_scores]
+        if scored:
+            scores = [float(rerank_scores[str(c["id"])]) for c in scored]
+            for c, s in zip(scored, scores):
+                c["rerank"] = s
+            unscored = [c for c in eligible if str(c["id"]) not in rerank_scores]
+            eligible = rerank.reorder(scored, scores) + unscored
+            it = iter(eligible)
+            g.candidates = [c if c["host_logical_id"] in in_context else next(it) for c in g.candidates]
+            g.rerank_used = True
     stale = _replaced_judge(view, selected, query, previous_ai, options, names_of) if changes and view is not None else None
     scan_slots = stale is not None or options.policy in UNEXTRACTED_POLICIES
     if not scan_slots:  # older policies keep the original top-k cut
