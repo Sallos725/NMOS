@@ -44,7 +44,9 @@ RANGES = {"recall_threshold": (0.05, 1.0), "vector_min_sim": (0.0, 1.0), "recall
           "embed_timeout_ms": (100, 5000), "rerank_timeout_ms": RERANK_TIMEOUT_MS}
 CHOICES = {"rerank_format": rerank.FORMATS}  # a value outside these would refuse the next startup (`Settings`)
 RERANK_NOTE = ("When a URL and a model are set, each request sends the user's message and the text of up to "
-               f"{rerank.MAX_CANDIDATES} recalled candidates to this endpoint, as the embedder is sent chat text.")
+               f"{rerank.MAX_CANDIDATES} recalled candidates to this endpoint, as the embedder is sent chat text."
+               " It waits at most its own timeout: keep the embedding timeout plus the rerank timeout well under the"
+               " plugin's request deadline (3 s by default).")
 # Saved settings `Settings` checks at startup (PHASE-60 S5): a saved value it would refuse (a restored row, a downgrade)
 # is ignored, so the environment's value applies and the sidecar still starts. The panel refuses such a value (422).
 STARTUP_CHECKED = ("rerank_format", "rerank_timeout_ms")

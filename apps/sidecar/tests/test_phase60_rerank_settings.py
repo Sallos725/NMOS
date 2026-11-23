@@ -100,6 +100,9 @@ def test_unconfigured_the_view_says_off(client):
     assert {k: v for k, v in view.items() if k != "note"} == {
         "url": "", "model": "", "timeout_ms": 600, "format": "standard", "key_set": False, "configured": False}
     assert "sent" in view["note"] and "endpoint" in view["note"]
+    # The reranker is bounded by its own timeout, which adds to the embedder's inside the plugin's deadline.
+    assert "own timeout" in view["note"] and "embedding timeout plus the rerank timeout" in view["note"]
+    assert "request deadline (3 s by default)" in view["note"]
 
 
 def test_the_panel_sets_and_resets_every_field(client):
