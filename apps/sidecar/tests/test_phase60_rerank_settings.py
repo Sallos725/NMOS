@@ -14,6 +14,7 @@ from nmos_sidecar import canonfacts, extraction, rerank, reveals, summaries, vec
 from nmos_sidecar.config import Settings
 from nmos_sidecar.retrieval import RECORDED, RecallOptions
 from simchat import SimChat
+from test_archive import export, read
 from test_generations import LLM
 from test_phase60_pins import BASE, PINNED
 from test_sidecar_integration import recall, sync
@@ -250,3 +251,59 @@ def test_a_blank_model_from_the_environment_is_off(migrated, monkeypatch):
         one_recall(c)
         assert c.get("/v1/config").json()["rerank"]["configured"] is False
     assert seen[-1].reranker is None
+
+
+# --- the archive: the key is a credential (D60); the other four settings archive like any other ----------------------
+
+def pasted(c, secret: str) -> None:
+    chat = SimChat()
+    chat.user(f"세라 said the code was {secret}, keep it")  # a key pasted into a chat by mistake
+    chat.reply("Noted.")
+    sync(c, chat)
+
+
+def refused(c, secret: str) -> None:
+    res = c.get("/v1/archive")
+    assert res.status_code == 409 and "credential" in res.json()["detail"]
+    assert secret not in res.text  # the refusal names no value
+
+
+def test_a_saved_key_anywhere_refuses_the_export(client):
+    assert client.put("/v1/config", json={"rerank_url": URL, "rerank_model": MODEL,
+                                         "rerank_api_key": SAVED_KEY}).status_code == 200
+    pasted(client, SAVED_KEY)
+    refused(client, SAVED_KEY)
+
+
+def test_the_environment_key_anywhere_refuses_the_export(migrated):
+    with make_client(migrated, rerank_url=URL, rerank_model=MODEL, rerank_api_key=ENV_KEY) as c:
+        pasted(c, ENV_KEY)
+        refused(c, ENV_KEY)
+
+
+def test_an_environment_key_replaced_in_the_panel_is_still_looked_for(migrated):
+    with make_client(migrated, rerank_url=URL, rerank_model=MODEL, rerank_api_key=ENV_KEY) as c:
+        assert c.put("/v1/config", json={"rerank_api_key": SAVED_KEY}).status_code == 200
+        pasted(c, ENV_KEY)
+        refused(c, ENV_KEY)
+
+
+def test_the_key_is_never_an_archived_setting_and_the_other_four_are(client):
+    assert client.put("/v1/config", json={"rerank_url": URL, "rerank_model": MODEL, "rerank_api_key": SAVED_KEY,
+                                         "rerank_timeout_ms": 800, "rerank_format": "standard"}).status_code == 200
+    _, tables, raw = read(export(client))
+    settings = {r["key"]: r["value"] for r in tables["app_config"]}
+    assert "rerank_api_key" not in settings
+    assert {k: settings[k] for k in ("rerank_url", "rerank_model", "rerank_timeout_ms", "rerank_format")} == {
+        "rerank_url": URL, "rerank_model": MODEL, "rerank_timeout_ms": 800, "rerank_format": "standard"}
+    assert not any(SAVED_KEY.encode() in body for body in raw.values())
+
+
+def test_a_rerank_endpoint_that_may_carry_a_key_is_left_out(client):
+    url = "https://rerank.example/v1?key=abc"
+    assert client.put("/v1/config", json={"rerank_url": url, "rerank_model": MODEL}).status_code == 200
+    manifest, tables, raw = read(export(client))
+    settings = {r["key"]: r["value"] for r in tables["app_config"]}
+    assert "rerank_url" not in settings and settings["rerank_model"] == MODEL
+    assert manifest["omitted_settings"] == ["rerank_url"]
+    assert not any(b"key=abc" in body for body in raw.values())

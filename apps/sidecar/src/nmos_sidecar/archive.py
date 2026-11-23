@@ -84,7 +84,7 @@ NEVER = ("job", "revision_text", "state_observation", "schema_migrations")
 # keys pinned per card (PHASE-43 A5).
 SETTINGS = tuple(sorted(set(runtime.EDITABLE) - runtime.SECRET)) + (runtime.PARSERS_KEY, runtime.PRESETS_KEY,
                                                                     runtime.STATUS_PINS_KEY, runtime.NOTES_PROMPT_KEY)
-URL_SETTINGS = ("llm_url", "embed_url")
+URL_SETTINGS = ("llm_url", "embed_url", "rerank_url")
 # A credential shorter than this is not looked for: a key of one or two characters would refuse nearly every chat.
 MIN_SECRET = 4
 
@@ -136,7 +136,7 @@ def _secrets(conn: psycopg.Connection, settings: Settings | list[Settings] | Non
         if isinstance(value, str):
             out.add(value)
     for s in ([settings] if isinstance(settings, Settings) else settings or []):
-        out.update(v for v in (s.llm_api_key, s.embed_api_key, s.auth_token) if v)
+        out.update(v for v in (s.llm_api_key, s.embed_api_key, s.rerank_api_key, s.auth_token) if v)
     for value in list(out):
         try:
             key = json.loads(value)
