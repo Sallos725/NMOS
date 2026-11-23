@@ -3064,9 +3064,42 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('p', { class: 'sub', text: L('set.maint_sub') }),
       el('div', { class: 'maint-list' }, ...maintRows),
       actionMsg);
-    chatPage.replaceChildren(switchSlot, modeCard, statusCard, maintCard);
+    const pinsCard = el('div', { class: 'card' }, el('h2', { text: L('pins.title') }), el('p', { class: 'sub', text: L('pin.sub') }));
+    chatPage.replaceChildren(switchSlot, modeCard, statusCard, pinsCard, maintCard);
+    void showPins(cid, pinsCard);
     void showMode(cid, loads);
     void showStatusWindows(cid, loads);
+  }
+  /** This chat's pinned characters (ADR 0087), each with its Unpin; a list that fails is said in the card only. */
+  async function showPins(conversation: string, card: HTMLElement, said?: StringKey): Promise<void> {
+    const head = [el('h2', { text: L('pins.title') }), el('p', { class: 'sub', text: L('pin.sub') })];
+    const msg = el('div', { class: 'msg', role: 'status' });
+    if (said) say(msg, L(said), 'ok');
+    let rows: PinRow[];
+    try {
+      const list = await deps.api<PinRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
+      if (!Array.isArray(list)) throw new Error('not a list');
+      rows = list;
+    } catch {
+      card.replaceChildren(...head, el('div', { class: 'muted', text: L('pins.failed') }));
+      return;
+    }
+    const lines = rows.filter((e) => typeof e.pinned === 'string' && e.pinned).map((e) => {
+      const unpin = el('button', { class: 'mini', text: L('pins.unpin') });
+      unpin.addEventListener('click', async () => {
+        unpin.disabled = true;
+        say(msg, '');
+        try {
+          await deps.api('POST', `/v1/conversations/${conversation}/repairs/${e.pinned}/remove`, {}, 15_000);
+          await showPins(conversation, card, 'pin.undone');
+        } catch (error) {
+          unpin.disabled = false;
+          say(msg, errorText(lang, error), 'err');
+        }
+      });
+      return el('div', { class: 'btns' }, el('span', { text: e.name }), unpin);
+    });
+    card.replaceChildren(...head, ...(lines.length ? lines : [el('div', { class: 'muted', text: L('pins.none') })]), msg);
   }
   /** Run a chat's failed jobs again from the working screen (PHASE-52 D5), as today's Retry failed does. */
   async function retryFrom(conversation: string | null): Promise<void> {

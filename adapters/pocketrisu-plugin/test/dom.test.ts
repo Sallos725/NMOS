@@ -1478,3 +1478,108 @@ describe('the timeline in the panel (PHASE-32 step 3)', () => {
     expect(calls.at(-1)).toBe(`GET /v1/inspector/c/${id}?part=status&span=recent&lang=en`);
   });
 });
+
+describe("this chat's pinned characters in the settings (PHASE-60 S8)", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+    document.head.replaceChildren();
+  });
+
+  const pinA = '0190f3a4-1b2c-7d3e-8f40-0000000000a1';
+  const pinB = '0190f3a4-1b2c-7d3e-8f40-0000000000b2';
+  const row = (name: string, extra: Record<string, unknown> = {}) =>
+    ({ id: `e-${name}`, type: 'character', name, names: [name], mentions: 3, ...extra });
+  const titles = { ko: '고정한 인물', en: 'Pinned characters' } as const;
+  const settle = async () => { for (let i = 0; i < 6; i += 1) await new Promise((r) => setTimeout(r, 0)); };
+  const panel = () => document.getElementById('nmos-panel')!;
+  const cardOf = (language: 'ko' | 'en') => [...panel().querySelectorAll<HTMLElement>('.card')]
+    .find((c) => c.querySelector('h2')?.textContent === titles[language])!;
+
+  /** A sidecar with the new screens, its hub on one chat, and that chat's entities (or a failing list). */
+  async function open(language: 'ko' | 'en', entities: Record<string, unknown>[] | 'fail') {
+    const calls: [string, string, unknown][] = [];
+    const d: PanelDeps = {
+      api: async <T>(method: 'GET' | 'POST' | 'PUT', address: string, body?: unknown) => {
+        const path = address.split('?')[0]!;
+        calls.push([method, path, body]);
+        if (path === '/v1/views/hub') {
+          return { html: '<div class="v"><a class="v-block" data-act="settings"><span>Settings</span></a></div>', conversation: id } as T;
+        }
+        if (path.startsWith('/v1/views/')) return { html: '<div class="v"></div>' } as T;
+        if (path === `/v1/conversations/${id}/entities`) {
+          if (entities === 'fail') throw new Error(`${path} -> HTTP 503`);
+          return entities as T;
+        }
+        if (method === 'POST' && path.endsWith('/remove') && entities !== 'fail') {
+          const at = entities.findIndex((e) => path.endsWith(`/repairs/${String(e.pinned)}/remove`));
+          if (at >= 0) delete entities[at]!.pinned;
+          return { removed: path.split('/').at(-2) } as T;
+        }
+        if (path.startsWith('/v1/conversations?')) return [] as T;
+        if (path.includes('/status/candidates')) throw new Error('404');
+        return {} as T;
+      },
+      status: async () => ({ enabled: true, sidecarUrl: 'http://127.0.0.1:8790', language, connected: true,
+        version: '0.6.0', features: { views: true }, last: null }),
+      getArg: async (key) => (key === 'language' ? language : ''),
+      setArg: async () => {},
+      show: async () => {},
+      hide: async () => {},
+      hud: { enable: async () => 'unsupported', disable: async () => {}, problem: () => null, background: () => {} },
+      chat: createChatSwitch({ getArg: async () => '', setArg: async () => {}, currentChatId: async () => 'host-chat-1' }),
+      download: async () => 0,
+    };
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>('a[data-act="settings"]')!.click();
+    await settle();
+    panel().querySelector<HTMLButtonElement>('.groups button[data-group="chat"]')!.click();
+    await settle();
+    return { calls };
+  }
+
+  it("lists the chat's pinned characters and unpins one", async () => {
+    for (const language of ['ko', 'en'] as const) {
+      const entities = [row('하나', { pinned: pinA }), row('카이토'), row('세라', { pinned: pinB }), row('유나', { persona: true })];
+      const { calls } = await open(language, entities);
+      const card = cardOf(language);
+      expect(card.closest('[data-group="chat"]')).not.toBeNull();
+      expect(card.querySelector('p.sub')!.textContent).toContain(language === 'en' ? 'part of the memory budget' : '기억 예산의 일부');
+      const unpin = language === 'en' ? 'Unpin' : '고정 풀기';
+      const rows = () => [...card.querySelectorAll('button')].filter((b) => b.textContent === unpin)
+        .map((b) => b.previousElementSibling!.textContent);
+      expect(rows()).toEqual(['하나', '세라']);
+      const before = calls.length;
+      [...card.querySelectorAll('button')].find((b) => b.previousElementSibling?.textContent === '세라')!.click();
+      await settle();
+      expect(calls.slice(before)).toEqual([['POST', `/v1/conversations/${id}/repairs/${pinB}/remove`, {}],
+        ['GET', `/v1/conversations/${id}/entities`, undefined]]);
+      expect(rows()).toEqual(['하나']);
+      expect(card.querySelector('.msg')!.textContent).toBe(language === 'en' ? 'Unpinned' : '고정을 풀었습니다');
+      document.body.replaceChildren();
+    }
+  });
+
+  it('says so when nothing is pinned', async () => {
+    for (const language of ['ko', 'en'] as const) {
+      await open(language, [row('하나'), row('카이토')]);
+      const line = cardOf(language).querySelector('.muted')!;
+      expect(line.textContent).toBe(language === 'en' ? "No pinned characters. Pin one from a person's page."
+        : '고정한 인물이 없습니다. 인물 페이지에서 고정할 수 있습니다.');
+      expect(cardOf(language).querySelector('button')).toBeNull();
+      document.body.replaceChildren();
+    }
+  });
+
+  it('says it could not load the list, and the rest of the page still shows', async () => {
+    for (const language of ['ko', 'en'] as const) {
+      await open(language, 'fail');
+      const line = cardOf(language).querySelector('.muted')!;
+      expect(line.textContent).toBe(language === 'en' ? 'Could not load the pinned characters.' : '고정한 인물 목록을 불러오지 못했습니다.');
+      const page = panel().querySelector<HTMLElement>('[data-group="chat"]:not(button)')!;
+      expect(page.textContent).toContain(language === 'en' ? 'Extract all history' : '과거 전체 추출');
+      expect(page.querySelector('.maint-list')).not.toBeNull();
+      document.body.replaceChildren();
+    }
+  });
+});
