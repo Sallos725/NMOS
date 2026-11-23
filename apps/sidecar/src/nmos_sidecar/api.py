@@ -1015,6 +1015,20 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return {**link, "source": {"id": link["source_conversation_id"], "character": source["host_character_name"],
                                    "chat": source["host_chat_name"]}}
 
+    def carry_data(conn, conv_id: UUID, view: dict[str, Any], entity_id: str | None = None) -> dict[str, Any] | None:
+        """What the panel's memory screen or a person's sheet shows of the chat's link in force (ADR 0085), from the
+        view the screen reads; None when the view carries nothing (no SQL then) or its link is gone since."""
+        carried = view.get("carried")
+        if carried is None:
+            return None
+        link = carry_labelled(conn, carry.in_force(conn, conv_id, snapshot=False))
+        if link is None or str(link["id"]) != str(carried["link"]):
+            return None
+        return {"source": jsonable_encoder(link["source"]), "mode": carried["mode"],
+                "names": [str(n) for n in link.get("entity_names") or ()],
+                "created_at": jsonable_encoder(link["created_at"]),
+                "lines": carry.panel_lines(view, entity_id)}
+
     @app.get("/v1/conversations/{conv_id}/carry", dependencies=[Depends(auth)])
     def get_carry(conv_id: UUID, request: Request, snapshot: bool = False):
         """The link this chat carries another chat's memory by, and the links it carried before, newest first."""
@@ -2024,15 +2038,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         key = rt.get("active_summarizer")
         told = summaries.current(conn, cid, head, key) if key else {"scenes": [], "story": None}
         scenes = [x["summary"] for x in told["scenes"] if x.get("summary")]
-        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
-                         "turns": last},
-                "now": now,
-                "threads": [th for th in threads if not inspector.stale(th, last)],
-                "stale": sum(1 for th in threads if inspector.stale(th, last)),
-                "pairs": inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING], excluded_ids(view)),
-                "story": told.get("story"), "scenes": list(reversed(scenes)),
-                "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
-                "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+        d = {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
+                      "turns": last},
+             "now": now,
+             "threads": [th for th in threads if not inspector.stale(th, last)],
+             "stale": sum(1 for th in threads if inspector.stale(th, last)),
+             "pairs": inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING], excluded_ids(view)),
+             "story": told.get("story"), "scenes": list(reversed(scenes)),
+             "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
+             "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+        if (carried := carry_data(conn, cid, view)) is not None:  # PHASE-60 S6: only a chat with a link in force
+            d["carry"] = carried
+        return d
 
     def map_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """The memory map (PHASE-55), from the read every request makes, and the newest request's scene."""
@@ -2117,6 +2134,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "knows": [s for s in view["secrets"] if s.get("open") and names & {norm(n) for n in s.get("holders") or []}],
                 "kept": [s for s in view["secrets"] if names & {norm(n) for n in s.get("open") or []}],
                 "marks": marks, "first": 0, "last": last, "entities": character_ids(view)}
+        if (carried := carry_data(conn, cid, view, eid)) is not None:  # PHASE-60 S6: only a chat with a link in force
+            data["carry"] = carried
         return with_told(data, told_chain(view["told"], eid))  # PHASE-60 S8: the chains this person tells or hears
 
     def working_data(conn, conv: dict[str, Any]) -> dict[str, Any]:

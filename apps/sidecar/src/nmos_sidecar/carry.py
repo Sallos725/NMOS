@@ -593,6 +593,72 @@ def target_rows(link: Mapping[str, Any]) -> Carried:
     return Carried(link_id, source, mode, names, tuple(rows), (), _plain(dict(story)) if story else None)
 
 
+def _resolved_id(r: Resolution | None, entity_type: str | None, name: str | None) -> str | None:
+    ent = r.entity(entity_type, name) if (r is not None and name) else None
+    return str(ent["id"]) if ent is not None else None
+
+
+def _line_entities(row: Mapping[str, Any], r: Resolution | None, *, thread: bool) -> set[str]:
+    """The entity ids a carried line is about, through the target's resolution: a fact's subject, object and
+    participants; a thread's maker and recipient."""
+    if thread:
+        found = (_resolved_id(r, "character", row.get("by")), _resolved_id(r, "character", row.get("to")))
+        return {eid for eid in found if eid is not None}
+    ids = {str(e["id"]) for e in (row.get("subject_entity"), row.get("object_entity"))
+           if isinstance(e, Mapping) and e.get("id") is not None}
+    for p in row.get("participants") or ():
+        if (eid := _resolved_id(r, p.get("type"), p.get("name"))) is not None:
+            ids.add(eid)
+    return ids
+
+
+def _panel_line(row: Mapping[str, Any], opening: Mapping[str, Any] | None, *, thread: bool) -> dict[str, Any]:
+    """A plain copy of a carried row with the keys a panel line reads: a thread names its opening's predicate (else
+    its kind), its maker and recipient as subject and object, and its text as value."""
+    line: dict[str, Any] = _plain(dict(row))
+    when = row.get("when_happened") or ((opening or {}).get("when_happened") if thread else None)
+    if thread:
+        line.update(kind="thread", predicate=(opening or {}).get("predicate") or row.get("kind"),
+                    subject=row.get("by"), object=row.get("to"), value=row.get("text"))
+    else:
+        line["kind"] = "fact"
+    for key in ("knowledge", "known_by", "hidden_from", "carried", "carried_from"):
+        line.setdefault(key, None)
+    line.pop("when_happened", None)
+    if when:
+        line["when_happened"] = _plain(when)
+    return line
+
+
+def panel_lines(view: Mapping[str, Any], entity_id: str | None = None) -> list[dict[str, Any]]:
+    """The lines a target's panel shows for its link in force, from its memory view (`memory_view` with `carried`).
+
+    `continue`: the view's carried facts, then its carried open threads, in the view's order. `regression`: the
+    view's regression rows in order. With `entity_id` (a person's sheet): only the lines about that entity, and for
+    `regression` none unless the entity is one of the link's names. Each line is a plain JSON copy; the view is
+    left unchanged. Pure."""
+    carried = view.get("carried")
+    if carried is None:
+        return []
+    r: Resolution | None = view.get("resolution")
+    if carried["mode"] == "regression":
+        if entity_id is not None and entity_id not in {
+                eid for n in carried.get("names") or () if (eid := _resolved_id(r, "character", n)) is not None}:
+            return []
+        rows = [(x, x.get("line") == "thread") for x in view.get("regression") or ()]
+    else:
+        rows = [(f, False) for f in view.get("facts") or () if f.get("carried")]
+        rows += [(t, True) for t in view.get("threads") or () if t.get("status") == "open" and t.get("carried")]
+    openings = {a["id"]: a for a in view.get("assertions") or () if a.get("carried")}
+    out: list[dict[str, Any]] = []
+    for row, thread in rows:
+        if entity_id is not None and entity_id not in _line_entities(row, r, thread=thread):
+            continue
+        opening = (row.get("opening") or openings.get(row.get("id"))) if thread else None
+        out.append(_panel_line(row, opening, thread=thread))
+    return out
+
+
 # --- database reading -------------------------------------------------------------------------------------------
 
 def _as_uuid(value: UUID | str) -> UUID:
