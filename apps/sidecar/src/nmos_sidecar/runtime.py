@@ -340,10 +340,14 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
     }
 
 
-def test_llm(url: str, model: str, api_key: str, json_mode: bool) -> dict[str, Any]:
+def test_llm(url: str, model: str, api_key: str, json_mode: bool, extra_body: dict[str, Any] | None = None,
+             no_temperature: bool = False) -> dict[str, Any]:
+    """One call as the worker would make it, with the body and the switch under test (PHASE-61 S3): a provider's
+    rejection of them shows here, before anything is saved."""
     started = time.perf_counter()
     try:
-        parsed, _ = ChatModel(url, model, api_key, timeout_s=60, json_mode=json_mode).complete_json(
+        parsed, _ = ChatModel(url, model, api_key, timeout_s=60, json_mode=json_mode, extra_body=extra_body,
+                              no_temperature=no_temperature).complete_json(
             "Reply with JSON only.", 'Return exactly {"ok": true, "language": "<the language of: 안녕하세요>"}')
         return {"ok": bool(parsed.get("ok")), "ms": round((time.perf_counter() - started) * 1000), "reply": parsed}
     except LLMError as exc:

@@ -120,7 +120,7 @@ def test_a_saved_key_is_sent_only_to_its_own_host(client, monkeypatch):
     sent: list[tuple[str, str]] = []
 
     class Model:
-        def __init__(self, url, model, api_key, timeout_s=60, json_mode=True):
+        def __init__(self, url, model, api_key, timeout_s=60, json_mode=True, **kwargs):  # PHASE-61: + body, switch
             self.url, self.key = url, api_key
 
         def complete_json(self, system, user):

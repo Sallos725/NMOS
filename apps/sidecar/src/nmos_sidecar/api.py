@@ -34,7 +34,7 @@ from . import (__version__, archive, audit, canon, canonfacts, carry, dropped, e
                plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
                vectors)
 from . import usage as model_usage
-from .config import Settings
+from .config import Settings, extra_body_error
 from .db import make_pool
 from .entities import norm
 from .extraction import enqueue_after_apply, job_counts, recent_errors
@@ -1873,9 +1873,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         cur = rt["settings"]
         kind = body.get("kind")
         if kind == "llm":
+            # PHASE-61 S3: the body and the switch under test, checked as a save checks them; absent, the saved ones
+            extra_body = body.get("extra_body") if "extra_body" in body else cur.llm_extra_body
+            no_temperature = body.get("no_temperature") if "no_temperature" in body else cur.llm_no_temperature
+            errors = [f"extra_body: {reason}"] if (reason := extra_body_error(extra_body)) is not None else []
+            if not isinstance(no_temperature, bool):
+                errors.append("no_temperature: expected a JSON boolean")
+            if errors:
+                raise HTTPException(status_code=422, detail=errors)
             key, note = key_for(body, kind)
             return noted(runtime.test_llm(body.get("url") or cur.llm_url, body.get("model") or cur.llm_model, key,
-                                          bool(body.get("json_mode", cur.llm_json_mode))), note)
+                                          bool(body.get("json_mode", cur.llm_json_mode)), extra_body=extra_body,
+                                          no_temperature=no_temperature), note)
         if kind == "embeddings":
             key, note = key_for(body, kind)
             return noted(runtime.test_embeddings(body.get("url") or cur.embed_url, body.get("model") or cur.embed_model,

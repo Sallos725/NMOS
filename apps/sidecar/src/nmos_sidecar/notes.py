@@ -432,7 +432,8 @@ def model_for(settings: Settings) -> Callable[..., tuple[Any, ...]] | None:
     if not (settings.llm_url and settings.llm_model):
         return None
     return ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
-                     settings.llm_json_mode).complete_metered
+                     settings.llm_json_mode, extra_body=settings.llm_extra_body,
+                     no_temperature=settings.llm_no_temperature).complete_metered
 
 
 def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn: int | None,

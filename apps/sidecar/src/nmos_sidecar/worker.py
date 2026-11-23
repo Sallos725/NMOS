@@ -32,7 +32,8 @@ def handlers(settings: Settings) -> Handlers:
     sm = summaries.summarizer(settings)
     if ex is not None:
         model = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
-                          settings.llm_json_mode)
+                          settings.llm_json_mode, extra_body=settings.llm_extra_body,
+                          no_temperature=settings.llm_no_temperature)
 
         def extract(conn: psycopg.Connection, job: dict[str, Any]) -> str:
             status = process_extract(conn, job, model.complete_metered, ex, settings.extract_turns)
@@ -45,7 +46,8 @@ def handlers(settings: Settings) -> Handlers:
         rv = reveals.generation(settings)
         if rv is not None:
             checker = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
-                                settings.llm_json_mode)
+                                settings.llm_json_mode, extra_body=settings.llm_extra_body,
+                                no_temperature=settings.llm_no_temperature)
 
             def check(conn: psycopg.Connection, job: dict[str, Any]) -> str:
                 status = reveals.process(conn, job, checker.complete_metered, rv, settings.extract_turns)
@@ -57,12 +59,14 @@ def handlers(settings: Settings) -> Handlers:
             out["reveal"] = (rv.key, check)
     if sm is not None:
         writer = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
-                           settings.llm_json_mode)
+                           settings.llm_json_mode, extra_body=settings.llm_extra_body,
+                           no_temperature=settings.llm_no_temperature)
         out["summarize"] = (sm.key, lambda conn, job: summaries.process(conn, job, writer.complete_metered, sm))
     cg = canonfacts.generation(settings)
     if cg is not None:
         reader = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
-                           settings.llm_json_mode)
+                           settings.llm_json_mode, extra_body=settings.llm_extra_body,
+                           no_temperature=settings.llm_no_temperature)
         out["canon"] = (cg.key, lambda conn, job: canonfacts.process(conn, job, reader.complete_metered, cg))
     pj = projection(settings)
     if pj is not None:

@@ -7,12 +7,14 @@ import asyncio
 import json
 import re
 import time
+from collections.abc import Mapping
 from typing import Any
 
 import httpx
 
 from . import vertex
 from .canonical import storable
+from .config import RESERVED_BODY_KEYS
 
 
 class LLMError(RuntimeError):
@@ -146,12 +148,20 @@ def reported(usage: dict[str, Any] | None) -> bool:
 
 
 class ChatModel:
-    def __init__(self, url: str, model: str, api_key: str = "", timeout_s: float = 120.0, json_mode: bool = True):
+    def __init__(self, url: str, model: str, api_key: str = "", timeout_s: float = 120.0, json_mode: bool = True, *,
+                 extra_body: Mapping[str, Any] | None = None, no_temperature: bool = False):
+        """`extra_body` is merged at the top level into every request (PHASE-61 S3); `no_temperature` sends none
+        (S1b). Their defaults send exactly the request sent before them."""
         self.url = url.rstrip("/")
         self.model = model
         self.api_key = api_key
         self.timeout_s = timeout_s
         self.json_mode = json_mode
+        self.extra_body = dict(extra_body or {})
+        # never overwrite the request's own fields: a body naming one is refused before it gets here (`config`)
+        if clash := sorted(RESERVED_BODY_KEYS & self.extra_body.keys()):
+            raise ValueError(f"the extra request body may not set {', '.join(clash)}")
+        self.no_temperature = no_temperature
 
     def complete_json(self, system: str, user: str) -> tuple[dict[str, Any], str]:
         parsed, text, _ = self.complete_metered(system, user)
@@ -164,8 +174,13 @@ class ChatModel:
             "temperature": 0,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         }
+        if self.no_temperature:
+            del body["temperature"]
         if self.json_mode:
             body["response_format"] = {"type": "json_object"}
+        # The extra body after the own fields; a provider that rejects it fails the call as any error does: it is never
+        # sent again without it (PHASE-61 S3, ADR 0088 item 4).
+        body = {**body, **self.extra_body}
         headers = chat_headers(self.api_key)
         started = time.monotonic()
         try:
