@@ -340,12 +340,13 @@ def head_of(conn, chat) -> object:
 
 def observe(conn, head, position: int, key: str, value: str, rules: str = "rules-a") -> None:
     """A status-window observation stored on the head's revision at `position`, as the parser would store it."""
-    conn.execute(
+    inserted = conn.execute(
         "INSERT INTO state_observation (conversation_id, source_revision_id, rules_version, rule_id, key, value)"
         " SELECT so.conversation_id, am.source_revision_id, %s, 'clock', %s, %s FROM active_membership am"
         " JOIN source_revision sr ON sr.id = am.source_revision_id JOIN source_object so ON so.id = sr.source_object_id"
         " WHERE am.commit_id = %s AND am.position = %s",
         (rules, key, value, head, position))
+    assert inserted.rowcount == 1, f"no membership at position {position}"
 
 
 def at(head, position: int) -> dict:
