@@ -6,7 +6,7 @@ import { DEFAULT_DEADLINE_MS } from '../src/form';
 import type { ActivityEvent } from '../src/hud';
 import { MEMORY_MARKER } from '../src/placement';
 import { GUARD_LINE, GUARD_RESERVE_TOKENS, hasPacket } from '../src/prompt';
-import type { HostChat, PromptMessage } from '../src/types';
+import type { HostChat, HostMessage, PromptMessage } from '../src/types';
 
 const chat: HostChat = {
   id: 'chat-1',
@@ -1224,5 +1224,299 @@ describe('[NMOS.memory] (PHASE-60 S2.3)', () => {
     const out = await createAdapter(host).beforeRequest(input, 'model');
     expect(out[1]?.content).toContain(PACKET);
     expect(hostChat).toEqual(snapshot);
+  });
+});
+
+describe('trimming old dialogue (PHASE-60 S1)', () => {
+  /** `turns` replied turns (some short `응` / `…그래.` messages) and a long latest user message `u{turns}`. */
+  function longChat(turns: number, trailing: HostMessage[] = []): HostChat {
+    const message: HostMessage[] = [];
+    for (let n = 0; n < turns; n += 1) {
+      message.push({ role: 'user', chatId: `u${n}`, data: n % 5 === 0
+        ? '응' : `세라 walked past lamp ${n} near the harbor archive and asked 카이토 about note ${n}.` });
+      message.push({ role: 'char', chatId: `c${n}`, data: n % 7 === 0
+        ? '…그래.' : `카이토 answered 세라 beside gate ${n} while 하나 recorded entry ${n} in the ledger.` });
+    }
+    message.push({ role: 'user', chatId: `u${turns}`,
+      data: `유나 stepped onto the pier at turn ${turns} and asked 세라 where the bronze lantern went.` });
+    message.push(...trailing);
+    return { id: 'chat-long', message };
+  }
+  const PRESET = 'You are the narrator for 세라 and 카이토.';
+  /** The host prompt: a system preset, then the whole chat one message each. */
+  const promptOf = (c: HostChat): PromptMessage[] => [
+    { role: 'system', content: PRESET },
+    ...c.message!.map((m) => ({ role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant', content: m.data })),
+  ];
+  const noop: HttpResult = { status: 200, json: { status: 'noop', active_commit: 'c', manifest_hash: 'm', conversation_id: 'conv-1' } };
+  /** The sidecar's rule with every turn covered: the first message of turn `cut` is the first one kept. */
+  const cutOf = (turns: number, k: number) => Math.floor((turns - k) / k) * k;
+  const quantized = (turns: number, extra: Record<string, unknown> = {}) => (body: any): HttpResult => {
+    const k = body.trim.keep_recent_turns;
+    const cut = cutOf(turns, k);
+    return { status: 200, json: { freshness: 'fresh', packet: { text: PACKET },
+      trim: cut > 0 ? { keep_from_id: `u${cut}`, keep_from_turn: cut, reason: null }
+        : { keep_from_id: null, keep_from_turn: null, reason: 'short' },
+      coverage: { recorded_through_turn: turns - 1, covered_through_turn: turns - 1 }, ...extra } };
+  };
+
+  /** A host whose chat is one held object (checked deep-equal after every call), trimming on with 4 recent turns. */
+  function trimHost(held: HostChat, answer: (body: any) => HttpResult | Promise<HttpResult>,
+                    overrides: Partial<Settings> = {}) {
+    const bodies: any[] = [];
+    const { host, calls } = fakeHost((path, body) => {
+      if (path === '/v1/sync/reconcile') return noop;
+      if (path === '/v1/retrieve') {
+        bodies.push(body);
+        return answer(body);
+      }
+      return { status: 404, json: null };
+    }, { trimOldTurns: true, keepRecentTurns: 4, deadlineMs: 5000, ...overrides });
+    const before = structuredClone(held);
+    host.currentChat = async () => held;
+    const events: ActivityEvent[] = [];
+    const adapter = createAdapter(host, (e) => events.push(e));
+    const run = async (p: PromptMessage[]) => {
+      const out = await adapter.beforeRequest(p, 'model');
+      expect(held).toEqual(before); // the host chat object is never written
+      return out;
+    };
+    const last = async () => (await adapter.status()).last;
+    const retrieves = () => calls.filter((c) => c === '/v1/retrieve').length;
+    return { host, adapter, run, last, bodies, events, retrieves };
+  }
+  /** `p` with the packet as a system message right before its latest user message. */
+  const withPacket = (p: PromptMessage[], text = PACKET): PromptMessage[] =>
+    [...p.slice(0, -1), { role: 'system', content: text }, p[p.length - 1]!];
+
+  it('A14: off sends no trim and returns the input plus the packet, as before', async () => {
+    const held = structuredClone(chat);
+    const snapshot = structuredClone(held);
+    const bodies: any[] = [];
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/retrieve') bodies.push(body);
+      return happy(path, body);
+    });
+    host.currentChat = async () => held;
+    const events: ActivityEvent[] = [];
+    const adapter = createAdapter(host, (e) => events.push(e));
+    const out = await adapter.beforeRequest(prompt, 'model');
+    expect(out).toEqual([
+      { role: 'system', content: 'narrator' },
+      { role: 'system', content: PACKET },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+    ]);
+    expect('trim' in bodies[0]).toBe(false);
+    const last = (await adapter.status()).last!;
+    expect('trim' in last).toBe(false);
+    expect(events.some((e) => 'trim' in e)).toBe(false);
+    expect(held).toEqual(snapshot);
+  });
+
+  it('A14: on, with an answer that has no trim (an older sidecar), drops nothing and says unsupported', async () => {
+    const held = structuredClone(chat);
+    const snapshot = structuredClone(held);
+    const bodies: any[] = [];
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/retrieve') bodies.push(body);
+      return happy(path, body);
+    }, { trimOldTurns: true, keepRecentTurns: 7 });
+    host.currentChat = async () => held;
+    const events: ActivityEvent[] = [];
+    const adapter = createAdapter(host, (e) => events.push(e));
+    const out = await adapter.beforeRequest(prompt, 'model');
+    expect(out).toEqual(withPacket(prompt));
+    expect(bodies[0].trim).toEqual({ keep_recent_turns: 7, step: 7 });
+    expect((await adapter.status()).last?.trim).toEqual({ dropped: 0, savedTokens: 0, reason: 'unsupported',
+      keepFromTurn: null });
+    expect(events[1]).toMatchObject({ type: 'request-end', trim: { dropped: 0, savedTokens: 0, reason: 'unsupported' } });
+    expect(held).toEqual(snapshot);
+  });
+
+  it('keeps keepRecentTurns within 4..200 in the request, and a missing one is 20', async () => {
+    for (const [value, expected] of [[2, 4], [999, 200], [undefined, 20], [Number.NaN, 20]] as const) {
+      const bodies: any[] = [];
+      const { host } = fakeHost((path, body) => {
+        if (path === '/v1/retrieve') bodies.push(body);
+        return happy(path, body);
+      }, { trimOldTurns: true, keepRecentTurns: value });
+      await createAdapter(host).beforeRequest(structuredClone(prompt), 'model');
+      expect(bodies[0].trim, String(value)).toEqual({ keep_recent_turns: expected, step: expected });
+    }
+  });
+
+  it('A15: drops exactly the messages before the boundary and places the packet before the latest user turn', async () => {
+    const turns = 30;
+    const held = longChat(turns);
+    const h = trimHost(held, quantized(turns));
+    const input = promptOf(held);
+    const out = await h.run(input);
+    const cut = cutOf(turns, 4);
+    expect(cut).toBe(24);
+    const kept = input.slice(1 + 2 * cut);
+    expect(out).toEqual([input[0], ...withPacket(kept)]);
+    expect(h.bodies[0].trim).toEqual({ keep_recent_turns: 4, step: 4 });
+    const last = (await h.last())!;
+    expect(last.trim).toEqual({ dropped: 2 * cut, savedTokens: expect.any(Number), reason: null, keepFromTurn: cut });
+    expect(last.trim!.savedTokens).toBeGreaterThan(0);
+    expect(last.coverage).toEqual({ recordedThroughTurn: turns - 1, coveredThroughTurn: turns - 1 });
+    expect(h.events[1]).toMatchObject({ type: 'request-end', outcome: 'injected',
+      trim: { dropped: 2 * cut, savedTokens: last.trim!.savedTokens, reason: null } });
+  });
+
+  it('A15: over a growing chat the kept prefix stays the same until the boundary moves by a whole step', async () => {
+    const k = 4;
+    const firstTwo = new Map<number, PromptMessage[]>();
+    let previousCut = -1;
+    for (let turns = 29; turns <= 29 + 2 * k; turns += 1) {
+      const held = longChat(turns);
+      const h = trimHost(held, quantized(turns), { keepRecentTurns: k });
+      const out = await h.run(promptOf(held));
+      const cut = cutOf(turns, k);
+      expect(cut % k).toBe(0);
+      expect((await h.last())?.trim).toMatchObject({ dropped: 2 * cut, reason: null, keepFromTurn: cut });
+      const head = out.slice(0, 2);
+      if (firstTwo.has(cut)) expect(head, `turns ${turns}`).toEqual(firstTwo.get(cut));
+      else firstTwo.set(cut, head);
+      if (previousCut >= 0 && cut !== previousCut) {
+        expect(cut - previousCut).toBe(k);
+        expect(head).not.toEqual(firstTwo.get(previousCut));
+      }
+      previousCut = cut;
+    }
+    expect(firstTwo.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a boundary at the latest user message drops only the messages before it', async () => {
+    const turns = 12;
+    const held = longChat(turns);
+    const h = trimHost(held, () => ({ status: 200, json: { freshness: 'fresh', packet: { text: PACKET },
+      trim: { keep_from_id: `u${turns}`, keep_from_turn: turns, reason: null } } }));
+    const input = promptOf(held);
+    const out = await h.run(input);
+    expect(out).toEqual([input[0], { role: 'system', content: PACKET }, input[input.length - 1]]);
+    expect((await h.last())?.trim).toMatchObject({ dropped: 2 * turns, reason: null, keepFromTurn: turns });
+  });
+
+  it('a boundary after the latest user message, an unknown one or a merged-chat preset drops nothing (format)', async () => {
+    const turns = 12;
+    const answerWith = (id: string) => () => ({ status: 200, json: { freshness: 'fresh', packet: { text: PACKET },
+      trim: { keep_from_id: id, keep_from_turn: 9, reason: null } } });
+    // After it: a reply the host already holds after the latest user message, sent as a prefill.
+    const after = longChat(turns, [{ role: 'char', chatId: 'c-after', data: '세라 turned toward the harbor without a word.' }]);
+    const afterPrompt = promptOf(after);
+    const a = trimHost(after, answerWith('c-after'));
+    expect(await a.run(afterPrompt)).toEqual([...withPacket(afterPrompt.slice(0, -1)), afterPrompt[afterPrompt.length - 1]]);
+    expect((await a.last())?.trim).toEqual({ dropped: 0, savedTokens: 0, reason: 'format', keepFromTurn: null });
+
+    const held = longChat(turns);
+    const input = promptOf(held);
+    const u = trimHost(held, answerWith('no-such-id'));
+    expect(await u.run(input)).toEqual(withPacket(input));
+    expect((await u.last())?.trim).toMatchObject({ dropped: 0, reason: 'format' });
+
+    const merged: PromptMessage[] = [{ role: 'system', content: PRESET },
+      { role: 'user', content: held.message!.map((m) => m.data).join('\n') }];
+    const m = trimHost(held, answerWith('u8'));
+    expect(await m.run(merged)).toEqual(withPacket(merged));
+    expect((await m.last())?.trim).toMatchObject({ dropped: 0, reason: 'format' });
+    expect(m.events[1]).toMatchObject({ trim: { dropped: 0, savedTokens: 0, reason: 'format' } });
+  });
+
+  it('a stale answer, a failed or throwing retrieve and an empty packet drop nothing', async () => {
+    const turns = 30;
+    const held = longChat(turns);
+    const input = promptOf(held);
+
+    const stale = trimHost(held, (body) => ({ ...quantized(turns)(body),
+      json: { ...(quantized(turns)(body).json as object), freshness: 'stale' } }));
+    expect(await stale.run(input)).toEqual(input);
+    expect((await stale.last())?.trim).toEqual({ dropped: 0, savedTokens: 0, reason: 'failed', keepFromTurn: null });
+
+    const down = trimHost(held, () => ({ status: 500, json: null }));
+    expect(await down.run(input)).toEqual(input);
+    expect((await down.last())).toMatchObject({ outcome: 'failed',
+      trim: { dropped: 0, savedTokens: 0, reason: 'failed', keepFromTurn: null } });
+    expect(down.events[1]).toMatchObject({ outcome: 'failed', trim: { dropped: 0, savedTokens: 0, reason: 'failed' } });
+    // The miss is cached briefly: a retry is still failed, nothing dropped.
+    expect(await down.run(structuredClone(input))).toEqual(input);
+    expect(down.retrieves()).toBe(1);
+    expect(down.events[3]).toMatchObject({ trim: { dropped: 0, reason: 'failed' } });
+
+    const throws = trimHost(held, () => Promise.reject(new TypeError('Failed to fetch')));
+    expect(await throws.run(input)).toEqual(input);
+    expect((await throws.last())?.trim).toMatchObject({ dropped: 0, reason: 'failed' });
+
+    const empty = trimHost(held, (body) => ({ status: 200, json: { ...(quantized(turns)(body).json as object),
+      packet: { text: '' } } }));
+    expect(await empty.run(input)).toEqual(input);
+    expect((await empty.last())?.trim).toEqual({ dropped: 0, savedTokens: 0, reason: 'empty_packet', keepFromTurn: null });
+  });
+
+  it('shows a reason the sidecar gives without a boundary, and treats an answer with neither as failed', async () => {
+    const held = longChat(30);
+    const input = promptOf(held);
+    const short = trimHost(held, () => ({ status: 200, json: { freshness: 'fresh', packet: { text: PACKET },
+      trim: { keep_from_id: null, keep_from_turn: null, reason: 'no_summaries' } } }));
+    expect(await short.run(input)).toEqual(withPacket(input));
+    expect((await short.last())?.trim).toEqual({ dropped: 0, savedTokens: 0, reason: 'no_summaries', keepFromTurn: null });
+    const odd = trimHost(held, () => ({ status: 200, json: { freshness: 'fresh', packet: { text: PACKET },
+      trim: { keep_from_id: '', keep_from_turn: 'x', reason: 7 } } }));
+    expect(await odd.run(input)).toEqual(withPacket(input));
+    expect((await odd.last())?.trim).toEqual({ dropped: 0, savedTokens: 0, reason: 'failed', keepFromTurn: null });
+  });
+
+  it('a cached packet applies the same boundary to the same host prompt without a second retrieve', async () => {
+    const turns = 30;
+    const held = longChat(turns);
+    const h = trimHost(held, quantized(turns));
+    const first = await h.run(promptOf(held));
+    const firstTrim = (await h.last())?.trim;
+    const again = await h.run(promptOf(held));
+    expect(again).toEqual(first);
+    expect(h.retrieves()).toBe(1);
+    expect((await h.last())?.trim).toEqual(firstTrim);
+    expect((await h.last())?.coverage).toEqual({ recordedThroughTurn: turns - 1, coveredThroughTurn: turns - 1 });
+    expect(h.events[3]).toMatchObject({ reused: true, trim: { dropped: 2 * 24, reason: null } });
+  });
+
+  it('H2: three chained calls give identical prompts with one retrieve, with and without a marker', async () => {
+    const turns = 30;
+    for (const marked of [true, false]) {
+      const held = longChat(turns);
+      let counter = 0;
+      const h = trimHost(held, (body) => {
+        counter += 1;
+        const res = quantized(turns)(body);
+        return { ...res, json: { ...(res.json as object), packet: { text:
+          `<NarrativeMemory version="0" source="nmos">\n  <Excerpt turn="0" speaker="user">lantern #${counter}</Excerpt>\n</NarrativeMemory>` } } };
+      });
+      const input = promptOf(held);
+      if (marked) {
+        const latest = input[input.length - 1]!;
+        input[input.length - 1] = { ...latest, content: `${latest.content as string}\n${MEMORY_MARKER}` };
+      }
+      const out1 = await h.run(input);
+      expect(out1.length, String(marked)).toBeLessThan(input.length - 40);
+      const out2 = await h.run(out1);
+      const out3 = await h.run(out2);
+      expect(out2, String(marked)).toBe(out1);
+      expect(out3, String(marked)).toBe(out2);
+      expect(out3, String(marked)).toEqual(out1);
+      expect(h.retrieves(), String(marked)).toBe(1);
+    }
+  });
+
+  it('a marker inside a message the boundary would drop: nothing dropped (format), the packet at the marker', async () => {
+    const turns = 30;
+    const held = longChat(turns);
+    const h = trimHost(held, quantized(turns));
+    const input = promptOf(held);
+    const index = 1 + 2 * 3 + 1; // c3, well before the boundary at turn 24
+    input[index] = { ...input[index]!, content: `${input[index]!.content as string}\n${MEMORY_MARKER}` };
+    const out = await h.run(input);
+    expect(out).toHaveLength(input.length);
+    expect(out[index]?.content).toBe(`${held.message![2 * 3 + 1]!.data}\n${PACKET}`);
+    expect((await h.last())?.trim).toEqual({ dropped: 0, savedTokens: 0, reason: 'format', keepFromTurn: null });
   });
 });

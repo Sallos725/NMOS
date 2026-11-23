@@ -8,13 +8,14 @@ import { canonHash, canonManifestId, canonTexts, heldKeys, type CanonEntry, type
 import { canonicalJson } from './canonical';
 import { sha256Hex } from './hash';
 import { deadlineAdvice, formatMs } from './deadline';
-import { DEFAULT_DEADLINE_MS } from './form';
+import { DEFAULT_DEADLINE_MS, DEFAULT_KEEP_RECENT_TURNS, MAX_KEEP_RECENT_TURNS, MIN_KEEP_RECENT_TURNS } from './form';
 import { t, type Lang, type StringKey } from './i18n';
 import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
 import type { ActivityEvent } from './hud';
 import { findMarker, holdsText, resolvePlaceholders, stripMarkers } from './placement';
 import { GUARD_RESERVE_TOKENS, hasPacket, inContextIds, injectPacket, landsAfterUserTurn, queryTexts, userTurnIndex,
   withGuard, type InjectPosition } from './prompt';
+import { trimPrompt } from './trim';
 import type { HostChat, HostMessage, HostPersonas, PromptMessage, ReconcileRequest } from './types';
 import { failureKind, INSECURE_ERROR, secureContext } from './failure';
 
@@ -93,6 +94,64 @@ interface CacheEntry {
   vectors?: Vectors | null;
   /** The canon the packet was built with (its manifest id and what the prompt held): another one misses. */
   canon?: string;
+  /** The sidecar's old-dialogue boundary for this state (PHASE-60 S1); only when trimming was asked for. */
+  trim?: TrimDecision | null;
+  coverage?: RecallCoverage | null;
+}
+
+/** The sidecar's answer on old dialogue (PHASE-60 S1): the host id of the first message to keep, or why none. */
+export interface TrimDecision {
+  keepFromId: string | null;
+  keepFromTurn: number | null;
+  reason: string | null;
+}
+
+/** How far memory has got for the head (PHASE-60 S1): the latest turn an extraction serves, and the latest turn the
+ *  trimming boundary may move to. Older sidecars send none. */
+export interface RecallCoverage {
+  recordedThroughTurn: number | null;
+  coveredThroughTurn: number | null;
+}
+
+/** What trimming did to this request (PHASE-60 S1), for the status tab. */
+export interface TrimOutcome {
+  dropped: number;
+  savedTokens: number;
+  reason: string | null;
+  /** The sidecar's boundary turn, only when messages were left out. */
+  keepFromTurn: number | null;
+}
+
+const FAILED_TRIM: TrimDecision = { keepFromId: null, keepFromTurn: null, reason: 'failed' };
+
+/** Recent turns always sent when trimming is on, kept within 4..200; 0 when it is off (no `trim` in the request). */
+export function keepRecentTurnsOf(settings: Settings): number {
+  if (!settings.trimOldTurns) return 0;
+  const n = settings.keepRecentTurns;
+  const k = typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_KEEP_RECENT_TURNS;
+  return Math.min(MAX_KEEP_RECENT_TURNS, Math.max(MIN_KEEP_RECENT_TURNS, k));
+}
+
+const finiteOrNull = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+/** The `trim` answer of a `/v1/retrieve` that asked for it: an older sidecar sends none (`unsupported`), and a
+ *  stale answer never cuts (`failed`). Anything else malformed is `failed`, never a boundary. */
+export function trimDecisionOf(fresh: boolean, trim: unknown): TrimDecision {
+  if (!fresh) return FAILED_TRIM;
+  if (!trim || typeof trim !== 'object') return { keepFromId: null, keepFromTurn: null, reason: 'unsupported' };
+  const t = trim as { keep_from_id?: unknown; keep_from_turn?: unknown; reason?: unknown };
+  const keepFromId = typeof t.keep_from_id === 'string' && t.keep_from_id ? t.keep_from_id : null;
+  const reason = typeof t.reason === 'string' ? t.reason : null;
+  if (!keepFromId && reason === null) return FAILED_TRIM;
+  return { keepFromId, keepFromTurn: finiteOrNull(t.keep_from_turn), reason };
+}
+
+/** The `coverage` answer of a `/v1/retrieve`, or null when it has none (an older sidecar). */
+export function coverageOf(coverage: unknown): RecallCoverage | null {
+  if (!coverage || typeof coverage !== 'object') return null;
+  const c = coverage as { recorded_through_turn?: unknown; covered_through_turn?: unknown };
+  return { recordedThroughTurn: finiteOrNull(c.recorded_through_turn), coveredThroughTurn: finiteOrNull(c.covered_through_turn) };
 }
 
 /** Whether the sidecar's recall searched vectors (PHASE-15 Q5, K34): "fallback" is lexical only because the embedder
@@ -122,6 +181,9 @@ export interface LastRequest {
   budgetTokens?: number;
   memory?: MemoryFit | null;
   vectors?: Vectors | null;
+  /** Old-dialogue trimming (PHASE-60 S1); only when it is on. */
+  trim?: TrimOutcome;
+  coverage?: RecallCoverage | null;
 }
 
 export interface StatusInfo {
@@ -328,8 +390,9 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   }
 
   function remember(key: string, packet: string, ttl: number, failed = false, memory: MemoryFit | null = null,
-    vectors: Vectors | null = null, canon?: string): void {
-    cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon });
+    vectors: Vectors | null = null, canon?: string, trim: TrimDecision | null = null,
+    coverage: RecallCoverage | null = null): void {
+    cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon, trim, coverage });
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
@@ -442,6 +505,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     let announced = false;
     let failure: LastRequest | null = null;
     let lateAt: number | null = null;
+    let k = 0; // recent turns kept when trimming (PHASE-60 S1); 0 = off
     const late = (at: number) => {
       lateAt = at;
       if (failure) failure.neededMs = Math.round(at - started);
@@ -455,6 +519,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // Without Web Crypto nothing can be hashed: say why in words instead of a TypeError (audit F24).
       if (!secureContext()) throw new Error(INSECURE_ERROR);
       const deadline = started + settings.deadlineMs;
+      k = keepRecentTurnsOf(settings);
       emit({ type: 'request-start' });
       announced = true;
 
@@ -487,14 +552,40 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const position = settings.injectPosition;
       const after = landsAfterUserTurn(prompt, messages, position, turn, marker);
       const budget = after ? Math.max(0, settings.reservedMemoryTokens - GUARD_RESERVE_TOKENS) : settings.reservedMemoryTokens;
-      const place = (p: PromptMessage[], packet: string): PromptMessage[] => {
-        if (!packet) return stripMarkers(p);
-        if (holdsText(p, packet)) return stripMarkers(p); // the prompt already holds this packet (a retry)
+      // `at`: the latest user turn's index in `p` (the trimmed prompt's, once old dialogue is left out).
+      const place = (p: PromptMessage[], packet: string, at: number): { out: PromptMessage[]; placed: boolean } => {
+        if (!packet) return { out: stripMarkers(p), placed: false };
+        // The prompt already holds this packet (a retry).
+        if (holdsText(p, packet)) return { out: stripMarkers(p), placed: false };
         const text = after ? withGuard(packet) : packet;
-        const out = marker ? resolvePlaceholders(p, text) : stripMarkers(injectPacket(p, text, position, turn));
-        if (out !== p) memoiseReturned(out);
-        return out;
+        return { out: marker ? resolvePlaceholders(p, text) : stripMarkers(injectPacket(p, text, position, at)),
+          placed: true };
       };
+      // Old dialogue is left out of the host's prompt (markers still in it) before the packet is placed, by the
+      // sidecar's boundary (PHASE-60 S1, ADR 0083): never with no memory in its place. The final prompt is what a
+      // retry (H2) sends back, so it is the one remembered.
+      const finishPrompt = (packet: string, decision: TrimDecision | null) => {
+        let p = prompt;
+        let dropped = 0;
+        let savedTokens = 0;
+        let reason = decision?.reason ?? null;
+        if (decision?.keepFromId) {
+          if (!packet) reason = 'empty_packet';
+          else {
+            const r = trimPrompt(prompt, messages, decision.keepFromId);
+            p = r.prompt;
+            dropped = r.dropped;
+            savedTokens = r.savedTokens;
+            reason = r.reason;
+          }
+        }
+        const { out, placed } = place(p, packet, turn - dropped); // every dropped index is before `turn` (trimPrompt)
+        if (out !== prompt && (placed || dropped > 0)) memoiseReturned(out);
+        const outcome: TrimOutcome = { dropped, savedTokens, reason,
+          keepFromTurn: dropped > 0 ? decision?.keepFromTurn ?? null : null };
+        return { out, trim: outcome };
+      };
+      const shown = (o: TrimOutcome) => ({ dropped: o.dropped, savedTokens: o.savedTokens, reason: o.reason });
 
       // Cache key = exact chat state (every message id + revision hash) + prompt shape and the messages it holds + the
       // sidecar, route, token and budget it was asked with, so a cached packet is reused only for the same state (host retries, reroll of an unchanged
@@ -511,6 +602,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]), inContext,
         request.persona_name ?? null, // the sidecar reads `{{user}}` from the sync a cached packet skips (ADR 0023)
         settings.sidecarUrl.replace(/\/+$/, ''), settings.route, settings.authToken, budget,
+        !!settings.trimOldTurns, k,
       ])), deadline, 'the cache key');
       // Canon (ADR 0045): which of it this prompt holds and its manifest go with the request; the texts follow in the
       // background. Observed for a cached packet too, whose canon may have changed.
@@ -522,13 +614,15 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         const known = conversations.get(chat.id);
         if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
         const outcome = cached.packet ? 'injected' : 'nothing-relevant';
+        const done = finishPrompt(cached.packet, k > 0 ? (cached.failed ? FAILED_TRIM : cached.trim ?? FAILED_TRIM) : null);
         // A retry served from the miss cache keeps the failure on the status tab.
         if (!cached.failed) last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: cached.packet.length,
           packet: cached.packet, outcome, deadlineMs: settings.deadlineMs, budgetTokens: budget,
-          memory: cached.memory ?? null, vectors: cached.vectors ?? null };
+          memory: cached.memory ?? null, vectors: cached.vectors ?? null,
+          ...(k > 0 ? { trim: done.trim } : {}), ...(cached.coverage ? { coverage: cached.coverage } : {}) };
         emit({ type: 'request-end', outcome, chars: cached.packet.length, reused: true, vectors: cached.vectors ?? null,
-          conversationId: conversations.get(chat.id) ?? null });
-        return place(prompt, cached.packet);
+          conversationId: conversations.get(chat.id) ?? null, ...(k > 0 ? { trim: shown(done.trim) } : {}) });
+        return done.out;
       }
 
       const t1 = host.now();
@@ -543,7 +637,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const { query, previousAi } = queryTexts(messages);
       const t2 = host.now();
       const retrieved = await call<{ freshness: string; packet: { text: string }; memory?: MemoryFit | null;
-        vectors?: Vectors | null }>(settings, '/v1/retrieve', {
+        vectors?: Vectors | null; trim?: unknown; coverage?: unknown }>(settings, '/v1/retrieve', {
         host: 'pocketrisu',
         chat_id: chat.id,
         active_commit: synced.active_commit,
@@ -555,30 +649,39 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
         canon_manifest_id: canon?.snapshot?.id ?? null,
         canon_held: canon?.held ?? [],
+        // Only when the owner turned trimming on: without it the request is the one sent before PHASE-60.
+        ...(k > 0 ? { trim: { keep_recent_turns: k, step: k } } : {}),
       }, deadline, undefined, late);
       if (canon?.snapshot && synced.conversation_id) syncCanon(settings, synced.conversation_id, chat.id, canon.snapshot);
       const packet = retrieved.freshness === 'fresh' ? retrieved.packet.text : '';
       const memory = retrieved.freshness === 'fresh' ? retrieved.memory ?? null : null; // older sidecars send none
       const vectors = retrieved.freshness === 'fresh' ? retrieved.vectors ?? null : null;
+      const decision = k > 0 ? trimDecisionOf(retrieved.freshness === 'fresh', retrieved.trim) : null;
+      const coverage = coverageOf(retrieved.coverage);
       // A delete, repair or settings save while this request ran: its packet may hold what that removed.
       if (epoch !== since) throw new Error('memory changed during this request');
-      remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors, canonKey);
+      remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors, canonKey, decision, coverage);
       host.debug('[NMOS] request done', { ms: Math.round(host.now() - started), manifestMs: Math.round(manifestMs),
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
       const outcome = packet ? 'injected' : 'nothing-relevant';
+      const done = finishPrompt(packet, decision);
       last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, packet, outcome,
-        deadlineMs: settings.deadlineMs, budgetTokens: budget, memory, vectors };
+        deadlineMs: settings.deadlineMs, budgetTokens: budget, memory, vectors,
+        ...(k > 0 ? { trim: done.trim } : {}), ...(coverage ? { coverage } : {}) };
       emit({ type: 'request-end', outcome, chars: packet.length, vectors, conversationId: synced.conversation_id ?? null,
-        ...(synced.rewritten > 0 ? { rewritten: synced.rewritten } : {}) });
-      return place(prompt, packet);
+        ...(synced.rewritten > 0 ? { rewritten: synced.rewritten } : {}), ...(k > 0 ? { trim: shown(done.trim) } : {}) });
+      return done.out;
     } catch (error) {
       // Cache the miss briefly so host retries of this request (H2) do not wait out the deadline again.
       if (key && epoch === since) remember(key, '', FAILURE_TTL_MS, true);
       last = failure = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: 0, packet: '', outcome: 'failed',
-        error: error instanceof Error ? error.message : String(error), deadlineMs: settings?.deadlineMs ?? 0 };
+        error: error instanceof Error ? error.message : String(error), deadlineMs: settings?.deadlineMs ?? 0,
+        // Nothing is left out on any failure: the host's prompt goes as it is.
+        ...(k > 0 ? { trim: { dropped: 0, savedTokens: 0, reason: 'failed', keepFromTurn: null } } : {}) };
       if (lateAt !== null) failure.neededMs = Math.round(lateAt - started);
       if (announced) emit({ type: 'request-end', outcome: 'failed', chars: 0, error: last.error,
-        deadlineMs: last.deadlineMs, conversationId: (chatId && conversations.get(chatId)) || null });
+        deadlineMs: last.deadlineMs, conversationId: (chatId && conversations.get(chatId)) || null,
+        ...(k > 0 ? { trim: { dropped: 0, savedTokens: 0, reason: 'failed' } } : {}) });
       host.warn('[NMOS] memory skipped for this request (fail open):', error instanceof Error ? error.message : error);
       return prompt;
     }
