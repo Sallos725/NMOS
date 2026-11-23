@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import re
 import uuid
+from uuid import UUID
 
 import psycopg
+from psycopg.rows import dict_row
 
 from conftest import make_client
 from memeval import stub_extractor
+from nmos_sidecar import audit
 from nmos_sidecar.entities import resolve
 from nmos_sidecar.packet import PIN_POLICIES
 from nmos_sidecar.retrieval import PIN_EXTRA, RecallOptions, pinned_characters
@@ -287,3 +290,57 @@ def test_at_name_pins_for_that_request_only_and_only_with_the_setting(migrated):
         assert group(in_full_scene(c, migrated, chat, FIVE.format(""))["packet"]["text"], "세라") is None  # the next
         for query in (FIVE.format("a@"), FIVE.format("@없는이름 ")):
             assert group(in_full_scene(c, migrated, chat, query)["packet"]["text"], "세라") is None, query
+
+
+# --- recorded, and replayed as recorded (D39, ADR 0087 item 4) ---------------------------------------------------------
+
+
+def replay(url: str, out: dict, **kw) -> dict:
+    with psycopg.connect(url, row_factory=dict_row) as conn:
+        return audit.replay(conn, UUID(out["trace_id"]), RecallOptions(), **kw)
+
+
+OWNER_SERA = [{"name": "세라", "entity_type": "character", "source": "owner"}]
+
+
+def test_owner_pins_are_recorded_and_a_replay_reproduces_after_the_pin_is_taken_back(migrated):
+    with make_client(migrated, packet_policy="packet-v20", **CLIENT) as c:
+        chat = story(c, migrated, *SERA)
+        cid = conv_id(c, chat)
+        quiet = ask(c, migrated, chat, QUIET)
+        assert "pins" not in trace(c, quiet)["recall_options"]  # nothing pinned: no key
+        rid = pin(c, cid, "세라").json()["repair"]["id"]
+        out = ask(c, migrated, chat, QUIET)
+        assert trace(c, out)["recall_options"]["pins"] == OWNER_SERA
+        assert c.post(f"/v1/conversations/{cid}/repairs/{rid}/remove").status_code == 200
+    again = replay(migrated, out)
+    assert again["status"] == "ok" and again["reproduced"] is True and again["text"] == out["packet"]["text"]
+    assert group(again["text"], "세라") is not None
+    assert group(replay(migrated, out, policy="packet-v19")["text"], "세라") is None  # another policy: no pin
+
+
+def test_an_at_pin_is_recorded_and_replayed_without_reading_the_message_again(migrated):
+    with make_client(migrated, packet_policy="packet-v20", **CLIENT) as c:
+        chat = story(c, migrated, "세라 is in the garden.", *IDLE)
+        assert c.put("/v1/config", json={"pin_at_mentions": True}).status_code == 200
+        out = in_full_scene(c, migrated, chat, FIVE.format("@"))
+        assert trace(c, out)["recall_options"]["pins"] == [{"name": "세라", "entity_type": "character", "source": "at"}]
+        plain = in_full_scene(c, migrated, chat, FIVE.format(""))
+        assert "pins" not in trace(c, plain)["recall_options"]
+    # the replay's options have the setting off (RecallOptions()): the record, not the message, pins
+    again = replay(migrated, out)
+    assert again["reproduced"] is True and group(again["text"], "세라") is not None
+
+
+def test_a_trace_without_recorded_pins_replays_with_none(migrated):
+    """An older trace (before pins were recorded) never gains the pins in force at its time."""
+    with make_client(migrated, packet_policy="packet-v20", **CLIENT) as c:
+        chat = story(c, migrated, *SERA)
+        assert pin(c, conv_id(c, chat), "세라").status_code == 200
+        out = ask(c, migrated, chat, QUIET)
+    assert group(out["packet"]["text"], "세라") is not None
+    with psycopg.connect(migrated) as conn:
+        conn.execute("UPDATE retrieval_trace SET recall_options = recall_options - 'pins' WHERE id = %s",
+                     (out["trace_id"],))
+    again = replay(migrated, out)
+    assert again["status"] == "ok" and group(again["text"], "세라") is None and again["reproduced"] is False

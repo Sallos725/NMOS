@@ -2119,6 +2119,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     }
     if fresh and options.policy in COVERAGE_POLICIES:
         trace_options["coverage"] = cov.recorded_dict()
+    if fresh and options.policy in PIN_POLICIES and g.pins:  # the names its pins resolved to (ADR 0087 item 4)
+        trace_options["pins"] = recorded_pins(g.pins)
     if trim_trace is not None:
         trace_options["trim"] = trim_trace
     placed = [e for e in compiled.ledger if e["placed"]]
