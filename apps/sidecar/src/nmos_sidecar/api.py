@@ -569,6 +569,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             memory=out.get("memory"),
             vectors=out.get("vectors"),
             coverage=out.get("coverage"),
+            trim=out.get("trim"),
         )
 
     @app.post("/v1/output", status_code=202, dependencies=[Depends(auth)])

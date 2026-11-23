@@ -7,7 +7,7 @@ scene summary holds it (D52, ADR 0042).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
@@ -163,3 +163,55 @@ def decide_trim(
             return TrimCut(None, "uncovered")
         return TrimCut(cut, None)
     return TrimCut(raw_cut, None)
+
+
+def window_turns(
+    conn: psycopg.Connection,
+    head: UUID,
+    in_context_ids: Iterable[str],
+    upto: int | None = None,
+) -> list[int]:
+    """Distinct turn numbers of `head` (up to `upto`) present in `in_context_ids`, ascending."""
+    ids = list(in_context_ids)
+    if not ids:
+        return []
+    rows = conn.execute(
+        "SELECT DISTINCT am.turn FROM active_membership am"
+        " JOIN source_revision sr ON sr.id = am.source_revision_id"
+        " JOIN source_object so ON so.id = sr.source_object_id"
+        " WHERE am.commit_id = %(head)s AND am.turn IS NOT NULL"
+        " AND (%(upto)s::int IS NULL OR am.position <= %(upto)s::int)"
+        " AND so.host_logical_id = ANY(%(ids)s)"
+        " ORDER BY am.turn ASC",
+        {"head": head, "upto": upto, "ids": ids},
+    ).fetchall()
+    return [r["turn"] for r in rows]
+
+
+def trim_boundary(
+    conn: psycopg.Connection,
+    head: UUID,
+    cut: int,
+    upto: int | None = None,
+) -> tuple[str | None, set[str]]:
+    """(host_logical_id of the first head message at turn `cut`, host_logical_ids of head messages with turn < `cut`)."""
+    first = conn.execute(
+        "SELECT so.host_logical_id FROM active_membership am"
+        " JOIN source_revision sr ON sr.id = am.source_revision_id"
+        " JOIN source_object so ON so.id = sr.source_object_id"
+        " WHERE am.commit_id = %(head)s AND am.turn = %(cut)s"
+        " AND (%(upto)s::int IS NULL OR am.position <= %(upto)s::int)"
+        " ORDER BY am.position ASC LIMIT 1",
+        {"head": head, "cut": cut, "upto": upto},
+    ).fetchone()
+    if first is None:
+        return None, set()
+    before = conn.execute(
+        "SELECT so.host_logical_id FROM active_membership am"
+        " JOIN source_revision sr ON sr.id = am.source_revision_id"
+        " JOIN source_object so ON so.id = sr.source_object_id"
+        " WHERE am.commit_id = %(head)s AND am.turn < %(cut)s"
+        " AND (%(upto)s::int IS NULL OR am.position <= %(upto)s::int)",
+        {"head": head, "cut": cut, "upto": upto},
+    ).fetchall()
+    return first["host_logical_id"], {r["host_logical_id"] for r in before}

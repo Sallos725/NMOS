@@ -1700,10 +1700,16 @@ def _head_last(conn: psycopg.Connection, head: UUID, upto: int | None) -> str | 
 
 def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> dict[str, Any]:
     started = time.perf_counter()
+    trim_req = getattr(request, "trim", None)
     conv = find_conversation(conn, request.host, request.chat_id)
     if conv is None or conv.head_commit_id is None:
-        return {"freshness": "unknown_conversation", "trace_id": None, "text": "", "tokens": 0, "count": 0,
-                "coverage": {"recorded_through_turn": None, "covered_through_turn": None}}
+        out: dict[str, Any] = {
+            "freshness": "unknown_conversation", "trace_id": None, "text": "", "tokens": 0, "count": 0,
+            "coverage": {"recorded_through_turn": None, "covered_through_turn": None},
+        }
+        if trim_req is not None:
+            out["trim"] = {"keep_from_id": None, "keep_from_turn": None, "reason": "stale"}
+        return out
     # The head, its manifest hash and its end in one statement, and every read below bounded by that end: recall
     # takes no conversation lock, and a concurrent sync's append extends the head commit in place (D4).
     snap = conn.execute(
@@ -1720,11 +1726,46 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator,
                                   replies_only=conv.replies_only,
                                   state_pins=dict(options.pins_by_card).get(snap["host_character_name"] or "", ()))
-    in_context = set(request.in_context_ids)
+    original_in_context = set(request.in_context_ids)
+    in_context = original_in_context
+    cov: coverage.Coverage | None = None
     served: frozenset[int] | None = None
     latest_replied: int | None = None
     cov_for_gather: dict[str, int | None] | None = None
-    if fresh and options.policy in COVERAGE_POLICIES:
+    trim_out: dict[str, Any] | None = None
+    trim_trace: dict[str, Any] | None = None
+    if trim_req is not None:
+        now_turn = _head_turn(conn, head, upto)
+        if not fresh:
+            trim_out = {"keep_from_id": None, "keep_from_turn": None, "reason": "stale"}
+            trim_trace = {"keep_recent_turns": trim_req.keep_recent_turns, "step": trim_req.step,
+                          "now": now_turn, "cut": None, "keep_from_id": None, "reason": "stale"}
+        else:
+            cov = coverage.read(conn, conv.id, head, options.summarize_key,
+                                extractor_key=options.extractor_key, upto=upto)
+            if options.policy in COVERAGE_POLICIES:
+                cov_for_gather = cov.recorded_dict()
+            last_id = _head_last(conn, head, upto)
+            window_ids = original_in_context | ({last_id} if last_id is not None else set())
+            w_turns = coverage.window_turns(conn, head, window_ids, upto)
+            decision = coverage.decide_trim(
+                now_turn, trim_req.keep_recent_turns, trim_req.step,
+                [(t, t in cov.covered_turns) for t in w_turns], bool(options.summarize_key),
+            )
+            keep_from_id: str | None = None
+            keep_from_turn: int | None = None
+            reason: str | None = decision.reason
+            if decision.cut is not None:
+                keep_from_id, before_ids = coverage.trim_boundary(conn, head, decision.cut, upto)
+                if keep_from_id is not None:
+                    keep_from_turn = decision.cut
+                    in_context = original_in_context - before_ids
+                else:
+                    reason = "short"
+            trim_out = {"keep_from_id": keep_from_id, "keep_from_turn": keep_from_turn, "reason": reason}
+            trim_trace = {"keep_recent_turns": trim_req.keep_recent_turns, "step": trim_req.step,
+                          "now": now_turn, "cut": keep_from_turn, "keep_from_id": keep_from_id, "reason": reason}
+    elif fresh and options.policy in COVERAGE_POLICIES:
         served, latest_replied = coverage.extraction_state(conn, head, upto)
         cov_for_gather = {
             "recorded_through_turn": max(served) if served else None,
@@ -1740,6 +1781,17 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         return compile_gathered(g, budget, options.policy)
 
     compiled = compile_at(request.budget_tokens)
+    if fresh and trim_out is not None and trim_out["keep_from_id"] is not None and not compiled.text:
+        # Empty packet cannot safely drop dialogue (PHASE-60 S1): revert to the unmodified in-context set so the
+        # returned packet and trace match what the request without trimming would have produced.
+        in_context = original_in_context
+        trim_out = {"keep_from_id": None, "keep_from_turn": None, "reason": "empty_packet"}
+        trim_trace = {**trim_trace, "cut": None, "keep_from_id": None, "reason": "empty_packet"}
+        g = gather(conn, head, query, previous_ai, in_context, filled(options, request.budget_tokens), upto,
+                   canon_manifest=getattr(request, "canon_manifest_id", None),
+                   canon_held=getattr(request, "canon_held", None) or (), recent=history,
+                   coverage_info=cov_for_gather)
+        compiled = compile_at(request.budget_tokens)
     kept = kept_counts(compiled.ledger)
     # Memory the budget left out, and the budget that would hold it all: the panel suggests it (ADR 0036).
     fit_started = time.perf_counter()
@@ -1757,15 +1809,18 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                 "sim": None if c.get("sim") is None else round(float(c["sim"]), 4),
                 "keyword_score": round(float(c.get("keyword_score") or 0), 4), "rrf": round(float(c.get("rrf") or 0), 5)}
 
-    cov = coverage.read(conn, conv.id, head, options.summarize_key, extractor_key=options.extractor_key,
-                        secrets=g.secrets if fresh else None, upto=upto,
-                        served=served, latest_replied=latest_replied)
+    if cov is None:
+        cov = coverage.read(conn, conv.id, head, options.summarize_key, extractor_key=options.extractor_key,
+                            secrets=g.secrets if fresh else None, upto=upto,
+                            served=served, latest_replied=latest_replied)
     trace_options: dict[str, Any] = {
         **recorded_options(options), "canon_names": g.canon_names, "canon_facts": g.canon_facts,
         "fill": fill(request.budget_tokens, options.policy),  # the growth its budget bought (ADR 0049)
     }
     if fresh and options.policy in COVERAGE_POLICIES:
         trace_options["coverage"] = cov.recorded_dict()
+    if trim_trace is not None:
+        trace_options["trim"] = trim_trace
     placed = [e for e in compiled.ledger if e["placed"]]
     trace_id: UUID = uuid7()
     conn.execute(
@@ -1806,7 +1861,12 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             Jsonb(sorted(set(getattr(request, "canon_held", None) or []))),
         ),
     )
-    return {"freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": compiled.text,
-            "tokens": compiled.tokens, "count": len(compiled.excerpts), "memory": memory, "conversation_id": conv.id,
-            "vectors": ("fallback" if g.vector_note.startswith("fallback") else g.vector_note) if fresh else None,
-            "coverage": cov.response_dict()}
+    result: dict[str, Any] = {
+        "freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": compiled.text,
+        "tokens": compiled.tokens, "count": len(compiled.excerpts), "memory": memory, "conversation_id": conv.id,
+        "vectors": ("fallback" if g.vector_note.startswith("fallback") else g.vector_note) if fresh else None,
+        "coverage": cov.response_dict(),
+    }
+    if trim_out is not None:
+        result["trim"] = trim_out
+    return result

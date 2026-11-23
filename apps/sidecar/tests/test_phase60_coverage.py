@@ -389,3 +389,227 @@ def test_decide_trim_pure_boundaries_and_reasons():
     assert coverage.decide_trim(60, 20, 20, full_window(60, lo=20, uncovered={33}), summaries_on=True) == coverage.TrimCut(None, "uncovered")
     # Unsorted input produces the same result.
     assert coverage.decide_trim(60, 20, 20, list(reversed(full_window(60, uncovered={33}))), summaries_on=True) == coverage.TrimCut(20, None)
+
+
+def test_trim_validation_errors_http_422(migrated):
+    with make_client(migrated, **SUMMARIES_ON) as client:
+        for bad in (
+            {"keep_recent_turns": 3, "step": 3},
+            {"keep_recent_turns": 201, "step": 201},
+            {"keep_recent_turns": 20, "step": 0},
+        ):
+            res = client.post("/v1/retrieve", json={
+                "chat_id": "any", "query": "hi", "in_context_ids": [], "budget_tokens": 600, "trim": bad,
+            })
+            assert res.status_code == 422, (bad, res.status_code, res.text)
+
+
+def test_trim_integration_growing_chat_uncovered_reasons_excerpt_and_replay(migrated):
+    from nmos_sidecar import audit
+    from nmos_sidecar.retrieval import RecallOptions
+
+    base_settings = {**SUMMARIES_ON, "packet_policy": "packet-v20"}
+    chat = SimChat()
+    for i in range(39):
+        if i == 2:
+            chat.user("Turn 2 begins. 세라는 오래된 등대 아래에 은빛 나침반을 숨겼다.")
+            chat.reply("Reply 2 follows. 세라가 은빛 나침반을 숨긴 자리를 기억해 두었다.")
+        else:
+            chat.user(f"Turn {i} walk along the harbor road.")
+            chat.reply(f"Reply {i} quiet breeze over the stones.")
+
+    def first_msg_id_of_turn(url: str, head: UUID, turn: int) -> str:
+        with db(url) as conn:
+            return conn.execute(
+                "SELECT so.host_logical_id FROM active_membership am"
+                " JOIN source_revision sr ON sr.id = am.source_revision_id"
+                " JOIN source_object so ON so.id = sr.source_object_id"
+                " WHERE am.commit_id = %s AND am.turn = %s ORDER BY am.position ASC LIMIT 1",
+                (head, turn),
+            ).fetchone()["host_logical_id"]
+
+    with make_client(migrated, **base_settings) as client:
+        # now = 39 (replied 0..38, user at turn 39) -> raw_cut = floor((39-20)/20)*20 = 0 -> short
+        chat.user("은빛 나침반은 어디 숨겼어?")
+        sync_39 = sync(client, chat)
+        extract(migrated)
+        drain_summaries(migrated)
+        all_39 = [m["chatId"] for m in chat.messages]
+        res_39 = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "은빛 나침반은 어디 숨겼어?",
+            "in_context_ids": all_39, "budget_tokens": 2000,
+            "trim": {"keep_recent_turns": 20, "step": 20},
+        })
+        assert res_39.status_code == 200
+        assert res_39.json()["trim"] == {"keep_from_id": None, "keep_from_turn": None, "reason": "short"}
+
+        # Grow to now = 40 -> raw_cut = 20, turns 0..31 covered -> cut = 20
+        chat.reply("Reply 39 quiet evening.")
+        chat.user("은빛 나침반은 어디 숨겼어?")
+        sync_40 = sync(client, chat)
+        extract(migrated)
+        drain_summaries(migrated)
+        cid, head_40 = _head(migrated, client, chat)
+        turn20_id = first_msg_id_of_turn(migrated, head_40, 20)
+        all_40 = [m["chatId"] for m in chat.messages]
+
+        # Without trim: no trim field in response, turn 2 is excluded_in_context, no excerpt of 은빛 나침반.
+        no_trim = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "은빛 나침반은 어디 숨겼어?",
+            "in_context_ids": all_40, "budget_tokens": 2000,
+        }).json()
+        assert "trim" not in no_trim
+        trace_no_trim = client.get(f"/v1/trace/{no_trim['trace_id']}").json()
+        assert "trim" not in trace_no_trim["recall_options"]
+        assert "은빛 나침반" not in no_trim["packet"]["text"]
+        assert "<Excerpt" not in no_trim["packet"]["text"]
+        assert any(e["host_logical_id"] == chat.messages[4]["chatId"] for e in trace_no_trim["excluded_in_context"])
+
+        # With trim at now=40: cut = 20, turn 2 is removed from in_context and now eligible as an excerpt!
+        trimmed_40 = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "은빛 나침반은 어디 숨겼어?",
+            "in_context_ids": all_40, "budget_tokens": 2000,
+            "trim": {"keep_recent_turns": 20, "step": 20},
+        }).json()
+        assert trimmed_40["trim"] == {"keep_from_id": turn20_id, "keep_from_turn": 20, "reason": None}
+        assert "은빛 나침반" in trimmed_40["packet"]["text"]
+        assert "<Excerpt" in trimmed_40["packet"]["text"]
+        trace_40 = client.get(f"/v1/trace/{trimmed_40['trace_id']}").json()
+        assert chat.messages[4]["chatId"] not in trace_40["in_context"]
+        assert turn20_id in trace_40["in_context"]
+        assert trace_40["recall_options"]["trim"] == {
+            "keep_recent_turns": 20, "step": 20, "now": 40, "cut": 20, "keep_from_id": turn20_id, "reason": None,
+        }
+
+        # Stale request -> reason="stale"
+        stale_res = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "은빛 나침반은 어디 숨겼어?",
+            "active_commit": sync_39["active_commit"], "manifest_hash": sync_39["manifest_hash"],
+            "in_context_ids": all_40, "budget_tokens": 2000,
+            "trim": {"keep_recent_turns": 20, "step": 20},
+        }).json()
+        assert stale_res["freshness"] == "stale"
+        assert stale_res["trim"] == {"keep_from_id": None, "keep_from_turn": None, "reason": "stale"}
+
+        # Empty packet (tiny budget) -> reason="empty_packet" and unmodified in_context in trace
+        empty_res = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "은빛 나침반은 어디 숨겼어?",
+            "in_context_ids": all_40, "budget_tokens": 5,
+            "trim": {"keep_recent_turns": 20, "step": 20},
+        }).json()
+        assert empty_res["packet"]["text"] == ""
+        assert empty_res["trim"] == {"keep_from_id": None, "keep_from_turn": None, "reason": "empty_packet"}
+        trace_empty = client.get(f"/v1/trace/{empty_res['trace_id']}").json()
+        assert set(trace_empty["in_context"]) == set(all_40)
+        assert trace_empty["recall_options"]["trim"]["reason"] == "empty_packet"
+        assert trace_empty["recall_options"]["trim"]["cut"] is None
+
+        # Grow to now = 45 (still cut 20), then now = 60 (cut 40).
+        chat.reply("Reply 40.")
+        for i in range(41, 45):
+            chat.user(f"Turn {i} walk along the harbor road.")
+            chat.reply(f"Reply {i} quiet breeze over the stones.")
+        chat.user("은빛 나침반은 어디 숨겼어?")
+        sync(client, chat)
+        extract(migrated)
+        drain_summaries(migrated)
+        res_45 = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "은빛 나침반은 어디 숨겼어?",
+            "in_context_ids": [m["chatId"] for m in chat.messages], "budget_tokens": 2000,
+            "trim": {"keep_recent_turns": 20, "step": 20},
+        }).json()
+        assert res_45["trim"] == {"keep_from_id": turn20_id, "keep_from_turn": 20, "reason": None}
+
+        chat.reply("Reply 45.")
+        for i in range(46, 60):
+            chat.user(f"Turn {i} walk along the harbor road.")
+            chat.reply(f"Reply {i} quiet breeze over the stones.")
+        chat.user("은빛 나침반은 어디 숨겼어?")
+        sync(client, chat)
+        extract(migrated)
+        drain_summaries(migrated)
+        _, head_60 = _head(migrated, client, chat)
+        turn40_id = first_msg_id_of_turn(migrated, head_60, 40)
+        all_60 = [m["chatId"] for m in chat.messages]
+        res_60 = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "은빛 나침반은 어디 숨겼어?",
+            "in_context_ids": all_60, "budget_tokens": 2000,
+            "trim": {"keep_recent_turns": 20, "step": 20},
+        }).json()
+        assert res_60["trim"] == {"keep_from_id": turn40_id, "keep_from_turn": 40, "reason": None}
+
+        # Uncovered turn at 33 lowers cut 40 -> floor(33/20)*20 = 20.
+        with db(migrated) as conn:
+            t33 = conn.execute(
+                "SELECT source_revision_id AS rid, turn_hash FROM active_membership"
+                " WHERE commit_id = %s AND turn = 33 AND turn_hash IS NOT NULL", (head_60,)
+            ).fetchone()
+            conn.execute(
+                "UPDATE extraction SET discarded_at = now() WHERE source_revision_id = %s AND window_hash = %s",
+                (t33["rid"], t33["turn_hash"]),
+            )
+            conn.commit()
+        res_gap33 = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "은빛 나침반은 어디 숨겼어?",
+            "in_context_ids": all_60, "budget_tokens": 2000,
+            "trim": {"keep_recent_turns": 20, "step": 20},
+        }).json()
+        assert res_gap33["trim"] == {"keep_from_id": turn20_id, "keep_from_turn": 20, "reason": None}
+
+        # Uncovered turn at 5 lowers cut -> 0 <= first_turn(0) -> reason="uncovered".
+        with db(migrated) as conn:
+            t5 = conn.execute(
+                "SELECT source_revision_id AS rid, turn_hash FROM active_membership"
+                " WHERE commit_id = %s AND turn = 5 AND turn_hash IS NOT NULL", (head_60,)
+            ).fetchone()
+            conn.execute(
+                "UPDATE extraction SET discarded_at = now() WHERE source_revision_id = %s AND window_hash = %s",
+                (t5["rid"], t5["turn_hash"]),
+            )
+            conn.commit()
+        res_gap5 = client.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "은빛 나침반은 어디 숨겼어?",
+            "in_context_ids": all_60, "budget_tokens": 2000,
+            "trim": {"keep_recent_turns": 20, "step": 20},
+        }).json()
+        assert res_gap5["trim"] == {"keep_from_id": None, "keep_from_turn": None, "reason": "uncovered"}
+
+    # Replay of the earlier trimmed trace (trace_40) reproduces identically even after turn 5 & 33 were discarded!
+    with db(migrated) as conn:
+        replayed = audit.replay(conn, UUID(trimmed_40["trace_id"]), RecallOptions())
+        replayed_empty = audit.replay(conn, UUID(empty_res["trace_id"]), RecallOptions())
+    assert replayed["status"] == "ok" and replayed["reproduced"] is True
+    assert replayed["text"] == trimmed_40["packet"]["text"]
+    assert replayed_empty["status"] == "ok" and replayed_empty["reproduced"] is True
+    assert replayed_empty["text"] == ""
+
+    # Summaries off -> reason="no_summaries".
+    with make_client(migrated, **{**LLM, "summaries": False, "packet_policy": "packet-v20"}) as client_no_sum:
+        res_no_sum = client_no_sum.post("/v1/retrieve", json={
+            "chat_id": chat.id, "query": "은빛 나침반은 어디 숨겼어?",
+            "in_context_ids": all_60, "budget_tokens": 2000,
+            "trim": {"keep_recent_turns": 20, "step": 20},
+        }).json()
+    assert res_no_sum["trim"] == {"keep_from_id": None, "keep_from_turn": None, "reason": "no_summaries"}
+
+
+def test_without_trim_v19_and_v20_omit_trim_and_match_null_trim(migrated):
+    chat = story_chat(16)
+    chat.user("Question about Turn 0?")
+    for policy in ("packet-v19", "packet-v20"):
+        with make_client(migrated, **{**SUMMARIES_ON, "packet_policy": policy}) as client:
+            sync(client, chat)
+            extract(migrated)
+            drain_summaries(migrated)
+            base_body = {
+                "chat_id": chat.id, "query": "Question about Turn 0?",
+                "in_context_ids": [m["chatId"] for m in chat.messages[-4:]], "budget_tokens": 2000,
+            }
+            absent = client.post("/v1/retrieve", json=base_body).json()
+            explicit_null = client.post("/v1/retrieve", json={**base_body, "trim": None}).json()
+            assert "trim" not in absent
+            assert "trim" not in explicit_null
+            assert absent["packet"] == explicit_null["packet"]
+            assert absent["coverage"] == explicit_null["coverage"] == {
+                "recorded_through_turn": 15, "covered_through_turn": 7,
+            }
