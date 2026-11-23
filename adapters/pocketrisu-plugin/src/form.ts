@@ -1,5 +1,7 @@
 // Settings form model: which sections changed, and the single sidecar update they add up to.
 
+import { bodyKey, bodyOf } from './extrabody';
+
 export type Section = 'conn' | 'llm' | 'emb' | 'rerank' | 'tune' | 'trim';
 
 /** Request-path deadline when the plugin arg is unset (0). 3 s: on PocketRisu v1.12.0 a warm
@@ -86,7 +88,8 @@ export interface ModelValues { url: string; model: string; key: string }
 
 export interface FormValues {
   conn: { url: string; route: string; enabled: boolean; reserved: string; deadline: string; token: string };
-  llm: ModelValues;
+  /** `extra` (the JSON text) and `noTemp` only when the sidecar reports them (PHASE-61 S4, ADR 0088). */
+  llm: ModelValues & { extra?: string; noTemp?: boolean };
   emb: ModelValues;
   /** Optional reranker (PHASE-60 S5, ADR 0084); sent only when the sidecar reported it. */
   rerank: { url: string; model: string; key: string; timeout: string };
@@ -100,7 +103,18 @@ export interface FormValues {
 
 /** Sections whose values differ from the last loaded or saved baseline. */
 export function dirtySections(baseline: FormValues, current: FormValues): Section[] {
-  return SECTIONS.filter((s) => JSON.stringify(baseline[s]) !== JSON.stringify(current[s]));
+  // the extra body counts by its object, not its spacing or key order
+  const view = (v: FormValues, s: Section) => s === 'llm' && v.llm.extra !== undefined
+    ? { ...v.llm, extra: bodyKey(v.llm.extra) } : v[s];
+  return SECTIONS.filter((s) => JSON.stringify(view(baseline, s)) !== JSON.stringify(view(current, s)));
+}
+
+/** A save that changes what the extraction model is asked with: its address, its model, the extra body or the
+ *  temperature switch (PHASE-61 S2: a body or switch change alone is a model change). */
+export function modelChange(baseline: FormValues, current: FormValues): boolean {
+  const [b, c] = [baseline.llm, current.llm];
+  return c.url.trim() !== b.url.trim() || c.model.trim() !== b.model.trim()
+    || bodyKey(c.extra ?? '') !== bodyKey(b.extra ?? '') || Boolean(c.noTemp) !== Boolean(b.noTemp);
 }
 
 /** A number field as the sidecar expects it; anything unparsable is sent as typed so the sidecar
@@ -113,14 +127,20 @@ function num(value: string): number | string {
 /** Settings a sidecar reports only from the version that has them; one it did not report is never sent. */
 export interface KnownSettings { pinAt?: boolean; rerank?: boolean }
 
-/** One PUT /v1/config body for every changed server-side section (validated and saved atomically). */
-export function configBody(dirty: Section[], v: FormValues, known: KnownSettings = {}): Record<string, unknown> {
+/** One PUT /v1/config body for every changed server-side section (validated and saved atomically). With `base`, the
+ *  extra body and the temperature switch are sent when they differ from it (PHASE-61 S4). */
+export function configBody(dirty: Section[], v: FormValues, known: KnownSettings = {}, base?: FormValues): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   for (const [section, prefix] of [['llm', 'llm'], ['emb', 'embed']] as const) {
     if (!dirty.includes(section)) continue;
     body[`${prefix}_url`] = v[section].url.trim();
     body[`${prefix}_model`] = v[section].model.trim();
     if (v[section].key.trim()) body[`${prefix}_api_key`] = v[section].key.trim();
+  }
+  if (dirty.includes('llm') && base) {
+    const extra = v.llm.extra === undefined ? null : bodyOf(v.llm.extra);  // null: an older sidecar, or not an object
+    if (extra && bodyKey(v.llm.extra as string) !== bodyKey(base.llm.extra ?? '')) body.llm_extra_body = extra;
+    if (v.llm.noTemp !== undefined && v.llm.noTemp !== Boolean(base.llm.noTemp)) body.llm_no_temperature = v.llm.noTemp;
   }
   if (dirty.includes('rerank') && known.rerank) {
     body.rerank_url = v.rerank.url.trim();

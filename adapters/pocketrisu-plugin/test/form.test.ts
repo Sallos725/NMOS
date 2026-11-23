@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { configBody, connArgs, dirtySections, embedWaitTooLong, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, trimArgs, VERTEX_URL,
+import { configBody, connArgs, dirtySections, embedWaitTooLong, modelChange, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, trimArgs, VERTEX_URL,
   type FormValues } from '../src/form';
 import { risuHost } from '../src/host';
 import { STRING_KEYS, langOf, t } from '../src/i18n';
@@ -121,6 +121,50 @@ describe('batch save', () => {
     const deadline = (value: string) => connArgs({ ...base.conn, deadline: value }).deadline_ms;
     expect([deadline(''), deadline('abc'), deadline('50'), deadline('4500.7'), deadline('99999')])
       .toEqual([3000, 3000, 200, 4500, 30000]);
+  });
+});
+
+describe('extra request values in the save (PHASE-61 S4)', () => {
+  const loaded: FormValues = { ...structuredClone(base), llm: { ...base.llm, extra: '{\n  "a": 1,\n  "b": 2\n}', noTemp: false } };
+
+  it('counts the body by its object: spacing and key order are no change', () => {
+    const edited = structuredClone(loaded);
+    edited.llm.extra = '{"b":2,"a":1}';
+    expect(dirtySections(loaded, edited)).toEqual([]);
+    expect(modelChange(loaded, edited)).toBe(false);
+    edited.llm.extra = '{"b": 2, "a": 1, "reasoning": {"effort": "low"}}';
+    expect(dirtySections(loaded, edited)).toEqual(['llm']);
+    expect(modelChange(loaded, edited)).toBe(true);
+  });
+
+  it('sends the body and the switch only when they changed, beside the model fields', () => {
+    const edited = structuredClone(loaded);
+    edited.llm.key = ' sk-new ';  // another llm change: neither new field goes with it
+    expect(configBody(['llm'], edited, {}, loaded)).toEqual({ llm_url: 'http://llm/v1', llm_model: 'm', llm_api_key: 'sk-new' });
+    edited.llm.key = '';
+    edited.llm.extra = '{"a": 1, "b": 2, "reasoning": {"effort": "low"}}';
+    expect(configBody(['llm'], edited, {}, loaded)).toEqual({ llm_url: 'http://llm/v1', llm_model: 'm',
+      llm_extra_body: { a: 1, b: 2, reasoning: { effort: 'low' } } });
+    edited.llm.extra = '';  // emptied: {} is sent
+    expect(configBody(['llm'], edited, {}, loaded)).toMatchObject({ llm_extra_body: {} });
+    edited.llm.extra = loaded.llm.extra;
+    edited.llm.noTemp = true;
+    expect(dirtySections(loaded, edited)).toEqual(['llm']);
+    expect(modelChange(loaded, edited)).toBe(true);
+    expect(configBody(['llm'], edited, {}, loaded)).toEqual({ llm_url: 'http://llm/v1', llm_model: 'm', llm_no_temperature: true });
+    expect(configBody(['tune'], edited, {}, loaded)).not.toHaveProperty('llm_no_temperature');  // only with llm
+  });
+
+  it('never sends a text that is not a JSON object, nor anything to a sidecar that has no such setting', () => {
+    const edited = structuredClone(loaded);
+    edited.llm.extra = '{"a": 1';
+    expect(dirtySections(loaded, edited)).toEqual(['llm']);
+    expect(configBody(['llm'], edited, {}, loaded)).not.toHaveProperty('llm_extra_body');
+    const older = structuredClone(base);
+    const moved = { ...structuredClone(base), llm: { ...base.llm, model: 'm2' } };
+    expect(configBody(['llm'], moved, {}, older)).toEqual({ llm_url: 'http://llm/v1', llm_model: 'm2' });
+    expect(modelChange(older, moved)).toBe(true);
+    expect(modelChange(older, structuredClone(older))).toBe(false);
   });
 });
 
