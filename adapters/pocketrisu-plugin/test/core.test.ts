@@ -1066,4 +1066,163 @@ describe('[NMOS.memory] (PHASE-60 S2.3)', () => {
     expect(withMarker.held).toEqual(withoutMarker.held);
     expect(withMarker.out[0]?.content).toBe(`${card.desc}\n세라는 등대를 지킨다.\n${PACKET}`);
   });
+
+  it('is idempotent across three chained retry calls in every placement mode (R5)', async () => {
+    const cases: Array<{ name: string; position: Settings['injectPosition']; makePrompt: () => PromptMessage[] }> = [
+      {
+        name: 'marker in user-role message',
+        position: 'before_last_user',
+        makePrompt: () => [
+          { role: 'system', content: 'narrator' },
+          { role: 'user', content: `Where did we hide the lantern?\n${MEMORY_MARKER}` },
+        ],
+      },
+      {
+        name: 'marker in multipart message',
+        position: 'before_last_user',
+        makePrompt: () => [
+          { role: 'system', content: 'narrator' },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Where did we hide the lantern?' },
+              { type: 'image_url', image_url: { url: 'https://example.invalid/harbor.png' } },
+              { type: 'text', text: `Notes:\n${MEMORY_MARKER}` },
+            ],
+          },
+        ],
+      },
+      {
+        name: 'marker in system message',
+        position: 'before_last_user',
+        makePrompt: () => [
+          { role: 'system', content: `narrator\n${MEMORY_MARKER}` },
+          { role: 'user', content: 'Where did we hide the lantern?' },
+        ],
+      },
+      {
+        name: 'no marker with before_last_user',
+        position: 'before_last_user',
+        makePrompt: () => structuredClone(prompt),
+      },
+      {
+        name: 'no marker with end',
+        position: 'end',
+        makePrompt: () => [
+          { role: 'system', content: 'narrator' },
+          { role: 'user', content: 'Where did we hide the lantern?' },
+          { role: 'assistant', content: '세라 stepped forward.' },
+        ],
+      },
+    ];
+
+    for (const c of cases) {
+      let counter = 0;
+      let settingsReads = 0;
+      const { host, calls } = fakeHost((path, body) => {
+        if (path === '/v1/retrieve') {
+          counter += 1;
+          const pkt = `<NarrativeMemory version="0" source="nmos">\n  <Excerpt turn="0" speaker="user">lantern #${counter} (${c.name})</Excerpt>\n</NarrativeMemory>`;
+          return { status: 200, json: { freshness: 'fresh', packet: { text: pkt } } };
+        }
+        return happy(path, body);
+      }, { injectPosition: c.position });
+      const origSettings = host.settings;
+      host.settings = () => { settingsReads += 1; return origSettings(); };
+      const events: ActivityEvent[] = [];
+      const adapter = createAdapter(host, (e) => events.push(e));
+
+      const out1 = await adapter.beforeRequest(c.makePrompt(), 'model');
+      const eventsAfterFirst = events.length;
+      const out2 = await adapter.beforeRequest(out1, 'model');
+      const out3 = await adapter.beforeRequest(out2, 'model');
+
+      expect(out2, c.name).toBe(out1);
+      expect(out3, c.name).toBe(out2);
+      expect(out2, c.name).toEqual(out1);
+      expect(out3, c.name).toEqual(out1);
+      expect(calls.filter((p) => p === '/v1/retrieve'), c.name).toHaveLength(1);
+      expect(settingsReads, c.name).toBe(1);
+      expect(events.length, c.name).toBe(eventsAfterFirst);
+    }
+  });
+
+  it('does not memoise a pass-through failure and expires retry memo entries after 120s (with holdsText fallback)', async () => {
+    // 1) Pass-through (retrieve 500) is NOT memoised: after the 30s failure cache expires, retrieve runs again.
+    {
+      let now = 1_000;
+      let fails = true;
+      const { host, calls } = fakeHost((path, body) => {
+        if (path === '/v1/retrieve' && fails) return { status: 500, json: null };
+        return happy(path, body);
+      });
+      host.now = () => now;
+      const adapter = createAdapter(host);
+
+      const first = await adapter.beforeRequest(structuredClone(prompt), 'model');
+      expect(first).toEqual(prompt);
+      expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(1);
+
+      now += 31_000; // past FAILURE_TTL_MS (30s), still inside RETRY_MEMO_TTL_MS (120s)
+      fails = false;
+      const second = await adapter.beforeRequest(structuredClone(prompt), 'model');
+      expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(2);
+      expect(hasPacket(second)).toBe(true);
+    }
+
+    // 2) Memo expires after 120s; even after expiry, holdsText stops double-placing the same packet.
+    {
+      let now = 10_000;
+      let settingsReads = 0;
+      const { host, calls } = fakeHost(happy);
+      host.now = () => now;
+      const origSettings = host.settings;
+      host.settings = () => { settingsReads += 1; return origSettings(); };
+      const adapter = createAdapter(host);
+
+      const userMarked: PromptMessage[] = [
+        { role: 'system', content: 'narrator' },
+        { role: 'user', content: `Where did we hide the lantern?\n${MEMORY_MARKER}` },
+      ];
+      const out1 = await adapter.beforeRequest(userMarked, 'model');
+      expect(settingsReads).toBe(1);
+      expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(1);
+
+      // Still live at 119.999s: memo hit, no settings read.
+      now += 119_999;
+      const out2 = await adapter.beforeRequest(out1, 'model');
+      expect(out2).toBe(out1);
+      expect(settingsReads).toBe(1);
+
+      // Past 120s: memo entry expired -> reaches settings and /v1/retrieve again (no marker left, so budget=600 misses
+      // the 560 cache key), and holdsText prevents placing a second packet on the fresh path.
+      now += 2;
+      const out3 = await adapter.beforeRequest(out1, 'model');
+      expect(settingsReads).toBe(2);
+      expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(2);
+      expect(out3).toEqual(out1);
+      expect(hasPacket(out3)).toBe(false); // no extra system packet injected
+
+      // A further call with out1 hits the 600-budget packet cache (not memoised because holdsText returned early);
+      // holdsText prevents placing a second packet on the cached path too.
+      const out4 = await adapter.beforeRequest(out1, 'model');
+      expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(2);
+      expect(out4).toEqual(out1);
+      expect(hasPacket(out4)).toBe(false);
+    }
+  });
+
+  it('never mutates the host chat object on a successful request with a marker', async () => {
+    const hostChat = structuredClone(chat);
+    const snapshot = structuredClone(hostChat);
+    const { host } = fakeHost(happy);
+    host.currentChat = async () => hostChat;
+    const input: PromptMessage[] = [
+      { role: 'system', content: 'narrator' },
+      { role: 'user', content: `Where did we hide the lantern?\n${MEMORY_MARKER}` },
+    ];
+    const out = await createAdapter(host).beforeRequest(input, 'model');
+    expect(out[1]?.content).toContain(PACKET);
+    expect(hostChat).toEqual(snapshot);
+  });
 });

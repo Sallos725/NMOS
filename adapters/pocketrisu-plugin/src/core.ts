@@ -12,7 +12,7 @@ import { DEFAULT_DEADLINE_MS } from './form';
 import { t, type Lang, type StringKey } from './i18n';
 import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
 import type { ActivityEvent } from './hud';
-import { findMarker, resolvePlaceholders, stripMarkers } from './placement';
+import { findMarker, holdsText, resolvePlaceholders, stripMarkers } from './placement';
 import { GUARD_RESERVE_TOKENS, hasPacket, inContextIds, injectPacket, landsAfterUserTurn, queryTexts, userTurnIndex,
   withGuard, type InjectPosition } from './prompt';
 import type { HostChat, HostMessage, HostPersonas, PromptMessage, ReconcileRequest } from './types';
@@ -98,6 +98,8 @@ export type Vectors = 'on' | 'off' | 'fallback';
 const SUCCESS_TTL_MS = 10 * 60_000;
 const FAILURE_TTL_MS = 30_000;
 const CACHE_LIMIT = 64;
+const RETRY_MEMO_TTL_MS = 120_000;
+const RETRY_MEMO_LIMIT = 4;
 const BODY_CHUNK = 250;
 
 export interface LastRequest {
@@ -165,6 +167,7 @@ export function personaOf(chat: HostChat, host: HostPersonas): string | null {
 /** `onActivity` feeds the progress display (D28): called synchronously, never awaited, errors ignored. */
 export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent) => void) {
   const cache = new Map<string, CacheEntry>();
+  const returnedMemo = new Map<string, number>(); // serialized returned prompt → expiry (H2 retry idempotence)
   const conversations = new Map<string, string>(); // host chat id → sidecar conversation id
   const names = new Map<string, { name: string | null; card: HostCard | null; at: number }>();
   const canonSent = new Map<string, string>(); // sidecar + conversation → the manifest id the sidecar has in force
@@ -326,6 +329,38 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
+  function promptSignature(prompt: PromptMessage[]): string | null {
+    if (!Array.isArray(prompt)) return null;
+    try {
+      return JSON.stringify(prompt.map((m) => [m?.role ?? null, m?.content ?? null]));
+    } catch {
+      return null;
+    }
+  }
+
+  function isReturnedMemo(prompt: PromptMessage[], now: number): boolean {
+    if (returnedMemo.size === 0) return false;
+    const sig = promptSignature(prompt);
+    if (sig === null) return false;
+    const expires = returnedMemo.get(sig);
+    if (expires === undefined) return false;
+    if (expires <= now) {
+      returnedMemo.delete(sig);
+      return false;
+    }
+    return true;
+  }
+
+  function memoiseReturned(prompt: PromptMessage[]): void {
+    const sig = promptSignature(prompt);
+    if (sig === null) return;
+    returnedMemo.delete(sig);
+    returnedMemo.set(sig, host.now() + RETRY_MEMO_TTL_MS);
+    while (returnedMemo.size > RETRY_MEMO_LIMIT) {
+      returnedMemo.delete(returnedMemo.keys().next().value as string);
+    }
+  }
+
   /** Host work on the request path, cut at the deadline like a sidecar call: a host call that never answers
    *  must not hold the generation (fail open). The host call itself cannot be cancelled. */
   async function within<T>(work: Promise<T>, deadline: number, what: string): Promise<T> {
@@ -408,7 +443,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       if (failure) failure.neededMs = Math.round(at - started);
     };
     try {
-      if (mode !== 'model' || hasPacket(prompt)) return prompt; // aux request, or retry of an injected prompt (H2)
+      if (mode !== 'model') return prompt; // aux request
+      if (isReturnedMemo(prompt, started) || hasPacket(prompt)) return prompt; // retry of an injected prompt (H2)
       // The deadline is in the settings, so reading them has the default one.
       settings = await within(host.settings(), started + DEFAULT_DEADLINE_MS, 'the plugin settings');
       if (!settings.enabled || !settings.sidecarUrl) return prompt;
@@ -449,8 +485,11 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const budget = after ? Math.max(0, settings.reservedMemoryTokens - GUARD_RESERVE_TOKENS) : settings.reservedMemoryTokens;
       const place = (p: PromptMessage[], packet: string): PromptMessage[] => {
         if (!packet) return stripMarkers(p);
+        if (holdsText(p, packet)) return stripMarkers(p); // the prompt already holds this packet (a retry)
         const text = after ? withGuard(packet) : packet;
-        return marker ? resolvePlaceholders(p, text) : injectPacket(p, text, position, turn);
+        const out = marker ? resolvePlaceholders(p, text) : stripMarkers(injectPacket(p, text, position, turn));
+        if (out !== p) memoiseReturned(out);
+        return out;
       };
 
       // Cache key = exact chat state (every message id + revision hash) + prompt shape and the messages it holds + the
