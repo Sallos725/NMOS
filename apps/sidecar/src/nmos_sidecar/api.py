@@ -474,6 +474,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                              "map_graph": True},  # and its drawing as data, for the panel (step 6)
                 "generations": {"extract": rt["active_extractor"],
                                 "embed": rt["projection"].key if rt["projection"] else None},
+                "rerank": {"configured": rt["recall"].reranker is not None},  # PHASE-60 S5: never its URL or key
                 "plugin": {"expected": plugin.expected(), "seen": plugins.recent()},
                 "install": settings.install or None}
 

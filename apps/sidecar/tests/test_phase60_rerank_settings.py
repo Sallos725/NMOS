@@ -307,3 +307,15 @@ def test_a_rerank_endpoint_that_may_carry_a_key_is_left_out(client):
     assert "rerank_url" not in settings and settings["rerank_model"] == MODEL
     assert manifest["omitted_settings"] == ["rerank_url"]
     assert not any(b"key=abc" in body for body in raw.values())
+
+
+# --- /v1/health tells the panel whether a reranker is configured (additive) ------------------------------------------
+
+def test_health_says_whether_a_reranker_is_configured(client):
+    health = client.get("/v1/health").json()
+    assert health["rerank"] == {"configured": False} and health["ok"] is True
+    client.put("/v1/config", json={"rerank_url": URL, "rerank_model": MODEL, "rerank_api_key": SAVED_KEY})
+    res = client.get("/v1/health")
+    assert res.json()["rerank"] == {"configured": True} and SAVED_KEY not in res.text
+    client.put("/v1/config", json={"rerank_url": None})
+    assert client.get("/v1/health").json()["rerank"] == {"configured": False}
