@@ -67,13 +67,42 @@ NOT_PLACES: frozenset[str] = frozenset({
 })
 
 
+_KO_FOLLOWERS = "함했하됨되한된당다음"
+_EN_FOLLOWERS: tuple[str, ...] = (
+    "in",
+    "at",
+    "on",
+    "after",
+    "since",
+    "from",
+    "without",
+    "and",
+    "by",
+    "during",
+    "for good",
+)
+
+
 def _en_pattern(phrases: tuple[str, ...]) -> re.Pattern[str]:
     ordered = sorted(phrases, key=len, reverse=True)
     return re.compile(r"\b(?:" + "|".join(re.escape(p) for p in ordered) + r")\b")
 
 
-_GONE_KO_RE = re.compile("|".join(re.escape(w) for w in sorted(GONE_KO, key=len, reverse=True)))
-_GONE_EN_RE = _en_pattern(GONE_EN)
+_GONE_KO_RE = re.compile(
+    r"(?<!\w)(?:"
+    + "|".join(re.escape(w) for w in sorted(GONE_KO, key=len, reverse=True))
+    + r")(?=$|\W|["
+    + _KO_FOLLOWERS
+    + r"])"
+)
+_EN_FOLLOWER_ALT = "|".join(re.escape(w) for w in sorted(_EN_FOLLOWERS, key=len, reverse=True))
+_GONE_EN_RE = re.compile(
+    r"\b(?:"
+    + "|".join(re.escape(w) for w in sorted(GONE_EN, key=len, reverse=True))
+    + r")\b(?=$|[^\w\s]|\s+(?:"
+    + _EN_FOLLOWER_ALT
+    + r")\b)"
+)
 _RECOVERED_EN_RE = _en_pattern(RECOVERED_EN)
 _NEAR_MISS_KO = tuple(p for p in NEAR_MISS if not p.isascii())
 _NEAR_MISS_EN_RE = _en_pattern(tuple(p for p in NEAR_MISS if p.isascii()))

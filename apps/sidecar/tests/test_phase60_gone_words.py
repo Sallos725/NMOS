@@ -162,3 +162,48 @@ def test_gone_places_match_whole_name(place: str):
 )
 def test_real_places_containing_gone_words_are_false(place: str | None):
     assert is_gone_place(place) is False
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "전사했다",
+        "사망함",
+        "죽었음",
+        "죽음.",
+        "추방당함",
+        "dead.",
+        "missing since the storm",
+        "exiled from the kingdom",
+        "killed by poison",
+        "vanished during the night",
+        "vanished for good",
+    ],
+)
+def test_gone_whole_words_in_state_still_match(status: str):
+    assert is_gone_status(status) is True
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "여전사처럼 싸우는 중",
+        "죽음을 두려워함",
+        "죽음의 공포에 떨고 있음",
+        "죽음이 다가오는 걸 느낌",
+        "실종자를 찾는 중",
+        "사망률이 높은 병에 걸림",
+        "missing her family",
+        "missing home",
+        "dead tired",
+        "dead set on revenge",
+        "dead serious",
+        "사망에 대한 기록",
+        "실종을 우려함",
+        "전사를 꿈꿈",
+        "missing attention",
+        "dead inside",
+    ],
+)
+def test_gone_topics_compounds_and_idioms_are_false(status: str):
+    assert is_gone_status(status) is False
