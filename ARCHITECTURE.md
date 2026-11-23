@@ -740,14 +740,15 @@ through turn N and the chat is right where a newer message disagrees (or that no
 `recall_options.coverage`. *Gone:* a character (not the persona, not one the owner left out) whose current, narrated,
 positive, undisputed `has_status` holds a word of `gone.py`'s lists as a whole word, with no recovered word, negation
 or near miss, or whose `located_in` is a whole name on its short list of non-places, has that status line marked
-`gone="true"`, `required`, first in its `<Cast>` group or first in `<Facts>`, at most 8, newest first, within 10 % of
-the budget, whether or not the turn names it. Canon and carried rows never pin; a character a row of a later turn in
+`gone="true"`, `required`, first in its `<Cast>` group or first in `<Facts>` (`<Private>` when private; strict and
+narrator modes apply as to any fact, D44, D45), at most 8, newest first, within 10 % of the budget, whether or not the
+turn names it. Canon and carried rows never pin; a character a row of a later turn in
 the scene window names is not pinned. The rule errs toward not pinning; the lists are policy constants, so a change is
 a new policy. *Return gap:* a `<Cast>` character whose current run (appearances at most 5 turns apart, begun at most 5
 turns ago) follows at least 40 served turns without it carries `back_after="~N turns"`; turns no extraction serves are
 not counted (invariant 4). *Settled:* up to 3 threads closed in the last 15 turns whose maker or recipient is in the
 scene or named, broken, failed and abandoned before the rest, then newest, follow the open threads as `<Thread
-status="…" … closed_turn="…">`, `supportive`, outside `threads_limit`. Each mark is explained in the Note only when a
+status="…" … closed_turn="…">`, `supportive`, not counted in `threads_limit` (none when it is 0). Each mark is explained in the Note only when a
 kept line uses it. Not the default; older policies compile as before, fresh or replayed (D39).
 
 **D85 — The owner pins a character (ADR 0087; PHASE-60 S8).** `owner_repair` kind `entity_pin` (migration 0038 widens
