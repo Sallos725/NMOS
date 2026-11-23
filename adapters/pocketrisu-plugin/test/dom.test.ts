@@ -386,6 +386,128 @@ describe('panel', () => {
     });
   });
 
+  describe('trimming settings (PHASE-60 S1)', () => {
+    const titles = { ko: '오래된 대화 빼기', en: 'Leave out old dialogue' } as const;
+    const sentences = {
+      ko: '기억이 이미 담고 있는 오래된 대화는 보내는 내용에서 뺍니다. 빼는 지점은 아래 턴 수만큼씩 한꺼번에 옮겨서, 제공자의 프롬프트 캐시가 계속 맞습니다. 채팅에서는 아무것도 지우지 않습니다. 장면 요약 만들기가 켜져 있어야 합니다.',
+      en: "Old dialogue that memory already holds is left out of what is sent, in steps of the number of turns below, so the provider's prompt cache keeps working. Nothing is removed from the chat. It needs Scene summaries on.",
+    } as const;
+    const open = async (language: 'ko' | 'en', stored: Record<string, string> = {}, views = false) => {
+      const h = deps(views ? { features: { extraction: true, views: true } } : {});
+      h.args.language = language;
+      Object.assign(h.args, stored);
+      const api = h.d.api;
+      h.d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeout?: number) =>
+        (path.startsWith('/v1/views/') ? { html: '<div class="v"></div>' } as T : api<T>(method, path, body, timeout));
+      const writes: [string, string | number][] = [];
+      const setArg = h.d.setArg;
+      h.d.setArg = async (key, value) => { writes.push([key, value]); await setArg(key, value); };
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      const card = [...panel.querySelectorAll<HTMLElement>('.card')]
+        .find((c) => c.querySelector('h2')?.textContent === titles[language])!;
+      expect(card).toBeDefined();
+      const save = panel.querySelector<HTMLButtonElement>('.bar button.primary')!;
+      return { ...h, writes, panel, card, save, bar: panel.querySelector('.bar .text')!,
+        box: card.querySelector<HTMLInputElement>('input[type="checkbox"]')!,
+        keep: card.querySelector<HTMLInputElement>('input[type="number"]')!,
+        warn: card.querySelector<HTMLElement>('div.warn')! };
+    };
+    const set = (input: HTMLInputElement, value: string | boolean) => {
+      if (typeof value === 'boolean') input.checked = value; else input.value = value;
+      input.dispatchEvent(new Event(typeof value === 'boolean' ? 'change' : 'input', { bubbles: true }));
+    };
+
+    it('shows its own card in the memory group, in plain words', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const { panel, card, keep } = await open(language, {}, true);
+        expect(card.dataset.group).toBe('memory');
+        expect(card.querySelector('p.sub')!.textContent).toBe(sentences[language]);
+        expect(card.querySelector('.check')!.textContent)
+          .toBe(language === 'en' ? 'Leave out old dialogue memory holds' : '기억이 담은 오래된 대화 빼기');
+        expect(keep.previousElementSibling!.textContent).toBe(language === 'en' ? 'Recent turns always sent' : '항상 보내는 최근 턴 수');
+        expect([keep.min, keep.max, keep.step]).toEqual(['4', '200', '1']);
+        panel.querySelector<HTMLButtonElement>('.groups button[data-group="memory"]')!.click();
+        expect(card.style.display).toBe('');
+        panel.querySelector<HTMLButtonElement>('.groups button[data-group="models"]')!.click();
+        expect(card.style.display).toBe('none');
+        panel.remove();
+      }
+    });
+
+    it('loads the stored args, and is off with 20 turns when they are unset', async () => {
+      const stored = await open('en', { trim_old_turns: '1', keep_recent_turns: '40' });
+      expect([stored.box.checked, stored.keep.value, stored.save.disabled]).toEqual([true, '40', true]);
+      stored.panel.remove();
+      const unset = await open('en');
+      expect([unset.box.checked, unset.keep.value, unset.save.disabled]).toEqual([false, '20', true]);
+    });
+
+    it('saves the two plugin args alone, with no sidecar request', async () => {
+      const { box, keep, save, bar, calls, writes } = await open('en');
+      set(box, true);
+      set(keep, '30');
+      expect(bar.textContent).toBe('Unsaved changes: Leave out old dialogue');
+      const before = calls.length;
+      save.click();
+      await vi.waitFor(() => expect(bar.textContent).toBe('Saved.'));
+      expect(writes).toEqual([['trim_old_turns', 1], ['keep_recent_turns', 30]]);
+      expect(calls.slice(before)).toEqual([]);  // no PUT /v1/config, and no reload of the sidecar's settings
+      expect(save.disabled).toBe(true);
+      set(box, false);
+      save.click();
+      await vi.waitFor(() => expect(writes.at(-2)).toEqual(['trim_old_turns', 0]));
+      expect(calls.filter(([method]) => method === 'PUT')).toEqual([]);
+    });
+
+    it('stores and shows a count past the limit as 200', async () => {
+      const { box, keep, save, bar, args } = await open('ko');
+      set(box, true);
+      set(keep, '500');
+      save.click();
+      await vi.waitFor(() => expect(bar.textContent).toBe('저장했습니다.'));
+      expect(save.disabled).toBe(true);
+      expect([args.trim_old_turns, args.keep_recent_turns, keep.value]).toEqual(['1', '200', '200']);
+    });
+
+    it('says a failed write in the bar and keeps the change to save again', async () => {
+      const { box, save, bar, d } = await open('en');
+      const setArg = d.setArg;
+      d.setArg = async (key, value) => {
+        if (key === 'keep_recent_turns') throw new Error('host argument write failed');
+        await setArg(key, value);
+      };
+      set(box, true);
+      save.click();
+      await vi.waitFor(() => expect(bar.textContent).toBe('host argument write failed'));
+      expect(save.disabled).toBe(false);
+    });
+
+    it('warns, in words, only while the switch is on and scene summaries are off', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const { panel, box, warn } = await open(language);
+        const summaries = [...panel.querySelectorAll('.check')]
+          .find((c) => c.textContent === (language === 'en' ? 'Scene summaries' : '장면 요약 만들기'))!
+          .querySelector('input') as HTMLInputElement;
+        expect(warn.textContent).toBe(language === 'en' ? 'Note: Scene summaries are off, so nothing is left out until they are on.'
+          : '주의: 장면 요약 만들기가 꺼져 있어서, 켜기 전까지는 아무것도 빼지 않습니다.');
+        const shown = () => warn.style.display !== 'none';
+        expect(shown()).toBe(false);  // off, summaries on
+        set(summaries, false);
+        expect(shown()).toBe(false);  // off, summaries off
+        set(box, true);
+        expect(shown()).toBe(true);
+        set(summaries, true);
+        expect(shown()).toBe(false);
+        set(summaries, false);
+        set(box, false);
+        expect(shown()).toBe(false);
+        panel.remove();
+      }
+    });
+  });
+
   it('says when no chat is open', async () => {
     const { d, open } = deps();
     open.chat = null;
