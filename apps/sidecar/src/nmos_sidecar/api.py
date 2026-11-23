@@ -29,7 +29,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
+from . import (__version__, archive, audit, canon, canonfacts, carry, dropped, endings, extraction, generations, inspector, ledger,
                memorymap, normtext, notes, overuse, views,
                plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
                vectors)
@@ -47,6 +47,7 @@ from .models import (
     BodiesRequest,
     BodiesResponse,
     CanonSyncRequest, CanonSyncResponse,
+    CarryRequest,
     EntityLinkRequest, ExpectRequest, MemoryModeRequest, ReextractRequest, RepairRequest, RepliesOnlyRequest,
     OutputRequest,
     Packet,
@@ -976,6 +977,73 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                      link_id, len(turns), discarded, queued)
             return {"turns": [t["turn"] for t in turns], "discarded": discarded, "queued": queued,
                     "coverage": coverage_view(conn, conv_id)}
+
+    # --- a chat that carries another chat's memory (PHASE-60 S6, ADR 0085) --------------------------------------
+    def carry_keys() -> carry.Keys:
+        """The readers a request uses now: a link's frozen reading is taken with them."""
+        return carry.Keys(extractor=rt["active_extractor"],
+                          summarize=rt["summarizer"].key if rt["summarizer"] else None,
+                          canon=rt.get("active_canon"))
+
+    def carry_refused(error: carry.CarryError) -> HTTPException:
+        if isinstance(error, carry.NoSuchChat):
+            return HTTPException(status_code=404, detail=str(error))
+        if isinstance(error, carry.CarryChanged):
+            return HTTPException(status_code=409, detail={"message": "the source changed since its preview",
+                                                          "preview": jsonable_encoder(error.preview)})
+        return HTTPException(status_code=422, detail=str(error))
+
+    def carry_labelled(conn, link: dict[str, Any] | None) -> dict[str, Any] | None:
+        if link is None:
+            return None
+        source = readmodel.conversation(conn, link["source_conversation_id"])
+        return {**link, "source": {"id": link["source_conversation_id"], "character": source["host_character_name"],
+                                   "chat": source["host_chat_name"]}}
+
+    @app.get("/v1/conversations/{conv_id}/carry", dependencies=[Depends(auth)])
+    def get_carry(conv_id: UUID, request: Request, snapshot: bool = False):
+        """The link this chat carries another chat's memory by, and the links it carried before, newest first."""
+        with request.app.state.pool.connection() as conn:
+            if readmodel.conversation(conn, conv_id) is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            links = carry.history(conn, conv_id, snapshot=snapshot)
+            return {"in_force": carry_labelled(conn, links["in_force"]),
+                    "removed": [carry_labelled(conn, x) for x in links["removed"]]}
+
+    @app.post("/v1/conversations/{conv_id}/carry/preview", dependencies=[Depends(auth)])
+    def preview_carry(conv_id: UUID, body: CarryRequest, request: Request):
+        """What this chat would carry of the source, read now (`expect` is ignored). Writes nothing."""
+        with request.app.state.pool.connection() as conn:
+            try:
+                return carry.preview(conn, conv_id, body.source_conversation_id, body.mode, body.entity_names,
+                                     carry_keys(), cutoff_turn=body.cutoff_turn)
+            except carry.CarryError as error:
+                raise carry_refused(error) from None
+
+    @app.post("/v1/conversations/{conv_id}/carry", dependencies=[Depends(auth)])
+    def add_carry(conv_id: UUID, body: CarryRequest, request: Request):
+        """The owner links this chat to carry the source's memory (ADR 0085): the source is read once now and the
+        reading is stored with the link; a link in force before is replaced. With `expect`, the preview's
+        fingerprint: 409 with a fresh preview when the source's reading changed since."""
+        with request.app.state.pool.connection() as conn:
+            try:
+                made = carry.link(conn, conv_id, body.source_conversation_id, body.mode, body.entity_names,
+                                  carry_keys(), cutoff_turn=body.cutoff_turn, expect=body.expect)
+            except carry.CarryError as error:
+                raise carry_refused(error) from None
+        log.info("carry link conversation=%s link=%s source=%s mode=%s", conv_id, made["link"]["id"],
+                 body.source_conversation_id, body.mode)
+        return made
+
+    @app.delete("/v1/conversations/{conv_id}/carry", dependencies=[Depends(auth)])
+    def remove_carry(conv_id: UUID, request: Request):
+        """The owner takes the link in force back: the row stays with `removed_at` for the record."""
+        with request.app.state.pool.connection() as conn:
+            removed = carry.unlink(conn, conv_id)
+        if removed is None:
+            raise HTTPException(status_code=404, detail="no link in force")
+        log.info("carry link removed conversation=%s link=%s", conv_id, removed["id"])
+        return {"removed": removed}
 
     def repair_rows(conn, conv_id: UUID, live: list[dict[str, Any]],
                     flags: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
