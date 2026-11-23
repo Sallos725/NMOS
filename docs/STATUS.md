@@ -171,7 +171,7 @@ under `packet-v19`, three runs, byte-identical to the code before the phase outs
 under `packet-v20` no error, 62 of the 404 replayable packets differing; `extract-v19`'s system prompt 7.82 % longer
 than `extract-v18`'s (A7). On a copy of production (C1) the switch queued nothing and changed no row fingerprint;
 production gained two chats that evening, so C1 was repeated on a fresh dump right before the deployment, with the same
-result. C2: one gone pin in all 58 chats, read and right (killed, then stated dead, no later row), no return-gap mark,
+result. C2: one gone pin in all 58 chats, read against its source turns and right, no return-gap mark,
 the largest `continue` reading 349 rows of the 2,000 allowed. C3: both rollback steps queued nothing, and the previous
 image answered `/v1/retrieve` and the owner's pages without error on the migrated copy holding `told` rows, a
 `when_happened`, a pin and a carry link. The coverage read costs about 4 ms a request on the copy. The scoped
