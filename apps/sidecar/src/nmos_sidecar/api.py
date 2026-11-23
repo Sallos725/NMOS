@@ -251,14 +251,16 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     rebuild({})
 
-    def view_of(conn, head: UUID, told: bool = False) -> dict[str, Any]:
-        """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047) and any carry link in
-        force (ADR 0085). `told`: with who told whom (`view["told"]`, PHASE-60 S8), for the pages that draw chains."""
-        carried = carried_of(conn, head)
-        if carried is None:
+    def view_of(conn, head: UUID, told: bool = False, carried: bool = False) -> dict[str, Any]:
+        """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047). `told`: with who told
+        whom (`view["told"]`, PHASE-60 S8), for the pages that draw chains. `carried`: with the chat's carry link in
+        force (ADR 0085), only for the read-only lists and screens that show carried memory; previews, repairs, the
+        author's note and every other reader keep the chat's own memory (PHASE-60 S6)."""
+        link = carried_of(conn, head) if carried else None
+        if link is None:
             return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told)
         return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told,
-                           carried=carried)
+                           carried=link)
 
     def with_told(out: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
         """A page's data with `told` (PHASE-60 S8) only when there is some: a chat without told rows keeps its data as
@@ -696,7 +698,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            facts = view_of(conn, conv["head_commit_id"])["facts"] if conv["head_commit_id"] else []
+            # PHASE-60 S6: a read-only list, with the facts a link in force carries (each marked `carried`)
+            facts = view_of(conn, conv["head_commit_id"], carried=True)["facts"] if conv["head_commit_id"] else []
         return [{k: v for k, v in f.items() if history or k != "history"} for f in facts]
 
     @app.get("/v1/conversations/{conv_id}/entities", dependencies=[Depends(auth)])
@@ -706,7 +709,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            view = (view_of(conn, conv["head_commit_id"])
+            # PHASE-60 S6: a read-only list the panel links a person from, a carried person among them
+            view = (view_of(conn, conv["head_commit_id"], carried=True)
                     if conv["head_commit_id"] else {"entities": []})
         pinned = {str(p["entity_id"]): str(p["repair"]) for p in view.get("pins") or ()}  # PHASE-60 S8: the pin's id
         return [{**e, "pinned": pinned[str(e["id"])]} if str(e["id"]) in pinned else e for e in view["entities"]]
@@ -1103,7 +1107,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             if conv["head_commit_id"] is None:
                 return []
-            return view_of(conn, conv["head_commit_id"])[key]
+            # PHASE-60 S6: the read-only thread and secret lists, with what a link in force carries
+            return view_of(conn, conv["head_commit_id"], carried=True)[key]
 
     @app.get("/v1/conversations/{conv_id}/threads", dependencies=[Depends(auth)])
     def conversation_threads(conv_id: UUID, request: Request):
@@ -2019,12 +2024,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def memory_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """What the panel's memory screen holds (PHASE-52 D2), from what the Inspector's chat page reads."""
         cid, head = conv["id"], conv["head_commit_id"]
-        view = inspector.with_participants(view_of(conn, head))
+        view = inspector.with_participants(view_of(conn, head, carried=True))  # PHASE-60 S6: shows carried memory
+        # what needs a look is the chat's own memory (PHASE-60 S6): a link in force reads it once more without
+        # the carried rows, so its dropped facts, role endings, repairs and threads are counted as before linking
+        own = view if "carried" not in view else view_of(conn, head)
         last = head_turn(conn, head)
-        lost, role_ends, flags, fixed = attention_inputs(conn, conv, head, view)
+        lost, role_ends, flags, fixed = attention_inputs(conn, conv, head, own)
         off_keys = statewatch.dismissed(fixed)
-        queue = inspector._attention({"threads": view["threads"], "unmatched": view["unmatched"],
-                                      "conflicts": view["conflicts"], "ambiguous": view["ambiguous"],
+        queue = inspector._attention({"threads": own["threads"], "unmatched": own["unmatched"],
+                                      "conflicts": own["conflicts"], "ambiguous": own["ambiguous"],
                                       "dropped": lost, "endings": role_ends,
                                       "state_flags": [f for f in flags if f["id"] not in off_keys]}, fixed, last, "ko")
         trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
@@ -2095,7 +2103,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def person_data(conn, conv: dict[str, Any], entity_id: UUID) -> dict[str, Any]:
         """A person's sheet (PHASE-52 D3, D4), from the view the Inspector's character page reads."""
         cid, head = conv["id"], conv["head_commit_id"]
-        view = inspector.with_participants(view_of(conn, head, told=True))
+        view = inspector.with_participants(view_of(conn, head, told=True, carried=True))  # PHASE-60 S6: shows carried
         e = next((x for x in view["entities"] if str(x["id"]) == str(entity_id)), None)
         if e is None:
             raise HTTPException(status_code=404, detail="person not found")
