@@ -330,6 +330,7 @@ GONE_POLICIES = frozenset({"packet-v20"})  # a character who is gone: their stat
 GONE_SHARE = 0.1  # packet-v20: gone lines together may take at most this share of the budget inside the frame
 RETURN_GAP_POLICIES = frozenset({"packet-v20"})  # a <Cast> character back after a long absence is marked (PHASE-60 S4, ADR 0082 item 4)
 SETTLED_POLICIES = frozenset({"packet-v20"})  # threads closed lately, after the open ones (PHASE-60 S4, ADR 0082 item 5)
+PIN_POLICIES = frozenset({"packet-v20"})  # a character the owner or an `@name` pins is present (PHASE-60 S8, ADR 0087)
 # The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
 _V20_MARKS = {GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES}
 STATE_HISTORY_MAX = 6  # changes on one <StateHistory> line

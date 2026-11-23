@@ -22,8 +22,8 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .entities import PERSONA, norm
-from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, lexically_related, memory_view, relevant_facts, settled_entry, thread_entry
-from . import absence, coverage, overuse, quotes, scene, spans, statechange, summaries, variants, source_time
+from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, excluded_ids, fact_entry, lexically_related, memory_view, relevant_facts, settled_entry, thread_entry
+from . import absence, coverage, mentions, overuse, quotes, scene, spans, statechange, summaries, variants, source_time
 from .gone import is_gone_place, is_gone_status
 from .ids import uuid7
 from .ledger import find_conversation
@@ -34,7 +34,7 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      STATE_HISTORY_MAX, STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES,
                      SOURCE_CLOCK_POLICIES, STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, RETURN_GAP_POLICIES, SETTLED_POLICIES,
-                     EXCERPT_FLOOR,
+                     PIN_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
@@ -301,6 +301,7 @@ CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
 GONE_MAX = 8  # packet-v20: gone characters pinned at most (PHASE-60 S3)
+PIN_EXTRA = 3  # packet-v20: <Cast> groups for pinned characters beyond the cast's own CAST_MAX (PHASE-60 S8)
 
 
 def recorded_options(options: RecallOptions) -> dict[str, Any]:
@@ -1385,6 +1386,57 @@ def _keyword_only(c: dict[str, Any], options: RecallOptions) -> bool:
     """A candidate that only the keyword route admitted (fuse's other two bars not met)."""
     return (float(c.get("keyword_score") or 0) > 0 and float(c.get("user_score") or 0) < options.threshold
             and not (c.get("sim") is not None and c["sim"] >= options.vector_min_sim))
+
+
+def pinned_characters(view: dict[str, Any] | None, r: Any, query: str, options: RecallOptions,
+                      recorded: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """packet-v20 (PHASE-60 S8, ADR 0087): the characters pinned for this request, in pin order, one entry each
+    ({"key": entity key, "name": display name, "source": "at" or "owner"}): first those an `@name` in the message
+    names (only with `pin_at_mentions`; `mentions.at_mentions` over every character's normalized names, a name two
+    characters share naming neither), then the owner's pins, newest first (`view["pins"]`). Never the persona, never
+    a character the owner left out (`entity_exclude` wins, item 5). `recorded`: a replay's `recall_options.pins`,
+    resolved by name in its own view; the message and the view's pins are then not read (item 4). Every other policy:
+    none."""
+    if options.policy not in PIN_POLICIES or r is None or view is None:
+        return []
+    persona = scene.key(r, scene.PERSONA)
+    left_out = excluded_ids(view)
+    by_id = {str(e["id"]): e for e in r.entities()}
+    out: dict[str, dict[str, Any]] = {}
+
+    def add(e: dict[str, Any] | None, source: str) -> None:
+        if (e is None or e.get("type") != "character" or e.get("persona") or e["id"] == persona
+                or str(e["id"]) in left_out or str(e["id"]) in out):
+            return
+        out[str(e["id"])] = {"key": e["id"], "name": e["name"], "source": source}
+
+    if recorded is not None:
+        for p in recorded:
+            if isinstance(p, dict) and p.get("name"):
+                add(r.entity("character", p["name"]), "at" if p.get("source") == "at" else "owner")
+        return list(out.values())
+    if options.pin_at_mentions and query:
+        names: dict[str, str] = {}
+        shared: set[str] = set()
+        for e in r.entities():
+            if e.get("type") != "character":
+                continue
+            for n in e["names"]:
+                k = norm(n)
+                if k and names.setdefault(k, str(e["id"])) != str(e["id"]):
+                    shared.add(k)
+        for k in shared:
+            del names[k]
+        for i in mentions.at_mentions(query, names, {str(persona), *left_out}):
+            add(by_id.get(i), "at")
+    for p in view.get("pins") or ():
+        add(by_id.get(str(p.get("entity_id"))), "owner")
+    return list(out.values())
+
+
+def recorded_pins(pins: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What a request records of its pins (`recall_options.pins`, ADR 0087 item 4): each name it resolved to."""
+    return [{"name": p["name"], "entity_type": "character", "source": p["source"]} for p in pins]
 
 
 def cast_facts(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, Any]], bool]) -> list[dict[str, Any]]:
