@@ -24,12 +24,13 @@ from psycopg.types.json import Jsonb
 from .entities import PERSONA, norm
 from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, lexically_related, memory_view, relevant_facts, thread_entry
 from . import coverage, overuse, quotes, scene, spans, statechange, summaries, variants, source_time
+from .gone import is_gone_place, is_gone_status
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
-                     CHANGE_POLICIES, CONTENTS, COVERAGE_POLICIES, LABEL_POLICIES, STATE_HISTORY_KEYS,
+                     CHANGE_POLICIES, CONTENTS, COVERAGE_POLICIES, GONE_POLICIES, LABEL_POLICIES, STATE_HISTORY_KEYS,
                      STATE_HISTORY_MAX, STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES,
                      SOURCE_CLOCK_POLICIES, STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
@@ -296,6 +297,7 @@ RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit"
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
+GONE_MAX = 8  # packet-v20: gone characters pinned at most (PHASE-60 S3)
 
 
 def recorded_options(options: RecallOptions) -> dict[str, Any]:
@@ -917,6 +919,7 @@ class Gathered:
     story: list[Line] = field(default_factory=list)  # summaries (packet-v8, ADR 0043)
     cast_lines: list[tuple[str, list[Line]]] = field(default_factory=list)  # each scene character's state (packet-v8)
     secrets: list[dict[str, Any]] | None = None  # head secrets from view, reused by coverage without a second read
+    gone: list[Line] = field(default_factory=list)  # gone characters' status lines not in <Cast> (packet-v20, PHASE-60 S3)
 
 
 def persona_question_names(r: Any) -> frozenset[str]:
@@ -1029,8 +1032,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         persona = r.persona_names if r else frozenset()
         aliases = _aliases(r, query, previous_ai, options, view, names_of)
         # Who is in the scene, so facts only some of them know are marked (packet-v3, ADR 0034).
+        now = _head_turn(conn, head, upto)
         g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
-                            _head_turn(conn, head, upto), aliases=aliases,
+                            now, aliases=aliases,
                             marks=_thread_marks(view, aliases))
         if options.threads_limit > 0:
             picked = relevant_threads(view["threads"], query, previous_ai, in_context,
@@ -1116,6 +1120,12 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 g.lead = [line for line in g.lead if line.ref.get("assertion") not in used]
                 g.facts = [line for line in g.facts if line.ref.get("assertion") not in used]
                 g.threads = [line for line in g.threads if line.ref.get("assertion") not in used]
+        if options.policy in GONE_POLICIES and options.facts_limit > 0 and r is not None:
+            # packet-v20 (PHASE-60 S3): a gone character's status, whether or not the message names them
+            pinned = pin_gone(g, view, r, now, options)
+            if changes:
+                offered = {f["id"] for f in selected}
+                selected += [f for f in pinned if f["id"] not in offered]
     if options.policy in COVERAGE_POLICIES and coverage_info is not None:
         g.note += coverage_note(coverage_info.get("recorded_through_turn"), coverage_info.get("latest_replied_turn"))
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
@@ -1415,11 +1425,112 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
     return groups, used
 
 
+def _gone_status(f: dict[str, Any]) -> bool:
+    """Whether a current fact says its character is gone (PHASE-60 S3, ADR 0082 item 2): a narrated, positive,
+    undisputed `has_status` the word rule calls gone, or a `located_in` whose whole place name is no place. Canon is
+    left out: it is how things stood before the story, which the story may have changed without saying so, and a
+    character the setting calls dead or missing can be one the story is about (a missed pin is today's behaviour, a
+    wrong pin silences a living character). A row carried from another chat is never one either."""
+    if (f.get("canon") or f.get("carried") or f.get("polarity") != "positive" or f.get("disputed_by")
+            or f.get("subject_type") != "character" or f.get("turn") is None):
+        return False
+    if f["predicate"] == "has_status":
+        return is_gone_status(f.get("value"))
+    return f["predicate"] == "located_in" and is_gone_place(f.get("object"))
+
+
+def gone_rows(view: dict[str, Any], r: Any, now: int | None) -> list[dict[str, Any]]:
+    """The characters who are gone (PHASE-60 S3), each by their newest gone fact, newest first, at most GONE_MAX.
+
+    From the view's current narrated facts only (a later status replaced an earlier one there; a claim is what someone
+    said). Not the persona, nor a character the owner left out (PHASE-47). Not a character the story brought back: one
+    who is a subject, object or typed participant of a row (fact, claim or other) of a turn after the gone fact's, in
+    the scene window `scene.cast` reads (CAST_TURNS turns before `now`). Their own gone rows, canon rows and carried
+    rows bring no one back."""
+    if r is None:
+        return []
+    persona = scene.key(r, scene.PERSONA)
+    left_out = frozenset(view.get("excluded") or ())
+    newest: dict[str, dict[str, Any]] = {}
+    gone_ids: set[int] = set()
+    for f in view["facts"]:
+        if not _gone_status(f):
+            continue
+        gone_ids.add(id(f))
+        k = scene.key(r, f["subject"])
+        if scene.is_persona(r, f["subject"]) or k == persona or str(k) in left_out:
+            continue
+        if k not in newest or (f["turn"], f["position"]) > (newest[k]["turn"], newest[k]["position"]):
+            newest[k] = f
+    if not newest:
+        return []
+    rows = view["facts"] + view["claims"] + view["other"]
+    until = now - 1 if now is not None else max((x["turn"] for x in rows if x.get("turn") is not None), default=-1)
+    since = until - scene.CAST_TURNS + 1
+    last_seen: dict[str, int] = {}  # each character's latest turn in the window, by the rows `scene.cast` reads
+    for x in rows:
+        if (id(x) in gone_ids or x.get("canon") or x.get("carried") or x.get("turn") is None
+                or not since <= x["turn"] <= until):
+            continue
+        names = [x["subject"]] if x.get("subject_type") == "character" else []
+        if x.get("object_type") == "character":
+            names.append(x.get("object"))
+        names += [p["name"] for p in x.get("participants") or () if p.get("type") == "character"]
+        for name in names:
+            if name:
+                k = scene.key(r, name)
+                last_seen[k] = max(last_seen.get(k, x["turn"]), x["turn"])
+    kept = [f for k, f in newest.items() if last_seen.get(k, f["turn"]) <= f["turn"]]
+    kept.sort(key=lambda f: (f["turn"], f["position"]), reverse=True)
+    return kept[:GONE_MAX]
+
+
+def gone_lines(view: dict[str, Any], r: Any, cast: dict[str, str], now: int | None,
+               options: RecallOptions) -> list[Line]:
+    """packet-v20 (PHASE-60 S3): each gone character's status line, marked gone="true", newest first, private as any
+    fact line is in this scene (ADR 0034). Every other policy: none."""
+    if options.policy not in GONE_POLICIES:
+        return []
+    before, cause = options.policy in BEFORE_POLICIES, options.policy in CAUSE_POLICIES
+    return [fact_entry(f, scene.private(f, cast, r), before, cause, options.history_marks, gone=True)
+            for f in gone_rows(view, r, now)]
+
+
+def pin_gone(g: Gathered, view: dict[str, Any], r: Any, now: int | None, options: RecallOptions) -> list[dict[str, Any]]:
+    """Put each gone character's status line where it goes (PHASE-60 S3, ADR 0082 item 3), once: first in the
+    character's <Cast> group when `cast_groups` gave it the line (it judged privacy, the narrator and D3 there),
+    else in `g.gone` (first in <Facts>, or <Private>) through this chat's memory mode (`_moded`). The same assertion
+    leaves the lead and facts. A gone fact the memory mode already withheld as a fact stays as the mode left it (a
+    strict <Secret> where the fact was), so nothing is withheld twice. Returns the rows pinned."""
+    if options.policy not in GONE_POLICIES:
+        return []
+    withheld = {line.ref.get("assertion") for line in g.withheld_lines}
+    lines = {line.ref.get("assertion"): line for line in gone_lines(view, r, g.cast, now, options)
+             if line.ref.get("assertion") not in withheld}
+    if not lines:
+        return []
+    in_cast: set[Any] = set()
+    groups: list[tuple[str, list[Line]]] = []
+    for name, group in g.cast_lines:
+        own = [line.ref.get("assertion") for line in group if line.ref.get("assertion") in lines]
+        if own:
+            in_cast.update(own)
+            group = [lines[a] for a in own] + [line for line in group if line.ref.get("assertion") not in lines]
+        groups.append((name, group))
+    g.cast_lines = groups
+    g.lead = [line for line in g.lead if line.ref.get("assertion") not in lines]
+    g.facts = [line for line in g.facts if line.ref.get("assertion") not in lines]
+    rows = [f for f in view["facts"] if f["id"] in lines]
+    rows.sort(key=lambda f: (f["turn"], f["position"]), reverse=True)
+    g.gone = _moded([lines[f["id"]] for f in rows if f["id"] not in in_cast], rows, g, r, options)
+    return rows
+
+
 def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
     """One request's packet from what `gather` offered (the request and its replay compile alike)."""
     compiled = compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
                              note=g.note, story=g.story, cast=g.cast_lines, named=frozenset(g.named),
-                             risky=frozenset(g.risky))
+                             risky=frozenset(g.risky), gone=g.gone)
     compiled = source_time.supplement(compiled, g.ranked, g.source_clocks, budget, policy)
     if policy in LABEL_POLICIES:
         # Diagnostics never take part in selection, token fitting or the rest/echo calculation.
