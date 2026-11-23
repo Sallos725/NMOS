@@ -39,3 +39,6 @@ production must not pay to re-extract history for it (ADR 0081 item 4).
 - `told` rows exist only from `extract-v19`; a switch back keeps them stored and unread for turns another compiler
   serves.
 - The prompt grows; the phase reports the growth against `extract-v18` (at most 15 %).
+- A switch back from `extract-v19` queues nothing only on code that knows `extract-v19` (its `ADDS`); an image from
+  before this phase reads it as a version change. A rollback therefore changes the compiler before it changes the
+  image (PHASE-60 C3).

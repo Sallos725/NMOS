@@ -332,9 +332,18 @@ Whole
 - C2. On the copy, every gone pin and every return-gap annotation of every chat is listed and read before the
   deployment; a wrong one is fixed first.
 - C3. **Rollback rehearsal.** Migrations are forward-only, so rollback is the old image and the old `.env`, not a
-  restore (a restore would lose turns written since). After C1, with a few stub-written `extract-v19` rows (`told`,
-  `when_happened`) on the copy, the previous image (`edge-1b16ef6…`) starts on the migrated copy, queues 0 jobs, and
-  answers `/v1/retrieve` and the Inspector without error.
+  restore (a restore would lose turns written since). The previous image does not know `extract-v19`, so its own
+  `classify` reads a switch from `extract-v19` to `extract-v18` as a `version` change and would queue the latest turns
+  of every chat again; a rollback therefore changes the compiler before it changes the image, in two steps with the
+  worker stopped throughout (coordinator's decision, 2026-11-23): (1) the **new** image with the previous `.env`
+  (`extract-v18`, packet policy unset) queues 0 jobs (`adds`) and makes `extract-v18` the most recently activated
+  extractor generation; (2) the previous image (`edge-1b16ef6…`) with the previous `.env` and compose file then sees
+  the same generation and queues 0 jobs; only then does the worker start. Step 1 alone is already a behavioural
+  rollback; step 2 is for a fault in the new image itself. Writing `activated_at` by SQL is an emergency path only,
+  for a new image that cannot start, and needs the owner's go. Rehearsed after C1, with a few stub-written
+  `extract-v19` rows (`told`, `when_happened`) on turns no `extract-v16`/`-v18` extraction serves, an `entity_pin`
+  repair and a `conversation_carry` link on the copy: both steps queue 0 jobs, and the previous image answers
+  `/v1/retrieve` and the Inspector without error (its readers skip `told` rows and ignore the pin).
 - D1. Production: a fresh dump, `.env` and compose-file backups and `rollback.sh` in
   `~/nmos-eval/phase60-backup-<timestamp>/`; the compose file passes `NMOS_PACKET_POLICY` and `NMOS_RERANK_*`
   through; the worker is held until the queue is checked; `/v1/health` reports the image, the schema and the plugin
@@ -346,7 +355,8 @@ Whole
 - `packet-v19` differs anywhere: stop and move the change behind `packet-v20`.
 - A gone pin or return gap on the copy is wrong and the rule cannot be made right without a model: that item ships
   off, and the report says so.
-- The old image does not run on the migrated copy: stop before production; the rollback would not hold.
+- Either step of the two-step rollback (C3) queues a job, or the old image does not run on the migrated copy: stop
+  before production; the rollback would not hold.
 - An item cannot be finished to its criteria: it stays off behind its switch, named in the report; a half item is
   never called done.
 
