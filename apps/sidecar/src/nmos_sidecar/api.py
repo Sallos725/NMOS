@@ -252,9 +252,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     rebuild({})
 
     def view_of(conn, head: UUID, told: bool = False) -> dict[str, Any]:
-        """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047). `told`: with who told
-        whom (`view["told"]`, PHASE-60 S8), for the pages that draw chains."""
-        return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told)
+        """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047) and any carry link in
+        force (ADR 0085). `told`: with who told whom (`view["told"]`, PHASE-60 S8), for the pages that draw chains."""
+        carried = carried_of(conn, head)
+        if carried is None:
+            return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told)
+        return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told,
+                           carried=carried)
 
     def with_told(out: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
         """A page's data with `told` (PHASE-60 S8) only when there is some: a chat without told rows keeps its data as
@@ -981,6 +985,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     "coverage": coverage_view(conn, conv_id)}
 
     # --- a chat that carries another chat's memory (PHASE-60 S6, ADR 0085) --------------------------------------
+    def carried_of(conn, head: UUID) -> carry.Carried | None:
+        """What the chat at `head` carries from its link in force now, or None."""
+        row = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
+        link = carry.in_force(conn, row["conversation_id"]) if row is not None else None
+        return carry.target_rows(link) if link is not None else None
+
     def carry_keys() -> carry.Keys:
         """The readers a request uses now: a link's frozen reading is taken with them."""
         return carry.Keys(extractor=rt["active_extractor"],
