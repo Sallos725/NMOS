@@ -2118,7 +2118,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             history = f.get("history") or [f]
             for i, h in enumerate(history):
                 turn = h.get("turn")
-                if h.get("canon") or not isinstance(turn, int) or norm(h.get("subject")) not in names:
+                # canon and a carried version (ADR 0085) are before this chat's story: listed, never a mark
+                if (h.get("canon") or h.get("carried") or not isinstance(turn, int)
+                        or norm(h.get("subject")) not in names):
                     continue
                 # a ring: a major event, or a relationship or role that replaced an earlier one (not its first word)
                 changed = f["predicate"] in ("relationship", "role_toward") and i > 0 \
