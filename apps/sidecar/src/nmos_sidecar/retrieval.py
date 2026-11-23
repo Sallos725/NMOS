@@ -23,7 +23,7 @@ from psycopg.types.json import Jsonb
 
 from .entities import PERSONA, norm
 from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, excluded_ids, fact_entry, lexically_related, memory_view, relevant_facts, settled_entry, thread_entry
-from . import absence, coverage, mentions, overuse, quotes, scene, spans, statechange, summaries, variants, source_time
+from . import absence, coverage, mentions, overuse, quotes, rerank, scene, spans, statechange, summaries, variants, source_time
 from .gone import is_gone_place, is_gone_status
 from .ids import uuid7
 from .ledger import find_conversation
@@ -948,6 +948,7 @@ class Gathered:
     pin_only: set[str] = field(default_factory=set)
     pin_named: set[str] = field(default_factory=set)
     sem_query: str | None = None  # packet-v20 (PHASE-60 S5, ADR 0084): reply tail + short message for embedding only
+    rerank_used: bool = False  # PHASE-60 S5 (ADR 0084): whether reranking reordered eligible candidates
 
 
 def persona_question_names(r: Any) -> frozenset[str]:
@@ -1222,6 +1223,22 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     g.candidates = fuse(lexical, vector, options.threshold, options.vector_min_sim, keyword)
     g.excluded = [c for c in g.candidates if c["host_logical_id"] in in_context]
     eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context]
+    if known_at is None and options.reranker is not None:
+        t0 = time.perf_counter()
+        if query.strip() and eligible:
+            top = eligible[:rerank.MAX_CANDIDATES]
+            docs = [c["clean"][:rerank.MAX_DOC_CHARS] for c in top]
+            # RetrieveRequest carries no remaining client deadline, so the call is bounded by the reranker's own
+            # timeout (`options.reranker.timeout_ms`); any timeout, error or malformed answer leaves the fused order.
+            scores = rerank.score(options.reranker, query, docs)
+            if scores is not None:
+                for c, s in zip(top, scores):
+                    c["rerank"] = float(s)
+                eligible = rerank.reorder(top, scores) + eligible[rerank.MAX_CANDIDATES:]
+                it = iter(eligible)
+                g.candidates = [c if c["host_logical_id"] in in_context else next(it) for c in g.candidates]
+                g.rerank_used = True
+        g.timings["rerank"] = round((time.perf_counter() - t0) * 1000, 2)
     stale = _replaced_judge(view, selected, query, previous_ai, options, names_of) if changes and view is not None else None
     scan_slots = stale is not None or options.policy in UNEXTRACTED_POLICIES
     if not scan_slots:  # older policies keep the original top-k cut
@@ -2111,7 +2128,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         in_context = original_in_context
         trim_out = {"keep_from_id": None, "keep_from_turn": None, "reason": "empty_packet"}
         trim_trace = {**trim_trace, "cut": None, "keep_from_id": None, "reason": "empty_packet"}
-        g = gather(conn, head, query, previous_ai, in_context, filled(options, request.budget_tokens), upto,
+        g = gather(conn, head, query, previous_ai, in_context,
+                   dataclasses.replace(filled(options, request.budget_tokens), reranker=None), upto,
                    canon_manifest=getattr(request, "canon_manifest_id", None),
                    canon_held=getattr(request, "canon_held", None) or (), recent=history,
                    coverage_info=cov_for_gather, served_turns=served_now)
@@ -2128,10 +2146,13 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                "sidecar_total": round((time.perf_counter() - started) * 1000, 2)}
 
     def brief(c: dict[str, Any]) -> dict[str, Any]:
-        return {"revision_id": str(c["id"]), "position": c["position"], "host_logical_id": c["host_logical_id"],
-                "score": round(float(c.get("score") or 0), 4), "user_score": round(float(c.get("user_score") or 0), 4),
-                "sim": None if c.get("sim") is None else round(float(c["sim"]), 4),
-                "keyword_score": round(float(c.get("keyword_score") or 0), 4), "rrf": round(float(c.get("rrf") or 0), 5)}
+        out = {"revision_id": str(c["id"]), "position": c["position"], "host_logical_id": c["host_logical_id"],
+               "score": round(float(c.get("score") or 0), 4), "user_score": round(float(c.get("user_score") or 0), 4),
+               "sim": None if c.get("sim") is None else round(float(c["sim"]), 4),
+               "keyword_score": round(float(c.get("keyword_score") or 0), 4), "rrf": round(float(c.get("rrf") or 0), 5)}
+        if "rerank" in c:
+            out["rerank"] = float(c["rerank"])
+        return out
 
     if cov is None:
         cov = coverage.read(conn, conv.id, head, options.summarize_key, extractor_key=options.extractor_key,
@@ -2147,6 +2168,9 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         trace_options["pins"] = recorded_pins(g.pins)
     if fresh and options.policy in SEM_QUERY_POLICIES:  # ADR 0084 item 1: recorded only under SEM_QUERY_POLICIES
         trace_options["sem_query"] = g.sem_query
+    if fresh and options.reranker is not None:  # ADR 0084 item 5: absent when unconfigured
+        trace_options["rerank_used"] = g.rerank_used
+        trace_options["rerank_ms"] = g.timings.get("rerank", 0.0)
     if trim_trace is not None:
         trace_options["trim"] = trim_trace
     placed = [e for e in compiled.ledger if e["placed"]]
