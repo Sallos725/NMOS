@@ -20,7 +20,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .keywords import keywords
-from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
+from .predicates import EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
 from . import canon, canonfacts
 from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, exclusions, live, pins, quoted_turns,
                       secret_events, splits_of, thread_events, unedited_quotes)
@@ -121,6 +121,23 @@ def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, 
         if (when := r.pop("when_happened")) is not None:  # extract-v19 only (PHASE-60 S7): other rows read as before
             r["when_happened"] = when
     return rows
+
+
+def told_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The `told` rows among served rows whose own compiler has `told` in its extension (PHASE-60 S8: only
+    extract-v19 asks for it and only its rows are read), in the order given (served rows: oldest first). A told row
+    of another compiler (one forced valid by hand) is left out."""
+    return [r for r in rows
+            if r["predicate"] == "told" and "told" in EXTENSIONS.get(r.get("compiler") or "", {})]
+
+
+def served_told(conn: psycopg.Connection, head: UUID, extractor_key: str, upto: int | None = None,
+                known_at: datetime | None = None) -> list[dict[str, Any]]:
+    """Who told whom in the head (PHASE-60 S8): the served `told` rows, oldest first, read with the same `upto` and
+    `known_at` as every served read, so a replay as of a request reads what the request read. The reader packet-v20
+    and the Inspector use; the packet's fact read (`memory_view`, whose rows keep `in REGISTRY`) keeps excluding
+    `told`, so the facts served to a packet never gain a told row."""
+    return told_rows(served_assertions(conn, head, extractor_key, upto, known_at))
 
 
 @lru_cache(maxsize=65536)
