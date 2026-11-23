@@ -199,7 +199,9 @@ through a SKIP LOCKED queue; single-valued predicates form fact versions.
 **D18 — Hybrid recall (Phase 3, ADR 0005).** Exact cosine over head-membership chunk embeddings (pgvector),
 RRF with lexical, abstention by per-signal bars, query-side instruction for instruction-tuned embedders,
 fail-open to lexical on embedding timeout. Since D70 the query is embedded while recall reads, and the timeout bounds
-the wait after the reads.
+the wait after the reads. **Amended by PHASE-60 S5 (ADR 0084):** under `packet-v20` a short message is embedded with
+the end of the reply before it (`sem_query`, D70); under any policy, a reranker the owner configured may reorder the
+fused candidates (D88). Without either, recall is as above.
 
 **D19 — Soft character knowledge (Phase 4 subset; revised 2026-09-22, ADR 0007).** Each assertion
 has `knowledge = public | limited | unknown`. `public` is openly known and needs no list; `limited`
@@ -611,6 +613,13 @@ such a request waits for nothing. Fail-open to lexical, the vector search, the f
 the trace records the embedder's time (`embed`), the wait after the reads (`embed_wait`), the search (`vector`) and,
 for a prefetched embedding, how long before recall its call began (`embed_lead`). Nothing recorded changes: requests
 replay as they were.
+**Amended by PHASE-60 S5 (ADR 0084):** under `packet-v20` (`SEM_QUERY_POLICIES`) a message shorter than 40 normalized
+characters with a previous reply is embedded as that reply's last 400 characters, a line break and the message
+(`retrieval.sem_query`). Only the embedding input changes: lexical and keyword recall, fact relevance and excerpt
+anchors read the message alone. Recorded as `recall_options.sem_query` (null when it did not apply); a replay embeds
+the recorded text, and a trace without the key replays with it off. The sync-time prefetch builds the same text with
+the same function from the reply before the synced message (the sync's bodies, else the head's stored revision), so a
+short message still finds its embedding waiting; a failed lookup or a mismatch costs only the bounded wait above.
 
 **D71 — The chunk cap, a setting of the projection (ADR 0062; K13, AGE-24).** A message is embedded in chunks of 700
 normalized characters from its start, at most `NMOS_EMBED_MAX_CHUNKS` of them (default 8: 5,600 characters, the cap
@@ -791,11 +800,42 @@ is parked `pending`. It stays outside `REGISTRY` in `predicates.EXTENSIONS["extr
 `EXTENSION_PARTICIPANTS`, `CLOCK_LINE` and the length caps into `extract-v19`'s `prompt` fingerprint so the keys of
 `extract-v15`–`extract-v18` and of canon, summarize, reveal and embed do not move. `told` changes no knowledge marks by
 itself; `memory_view` keeps reading `REGISTRY` alone, while `facts.served_told` reads served `told` rows of compilers
-whose extension declares it, oldest first, as of `upto` / `known_at` (`packet-v20` does not yet emit `happened` or
-`told` lines). `extract-v19` joins `generations.ADDS` with `extract-v16` and `extract-v18`, so switching among them
+whose extension declares it, oldest first, as of `upto` / `known_at` (`packet-v20`'s `happened` and `told` lines:
+D87). `extract-v19` joins `generations.ADDS` with `extract-v16` and `extract-v18`, so switching among them
 with the same model and endpoint is classified `adds` in both directions and queues no already-served turns. Known
 limits: a `told` row kept from someone keeps its knowledge marks but is in `secrets.NOT_SECRETS`, so it is not tracked
 as a secret and no reveal check ends it; `fact_restore` (`repairs.RESTORED`) does not carry `when_happened`.
+
+**D87 — When it happened, and who told whom, in the packet (`packet-v20`; ADR 0086; PHASE-60 S7, S8).** Under
+`packet-v20` (`HAPPENED_POLICIES`) a line whose assertion has a `when_happened` (D86) carries `happened="…"` right after
+its `turn`: fact lines (in `<Facts>`, `<Private>`, a `<Cast>` group and a gone line), thread lines (a cast group's goals
+included), settled lines and told lines; claim lines carry none. The Note then says `happened` is when it happened in
+the story and `turn` when it was told. Under `TOLD_POLICIES`, with `facts_limit` above 0, at most 2 (`TOLD_MAX`) served
+`told` rows (`facts.served_told`, D86) follow the facts as `<Fact kind="told">` lines (teller told hearer: what, and whom
+it is about when it names them), only when the teller or the hearer (never the persona) is in the scene or named in the
+user's message under any name they go by: ranked as facts are, then the scene's newest; not said again while its
+message is in the prompt (D3); resting as any line does (D77); never a carried row. A line whose value or quote says a
+secret still kept from someone is left out as a keyword-only excerpt is (D62, a hidden `secret_gate` entry), and the
+next may take its place; the rest is any fact line's: private in its scene, strict and narrator modes (D44, D45). The
+Note says a told Fact does not show that the hearer believed it. Older policies emit neither. Kept apart from D84,
+which already holds four reads.
+
+**D88 — An optional reranker (ADR 0084; PHASE-60 S5; amends `AGENTS.md §4` "Models").** Opt-in: a reranker exists only
+when both `NMOS_RERANK_URL` and `NMOS_RERANK_MODEL` are set (`runtime.reranker`; also settable in the panel); otherwise
+no code path calls one. Not tied to a policy: a live request, after the fusion and with the in-context messages left
+out, sends the user's message (not `sem_query`) and the top 30 (`rerank.MAX_CANDIDATES`) eligible candidates, each cut
+to 1,000 characters, in one `POST <url>/rerank` over the sidecar's `httpx` client, and the scores reorder those 30
+ahead of the rest; at most one call per live request (the trim's empty-packet re-read, D82, calls none). The call is
+bounded by its own timeout on the sidecar (`NMOS_RERANK_TIMEOUT_MS`, 600 by default, 50–5,000): `/v1/retrieve` carries
+no remaining deadline, and the plugin's deadline (3,000 ms by default) still fails the whole request open on its side,
+so `NMOS_EMBED_TIMEOUT_MS` + `NMOS_RERANK_TIMEOUT_MS` should stay well under it. A timeout, an error or a malformed
+answer (not every index exactly once with a finite score) leaves the fused order. With a reranker configured the
+trace records `rerank_used`, `rerank_ms` and each scored candidate's `rerank`; a replay never calls one and reapplies
+the recorded scores to the same candidates (a request whose call failed replays in fused order; a replay with a
+replaced query applies none). The key is a credential (`runtime.SECRET`): bound to its endpoint's host, never in a
+trace, a log or an archive (an archive holding it is refused, D60); `/v1/health` says only whether one is configured.
+Only the `standard` format exists (`NMOS_RERANK_FORMAT`: `{model, query, documents, top_n}`, answered by `results[]` or
+`data[]` of `{index, relevance_score}`); no other is built. It derives nothing stored and is part of no generation key.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
