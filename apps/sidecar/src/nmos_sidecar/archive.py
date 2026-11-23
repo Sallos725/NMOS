@@ -71,6 +71,9 @@ TABLES: tuple[Table, ...] = (
           "conversation_id, applied_at, manifest_id, observed_at"),
     Table("entity_link", "ledger", "conversation_id = ANY(%(c)s)", "conversation_id, created_at, id"),
     Table("owner_repair", "ledger", "conversation_id = ANY(%(c)s)", "conversation_id, created_at, id"),
+    Table("conversation_carry", "ledger",
+          "target_conversation_id = ANY(%(c)s) AND source_conversation_id = ANY(%(c)s)",
+          "target_conversation_id, created_at, id"),
     Table("extraction", "projections", f"source_revision_id IN ({_REVS})", "created_at, id"),
     Table("assertion", "projections", f"source_revision_id IN ({_REVS})", "id"),
     Table("summary", "projections", "conversation_id = ANY(%(c)s)", "created_at, id"),
@@ -235,6 +238,14 @@ def write_archive(conn: psycopg.Connection, out: IO[bytes], conversations: list[
                     (convs,))
         latest = dict(_q(conn, "SELECT DISTINCT ON (kind) kind, key FROM projection_generation"
                                " ORDER BY kind, activated_at DESC, key"))
+        carry_left_out = 0
+        if _q(conn, "SELECT to_regclass(%s::text)", ("conversation_carry",))[0][0] is not None:
+            carry_left_out = _q(
+                conn,
+                "SELECT count(*) FROM conversation_carry"
+                " WHERE (target_conversation_id = ANY(%s)) <> (source_conversation_id = ANY(%s))",
+                (convs, convs),
+            )[0][0]
         export = Export(manifest={})
         omitted: list[str] = []
         with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
@@ -274,6 +285,7 @@ def write_archive(conn: psycopg.Connection, out: IO[bytes], conversations: list[
                 "conversations": [{"id": str(r[0]), "host": r[1], "host_chat_ref": r[2], "character": r[3],
                                    "chat": r[4], "branched_from": str(r[5]) if r[5] else None} for r in labels],
                 "omitted_settings": sorted(omitted),
+                "carry_left_out": carry_left_out,
                 "files": [{"path": w.path, "table": w.table, "rows": w.rows, "bytes": w.bytes, "sha256": w.sha256}
                           for w in export.files],
             }
@@ -596,6 +608,26 @@ def _make_room(conn: psycopg.Connection, scratch: str, out: Restored) -> None:
                         ORDER BY i)
                     FROM jsonb_array_elements(t.lines) WITH ORDINALITY AS a(l, i))
                 WHERE jsonb_typeof(t.lines) = 'array' AND jsonb_array_length(t.lines) > 0""", {"shift": shift})
+            conn.execute(f"""
+                UPDATE "{scratch}".conversation_carry c SET snapshot = (
+                    SELECT jsonb_object_agg(k, CASE
+                        WHEN k IN ('facts', 'aliases', 'threads')
+                             AND jsonb_typeof(v) = 'array' AND jsonb_array_length(v) > 0
+                        THEN (
+                            SELECT jsonb_agg(
+                                CASE WHEN jsonb_typeof(el) = 'object'
+                                          AND jsonb_typeof(el->'from') = 'object'
+                                          AND jsonb_typeof(el->'from'->'assertion') = 'number'
+                                     THEN CASE WHEN (el->'from'->>'assertion')::bigint > 0
+                                               THEN jsonb_set(el, '{{from,assertion}}',
+                                                              to_jsonb((el->'from'->>'assertion')::bigint + %(shift)s))
+                                               ELSE el END
+                                     ELSE el END
+                                ORDER BY i)
+                            FROM jsonb_array_elements(v) WITH ORDINALITY AS a(el, i))
+                        ELSE v END)
+                    FROM jsonb_each(c.snapshot) AS top(k, v))
+                WHERE c.snapshot ?| ARRAY['facts', 'aliases', 'threads']""", {"shift": shift})
 
 
 def _copy_in(conn: psycopg.Connection, scratch: str, checked: Checked, out: Restored) -> None:
