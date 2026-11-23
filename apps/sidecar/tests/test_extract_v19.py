@@ -5,12 +5,14 @@ Synthetic names only (세라, 카이토, 하나, 유나).
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 
 import pytest
 
-from nmos_sidecar import entities, extraction as X, predicates as P
+from nmos_sidecar import entities, extraction as X, generations, predicates as P
 from nmos_sidecar.config import Settings
+from test_phase60_pins import BASE, PINNED_EXTRACT_SPEC_FIELDS
 
 REGISTRY_PROMPT_SHA256 = "9cd57478151107025e53b7f29a38f5d7154ee57c66a5a92b8b3cfeb2e894084b"
 REGISTRY_PROMPT_ONLY_SHA256 = "4eac87e6574ab18970f8c236a774a47c8eb9749c2699ef1a7f210c76a3d72c63"
@@ -73,6 +75,28 @@ def test_v19_prompt_extends_v18_and_joins_only_v18_compiler_sets():
     assert v19.format(registry=P.registry_prompt(compiler="extract-v19"))
     assert "extract-v19" in X.ROLES & X.PARTS_APART & X.CONFIRMS & X.FEELINGS & entities.PART_EDGES
     assert "extract-v19" not in X.HORIZONS | X.SPEAKERS
+
+
+def test_v19_key_keeps_v18_fields_and_differs_only_in_compiler_and_prompt():
+    v18 = X.extractor(Settings(**BASE, extract_compiler="extract-v18"))
+    v19 = X.extractor(Settings(**BASE, extract_compiler="extract-v19"))
+    assert sorted(v19.spec) == PINNED_EXTRACT_SPEC_FIELDS["extract-v18"]
+    assert {k for k in v18.spec if v18.spec[k] != v19.spec[k]} == {"compiler", "prompt"}
+    assert v19.key != v18.key
+    assert v19.spec["prompt"] != generations.fingerprint(X.prompt_of("extract-v19"))  # the extension is in it
+    assert v18.spec["prompt"] == generations.fingerprint(X.prompt_of("extract-v18"))
+
+
+def test_the_told_definition_is_in_the_v19_key_only(monkeypatch):
+    settings = {c: Settings(**BASE, extract_compiler=c) for c in ("extract-v18", "extract-v19")}
+    before = {c: X.extractor(s).key for c, s in settings.items()}
+    reworded = dataclasses.replace(P.TOLD, description="the subject passed something on to the object")
+    monkeypatch.setitem(P.EXTENSIONS, "extract-v19", {"told": reworded})
+    after = {c: X.extractor(s).key for c, s in settings.items()}
+    assert after["extract-v18"] == before["extract-v18"] and after["extract-v19"] != before["extract-v19"]
+    monkeypatch.setitem(P.EXTENSIONS, "extract-v19", {"told": P.TOLD})
+    monkeypatch.setitem(P.EXTENSION_PARTICIPANTS, "extract-v19", frozenset())
+    assert X.extractor(settings["extract-v19"]).key != before["extract-v19"]
 
 
 def test_settings_accept_v19_and_refuse_a_later_name():

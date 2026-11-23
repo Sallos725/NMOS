@@ -17,7 +17,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import generations, normtext
+from . import generations, normtext, predicates
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
@@ -1690,6 +1690,20 @@ def job_counts(conn: psycopg.Connection) -> dict[str, int]:
     return {r["status"]: r["n"] for r in conn.execute("SELECT status, count(*) AS n FROM job GROUP BY status").fetchall()}
 
 
+def _prompt_print(compiler: str) -> str:
+    """The `prompt` fingerprint of a compiler's generation. Every extractor key hashes `repr(REGISTRY)`, so a
+    compiler's extension predicates (`predicates.EXTENSIONS`, only extract-v19's `told`) and its other output-changing
+    constants (the story clock line, the caps) are hashed here instead: its spec keeps extract-v18's field names, so a
+    switch between them differs in `compiler` and `prompt` alone (PHASE-60 S7, ADR 0086 item 5). Every other
+    compiler's is the fingerprint of its prompt, as before."""
+    if compiler not in predicates.EXTENSIONS:
+        return generations.fingerprint(prompt_of(compiler))
+    return generations.fingerprint(
+        prompt_of(compiler) + "\n" + repr(sorted(predicates.EXTENSIONS[compiler].items())) + "\n"
+        + repr(sorted(predicates.EXTENSION_PARTICIPANTS.get(compiler, frozenset()))) + "\n" + CLOCK_LINE + "\n"
+        + f"{HAPPENED_MAX}|{CLOCK_MAX}")
+
+
 def extractor(settings: Settings) -> Generation | None:
     """The extractor generation the settings describe (credentials excluded), or None when off."""
     if not (settings.llm_url and settings.llm_model):
@@ -1697,7 +1711,7 @@ def extractor(settings: Settings) -> Generation | None:
     compiler = compiler_of(settings)
     return generations.make(
         "extract", settings.llm_url, settings.llm_model,
-        compiler=compiler, prompt=generations.fingerprint(prompt_of(compiler)),
+        compiler=compiler, prompt=_prompt_print(compiler),
         **({"confirm": generations.fingerprint(ROLE_CONFIRM_SYSTEM + str(CONFIRM_TURNS) + "|".join(DOUBTS)
                                                 + ALIAS_CONFIRM_SYSTEM + ALIAS_ASKED + ENDINGS_POST)}
            if compiler in CONFIRMS else {}),
