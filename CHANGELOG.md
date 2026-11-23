@@ -3,6 +3,39 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
+## Unreleased
+
+Phase 60, in progress: nothing below changes a default (`packet-v19`, `extract-v16`, `clean-v3`); each item is behind a
+switch.
+
+- **Old dialogue left out in steps** (Phase 60 S1, plugin args `trim_old_turns` and `keep_recent_turns`, off by
+  default; 20 turns kept, 4–200). Once memory has extracted the older turns and a scene summary holds them, the plugin
+  leaves their messages out of the copy of the prompt it returns, never out of the chat. The sidecar picks the first
+  message to keep and moves it only in whole steps of `keep_recent_turns`, so the start of the prompt stays the same
+  for up to that many turns. Only plain user or assistant messages that each carry one chat message, before the latest
+  user turn, are left out; any other layout, or an empty packet, leaves out nothing. The Status tab and the HUD say how
+  many messages were left out, the tokens saved, or why none were. Needs summaries on.
+- **`[NMOS.memory]`** (Phase 60 S2.3). Put the marker in a preset or a lorebook entry and memory goes there: the first
+  marker is replaced by the memory, every other one is removed, and no marker ever reaches the model, also when
+  memory is skipped or fails. A retried request gets the same prompt.
+- **Memory placed at the end goes before a prefill** (Phase 60 S2.2). With `inject_position` `end`, memory now goes
+  before a trailing run of assistant messages. Whenever memory lands after the latest user message, one fixed line
+  after it says that message already happened and wins where the two differ, and the plugin asks for 40 tokens less.
+- **`packet-v20`, selectable, not the default** (Phase 60 S2.1, S3, S4; `NMOS_PACKET_POLICY=packet-v20`). When the chat
+  has replied turns past what memory has recorded, the Note says how far memory is recorded and that the chat is right
+  where a newer message disagrees; a dead, missing or departed character's status line is kept in the packet, marked
+  `gone="true"`, even when no one names them (at most 8; not the persona, not a setting's status, not someone the story
+  has brought back since); a character back after at least 40 extracted turns away is marked `back_after` for its
+  first 5 turns back; and up to 3 threads the story closed in the last 15 turns, broken ones first, follow the open
+  ones.
+- **A character the owner pins** (Phase 60 S8, migration `0038`). The repair route takes `entity_pin` (a name, as
+  "not a character" names one; an excluded name is not pinned); a chat's entities and a person's sheet say who is
+  pinned, the repairs list names the pin, and it is kept by rebuilds, archived and deleted with the chat. The
+  packet does not read pins yet, and nothing acts on the `@name` setting (`NMOS_PIN_AT_MENTIONS`, off) yet.
+- **`/v1/retrieve` answers with `coverage`** (`recorded_through_turn`: the latest turn an extraction serves;
+  `covered_through_turn`: the last turn up to which every turn has an extraction and a scene summary) and, when the
+  request asked for trimming, `trim`. Older plugins ignore both.
+
 ## 0.6.0
 
 R8, amended (`docs/ROADMAP-1.0.md`): the owner's requests after 0.5.0 come before 1.0 — the author's note says where the
