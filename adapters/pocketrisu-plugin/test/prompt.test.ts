@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { hasPacket, inContextIds, injectPacket, isMainGeneration, PACKET_TAG, queryTexts, userTurnIndex } from '../src/prompt';
+import { findMarker, MEMORY_MARKER } from '../src/placement';
+import {
+  GUARD_LINE,
+  GUARD_RESERVE_TOKENS,
+  hasPacket,
+  inContextIds,
+  injectPacket,
+  isMainGeneration,
+  landsAfterUserTurn,
+  PACKET_TAG,
+  queryTexts,
+  userTurnAnchor,
+  userTurnIndex,
+  withGuard,
+} from '../src/prompt';
 import type { HostMessage, PromptMessage } from '../src/types';
 
 const host: HostMessage[] = [
@@ -278,5 +292,130 @@ describe('in-context detection (D3)', () => {
 describe('query texts', () => {
   it('uses the latest user message and the AI message before it', () => {
     expect(queryTexts(host)).toEqual({ query: 'Where did we hide the lantern?', previousAi: 'The harbor bell rang twice at dusk.' });
+  });
+});
+
+describe('guard line and post-turn landing (Phase 60 S2.2)', () => {
+  const packet = `${PACKET_TAG}\n  <Fact subject="세라">holds lantern</Fact>\n</NarrativeMemory>`;
+
+  it('appends the guard line only to non-empty packets and exports the reserve', () => {
+    expect(GUARD_RESERVE_TOKENS).toBe(40);
+    expect(withGuard(packet)).toBe(`${packet}\n${GUARD_LINE}`);
+    expect(withGuard('')).toBe('');
+  });
+
+  it('extracts userTurnAnchor from the latest active user message', () => {
+    expect(userTurnAnchor(host)).toBe('Where did we hide the lantern?');
+    expect(userTurnAnchor([])).toBe('');
+    expect(userTurnAnchor([{ role: 'user', data: '<div>   </div>', chatId: 'u0' }])).toBe('');
+    const longMsg = 'a'.repeat(30) + 'MIDDLE_ANCHOR_TEXT_FOR_SERA_AND_KAITO_TEST' + 'b'.repeat(30);
+    const longHost: HostMessage[] = [{ role: 'user', data: longMsg, chatId: 'u0' }];
+    expect(userTurnAnchor(longHost)).toHaveLength(64);
+    expect(longMsg.includes(userTurnAnchor(longHost))).toBe(true);
+  });
+
+  it('decides landsAfterUserTurn when no marker is present', () => {
+    const turn = userTurnIndex(mainPrompt, host);
+    expect(landsAfterUserTurn(mainPrompt, host, 'end', turn, null)).toBe(true);
+    expect(landsAfterUserTurn(mainPrompt, host, 'before_last_user', turn, null)).toBe(false);
+  });
+
+  it('decides landsAfterUserTurn when turn is unknown (turn < 0)', () => {
+    const marker = { message: 0, part: null, offset: 0 };
+    expect(landsAfterUserTurn(mainPrompt, host, 'end', -1, null)).toBe(true);
+    expect(landsAfterUserTurn(mainPrompt, host, 'before_last_user', -1, null)).toBe(false);
+    expect(landsAfterUserTurn(mainPrompt, host, 'before_last_user', -1, marker)).toBe(true);
+    expect(landsAfterUserTurn(mainPrompt, host, 'end', -1, marker)).toBe(true);
+  });
+
+  it('decides landsAfterUserTurn by message order when marker is in a different message', () => {
+    const markerBefore: PromptMessage[] = [
+      { role: 'system', content: `Header\n${MEMORY_MARKER}` },
+      ...mainPrompt.slice(1),
+    ];
+    const turnBefore = userTurnIndex(markerBefore, host);
+    expect(landsAfterUserTurn(markerBefore, host, 'end', turnBefore, findMarker(markerBefore))).toBe(false);
+
+    const markerAfter: PromptMessage[] = [
+      ...mainPrompt,
+      { role: 'system', content: `Trailer\n${MEMORY_MARKER}` },
+    ];
+    const turnAfter = userTurnIndex(markerAfter, host);
+    expect(landsAfterUserTurn(markerAfter, host, 'before_last_user', turnAfter, findMarker(markerAfter))).toBe(true);
+  });
+
+  it('decides landsAfterUserTurn when marker shares the turn message (string content)', () => {
+    const beforeUserText: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      { role: 'user', content: `${MEMORY_MARKER}\nWhere did we hide the lantern?` },
+    ];
+    const turnA = userTurnIndex(beforeUserText, host);
+    expect(landsAfterUserTurn(beforeUserText, host, 'end', turnA, findMarker(beforeUserText))).toBe(false);
+
+    const afterUserText: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      { role: 'user', content: `Where did we hide the lantern?\n${MEMORY_MARKER}` },
+    ];
+    const turnB = userTurnIndex(afterUserText, host);
+    expect(landsAfterUserTurn(afterUserText, host, 'before_last_user', turnB, findMarker(afterUserText))).toBe(true);
+
+    // Empty anchor defaults to true when marker is in the turn message.
+    expect(landsAfterUserTurn(beforeUserText, [], 'before_last_user', turnA, findMarker(beforeUserText))).toBe(true);
+  });
+
+  it('decides landsAfterUserTurn when marker shares a multipart turn message', () => {
+    const markerEarlierPart: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: `Context: ${MEMORY_MARKER}` },
+          { type: 'image_url', image_url: { url: 'https://example.invalid/a.png' } },
+          { type: 'text', text: 'Where did we hide the lantern?' },
+        ],
+      },
+    ];
+    const turnEarlier = userTurnIndex(markerEarlierPart, host);
+    expect(landsAfterUserTurn(markerEarlierPart, host, 'end', turnEarlier, findMarker(markerEarlierPart))).toBe(false);
+
+    const markerLaterPart: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Where did we hide the lantern?' },
+          { type: 'image_url', image_url: { url: 'https://example.invalid/a.png' } },
+          { type: 'text', text: `Notes: ${MEMORY_MARKER}` },
+        ],
+      },
+    ];
+    const turnLater = userTurnIndex(markerLaterPart, host);
+    expect(landsAfterUserTurn(markerLaterPart, host, 'before_last_user', turnLater, findMarker(markerLaterPart))).toBe(true);
+
+    const markerSamePartBefore: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: 'https://example.invalid/a.png' } },
+          { type: 'text', text: `${MEMORY_MARKER} Where did we hide the lantern?` },
+        ],
+      },
+    ];
+    const turnSameBefore = userTurnIndex(markerSamePartBefore, host);
+    expect(landsAfterUserTurn(markerSamePartBefore, host, 'end', turnSameBefore, findMarker(markerSamePartBefore))).toBe(false);
+
+    const markerSamePartAfter: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: 'https://example.invalid/a.png' } },
+          { type: 'text', text: `Where did we hide the lantern? ${MEMORY_MARKER}` },
+        ],
+      },
+    ];
+    const turnSameAfter = userTurnIndex(markerSamePartAfter, host);
+    expect(landsAfterUserTurn(markerSamePartAfter, host, 'before_last_user', turnSameAfter, findMarker(markerSamePartAfter))).toBe(true);
   });
 });
