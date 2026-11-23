@@ -306,6 +306,56 @@ describe('panel', () => {
     }
   });
 
+  describe('trimming on the status card (PHASE-60 S1 "Shown")', () => {
+    const last = { at: Date.now(), ms: 900, packetChars: 10, packet: 'x', outcome: 'injected' as const, deadlineMs: 3000 };
+    const lastCard = (title: string) => [...document.querySelectorAll<HTMLElement>('#nmos-panel .card')]
+      .find((c) => c.querySelector('h2')?.textContent === title)!;
+    const lineOf = (card: HTMLElement, text: string) => [...card.querySelectorAll<HTMLElement>('div')]
+      .find((e) => e.textContent === text);
+    const render = async (status: Partial<StatusInfo>, language: 'ko' | 'en') => {
+      const { d, args } = deps(status);
+      args.language = language;
+      await openPanel(d, 'status');
+      await settle();
+      const card = lastCard(language === 'en' ? 'Last request' : '마지막 요청');
+      document.getElementById('nmos-panel')?.remove();
+      return card;
+    };
+    const dropped = { dropped: 12, savedTokens: 3400, reason: null, keepFromTurn: 40 };
+
+    it('says how many old messages were left out and the tokens saved, right after the "ago · ms" line', async () => {
+      for (const [language, text] of [['ko', '오래된 대화 12개를 빼고 보냈습니다 (약 3,400토큰 절약)'],
+        ['en', 'Left out 12 old messages (about 3,400 tokens saved)']] as const) {
+        const card = await render({ last: { ...last, trim: dropped } }, language);
+        const line = lineOf(card, text)!;
+        expect(line).toBeDefined();
+        expect(line.className).toBe('muted');
+        expect(line.classList.contains('mono')).toBe(false);
+        expect(line.previousElementSibling!.textContent).toContain('900ms');
+      }
+    });
+
+    it('says why nothing was left out', async () => {
+      const card = await render({ last: { ...last, trim: { dropped: 0, savedTokens: 0, reason: 'uncovered', keepFromTurn: null } } },
+        'ko');
+      const line = lineOf(card, '오래된 대화를 빼지 않았습니다: 기억 정리(추출·요약)가 아직 따라오지 못함')!;
+      expect(line).toBeDefined();
+      expect(line.classList.contains('mono')).toBe(false);
+    });
+
+    it('adds nothing without a trimming outcome', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const plain = await render({ last }, language);
+        const trimmed = await render({ last: { ...last, trim: dropped } }, language);
+        const text = language === 'en' ? 'Left out 12 old messages (about 3,400 tokens saved)'
+          : '오래된 대화 12개를 빼고 보냈습니다 (약 3,400토큰 절약)';
+        lineOf(trimmed, text)!.remove();
+        expect(plain.innerHTML).toBe(trimmed.innerHTML);
+        expect(plain.children.length).toBe(4); // title, outcome, "ago · ms", packet
+      }
+    });
+  });
+
   it('says when no chat is open', async () => {
     const { d, open } = deps();
     open.chat = null;
