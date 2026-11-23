@@ -153,6 +153,12 @@ def test_reversed_index_order_still_returns_input_order():
         {"index": 1, "relevance_score": 0.4},
         {"index": 2, "relevance_score": 0.3},
     ]},
+    # an integer score too large for a float (valid JSON): OverflowError on conversion
+    {"results": [
+        {"index": 0, "relevance_score": 10 ** 400},
+        {"index": 1, "relevance_score": 0.4},
+        {"index": 2, "relevance_score": 0.3},
+    ]},
     # missing results/data list
     {"scores": [0.1, 0.2, 0.3]},
     # non-list results

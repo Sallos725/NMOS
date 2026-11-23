@@ -98,7 +98,10 @@ def parse_scores(body: Any, expected: int) -> list[float] | None:
         raw_score = item.get("relevance_score")
         if not isinstance(raw_score, (int, float)) or isinstance(raw_score, bool):
             return None
-        val = float(raw_score)
+        try:
+            val = float(raw_score)
+        except (OverflowError, ValueError, TypeError):  # e.g. an integer too large for a float: valid JSON
+            return None
         if not math.isfinite(val):
             return None
         scores[idx] = val
@@ -138,7 +141,22 @@ def score(
 
     Fails open (`None`) on any configuration guard, timeout, transport error, non-2xx status,
     or malformed response. Never logs credentials, URL userinfo, query text, or documents.
+    Total: it never raises into the request path, whatever the configuration or the answer.
     """
+    try:
+        return _score(reranker, query, documents, timeout_s, client)
+    except Exception as exc:  # noqa: BLE001  (fail open: the reranker may never fail a request)
+        log.debug("rerank status=error error=%s", type(exc).__name__)
+        return None
+
+
+def _score(
+    reranker: Reranker,
+    query: str,
+    documents: list[str],
+    timeout_s: float | None,
+    client: httpx.Client | None,
+) -> list[float] | None:
     if reranker.format not in FORMATS or not reranker.url.strip() or not reranker.model.strip():
         return None
     if not documents:
@@ -180,13 +198,11 @@ def score(
         return None
 
     try:
-        body = res.json()
+        scores = parse_scores(res.json(), len(docs))
     except Exception:
-        log.debug("rerank status=%d ms=%d", res.status_code, elapsed_ms)
-        return None
-
+        scores = None
     log.debug("rerank status=%d ms=%d", res.status_code, elapsed_ms)
-    return parse_scores(body, len(docs))
+    return scores
 
 
 def reorder(candidates: list[T], scores: list[float]) -> list[T]:

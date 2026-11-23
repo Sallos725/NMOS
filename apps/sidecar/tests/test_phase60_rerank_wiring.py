@@ -201,7 +201,7 @@ def test_configured_the_30_eligible_are_sent_once_and_reordered_by_score(migrate
     assert best in {s["revision_id"] for s in trace["selected"]}
 
 
-@pytest.mark.parametrize("failure", ["timeout", "status_500", "malformed", "not_json"])
+@pytest.mark.parametrize("failure", ["timeout", "status_500", "malformed", "huge_int", "not_json"])
 def test_a_failed_rerank_leaves_the_fused_order(migrated, rerank_server, failure):
     rerank_server.score = score_of
     kw: dict[str, Any] = {}
@@ -212,6 +212,9 @@ def test_a_failed_rerank_leaves_the_fused_order(migrated, rerank_server, failure
         rerank_server.status = 500
     elif failure == "malformed":
         rerank_server.raw_body = json.dumps({"results": [{"index": 0, "relevance_score": "high"}]}).encode()
+    elif failure == "huge_int":  # a well-formed answer whose scores no float can hold: never a 500
+        rerank_server.raw_body = json.dumps({"results": [{"index": i, "relevance_score": 10 ** 400}
+                                                         for i in range(rerank.MAX_CANDIDATES)]}).encode()
     else:
         rerank_server.raw_body = b"<html>not json</html>"
     with make_client(migrated, **settings()) as client:
