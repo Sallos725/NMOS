@@ -23,6 +23,10 @@ PACKET_CLOSE = "</NarrativeMemory>"
 GONE_MARK = 'gone="true"'
 GONE_NOTE = (" gone=\"true\" marks a character who is dead or gone: they do not appear, act or speak now unless the"
              " story itself brings them back.")
+# packet-v20 (PHASE-60 S4, ADR 0082 item 4): a <Cast> character back after a long absence carries this on its tag
+BACK_AFTER_MARK = 'back_after="'
+BACK_AFTER_NOTE = (" back_after on a Character marks one who has just come back after that long away from the story:"
+                   " write them as returning after that time.")
 # Added to the Note only when a kept line uses the mark (ADR 0013), so other packets stay as they were.
 NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly not, or no longer, true."),
                ("<Claim ", " A Claim is what that character said, not established truth."),
@@ -45,8 +49,9 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                                   " story may have changed it since."),
                ('locked="true"', " locked=\"true\" marks a fact the user fixed: it holds, whatever the story said"
                                  " against it."),
-               # packet-v20 only (GONE_POLICIES): an older policy never adds it, whatever a value spells
-               (GONE_MARK, GONE_NOTE))
+               # packet-v20 only (`_V20_MARKS`): an older policy never adds them, whatever a value spells
+               (GONE_MARK, GONE_NOTE),
+               (BACK_AFTER_MARK, BACK_AFTER_NOTE))
 MAX_EXCERPT_CHARS = 480
 # packet-v10 grows an excerpt to at most this many sentences (owner, 2026-09-30): growing to the whole length brought
 # back more values the story had since replaced (docs/perf/lexical-recall.md, "Step 4"); packet-v11 lifts the cap for a
@@ -318,6 +323,9 @@ RELATED_FILL_POLICIES = frozenset({"packet-v19", "packet-v20"})  # the budget fi
 COVERAGE_POLICIES = frozenset({"packet-v20"})  # Note states how far extraction has recorded when a replied turn is newer (PHASE-60 S2.1, ADR 0082 item 6)
 GONE_POLICIES = frozenset({"packet-v20"})  # a character who is gone: their status line pinned, marked (PHASE-60 S3, ADR 0082 items 2–3)
 GONE_SHARE = 0.1  # packet-v20: gone lines together may take at most this share of the budget inside the frame
+RETURN_GAP_POLICIES = frozenset({"packet-v20"})  # a <Cast> character back after a long absence is marked (PHASE-60 S4, ADR 0082 item 4)
+# The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
+_V20_MARKS = {GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES}
 STATE_HISTORY_MAX = 6  # changes on one <StateHistory> line
 STATE_HISTORY_KEYS = 2  # keys one message gets a line for
 EXCERPT_FLOOR = 0.5  # packet-v14: an excerpt after the first needs this share of the best fused score, or a word hit
@@ -583,7 +591,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
                   policy: str = DEFAULT_POLICY, lead: list[Line] | None = None, note: str = "",
                   story: list[Line] | None = None, cast: list[tuple[str, list[Line]]] | None = None,
                   named: frozenset[str] = frozenset(), risky: frozenset[str] = frozenset(),
-                  gone: list[Line] | None = None) -> Compiled:
+                  gone: list[Line] | None = None, cast_marks: dict[str, str] | None = None) -> Compiled:
     """Fill the budget and record every offered line in a ledger (ADR 0027).
 
     Budget order is fixed: state, lead facts (how the cast stand with each other, ADR 0026), open threads
@@ -605,7 +613,10 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     the cast and emitted first in <Facts>, or first in <Private> when private; a gone character with a <Cast> group has
     its marked line first in that group instead (the caller puts it there; `marks["gone"]` tells it apart). Together
     they take at most GONE_SHARE of the budget inside the frame, the newest first; a line beyond it is left out
-    (`gone_cap`). Every other policy ignores `gone`."""
+    (`gone_cap`). Every other policy ignores `gone`.
+
+    packet-v20 (PHASE-60 S4, ADR 0082 item 4): `cast_marks` ({character name: "~N turns"}) puts back_after on that
+    character's <Character> tag; the longer opening is part of its group's cost. Every other policy ignores it."""
     if policy in LABEL_POLICIES and risky:  # a risky line is offered after the other supportive ones (PHASE-34 Q1)
         def demoted(line: Line) -> bool:
             ref = str(line.ref.get("assertion"))
@@ -620,7 +631,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     reserving = policy != "packet-v0"  # packet-v1 and later
     state, threads, facts, lead, story, cast = state or [], threads or [], facts or [], lead or [], story or [], cast or []
     gone = (gone or []) if policy in GONE_POLICIES else []
-    notes = NOTE_EXTRAS if policy in GONE_POLICIES else tuple(n for n in NOTE_EXTRAS if n[0] != GONE_MARK)
+    cast_marks = (cast_marks or {}) if policy in RETURN_GAP_POLICIES else {}
+    notes = tuple(n for n in NOTE_EXTRAS if n[0] not in _V20_MARKS or policy in _V20_MARKS[n[0]])
     note = escape(note)  # a narrator's name is not markup: it stays inside the Note
     cast_lines = [line for _, lines in cast for line in lines]
     ledger = ([_entry("state_history" if i.history else "state", {"key": i.key}, i.turn, i.text,
@@ -705,7 +717,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     kept_cast: list[str] = []
     for name, lines in cast:
         group: list[str] = []
-        opening = f"    <Character name={quoteattr(name)}>"
+        back = f" back_after={quoteattr(cast_marks[name])}" if name in cast_marks else ""
+        opening = f"    <Character name={quoteattr(name)}{back}>"
         for line in lines:
             entry = ledger[offset]
             offset += 1

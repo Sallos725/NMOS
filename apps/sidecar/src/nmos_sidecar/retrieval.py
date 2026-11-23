@@ -23,7 +23,7 @@ from psycopg.types.json import Jsonb
 
 from .entities import PERSONA, norm
 from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, lexically_related, memory_view, relevant_facts, thread_entry
-from . import coverage, overuse, quotes, scene, spans, statechange, summaries, variants, source_time
+from . import absence, coverage, overuse, quotes, scene, spans, statechange, summaries, variants, source_time
 from .gone import is_gone_place, is_gone_status
 from .ids import uuid7
 from .ledger import find_conversation
@@ -33,7 +33,7 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      CHANGE_POLICIES, CONTENTS, COVERAGE_POLICIES, GONE_POLICIES, LABEL_POLICIES, STATE_HISTORY_KEYS,
                      STATE_HISTORY_MAX, STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES,
                      SOURCE_CLOCK_POLICIES, STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
-                     QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
+                     QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, RETURN_GAP_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
@@ -920,6 +920,7 @@ class Gathered:
     cast_lines: list[tuple[str, list[Line]]] = field(default_factory=list)  # each scene character's state (packet-v8)
     secrets: list[dict[str, Any]] | None = None  # head secrets from view, reused by coverage without a second read
     gone: list[Line] = field(default_factory=list)  # gone characters' status lines not in <Cast> (packet-v20, PHASE-60 S3)
+    cast_marks: dict[str, str] = field(default_factory=dict)  # <Cast> name → back_after value (packet-v20, PHASE-60 S4)
 
 
 def persona_question_names(r: Any) -> frozenset[str]:
@@ -942,11 +943,14 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
            canon_manifest: str | None = None, canon_exact: bool = False, canon_held: Iterable[str] = (),
            canon_facts: Any = LIVE, vectors_now: bool = False,
            recent: list[overuse.Recent] | None = None,
-           coverage_info: Mapping[str, int | None] | None = None) -> Gathered:
+           coverage_info: Mapping[str, int | None] | None = None,
+           served_turns: frozenset[int] | None = None) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time. The canon keys the
     prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047).
-    `vectors_now` searches vectors as they are now whatever `known_at` says (a replay's named projection)."""
+    `vectors_now` searches vectors as they are now whatever `known_at` says (a replay's named projection).
+    `served_turns`: the turns an extraction serves as of the request, when the caller has read them (packet-v20's
+    return gap); otherwise they are read here, as of `upto` and `known_at`, and only when a gap is possible."""
     started = time.perf_counter()
     g = Gathered()
     # packet-v14 (PHASE-34 Q2, Q3): the supportive lines overused in the requests before this one rest
@@ -1124,6 +1128,17 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             # packet-v20 (PHASE-60 S3): a gone character's status, whether or not the message names them; like <Cast>,
             # whether or not its message is in the prompt (the mark is what the prompt lacks)
             pin_gone(g, view, r, now, options)
+        if options.policy in RETURN_GAP_POLICIES and g.cast_lines and r is not None and now is not None:
+            # packet-v20 (PHASE-60 S4): a <Cast> character back after a long absence; which turns an extraction serves
+            # is read only when some character's appearances leave room for a gap
+            loaded = [served_turns]
+
+            def served(t: int) -> bool:
+                if loaded[0] is None:
+                    loaded[0] = coverage.extraction_state(conn, head, upto, known_at)[0]
+                return t in loaded[0]
+
+            g.cast_marks = return_marks(view, r, g.cast, g.cast_lines, now, served, options.policy)
     if options.policy in COVERAGE_POLICIES and coverage_info is not None:
         g.note += coverage_note(coverage_info.get("recorded_through_turn"), coverage_info.get("latest_replied_turn"))
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
@@ -1524,11 +1539,56 @@ def pin_gone(g: Gathered, view: dict[str, Any], r: Any, now: int | None, options
     return rows
 
 
+def appearances(view: dict[str, Any], r: Any) -> dict[str, list[int]]:
+    """Each character's turns, by entity key, from every assertion the view read: superseded versions too (a place the
+    story replaced was still an appearance), as subject, object or typed participant (PHASE-60 S4). Canon rows are
+    before the story, and rows carried from another chat are not this chat's story: neither is an appearance."""
+    rows = view.get("assertions")
+    if rows is None:
+        rows = view["facts"] + view["claims"] + view["other"]
+    out: dict[str, set[int]] = {}
+    for x in rows:
+        if x.get("canon") or x.get("carried") or x.get("turn") is None:
+            continue
+        names = [x["subject"]] if x.get("subject_type") == "character" else []
+        if x.get("object_type") == "character":
+            names.append(x.get("object"))
+        names += [p["name"] for p in x.get("participants") or () if p.get("type") == "character"]
+        for name in names:
+            if name:
+                out.setdefault(scene.key(r, name), set()).add(x["turn"])
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def return_marks(view: dict[str, Any], r: Any, cast: dict[str, str], cast_lines: list[tuple[str, list[Line]]],
+                 now: int, served: Callable[[int], bool] | Iterable[int], policy: str = "packet-v20") -> dict[str, str]:
+    """packet-v20 (PHASE-60 S4, ADR 0082 item 4): {<Cast> name: back_after value} for each character with a <Cast>
+    group, not the persona, whose current run began at most RUN_START_MAX turns ago after at least GAP_MIN served turns
+    away (`absence.return_gap`). `served` is asked only when a gap is possible even if every turn were served. Every
+    other policy: none."""
+    if policy not in RETURN_GAP_POLICIES or r is None or not cast_lines:
+        return {}
+    persona = scene.key(r, scene.PERSONA)
+    key_of = {name: k for k, name in cast.items()}
+    seen = appearances(view, r)
+    out: dict[str, str] = {}
+    for name, _ in cast_lines:
+        k = key_of.get(name)
+        if k is None or k == persona or scene.is_persona(r, name):
+            continue
+        turns = seen.get(k, [])
+        if absence.return_gap(turns, lambda _t: True, now) is None:  # no gap even if every turn were served
+            continue
+        if (gap := absence.return_gap(turns, served, now)) is not None:
+            out[name] = absence.back_after_label(gap)
+    return out
+
+
 def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
     """One request's packet from what `gather` offered (the request and its replay compile alike)."""
     compiled = compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
                              note=g.note, story=g.story, cast=g.cast_lines, named=frozenset(g.named),
-                             risky=frozenset(g.risky), gone=g.gone)
+                             risky=frozenset(g.risky), gone=g.gone, cast_marks=g.cast_marks)
     compiled = source_time.supplement(compiled, g.ranked, g.source_clocks, budget, policy)
     if policy in LABEL_POLICIES:
         # Diagnostics never take part in selection, token fitting or the rest/echo calculation.
@@ -1880,12 +1940,13 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             "recorded_through_turn": max(served) if served else None,
             "latest_replied_turn": latest_replied,
         }
+    served_now = cov.served_turns if cov is not None else served  # read once; the return gap reuses it (PHASE-60 S4)
     history = (overuse.recent(conn, conv.id, head, n=options.rest_after + 1)
                if options.policy in REST_POLICIES and fresh else None)
     g = (gather(conn, head, query, previous_ai, in_context, filled(options, request.budget_tokens), upto,
                 canon_manifest=getattr(request, "canon_manifest_id", None),
                 canon_held=getattr(request, "canon_held", None) or (), recent=history,
-                coverage_info=cov_for_gather) if fresh else Gathered())
+                coverage_info=cov_for_gather, served_turns=served_now) if fresh else Gathered())
     def compile_at(budget: int) -> Compiled:
         return compile_gathered(g, budget, options.policy)
 
@@ -1899,7 +1960,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         g = gather(conn, head, query, previous_ai, in_context, filled(options, request.budget_tokens), upto,
                    canon_manifest=getattr(request, "canon_manifest_id", None),
                    canon_held=getattr(request, "canon_held", None) or (), recent=history,
-                   coverage_info=cov_for_gather)
+                   coverage_info=cov_for_gather, served_turns=served_now)
         compiled = compile_at(request.budget_tokens)
     kept = kept_counts(compiled.ledger)
     # Memory the budget left out, and the budget that would hold it all: the panel suggests it (ADR 0036).
