@@ -138,8 +138,10 @@ fact does (D44, D45).
   `{model, query, documents, top_n}`, answers with `results[]` or `data[]` of `{index, relevance_score}`), also
   settable in the panel's settings. Unconfigured, no code path calls anything. Configured, the top 30 fused
   candidates **(proposal)**, each cut to 1,000 normalized characters, are sent once per request with the `httpx`
-  client the sidecar already has (no new dependency); the answer reorders them, and a timeout, an error, a malformed
-  answer or the request's remaining deadline leaves the fused order (fail open). The trace records `rerank_used`,
+  client the sidecar already has (no new dependency); the answer reorders them, and a timeout, an error or a malformed
+  answer leaves the fused order (fail open). The call is bounded by its own timeout on the sidecar (the request carries
+  no remaining deadline); the plugin's deadline (3 s by default) is around the whole request, so the embedding timeout
+  plus the rerank timeout should stay well under it. The trace records `rerank_used`,
   `rerank_ms` and each candidate's rerank score; **a replay never calls the reranker**, it applies the recorded
   scores. The key is a credential like the other two: never in a trace, a log or an archive (an archive holding one is
   refused, D60). It sends chat text to the configured endpoint, as the embedder does; the settings say so.

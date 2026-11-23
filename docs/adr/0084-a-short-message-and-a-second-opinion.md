@@ -18,8 +18,10 @@ And the fused order (RRF of lexical, keyword and vector) has no model that reads
    reply, so the common case still has its embedding waiting. A mismatch falls back to the bounded wait, then to
    lexical recall, as today.
 3. **`AGENTS.md §4` is amended:** the request path may make, besides the query embedding, **one non-generative
-   rerank call**, only when the owner configured a reranker, inside its own timeout and the request's deadline, failing
-   open to the fused order. Generative calls stay in the worker.
+   rerank call**, only when the owner configured a reranker, bounded by its own timeout on the sidecar (the request
+   carries no remaining deadline; the plugin's deadline around the whole request still fails it open on the plugin's
+   side), failing open to the fused order. The embedding timeout plus the rerank timeout should stay well under the
+   plugin's deadline (3 s by default). Generative calls stay in the worker.
 4. **Opt-in by configuration, not by default.** No URL and model, no code path that calls. No new dependency: the
    sidecar's `httpx`.
 5. **A replay never calls.** The trace records each candidate's rerank score, `rerank_used` and `rerank_ms`; an as-of

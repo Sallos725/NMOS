@@ -253,7 +253,8 @@ A change that weakens one of these requires an explicit owner decision.
 - Generative LLM calls run only in the worker, never on the request path (PHASE-2).
 - The request path may embed the query only, with its own short timeout and lexical fallback (PHASE-3). Since
   PHASE-60 (ADR 0084) it may also make one non-generative rerank call, only when the owner configured a reranker,
-  inside its own timeout and the request's deadline, failing open to the fused order.
+  bounded by its own timeout on the sidecar (the plugin's deadline is around the whole request; keep the embedding
+  and rerank timeouts together well under it, 3 s by default), failing open to the fused order.
 - Do not add model-provider abstractions early merely because the reference architecture will need them.
 
 ### Dependencies
