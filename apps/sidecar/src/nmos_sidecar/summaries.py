@@ -112,7 +112,8 @@ def summarizer(settings: Settings) -> Generation | None:
     return generations.make(
         "summarize", settings.llm_url, settings.llm_model, version=VERSION,
         prompt=generations.fingerprint(SCENE_PROMPT + STORY_PROMPT), normalizer=normtext.NORMALIZER_VERSION,
-        json_mode=settings.llm_json_mode, temperature=0, window=WINDOW, lag=LAG, message_chars=MESSAGE_CHARS,
+        json_mode=settings.llm_json_mode, window=WINDOW, lag=LAG, message_chars=MESSAGE_CHARS,
+        **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
     )
 
 

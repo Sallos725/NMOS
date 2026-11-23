@@ -1779,7 +1779,8 @@ def extractor(settings: Settings) -> Generation | None:
         **({"speakers": generations.fingerprint(f"{SPEAKER_RULE}|{QUOTES_LISTED}|{QUOTE_SHOWN}|{SYSTEM_V17}")}
            if compiler in SPEAKERS else {}),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,
-        json_mode=settings.llm_json_mode, temperature=0, unit="turn", context_turns=settings.extract_turns,
+        json_mode=settings.llm_json_mode, unit="turn", context_turns=settings.extract_turns,
+        **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
         target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS, hints=settings.extract_hints,
     )
 
