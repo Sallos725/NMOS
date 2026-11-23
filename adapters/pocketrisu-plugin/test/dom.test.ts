@@ -1391,7 +1391,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     const pin = '0190f3a4-1b2c-7d3e-8f40-0000000000aa';
     const hanaRow = (extra: Record<string, unknown> = {}) =>
       ({ id: who, type: 'character', name: '하나', names: ['하나'], mentions: 9, links: [], aliases: [], ...extra });
-    const titles = { ko: '인물 고정', en: 'Pin this character' } as const;
+    const titles = { ko: '하나 고정', en: 'Pin 하나' } as const;  // the card names whose page it is (SHOTS finding 9)
     const sentences = {
       ko: '고정한 인물의 현재 사실은 장면에 이름이 나오지 않아도 매 답장의 기억에 들어갑니다. 그래서 고정은 요청마다 기억 예산의 일부를 씁니다. 언제든 풀 수 있습니다.',
       en: "A pinned character's current facts go into memory on every reply, even when the scene does not name them, so a pin uses part of the memory budget on every request. You can take it off any time.",

@@ -1450,7 +1450,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         box.disabled = false;
       }
     });
-    pinCard.replaceChildren(el('h2', { text: L('pin.title') }), el('p', { class: 'sub', text: L('pin.sub') }),
+    pinCard.replaceChildren(el('h2', { text: L('pin.title', { n: row.name }) }), el('p', { class: 'sub', text: L('pin.sub') }),
       el('label', { class: 'check' }, box, el('span', { text: L('pin.toggle') })), msg);
     pinCard.style.display = '';
   }

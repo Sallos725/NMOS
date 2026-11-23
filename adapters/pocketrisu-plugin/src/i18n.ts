@@ -666,7 +666,7 @@ const STRINGS = {
   'tune.pin_at': ['메시지에서 @이름으로 인물 고정', 'Pin a character with @name in a message'],
   'tune.pin_at_hint': ['켜면 "@세라 어디 있어?"처럼 메시지에 @이름으로 쓴 인물은, 장면에 이름이 나오지 않아도 그 답장의 기억에 들어갑니다. 단어 안의 @(이메일 주소, 아이디)나 이 채팅의 인물이 아닌 이름 앞의 @는 아무 일도 하지 않습니다.',
     'On: a message like "@Sera where are you?" keeps Sera in memory for that reply even when the scene does not name her. An @ inside a word (an e-mail address, a handle) or before a name that is no character of this chat does nothing.'],
-  'pin.title': ['인물 고정', 'Pin this character'],
+  'pin.title': ['{n} 고정', 'Pin {n}'],
   'pin.toggle': ['항상 기억에 두기', 'Always keep in memory'],
   'pin.sub': ['고정한 인물의 현재 사실은 장면에 이름이 나오지 않아도 매 답장의 기억에 들어갑니다. 그래서 고정은 요청마다 기억 예산의 일부를 씁니다. 언제든 풀 수 있습니다.',
     "A pinned character's current facts go into memory on every reply, even when the scene does not name them, so a pin uses part of the memory budget on every request. You can take it off any time."],
