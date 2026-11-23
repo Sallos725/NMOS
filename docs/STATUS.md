@@ -12,6 +12,11 @@ are at their defaults (`llm_extra_body` empty, a temperature of 0 sent); what a 
 experiment. **The 1.0 gate's two quiet weeks restart at this deployment; earliest end 2026-12-08** (`ROADMAP-1.0.md`).
 Rollback: `rollback61.sh` beside the backups in `~/nmos-eval/phase61-backup-20261124-0221/`; it refuses while a body or
 the no-temperature switch is set (clear both in the panel first, carry on), then changes the image only.
+**Fix, 2026-11-24 08:16 KST** (found by the owner's first use): picking a reasoning effort in the dropdown wrote nothing
+in a real browser, where a select fires `input` before `change` and the settings view's `input` handler set the
+dropdown back from the unchanged text first; the tests had sent `change` alone. The dropdown now writes on `input`
+too, and the tests pick an option as a browser does. Image `exp-phase61-9296889` (plugin build `870d9e00b6f7`; the
+sidecar's code unchanged, so no generation was made and nothing queued; the owner's saved body kept).
 
 ## Phase 60 on production — 2026-11-23
 
