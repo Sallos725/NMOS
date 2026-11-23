@@ -1153,6 +1153,17 @@ def thread_line(t: dict[str, Any]) -> str:
     return f"    <Thread{attrs}>{escape(t.get('text') or '')}</Thread>"
 
 
+def settled_line(t: dict[str, Any]) -> str:
+    """packet-v20 (PHASE-60 S4): a thread the story closed, as its open line with how it ended first (`status`, so the
+    open kinds' Note marks never match it) and the closing turn after its own."""
+    turn = t["turn"] if t.get("turn") is not None else t["position"]
+    attrs = f" status={quoteattr(t['status'])} kind={quoteattr(t['kind'])} by={quoteattr(t['by'])}"
+    if t.get("to"):
+        attrs += f" to={quoteattr(t['to'])}"
+    attrs += f" turn=\"{turn}\" closed_turn=\"{t['closed_by']['turn']}\"" + _knowledge_attrs(t)
+    return f"    <Thread{attrs}>{escape(t.get('text') or '')}</Thread>"
+
+
 def claim_line(c: dict[str, Any], marked: bool = False, cause: bool = False) -> str:
     """What a character said (ADR 0013): never a fact, whatever the narration says. `marked` adds who
     knows it (the Private section, ADR 0035); `cause` the cause they give (packet-v6, ADR 0040)."""
@@ -1200,3 +1211,12 @@ def _ref(a: dict[str, Any]) -> dict[str, Any]:
 def thread_entry(t: dict[str, Any], private: bool = False) -> Line:
     return Line("thread", thread_line(t), _ref(t), t.get("turn"),
                 f"{t['by']} → {t.get('to') or '?'}: {t.get('text') or ''}", t.get("text") or "", _marks(t), private)
+
+
+def settled_entry(t: dict[str, Any], private: bool = False) -> Line:
+    """A closed thread's line (packet-v20, PHASE-60 S4): ledger kind `thread`, the same assertion as its open line (one
+    thread is one line across requests, `overuse.key`), `marks["settled"]` its status. The status is in the text's
+    head, so the line never restates a similar promise opened afresh (`packet.restated`)."""
+    return Line("thread", settled_line(t), _ref(t), t.get("turn"),
+                f"{t['by']} → {t.get('to') or '?'} ({t['status']}): {t.get('text') or ''}", t.get("text") or "",
+                {**_marks(t), "settled": t["status"]}, private)

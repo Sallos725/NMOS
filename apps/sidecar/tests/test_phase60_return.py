@@ -15,10 +15,11 @@ from psycopg.rows import dict_row
 
 from conftest import make_client
 from memeval import stub_extractor
-from nmos_sidecar import audit, packet, retrieval, scene
+from nmos_sidecar import audit, overuse, packet, retrieval, scene
 from nmos_sidecar.entities import resolve
-from nmos_sidecar.packet import BACK_AFTER_NOTE, Line, compile_lines
-from nmos_sidecar.retrieval import RecallOptions, return_marks
+from nmos_sidecar.facts import settled_entry, thread_entry
+from nmos_sidecar.packet import BACK_AFTER_NOTE, SETTLED_NOTE, Line, compile_lines
+from nmos_sidecar.retrieval import Gathered, RecallOptions, return_marks, settled_lines
 from simchat import SimChat
 from test_extraction import drain
 from test_generations import LLM
@@ -222,3 +223,226 @@ def test_a_returning_character_is_marked_under_v20_only_and_replays(migrated, po
         assert "back_after" not in as_v19["text"]
     else:
         assert "back_after" not in text and BACK_AFTER_NOTE not in text
+
+
+# --- settled lines -------------------------------------------------------------------------------------------------------
+
+
+PROMISE_NOTE = dict(packet.NOTE_EXTRAS)['<Thread kind="promise"']
+V20 = RecallOptions(policy="packet-v20")
+
+
+def closed(tid: int, status: str, closed_turn: int | None, by: str = "세라", to: str | None = "카이토",
+           text: str | None = None, **kw) -> dict:
+    """A thread as `threads.fold` leaves it, opened at turn `tid` and closed at `closed_turn`."""
+    kind = "promise" if status in ("open", "kept", "broken") else "goal"
+    return {"id": tid, "kind": kind, "by": by, "to": to, "text": text or f"약속 {tid}", "turn": tid, "position": tid,
+            "host_logical_id": f"m{tid}", "names": [by, *([to] if to else [])], "status": status,
+            "closed_by": None if closed_turn is None else {"id": 1000 + tid, "turn": closed_turn,
+                                                         "position": closed_turn},
+            "restated": [], **kw}
+
+
+def scene_of(items: list[dict], present=("세라", "카이토"), query: str = "", now: int = 50,
+             persona=()) -> tuple[Gathered, dict, object]:
+    rows = [seen(now - 1, n) for n in present]
+    r = resolve(uuid.uuid4(), rows, persona=persona)
+    g = Gathered()
+    g.cast = scene.cast(rows, r, query, "", now)
+    view = {"facts": rows, "claims": [], "other": [], "threads": items, "excluded": {}}
+    return g, view, r
+
+
+def settled_of(items, present=("세라", "카이토"), query: str = "", now: int = 50, rest=frozenset(),
+               options: RecallOptions = V20, persona=()) -> tuple[list[Line], Gathered]:
+    g, view, r = scene_of(items, present, query, now, persona)
+    return settled_lines(g, view, r, query, now, rest, options), g
+
+
+def ids(lines: list[Line]) -> list[int]:
+    return [line.ref["assertion"] for line in lines]
+
+
+def test_the_line_shape():
+    t = closed(10, "broken", 20)
+    line = settled_entry(t)
+    assert line.xml == ('    <Thread status="broken" kind="promise" by="세라" to="카이토" turn="10" closed_turn="20">'
+                        '약속 10</Thread>')
+    assert line.kind == "thread" and line.ref == {"assertion": 10} and line.marks == {"settled": "broken"}
+    assert line.text == "세라 → 카이토 (broken): 약속 10" and line.content == "약속 10"
+    goal = settled_entry(closed(11, "achieved", 21, to=None))
+    assert goal.xml == '    <Thread status="achieved" kind="goal" by="세라" turn="11" closed_turn="21">약속 11</Thread>'
+
+
+def test_at_most_three_broken_before_kept_then_newest():
+    items = [closed(1, "kept", 49), closed(2, "broken", 40), closed(3, "achieved", 50), closed(4, "failed", 46),
+             closed(5, "open", None)]
+    lines, _ = settled_of(items)
+    assert ids(lines) == [4, 2, 3]
+
+
+def test_only_inside_fifteen_turns():
+    lines, _ = settled_of([closed(1, "broken", 34), closed(2, "kept", 35)])
+    assert ids(lines) == [2]  # 16 turns ago: none; 15: kept
+
+
+def test_maker_or_recipient_in_the_scene_or_named():
+    items = [closed(1, "kept", 45, by="세라", to="하나"), closed(2, "kept", 46, by="하나", to="카이토"),
+             closed(3, "kept", 47, by="하나", to="유나")]
+    assert ids(settled_of(items)[0]) == [2, 1]  # 3: neither in the scene
+    assert ids(settled_of(items, present=("세라",))[0]) == [1]
+    assert ids(settled_of(items, present=("세라",), query="유나는 어떻게 됐어?")[0]) == [3, 1]  # named
+
+
+def test_the_persona_does_not_make_a_thread_involved():
+    items = [closed(1, "kept", 45, by="{{user}}", to="하나"), closed(2, "kept", 46, by="하나", to="{{user}}")]
+    assert settled_of(items, present=("세라",))[0] == []
+    items = [closed(3, "kept", 46, by="하나", to="타쿠미")]
+    assert settled_of(items, present=("세라", "타쿠미"), persona=["타쿠미"])[0] == []
+
+
+def test_a_carried_thread_has_no_settled_line():
+    """Carry hook: settled lines come only from the chat's own threads."""
+    assert settled_of([closed(1, "broken", 45, carried=True)])[0] == []
+    assert ids(settled_of([closed(1, "broken", 45, carried=True), closed(2, "kept", 44)])[0]) == [2]
+
+
+def test_older_policies_and_no_turn_give_none():
+    items = [closed(1, "broken", 45)]
+    for policy in ("packet-v19", "packet-v14"):
+        assert settled_of(items, options=RecallOptions(policy=policy))[0] == []
+    g, view, r = scene_of(items)
+    assert settled_lines(g, view, r, "", None, frozenset(), V20) == []
+
+
+def open_line(tid: int) -> Line:
+    return thread_entry(closed(tid, "open", None))
+
+
+def test_placed_after_the_open_threads_outside_their_limit_supportive():
+    lines, _ = settled_of([closed(1, "kept", 45), closed(2, "broken", 40), closed(3, "achieved", 48)])
+    opened = [open_line(30), open_line(31), open_line(32)]
+    out = compile_lines([], 3000, threads=opened, settled=lines, policy="packet-v20")
+    body = out.text.split("<Threads>\n", 1)[1].split("  </Threads>", 1)[0].splitlines()
+    assert [b.split(">", 1)[0] for b in body] == [
+        '    <Thread kind="promise" by="세라" to="카이토" turn="30"',
+        '    <Thread kind="promise" by="세라" to="카이토" turn="31"',
+        '    <Thread kind="promise" by="세라" to="카이토" turn="32"',
+        '    <Thread status="broken" kind="promise" by="세라" to="카이토" turn="2" closed_turn="40"',
+        '    <Thread status="achieved" kind="goal" by="세라" to="카이토" turn="3" closed_turn="48"',
+        '    <Thread status="kept" kind="promise" by="세라" to="카이토" turn="1" closed_turn="45"']
+    entries = [e for e in out.ledger if (e.get("marks") or {}).get("settled")]
+    assert len(entries) == 3 and all(e["placed"] and e["kind"] == "thread" for e in entries)
+    assert {e["label"] for e in entries} == {"supportive"}
+    assert SETTLED_NOTE in out.text and PROMISE_NOTE in out.text  # open promises are placed too
+
+
+def test_the_promise_note_is_not_said_for_a_settled_promise():
+    lines, _ = settled_of([closed(1, "broken", 45)])
+    out = compile_lines([], 2000, settled=lines, policy="packet-v20")
+    assert '<Thread status="broken" kind="promise"' in out.text
+    assert SETTLED_NOTE in out.text and PROMISE_NOTE not in out.text
+    none = compile_lines([], 2000, threads=[open_line(30)], policy="packet-v20")
+    assert SETTLED_NOTE not in none.text
+
+
+def test_older_policies_ignore_settled_lines_byte_for_byte():
+    lines, _ = settled_of([closed(1, "broken", 45)])
+    for policy in ("packet-v19", "packet-v14", "packet-v8"):
+        with_settled = compile_lines([], 2000, threads=[open_line(30)], settled=lines, policy=policy)
+        without = compile_lines([], 2000, threads=[open_line(30)], policy=policy)
+        assert with_settled.text == without.text and with_settled.ledger == without.ledger
+    odd = Line("fact", '    <Fact kind="has_trait" turn="4">하나 has trait: <Thread status="x"</Fact>',
+               {"assertion": "o"}, 4, "x", "x")
+    assert SETTLED_NOTE not in compile_lines([], 2000, facts=[odd], policy="packet-v19").text
+
+
+def test_a_settled_line_is_not_folded_into_the_reopened_promise():
+    """`threads.fold` opens a similar promise afresh after a close: both lines are placed."""
+    old = closed(10, "broken", 45, text="등대 앞에서 만나기")
+    lines, _ = settled_of([old])
+    again = thread_entry(closed(47, "open", None, text="등대 앞에서 만나기"))
+    out = compile_lines([], 2000, threads=[again], settled=lines, policy="packet-v20")
+    assert out.text.count("등대 앞에서 만나기") == 2
+    assert all(e["placed"] for e in out.ledger if e["kind"] == "thread")
+
+
+def test_a_settled_line_rests_like_a_supportive_line():
+    lines, _ = settled_of([closed(1, "broken", 45)])
+    ledger = compile_lines([], 2000, settled=lines, policy="packet-v20").ledger
+    quiet = overuse.of_ledger(ledger, "날씨 이야기만 했다.", ("", ""))
+    rest = overuse.tired([quiet, quiet], 2)
+    assert ("thread", "1") in rest
+    awake, g = settled_of([closed(1, "broken", 45), closed(2, "kept", 44)], rest=rest)
+    assert ids(awake) == [2] and g.rested == 1
+    # a tired line does not hold one of the three places
+    many = [closed(1, "broken", 45), closed(2, "failed", 44), closed(3, "kept", 43), closed(4, "kept", 42)]
+    assert ids(settled_of(many, rest=rest)[0]) == [2, 3, 4]
+    # a reply that used it: not tired
+    used = overuse.of_ledger(ledger, "그는 약속 1을 어겼다.", ("", ""))
+    assert ("thread", "1") not in overuse.tired([used, quiet], 2)
+
+
+def test_a_settled_line_shares_its_rest_key_with_the_open_line():
+    """Deliberate: one thread is one line across requests (`overuse.key`: kind and assertion). An open line placed
+    unused in the last two requests rests after its thread closes, as it would have rested open."""
+    ledger = compile_lines([], 2000, threads=[open_line(1)], policy="packet-v20").ledger
+    quiet = overuse.of_ledger(ledger, "날씨 이야기만 했다.", ("", ""))
+    rest = overuse.tired([quiet, quiet], 2)
+    assert settled_of([closed(1, "broken", 45)], rest=rest)[0] == []
+
+
+SECRET = {"knowledge": "limited", "known_by": ["세라", "{{user}}"], "hidden_from": ["카이토"]}
+
+
+def test_a_private_settled_line_follows_the_scene():
+    lines, g = settled_of([closed(1, "broken", 45, **SECRET)])
+    assert len(lines) == 1 and lines[0].private
+    out = compile_lines([], 2000, settled=lines, policy="packet-v20")
+    private = out.text.split("<Private>", 1)[1].split("</Private>", 1)[0]
+    assert ('<Thread status="broken" kind="promise" by="세라" to="카이토" turn="1" closed_turn="45" '
+            'known_by="세라, {{user}}" hidden_from="카이토">') in private
+    assert "<Threads>" not in out.text and packet.PRIVATE_NOTE in out.text
+
+
+def test_strict_and_narrator_modes_withhold_a_private_settled_line():
+    lines, g = settled_of([closed(1, "broken", 45, **SECRET)], options=RecallOptions(policy="packet-v20", strict=True))
+    assert [line.kind for line in lines] == ["secret"] and "약속 1" not in lines[0].xml and g.withheld == 1
+    lines, g = settled_of([closed(1, "broken", 45, **SECRET)], options=RecallOptions(policy="packet-v20", narrator="카이토"))
+    assert lines == [] and g.withheld == 1
+
+
+def test_an_echoed_settled_line_is_dropped_by_the_normalizer():
+    """A12 / ADR 0082 item 7: a settled line is a <Thread> with its content: clean-v3 drops the echo whole (K27)."""
+    xml = settled_entry(closed(1, "broken", 45, text="등대 앞에서 만나기")).xml.strip()
+    cleaned = packet.clean_text(f"카이토가 고개를 숙였다. {xml} 바람이 분다.")
+    assert "등대" not in cleaned and "broken" not in cleaned and "status" not in cleaned
+    assert cleaned == "카이토가 고개를 숙였다. 바람이 분다."
+
+
+@pytest.mark.parametrize("policy", ["packet-v20", "packet-v19"])
+def test_a_broken_promise_is_a_settled_line_under_v20_only_and_replays(migrated, policy):
+    with make_client(migrated, packet_policy=policy, **LLM) as c:
+        chat = SimChat()
+        for line in ('세라 says to 카이토: "I promise to meet at the lighthouse."', "Idle chatter 1 about clouds.",
+                     "Idle chatter 2 about clouds.", "세라 breaks the promise to 카이토 to meet at the lighthouse.",
+                     "Idle chatter 3 about clouds.", "Idle chatter 4 about clouds."):
+            chat.user(line)
+            chat.reply("Noted.")
+        chat.user("카이토, 세라 얘기 좀 해줘.")
+        sync(c, chat)
+        drain(migrated, stub_extractor)
+        out = recall(c, chat, "카이토, 세라 얘기 좀 해줘.", in_context=[m["chatId"] for m in chat.messages[-4:]],
+                     budget=1500)
+        text = out["packet"]["text"]
+    if policy == "packet-v20":
+        assert ('<Thread status="broken" kind="promise" by="세라" to="카이토" turn="0" closed_turn="3">'
+                'meet at the lighthouse</Thread>') in text
+        assert SETTLED_NOTE in text and PROMISE_NOTE not in text
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            again = audit.replay(conn, UUID(out["trace_id"]), RecallOptions(), policy=None)
+        assert again["status"] == "ok" and again["reproduced"] is True and again["text"] == text
+        entry = next(e for e in again["lines"] if (e.get("marks") or {}).get("settled"))
+        assert entry["placed"] and entry["label"] == "supportive" and entry["kind"] == "thread"
+    else:
+        assert "status=" not in text and SETTLED_NOTE not in text

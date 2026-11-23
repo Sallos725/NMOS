@@ -27,6 +27,10 @@ GONE_NOTE = (" gone=\"true\" marks a character who is dead or gone: they do not 
 BACK_AFTER_MARK = 'back_after="'
 BACK_AFTER_NOTE = (" back_after on a Character marks one who has just come back after that long away from the story:"
                    " write them as returning after that time.")
+# packet-v20 (PHASE-60 S4, ADR 0082 item 5): a thread the story closed lately leads with its status
+SETTLED_MARK = '<Thread status="'
+SETTLED_NOTE = (" A Thread with a status has ended in the story at closed_turn, as its status says: it is no longer"
+                " open.")
 # Added to the Note only when a kept line uses the mark (ADR 0013), so other packets stay as they were.
 NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly not, or no longer, true."),
                ("<Claim ", " A Claim is what that character said, not established truth."),
@@ -51,7 +55,8 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                                  " against it."),
                # packet-v20 only (`_V20_MARKS`): an older policy never adds them, whatever a value spells
                (GONE_MARK, GONE_NOTE),
-               (BACK_AFTER_MARK, BACK_AFTER_NOTE))
+               (BACK_AFTER_MARK, BACK_AFTER_NOTE),
+               (SETTLED_MARK, SETTLED_NOTE))
 MAX_EXCERPT_CHARS = 480
 # packet-v10 grows an excerpt to at most this many sentences (owner, 2026-09-30): growing to the whole length brought
 # back more values the story had since replaced (docs/perf/lexical-recall.md, "Step 4"); packet-v11 lifts the cap for a
@@ -324,8 +329,9 @@ COVERAGE_POLICIES = frozenset({"packet-v20"})  # Note states how far extraction 
 GONE_POLICIES = frozenset({"packet-v20"})  # a character who is gone: their status line pinned, marked (PHASE-60 S3, ADR 0082 items 2–3)
 GONE_SHARE = 0.1  # packet-v20: gone lines together may take at most this share of the budget inside the frame
 RETURN_GAP_POLICIES = frozenset({"packet-v20"})  # a <Cast> character back after a long absence is marked (PHASE-60 S4, ADR 0082 item 4)
+SETTLED_POLICIES = frozenset({"packet-v20"})  # threads closed lately, after the open ones (PHASE-60 S4, ADR 0082 item 5)
 # The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
-_V20_MARKS = {GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES}
+_V20_MARKS = {GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES}
 STATE_HISTORY_MAX = 6  # changes on one <StateHistory> line
 STATE_HISTORY_KEYS = 2  # keys one message gets a line for
 EXCERPT_FLOOR = 0.5  # packet-v14: an excerpt after the first needs this share of the best fused score, or a word hit
@@ -591,7 +597,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
                   policy: str = DEFAULT_POLICY, lead: list[Line] | None = None, note: str = "",
                   story: list[Line] | None = None, cast: list[tuple[str, list[Line]]] | None = None,
                   named: frozenset[str] = frozenset(), risky: frozenset[str] = frozenset(),
-                  gone: list[Line] | None = None, cast_marks: dict[str, str] | None = None) -> Compiled:
+                  gone: list[Line] | None = None, cast_marks: dict[str, str] | None = None,
+                  settled: list[Line] | None = None) -> Compiled:
     """Fill the budget and record every offered line in a ledger (ADR 0027).
 
     Budget order is fixed: state, lead facts (how the cast stand with each other, ADR 0026), open threads
@@ -616,7 +623,9 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     (`gone_cap`). Every other policy ignores `gone`.
 
     packet-v20 (PHASE-60 S4, ADR 0082 item 4): `cast_marks` ({character name: "~N turns"}) puts back_after on that
-    character's <Character> tag; the longer opening is part of its group's cost. Every other policy ignores it."""
+    character's <Character> tag; the longer opening is part of its group's cost. `settled` (closed threads' lines,
+    ADR 0082 item 5) is placed after the open threads and emitted after them in <Threads>, or in <Private> when
+    private; open threads take the budget first. Every other policy ignores both."""
     if policy in LABEL_POLICIES and risky:  # a risky line is offered after the other supportive ones (PHASE-34 Q1)
         def demoted(line: Line) -> bool:
             ref = str(line.ref.get("assertion"))
@@ -632,13 +641,14 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     state, threads, facts, lead, story, cast = state or [], threads or [], facts or [], lead or [], story or [], cast or []
     gone = (gone or []) if policy in GONE_POLICIES else []
     cast_marks = (cast_marks or {}) if policy in RETURN_GAP_POLICIES else {}
+    settled = (settled or []) if policy in SETTLED_POLICIES else []
     notes = tuple(n for n in NOTE_EXTRAS if n[0] not in _V20_MARKS or policy in _V20_MARKS[n[0]])
     note = escape(note)  # a narrator's name is not markup: it stays inside the Note
     cast_lines = [line for _, lines in cast for line in lines]
     ledger = ([_entry("state_history" if i.history else "state", {"key": i.key}, i.turn, i.text,
                       i.value if not i.history else i.text) for i in state]
               + [_entry(l.kind, l.ref, l.turn, l.text, l.content, l.marks) for l in story + cast_lines + gone + lead
-                 + threads + facts]
+                 + threads + settled + facts]
               + [_entry("quote" if e.quote else "excerpt", {"revision": e.revision_id}, e.turn, e.text, e.text,
                         {"unextracted": True} if e.unextracted else None)
                  for e in ranked])
@@ -648,7 +658,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     if reserving:
         for n, item in enumerate(ranked):
             if (not item.quote and not item.unextracted
-                    and (same := _restates(item, story + cast_lines + gone + lead + threads + facts)) is not None):
+                    and (same := _restates(item, story + cast_lines + gone + lead + threads + settled + facts)) is not None):
                 repeats[n] = same
     # The reserved, required excerpt (ADR 0026): the first that survives the repeat check and is neither resting nor
     # under the activation threshold, or else the first that survives it (PHASE-34 Q3, Q4; a review and its follow-ups:
@@ -657,7 +667,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
                   if n not in repeats and not ranked[n].resting and not ranked[n].below_floor),
                  next((n for n in range(len(ranked)) if n not in repeats), None))
     if policy in LABEL_POLICIES:
-        _label(ledger, state, story, cast_lines, lead + threads + facts, ranked, first, named, risky, gone)
+        _label(ledger, state, story, cast_lines, lead + threads + settled + facts, ranked, first, named, risky, gone)
     if used >= budget_tokens:
         return Compiled("", 0, [], ledger)
     inner = budget_tokens - used
@@ -740,7 +750,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     base = offset  # where lead, threads and facts start in the ledger
     privacy = policy in PRIVATE_POLICIES
     kept_private: list[str] = []
-    folded = restated(gone + lead + threads + facts) if policy in FOLD_POLICIES else {}
+    folded = restated(gone + lead + threads + settled + facts) if policy in FOLD_POLICIES else {}
 
     def section(lines: list[Line], tag: str, opened: bool = False, capped: bool = False) -> list[str]:
         nonlocal used, offset
@@ -778,6 +788,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     kept_gone = section(gone, "Facts", capped=True)  # first in <Facts> (packet-v20); empty for every other policy
     kept_lead = section(lead, "Facts", opened=bool(kept_gone))
     kept_threads = section(threads, "Threads")
+    kept_threads += section(settled, "Threads", opened=bool(kept_threads))  # after the open ones (packet-v20)
     kept_facts = kept_gone + kept_lead + section(facts, "Facts", opened=bool(kept_gone or kept_lead))
     chosen: list[tuple[Excerpt, str]] = []
     for n, item in enumerate(ranked):

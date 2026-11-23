@@ -22,7 +22,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .entities import PERSONA, norm
-from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, lexically_related, memory_view, relevant_facts, thread_entry
+from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, lexically_related, memory_view, relevant_facts, settled_entry, thread_entry
 from . import absence, coverage, overuse, quotes, scene, spans, statechange, summaries, variants, source_time
 from .gone import is_gone_place, is_gone_status
 from .ids import uuid7
@@ -33,7 +33,8 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      CHANGE_POLICIES, CONTENTS, COVERAGE_POLICIES, GONE_POLICIES, LABEL_POLICIES, STATE_HISTORY_KEYS,
                      STATE_HISTORY_MAX, STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES,
                      SOURCE_CLOCK_POLICIES, STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
-                     QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, RETURN_GAP_POLICIES, EXCERPT_FLOOR,
+                     QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, RETURN_GAP_POLICIES, SETTLED_POLICIES,
+                     EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
@@ -921,6 +922,7 @@ class Gathered:
     secrets: list[dict[str, Any]] | None = None  # head secrets from view, reused by coverage without a second read
     gone: list[Line] = field(default_factory=list)  # gone characters' status lines not in <Cast> (packet-v20, PHASE-60 S3)
     cast_marks: dict[str, str] = field(default_factory=dict)  # <Cast> name → back_after value (packet-v20, PHASE-60 S4)
+    settled: list[Line] = field(default_factory=list)  # threads closed lately, after the open ones (packet-v20, PHASE-60 S4)
 
 
 def persona_question_names(r: Any) -> frozenset[str]:
@@ -1139,6 +1141,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 return t in loaded[0]
 
             g.cast_marks = return_marks(view, r, g.cast, g.cast_lines, now, served, options.policy)
+        if options.policy in SETTLED_POLICIES and options.threads_limit > 0:
+            # packet-v20 (PHASE-60 S4): threads the story closed lately, outside threads_limit
+            g.settled = settled_lines(g, view, r, query, now, rest, options, aliases)
     if options.policy in COVERAGE_POLICIES and coverage_info is not None:
         g.note += coverage_note(coverage_info.get("recorded_through_turn"), coverage_info.get("latest_replied_turn"))
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
@@ -1584,11 +1589,42 @@ def return_marks(view: dict[str, Any], r: Any, cast: dict[str, str], cast_lines:
     return out
 
 
+def settled_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, now: int | None,
+                  rest: frozenset[tuple[str, str]], options: RecallOptions,
+                  aliases: dict[str, frozenset[str]] | None = None) -> list[Line]:
+    """packet-v20 (PHASE-60 S4, ADR 0082 item 5): the lines of threads closed within SETTLED_TURNS of `now` whose maker
+    or recipient (not the persona) is in the scene or named in the user's message, under any name they go by
+    (`aliases`): bad endings first, then newest, at most SETTLED_MAX (`absence.settled`). Supportive: a tired one rests
+    as an open thread does and holds no place (`_rested`, the same key as its open line). A thread carried from another
+    chat has none. Private as any thread is in this scene, through this chat's memory mode (`_moded`). Every other
+    policy: none."""
+    if options.policy not in SETTLED_POLICIES or r is None or now is None:
+        return []
+    persona = scene.key(r, scene.PERSONA)
+    present = set(g.cast) - {persona}
+    said = norm(query)
+
+    def involved(t: dict[str, Any]) -> bool:
+        for name in (t.get("by"), t.get("to")):
+            if not name or scene.is_persona(r, name):
+                continue
+            k = scene.key(r, name)
+            if k == persona:
+                continue
+            if k in present or any(n in said for n in scene.names({k: name}, r, aliases)):
+                return True
+        return False
+
+    own = [t for t in view["threads"] if not t.get("carried")]
+    picked = absence.settled(own, now, lambda t: involved(t) and bool(_rested([t], "thread", rest, g)))
+    return _moded([settled_entry(t, scene.private(t, g.cast, r)) for t in picked], view["threads"], g, r, options)
+
+
 def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
     """One request's packet from what `gather` offered (the request and its replay compile alike)."""
     compiled = compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
                              note=g.note, story=g.story, cast=g.cast_lines, named=frozenset(g.named),
-                             risky=frozenset(g.risky), gone=g.gone, cast_marks=g.cast_marks)
+                             risky=frozenset(g.risky), gone=g.gone, cast_marks=g.cast_marks, settled=g.settled)
     compiled = source_time.supplement(compiled, g.ranked, g.source_clocks, budget, policy)
     if policy in LABEL_POLICIES:
         # Diagnostics never take part in selection, token fitting or the rest/echo calculation.
