@@ -379,3 +379,20 @@ def test_regression_rows_are_listed_apart_and_enter_no_fold(migrated: str) -> No
         assert thread["by"] == "세라" and thread["to"] == "카이토" and "카이토" in thread["names"]
         # The read annotated copies: the link's rows are as stored.
         assert not [x for x in carried.regression if "subject_entity" in x]
+
+
+# --- the scene: a carried row is never the scene ----------------------------------------------------------------
+
+def test_a_carried_row_puts_no_one_in_the_scene(migrated: str) -> None:
+    with make_client(migrated, **CANON_ON) as c:
+        src, _, tgt = _world(c, migrated)
+        with _connect(migrated) as conn:
+            carried = _link_continue(conn, tgt, src)
+            view = memory_view(conn, _head(conn, tgt), _key(conn), carried=carried)
+        r = view["resolution"]
+        rows = view["facts"] + view["claims"] + view["other"]
+        assert {(f["subject"], f["turn"]) for f in _carried(rows)} >= {("세라", -1), ("유나", -1)}
+        # At turn 1 the scene window is turns -1 and 0: before the story there is no scene, only the persona.
+        assert scene.cast(rows, r, "", "", now=1) == {scene.key(r, PERSONA): r.entity("character", PERSONA)["name"]}
+        # A name the message says still counts, whatever the rows are.
+        assert scene.key(r, "카이토") in scene.cast(rows, r, "카이토는 어디 있어?", "", now=1)
