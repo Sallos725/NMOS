@@ -428,3 +428,33 @@ def test_a_carried_open_thread_is_listed_without_the_close_that_would_be_refused
             res = c.post(f"/v1/conversations/{tgt}/repairs",
                          json={"kind": "thread_close", "item": str(th["id"]), "outcome": "kept"})
             assert res.status_code == 422, res.text
+
+
+def test_a_carried_line_with_when_it_happened_shows_it_without_a_turn_of_this_chat(
+    migrated: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stub extractor writes no `when_happened`: the stored reading gets one on a fact and on a thread's opening
+    (as test_phase60_carry_data does), so the mark is the one the data side really hands over."""
+    import psycopg
+    from psycopg.rows import dict_row
+    from psycopg.types.json import Jsonb
+
+    seen = Seen(monkeypatch)
+    with make_client(migrated, **ON) as c:
+        src, tgt = _setup(c, migrated)
+        _link(c, tgt, src, "continue")
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            link = conn.execute("SELECT id, snapshot FROM conversation_carry WHERE removed_at IS NULL").fetchone()
+            snap = link["snapshot"]
+            fact = next(f for f in snap["facts"] if f["subject"] == "하나" and f["predicate"] == "located_in")
+            fact["when_happened"] = "4월 11일"
+            thread = next(t for t in snap["threads"] if t.get("opening"))
+            thread["opening"]["when_happened"] = "지난 겨울"
+            conn.execute("UPDATE conversation_carry SET snapshot = %s WHERE id = %s", (Jsonb(snap), link["id"]))
+        for lang, mark in (("ko", "일어난 때: {}"), ("en", "happened: {}")):
+            s = _carry_section(_fragment(c, f"/v1/views/c/{tgt}/memory", lang))
+            assert seen.memory is not None
+            dated = {r["kind"]: r["when_happened"] for r in seen.memory["carry"]["lines"] if r.get("when_happened")}
+            assert dated == {"fact": "4월 11일", "thread": "지난 겨울"}
+            assert f"</a> [{mark.format('4월 11일')}]" in s and f"</a> [{mark.format('지난 겨울')}]" in s, s
+            assert "t-1" not in s and "; t" not in s  # no turn of this chat beside it
