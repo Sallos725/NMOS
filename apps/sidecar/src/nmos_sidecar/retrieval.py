@@ -10,7 +10,7 @@ import math
 import re
 import threading
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -1566,7 +1566,7 @@ def appearances(view: dict[str, Any], r: Any) -> dict[str, list[int]]:
 
 
 def return_marks(view: dict[str, Any], r: Any, cast: dict[str, str], cast_lines: list[tuple[str, list[Line]]],
-                 now: int, served: Callable[[int], bool] | Iterable[int], policy: str = "packet-v20") -> dict[str, str]:
+                 now: int, served: Callable[[int], bool] | Collection[int], policy: str = "packet-v20") -> dict[str, str]:
     """packet-v20 (PHASE-60 S4, ADR 0082 item 4): {<Cast> name: back_after value} for each character with a <Cast>
     group, not the persona, whose current run began at most RUN_START_MAX turns ago after at least GAP_MIN served turns
     away (`absence.return_gap`). `served` is asked only when a gap is possible even if every turn were served. Every
