@@ -110,6 +110,100 @@ describe('injection (H2 idempotency)', () => {
     expect(injectPacket(mainPrompt, packet, 'end').at(-1)?.content).toBe(packet);
     expect(injectPacket(mainPrompt, '')).toBe(mainPrompt);
   });
+
+  it('keeps before_last_user byte-identical across existing fixtures (pinned at 375efa5)', () => {
+    const continuePrompt: PromptMessage[] = [...mainPrompt, { role: 'system', content: 'Continue the last response.' }];
+    const wrapped: PromptMessage[] = [
+      { role: 'user', content: '<user_input>Where did we hide the lantern?</user_input>\n(OOC: stay in character)' },
+    ];
+    const inSystem: PromptMessage[] = [
+      { role: 'system', content: 'Chat log:\nUser: Where did we hide the lantern?\nReply now.' },
+    ];
+    const quoted: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      { role: 'assistant', content: `As the notes say: ${PACKET_TAG} …` },
+      { role: 'user', content: `What is ${PACKET_TAG}?` },
+    ];
+
+    const expectedMain = [
+      { role: 'system', content: 'You are a narrator.' },
+      { role: 'user', content: 'Tell me about the harbor bell again.' },
+      { role: 'assistant', content: 'The harbor bell rang twice at dusk.' },
+      { role: 'system', content: packet },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+    ];
+    expect(JSON.stringify(injectPacket(mainPrompt, packet, 'before_last_user', userTurnIndex(mainPrompt, host))))
+      .toBe(JSON.stringify(expectedMain));
+    expect(JSON.stringify(injectPacket(mainPrompt, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedMain));
+
+    const expectedPreset = [
+      { role: 'system', content: '# System Prompt' },
+      { role: 'user', content: 'Tell me about the harbor bell again.' },
+      { role: 'assistant', content: '<Last output>' },
+      { role: 'assistant', content: 'The harbor bell rang twice at dusk.' },
+      { role: 'assistant', content: '</Last output>' },
+      { role: 'system', content: packet },
+      { role: 'user', content: '<Current Input>\n\n```' },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+      { role: 'user', content: '```\n</Current Input>\n\nTake my current input as inspiration.' },
+      { role: 'user', content: '---\n\n# Feedback\n- Proactive Writer' },
+      { role: 'user', content: '---\n\n# Tags' },
+      { role: 'user', content: 'system: POV : Omniscient Point of View.' },
+    ];
+    expect(JSON.stringify(injectPacket(presetPrompt, packet, 'before_last_user', userTurnIndex(presetPrompt, host))))
+      .toBe(JSON.stringify(expectedPreset));
+    expect(JSON.stringify(injectPacket(presetPrompt, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedPreset));
+
+    const expectedContinue = [
+      { role: 'system', content: 'You are a narrator.' },
+      { role: 'user', content: 'Tell me about the harbor bell again.' },
+      { role: 'assistant', content: 'The harbor bell rang twice at dusk.' },
+      { role: 'system', content: packet },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+      { role: 'system', content: 'Continue the last response.' },
+    ];
+    expect(JSON.stringify(injectPacket(continuePrompt, packet, 'before_last_user', userTurnIndex(continuePrompt, host))))
+      .toBe(JSON.stringify(expectedContinue));
+    expect(JSON.stringify(injectPacket(continuePrompt, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedContinue));
+
+    const expectedWrapped = [
+      { role: 'system', content: packet },
+      { role: 'user', content: '<user_input>Where did we hide the lantern?</user_input>\n(OOC: stay in character)' },
+    ];
+    expect(JSON.stringify(injectPacket(wrapped, packet, 'before_last_user', userTurnIndex(wrapped, host))))
+      .toBe(JSON.stringify(expectedWrapped));
+    expect(JSON.stringify(injectPacket(wrapped, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedWrapped));
+
+    const expectedInSystemWithTurn = [
+      { role: 'system', content: packet },
+      { role: 'system', content: 'Chat log:\nUser: Where did we hide the lantern?\nReply now.' },
+    ];
+    const expectedInSystemNoTurn = [
+      { role: 'system', content: 'Chat log:\nUser: Where did we hide the lantern?\nReply now.' },
+      { role: 'system', content: packet },
+    ];
+    expect(JSON.stringify(injectPacket(inSystem, packet, 'before_last_user', userTurnIndex(inSystem, host))))
+      .toBe(JSON.stringify(expectedInSystemWithTurn));
+    expect(JSON.stringify(injectPacket(inSystem, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedInSystemNoTurn));
+
+    const expectedQuoted = [
+      { role: 'system', content: 'You are a narrator.' },
+      { role: 'user', content: 'Tell me about the harbor bell again.' },
+      { role: 'assistant', content: 'The harbor bell rang twice at dusk.' },
+      { role: 'assistant', content: `As the notes say: ${PACKET_TAG} …` },
+      { role: 'system', content: packet },
+      { role: 'user', content: `What is ${PACKET_TAG}?` },
+    ];
+    expect(JSON.stringify(injectPacket(quoted, packet, 'before_last_user', userTurnIndex(quoted, host))))
+      .toBe(JSON.stringify(expectedQuoted));
+    expect(JSON.stringify(injectPacket(quoted, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedQuoted));
+  });
 });
 
 describe('in-context detection (D3)', () => {
