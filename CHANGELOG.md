@@ -43,19 +43,35 @@ switch.
   target turn's status-window `story_clock` on the extraction (never part of validity), and adds `told` (character →
   character with a required quote) as a per-compiler extension outside `REGISTRY`, hashed into the prompt fingerprint so
   earlier keys do not move. Switching among `extract-v16`, `extract-v18` and `extract-v19` queues nothing; older turns
-  keep their facts. Served `told` rows are readable via `served_told`; `packet-v20` does not emit `happened` or `told`
-  lines yet. Known limits: a `told` row kept from someone is not tracked as a secret (no reveal check ends it), and
-  `fact_restore` does not carry `when_happened`.
-- **Reranker settings, off by default** (Phase 60 S5, ADR 0084). `NMOS_RERANK_URL`, `NMOS_RERANK_MODEL`,
+  keep their facts. A restored dropped fact keeps its `when_happened`. Known limits: a `told` row kept from someone is
+  not tracked as a secret (no reveal check ends it), no owner repair retracts a `told` row, and a teller or hearer named
+  only in `told` rows is not an entity of the chat.
+- **When it happened, and who told whom, in `packet-v20`** (Phase 60 S7, S8, ADR 0086). A line whose fact or thread
+  has a `when_happened` carries `happened="…"` beside its `turn`, and the Note says which is which (claim lines carry
+  none). At most 2 `<Fact kind="told">` lines, only when the teller or the hearer is in the scene or named in the
+  message; one that says a secret still kept from someone in the scene is left out, and strict and narrator modes
+  apply as to any fact.
+- **A short message asks with the reply before it** (Phase 60 S5, ADR 0084; `packet-v20` only). A message shorter
+  than 40 characters is embedded with the last 400 characters of the reply before it; lexical and keyword recall still
+  read the message alone. The sync-time prefetch builds the same text, recorded as `recall_options.sem_query`; a
+  replay embeds what was recorded.
+- **An optional reranker, off by default** (Phase 60 S5, ADR 0084). `NMOS_RERANK_URL`, `NMOS_RERANK_MODEL`,
   `NMOS_RERANK_API_KEY`, `NMOS_RERANK_TIMEOUT_MS` (default `600`, 50–5000 ms) and `NMOS_RERANK_FORMAT` (`standard`
   only), editable at runtime and passed through both compose files. Off unless both URL and model are set; when on, the
   user's message and up to 30 recalled candidates' text go to that endpoint (noted in `/v1/config`). `/v1/health`
   reports `rerank.configured` without exposing the URL or key, the key is bound to its endpoint's host and refused in
-  archives (D60), and an unusable saved format or timeout is ignored at startup so the sidecar still starts. Nothing on
-  the request path calls the reranker yet.
+  archives (D60), and an unusable saved format or timeout is ignored at startup so the sidecar still starts. When
+  configured, under any packet policy, one call per request reorders the top 30 recalled candidates; a timeout, an
+  error or a malformed answer keeps the usual order. The call is bounded by its own timeout, not the plugin's deadline:
+  keep `NMOS_EMBED_TIMEOUT_MS` plus `NMOS_RERANK_TIMEOUT_MS` well under that deadline (3 s by default). The trace
+  records the scores and a replay reapplies them, never calling the reranker. Only the `standard` format is built;
+  `systemone` is not.
 - **`/v1/retrieve` answers with `coverage`** (`recorded_through_turn`: the latest turn an extraction serves;
   `covered_through_turn`: the last turn up to which every turn has an extraction and a scene summary) and, when the
   request asked for trimming, `trim`. Older plugins ignore both.
+
+Known issue, since Phase 58 (not Phase 60's): restoring a dropped `feels_toward` fact loses its feeling detail
+(strength, sign, a feeling beneath it), because the dropped-facts listing never reads it.
 
 ## 0.6.0
 
