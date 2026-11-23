@@ -166,6 +166,8 @@ describe("carry another chat's memory card in Settings -> This chat (PHASE-60 S6
       const card = carryCardOf(lang)!;
       expect(card).not.toBeNull();
       expect(card.closest('[data-group="chat"]')).not.toBeNull();
+      expect(card.textContent).toContain('packet-v20');
+      expect(card.textContent).toContain(lang === 'ko' ? '정책과 상관없이 연결이 보입니다' : 'show the link either way');
 
       // Picker excludes this chat
       const select = card.querySelector<HTMLSelectElement>('select')!;
@@ -394,7 +396,9 @@ describe("carry another chat's memory card in Settings -> This chat (PHASE-60 S6
         carry: { in_force: null, removed: [] },
         onPreview: () => {
           if (errKind === 'size') {
-            throw new Error(`/v1/conversations/${cid}/carry/preview -> HTTP 422: the reading holds 2345 rows; a link carries at most 2000`);
+            throw new Error(
+              `/v1/conversations/${cid}/carry/preview -> HTTP 422: too_many_rows: rows=2345 max=2000 (the reading holds 2345 rows; a link carries at most 2000)`,
+            );
           }
           throw new Error(`/v1/conversations/${cid}/carry/preview -> HTTP 422: turn 999 is not on the source's current head`);
         },
@@ -445,9 +449,12 @@ describe("carry another chat's memory card in Settings -> This chat (PHASE-60 S6
         }),
       });
       const card = carryCardOf(lang)!;
+      expect(card.textContent).toContain('packet-v20');
       expect(card.textContent).toContain('세라 · 항구');
       expect(card.textContent).toContain(lang === 'ko' ? '회귀' : 'Regression');
-      expect(card.textContent).toContain(lang === 'ko' ? '세라, 카이토만 기억' : 'Only 세라, 카이토 remember');
+      expect(card.textContent).toContain(
+        lang === 'ko' ? '이전 타임라인 · 세라, 카이토만 기억' : 'earlier timeline · remembered only by 세라, 카이토',
+      );
       expect(card.textContent).toContain(lang === 'ko' ? 't24까지' : 'through t24');
       const expectedTime = localTime(link.created_at, lang)!.text;
       expect(card.textContent).toContain(expectedTime);
@@ -487,13 +494,17 @@ describe("carry another chat's memory card in Settings -> This chat (PHASE-60 S6
     }
   });
 
-  it('shows "끝까지" / "through the end" when a link has cutoff_turn null', async () => {
+  it('shows "끝까지" / "through the end" and carried-from label for a continue link', async () => {
     for (const lang of ['ko', 'en'] as const) {
       await openThisChat({
         lang,
-        carry: { in_force: makeLink({ cutoff_turn: null }), removed: [] },
+        carry: { in_force: makeLink({ mode: 'continue', cutoff_turn: null }), removed: [] },
       });
       const card = carryCardOf(lang)!;
+      expect(card.textContent).toContain('packet-v20');
+      expect(card.textContent).toContain(
+        lang === 'ko' ? '세라 · 항구에서 이어받은 기억 (이 채팅의 턴이 아님)' : "Carried from 세라 · 항구 (not this chat's own turns)",
+      );
       expect(card.textContent).toContain(lang === 'ko' ? '끝까지' : 'through the end');
       document.body.replaceChildren();
     }

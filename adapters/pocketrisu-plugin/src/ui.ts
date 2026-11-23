@@ -3081,6 +3081,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   }
   /** Carry another chat's memory (PHASE-60 S6, ADR 0085): preview before linking, 409 refresh, read again, two-tap unlink. */
   async function showCarry(conversation: string, card: HTMLElement, said?: StringKey): Promise<void> {
+    const carryHead = () => [
+      el('h2', { text: L('carry.title') }),
+      el('p', { class: 'sub', text: L('carry.sub') }),
+      el('p', { class: 'sub', text: L('carry.policy_note') }),
+    ];
     let state: CarryState;
     try {
       const res = await deps.api<CarryState>('GET', `/v1/conversations/${conversation}/carry`, undefined, 15_000);
@@ -3099,7 +3104,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       }
       const errMsg = el('div', { class: 'msg', role: 'status' });
       say(errMsg, carryErrorText(lang, error, errorText), 'err');
-      card.replaceChildren(el('h2', { text: L('carry.title') }), el('p', { class: 'sub', text: L('carry.sub') }), errMsg);
+      card.replaceChildren(...carryHead(), errMsg);
       card.style.display = '';
       return;
     }
@@ -3285,16 +3290,19 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       const lt = localTime(link.created_at, lang);
       const takenEl = el('div', { class: 'muted', text: L('carry.taken_at', { time: lt ? lt.text : link.created_at }) });
       if (lt) takenEl.title = lt.title;
+      const sourceText = carrySourceLabel(link.source);
       const summaryLines: HTMLElement[] = [
         el('div', { class: 'line' },
           el('span', { class: 'badge b-info', text: L('carry.linked_badge') }),
-          el('strong', { text: carrySourceLabel(link.source) })),
+          el('strong', { text: sourceText })),
         el('div', { text: `${modeText} · ${carryCutoffLabel(lang, link.cutoff_turn)}` }),
+        el('div', {
+          text: link.mode === 'regression'
+            ? L('carry.only_remember', { names: link.entity_names.join(', ') })
+            : L('carry.linked_continue', { source: sourceText }),
+        }),
+        takenEl,
       ];
-      if (link.mode === 'regression' && link.entity_names.length) {
-        summaryLines.push(el('div', { text: L('carry.only_remember', { names: link.entity_names.join(', ') }) }));
-      }
-      summaryLines.push(takenEl);
 
       const readAgainBtn = el('button', { text: L('carry.read_again') });
       const unlinkBtn = el('button', { text: L('carry.unlink') });
@@ -3342,8 +3350,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       });
 
       card.replaceChildren(
-        el('h2', { text: L('carry.title') }),
-        el('p', { class: 'sub', text: L('carry.sub') }),
+        ...carryHead(),
         ...summaryLines,
         el('div', { class: 'btns' }, readAgainBtn, unlinkBtn),
         previewSpot,
@@ -3376,8 +3383,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const choices = knownChats.filter((c) => c.id !== conversation);
     if (!choices.length) {
       card.replaceChildren(
-        el('h2', { text: L('carry.title') }),
-        el('p', { class: 'sub', text: L('carry.sub') }),
+        ...carryHead(),
         el('div', { class: 'muted', text: L('carry.no_other') }),
         msg,
       );
@@ -3425,8 +3431,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     });
 
     card.replaceChildren(
-      el('h2', { text: L('carry.title') }),
-      el('p', { class: 'sub', text: L('carry.sub') }),
+      ...carryHead(),
       field(L('carry.source'), sourceSelect),
       el('label', { text: L('carry.mode') }),
       el('label', { class: 'check' }, continueRadio, el('strong', { text: L('carry.mode_continue') })),
