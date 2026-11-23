@@ -440,6 +440,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "rk.fact_restore": ("사실 복원", "restore a fact"), "rk.fact_retract": ("사실 철회", "retract a fact"), "rk.fact_correct": ("사실 정정", "correct a fact"),
     "rk.name_split": ("이름 분리", "split two names"),
     "rk.entity_exclude": ("캐릭터 아님", "not a character"),
+    "rk.entity_pin": ("고정", "pinned"),  # PHASE-60 S8: a character the owner pinned
     "ex.cast": ("인물 목록에서만", "out of the cast"), "ex.memory": ("기억에서도", "out of memory too"),
     "ex.hidden": ("가린 사실 {n}개", "{n} facts hidden"), "ex.now": ("캐릭터 아님으로 표시됨", "marked not a character"),
     "rk.state_dismiss": ("상태창 확인 표시 넘김", "status flag dismissed"),
@@ -1399,7 +1400,7 @@ def _repair_target(rep: dict[str, Any]) -> str:
     t = rep["target"] or {}
     if rep["kind"] == "name_split":
         return _v(f"{t.get('name')} ≠ {t.get('other')}")
-    if rep["kind"] == "entity_exclude":
+    if rep["kind"] in ("entity_exclude", "entity_pin"):
         return _v(t.get("name"))
     if rep["kind"].startswith("thread_"):
         text = _who_to(t) + f": {t.get('text')}"

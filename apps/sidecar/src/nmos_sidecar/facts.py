@@ -22,7 +22,7 @@ from .packet import Line
 from .keywords import keywords
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
 from . import canon, canonfacts
-from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, exclusions, live, quoted_turns,
+from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, exclusions, live, pins, quoted_turns,
                       secret_events, splits_of, thread_events, unedited_quotes)
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
@@ -572,10 +572,13 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                 "position": f["position"], "history": f["history"]})
     entities = [{**e, "excluded": excluded[str(e["id"])]["scope"]} if str(e["id"]) in excluded else e
                 for e in r.entities()]
+    pinned = pins(in_force, r)  # PHASE-60 S8: the characters the owner pinned, newest first; an exclusion wins
     return {"facts": facts, "claims": claims, "other": other, "entities": entities, "excluded": excluded,
+            "pins": pinned,
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
-            "repairs": [_report(rep, applied, r, excluded) for rep in repairs], "assertions": rows, "resolution": r,
+            "repairs": [_report(rep, applied, r, excluded, pinned) for rep in repairs], "assertions": rows,
+            "resolution": r,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
 
 
@@ -653,9 +656,16 @@ def _hold(history: list[dict[str, Any]],
 
 
 def _report(rep: dict[str, Any], applied: dict[str, str | None], r: Resolution,
-            excluded: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+            excluded: dict[str, dict[str, Any]] | None = None,
+            pinned: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """A repair with what it applies to now (ADR 0044); a name split, the entity it left and the names that still
-    join the two when it could not separate them; an exclusion, the entity it leaves out and how many rows (PHASE-47)."""
+    join the two when it could not separate them; an exclusion, the entity it leaves out and how many rows (PHASE-47);
+    a pin, the character it pins (PHASE-60 S8), or None when its name is no character now or the owner left it out."""
+    if rep["kind"] == "entity_pin":
+        t = rep.get("target") or {}
+        e = r.entity(t.get("entity_type") or "character", t.get("name")) if r is not None else None
+        on = e is not None and any(str(p["entity_id"]) == str(e["id"]) for p in pinned or ())
+        return {**rep, "applied": e["id"] if on else None}
     if rep["kind"] == "entity_exclude":
         hit = next(((i, x) for i, x in (excluded or {}).items() if str(x["repair"]) == str(rep["id"])), None)
         return {**rep, "applied": hit[0] if hit else None, "hidden": hit[1].get("hidden", 0) if hit else 0}
