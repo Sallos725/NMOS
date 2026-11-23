@@ -249,4 +249,44 @@ def test_timeline_shows_happened_mark_in_existing_attributes_and_card_only():
     assert len(data_s) <= 300
 
 
+def test_end_to_end_when_happened_reaches_inspector_and_views(migrated):
+    """A stub-extracted event with `when_happened` set in SQL reaches the Inspector chat/character pages and timeline."""
+    import psycopg
+    from conftest import make_client
+    from memeval import stub_extractor
+    from simchat import SimChat
+    from test_extraction import drain
+    from test_generations import LLM
+    from test_sidecar_integration import sync
+
+    chat = SimChat("phase60-happened-e2e")
+    for line in ("Hana is in the harbor.", "Hana betrayed Kaito.",
+                 'Hana says to Kaito: "I promise to meet you at the lighthouse."'):
+        chat.user(line)
+        chat.reply("Noted.")
+    chat.user("next")
+
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain(migrated, stub_extractor)
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            row = conn.execute(
+                "UPDATE assertion SET when_happened = %s WHERE predicate = 'event' RETURNING id",
+                ("4월 11일",),
+            ).fetchone()
+            assert row is not None
+        cid = c.get("/v1/views/hub", params={"chat": chat.id}).json()["conversation"]
+        hana = next(e["id"] for e in c.get(f"/v1/conversations/{cid}/entities").json() if e["name"] == "Hana")
+
+        for lang, want in (("ko", "[일어난 때: 4월 11일; t1에 말함]"), ("en", "[happened: 4월 11일; told t1]")):
+            mem = c.get(f"/v1/views/c/{cid}/memory", params={"lang": lang})
+            assert mem.status_code == 200 and 'id="s-open"' in mem.json()["html"]
+            insp = c.get(f"/v1/inspector/c/{cid}", params={"lang": lang})
+            assert insp.status_code == 200 and want in insp.json()["html"]
+            char = c.get(f"/inspector/c/{cid}/e/{hana}", params={"lang": lang})
+            assert char.status_code == 200
+            assert want in char.text and f'data-s="t1 · {want}"' in char.text
+
+
+
 
