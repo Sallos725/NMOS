@@ -11,7 +11,7 @@ import re
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import psycopg
@@ -26,6 +26,9 @@ from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, exclus
                       secret_events, splits_of, thread_events, unedited_quotes)
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
+
+if TYPE_CHECKING:  # carry imports this module: never at run time
+    from .carry import Carried
 
 # `unit` is the turn (a message without one counts alone). `live` holds every extraction that still
 # matches the head, and `chosen` the one generation that serves its unit: the active one first, then the
@@ -409,7 +412,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                 known_at: datetime | None = None, canon_manifest: str | None = None,
                 canon_exact: bool = False, canon_key: str | None = None,
                 canon_facts: Any = LIVE, what_if: dict[str, Any] | None = None,
-                told: bool = False) -> dict[str, list[dict[str, Any]]]:
+                told: bool = False, carried: Carried | None = None) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -444,6 +447,13 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     With `told` (packet-v20 and the pages that draw chains, PHASE-60 S8, ADR 0086), the view also has `told`: who told
     whom (`told_view`), from the same read, a list of its own. It is never a fact, claim, thread or assertion of the
     view and never shapes its resolution, so nothing else in the view changes; without `told` the key is absent.
+
+    With `carried` (PHASE-60 S6, ADR 0085: what the target's link carries, `carry.target_rows`), a `continue` link's
+    rows are mentions from before the story in the resolution and facts from before turn 0, after the canon facts: the
+    story supersedes them, the owner's repairs and exclusions apply to them, a carried opening opens its thread (marked
+    `carried`) and the story can close it by text; they take no part in secrets and keep their stored marks. A
+    `regression` link's rows are listed apart (`regression`), annotated with the target's resolution, and enter
+    neither the resolution nor a fold. Either way the view gains `carried` and `regression`; without it, neither.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
@@ -474,8 +484,12 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if what_if:
         links = [x for x in links if str(x["id"]) not in what_if.get("drop_links", ())] + list(
             what_if.get("add_links", ()))
-    r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]), links, splits_of(in_force),
-                canon_names)
+    # Carried rows (ADR 0085), copied: a read annotates and folds its rows in place, and the link's rows are reused.
+    carried_all = [{**x, "known_by": list(x["known_by"]) if x.get("known_by") else None,
+                    "hidden_from": list(x["hidden_from"]) if x.get("hidden_from") else None}
+                   for x in carried.rows] if carried is not None and carried.mode == "continue" else []
+    r = resolve(conv["conversation_id"], carried_all + rows if carried_all else rows,
+                persona_of(conv["host_persona_name"]), links, splits_of(in_force), canon_names)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
@@ -496,7 +510,14 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                   if c["predicate"] in REGISTRY and c["predicate"] != "also_called"] if canon_key and canon_facts else []
     for row in canon_rows:
         _annotate(row, r)
-    rows = canon_rows + kept
+    # Carried rows (ADR 0085): after the canon, before every row of the story; their openings open threads first.
+    carried_rows = [x for x in carried_all if x["predicate"] in REGISTRY and x["predicate"] != "also_called"]
+    for row in carried_rows:
+        _annotate(row, r)
+    carried_openings = [x for x in carried_rows if x["predicate"] in THREAD_PREDICATES]
+    if carried_openings:
+        promises = carried_openings + promises
+    rows = canon_rows + carried_rows + kept
     # The owner's repairs (ADR 0044): retracted and corrected facts first, then events of their turn in the secret and
     # thread folds, and name splits in the resolution above.
     applied: dict[str, str | None] = {}
@@ -535,7 +556,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
     # and a narrator must count them as knowing it). `learned` is not a fact itself. Before the threads, which copy
     # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
-    secrets, unrevealed, reveals = fold_secrets([x for x in rows if not x.get("canon")] if canon_rows else rows, r,
+    secrets, unrevealed, reveals = fold_secrets([x for x in rows if not x.get("canon") and not x.get("carried")]
+                                                if canon_rows or carried_rows else rows, r,
                                                 secret_events(in_force, r, applied))
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     by_repair = {s["id"]: s["repair"] for s in secrets if s.get("repair")}
@@ -547,6 +569,12 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             row["known_by"] = list(row.get("known_by") or []) + sorted(ended[row["id"]] - set(row.get("known_by") or []))
             row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
     threads, unmatched, consumed = fold_threads(promises, r, thread_events(in_force, r, applied))
+    if carried_openings:
+        assert carried is not None
+        opened = {x["id"] for x in carried_openings}
+        for t in threads:
+            if t["id"] in opened:
+                t["carried"] = carried.link
     consumed |= reveals
     for row in rows:
         if row["id"] in consumed:
@@ -609,6 +637,10 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
     if told:
         view["told"] = told_view(told_rows(served), r, excluded)
+    if carried is not None:
+        view["carried"] = {"link": carried.link, "source": carried.source, "mode": carried.mode,
+                           "names": carried.names, "rows": len(carried_rows), "story": carried.story}
+        view["regression"] = []
     return view
 
 
