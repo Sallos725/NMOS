@@ -283,6 +283,41 @@ describe('panel', () => {
     answer([]);
   });
 
+  it('shows what the worker is doing after the sidecar card, and no card when the sidecar cannot say (PHASE-61 S5)', async () => {
+    const worker = { queued: { extract: 642, reveal: 0, summarize: 56, canon: 1010, embed: 0 }, queued_total: 1708,
+      running: 2, retrying: 35, dead_recent: 1, done_recent: 96, recent_minutes: 30, dead_hours: 24,
+      last_error: { kind: 'canon', status: 'queued', at: new Date().toISOString(), text: 'HTTP 504: upstream' } };
+    const titles = () => Array.from(document.querySelectorAll('#nmos-panel h2')).map((h) => h.textContent);
+    const show = async (answer: () => Promise<unknown>) => {
+      document.body.replaceChildren();
+      const { d, calls } = deps();
+      const usual = d.api;
+      d.api = <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => (path === '/v1/worker/status'
+        ? (calls.push([method, path, body]), answer() as Promise<T>) : usual<T>(method, path, body));
+      await openPanel(d, 'status');
+      await vi.waitFor(() => expect(document.querySelector('#nmos-panel .card')!.textContent).toContain('NMOS on'));
+      for (let i = 0; i < 3; i++) await settle();
+      expect(calls.filter(([, path]) => path === '/v1/worker/status')).toHaveLength(1);
+    };
+
+    await show(async () => worker);
+    const shown = titles();
+    expect(shown.indexOf('Model work')).toBe(shown.indexOf('Sidecar') + 1);
+    const card = Array.from(document.querySelectorAll<HTMLElement>('#nmos-panel .card'))
+      .find((c) => c.querySelector('h2')?.textContent === 'Model work')!;
+    const lines = Array.from(card.querySelectorAll('div')).map((x) => [x.className, x.textContent]);
+    expect(lines).toEqual([
+      ['muted', '1,708 waiting (extraction 642 · summaries 56 · canon 1,010) · 2 running'],
+      ['muted', 'Last 30 min: 96 finished · 35 being retried · 1 given up (24 h)'],
+      ['warn', expect.stringMatching(/^Last error \d\d:\d\d \(canon\): HTTP 504: upstream$/)]]);
+
+    const without = shown.filter((x) => x !== 'Model work');
+    await show(async () => { throw new Error('/v1/worker/status -> HTTP 404: Not Found'); });  // an older sidecar
+    expect(titles()).toEqual(without);
+    await show(() => { throw new TypeError('Failed to fetch'); });  // thrown before any promise
+    expect(titles()).toEqual(without);
+  });
+
   it('says when NMOS is off for every chat', async () => {
     const { d } = deps({ enabled: false });
     await openPanel(d, 'status');

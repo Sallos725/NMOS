@@ -24,6 +24,7 @@ import type { BulkMark, BulkRequest, EntityRow, ExcludePreview, Preview, RepairA
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
 import { coverageLine, trimStatusLine } from './trimtext';
+import { workerLines, type WorkerStatus } from './workertext';
 import {
   CARRY_MAX_NAMES, carryCountsLine, carryCutoffLabel, carryErrorText, carryRefusal, carrySourceLabel,
   isCarryConflict, isCarryNotFound, parseCutoffTurn,
@@ -460,8 +461,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   // --- status tab ------------------------------------------------------------------------------
   let usageRound = 0; // a refresh or another chat's card makes an older answer stale
+  let workerRound = 0; // the same for the "Model work" card
   async function refreshStatus(): Promise<void> {
     statusView.replaceChildren(el('div', { class: 'card muted', text: L('status.checking') }));
+    const round = ++workerRound;
+    const worker = workerCard(); // asked beside the health check; the other cards never wait for it
     const s = await deps.status();
     const base = s.sidecarUrl.replace(/\/+$/, '');
     const conn = el('div', { class: 'card' }, el('h2', { text: L('status.sidecar') }));
@@ -592,6 +596,25 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const refresh = el('button', { text: L('refresh') });
     refresh.addEventListener('click', () => void refreshStatus());
     statusView.replaceChildren(...cards, el('div', { class: 'btns' }, refresh));
+    void worker.then((card) => {
+      if (card && s.connected && round === workerRound && conn.isConnected) conn.after(card);
+    });
+  }
+
+  /** "Model work" (PHASE-61 S5): the queue, recent outcomes and the last model error; null, so no card, when the
+   *  sidecar has no such route (an older one) or does not answer. */
+  async function workerCard(): Promise<HTMLElement | null> {
+    let raw: unknown;
+    try {
+      raw = await deps.api<unknown>('GET', '/v1/worker/status', undefined, 5000);
+    } catch {
+      return null;
+    }
+    const { level, lines } = workerLines(lang, raw);
+    if (!lines.length) return null;
+    const errorLine = (raw as WorkerStatus).last_error && level === 'trouble' ? lines.length - 1 : -1;
+    return el('div', { class: 'card' }, el('h2', { text: L('worker.title') }),
+      ...lines.map((text, i) => el('div', { class: i === errorLine ? 'warn' : 'muted', text })));
   }
 
   /** "This chat": whether NMOS is on for the chat open now, and the switch. */
