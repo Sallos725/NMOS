@@ -114,6 +114,24 @@ the author's-note calls and the settings test).
   (an object) and `llm_no_temperature` (a boolean); `/v1/config/test` (kind `llm`) takes `extra_body` and
   `no_temperature` beside the fields it has, and sends the request as they say.
 
+### S5 — What the worker is doing, shown (amendment 1, owner 2026-11-24)
+
+The owner could not tell, after a save that queued a long re-read, whether the model was slow or failing: the panel
+showed neither the queue nor a model error (S3 said a rejection shows "in the Status tab"; nothing did).
+
+- **`GET /v1/worker/status`** (read-only, the same authorization as the other routes; never on the request path):
+  the jobs waiting by kind (`extract`, `reveal`, `summarize`, `canon`, `embed`), the number running, the number
+  being tried again (waiting or running after a failed attempt), the number given up on in the last 24 hours, the
+  number finished in the last 30 minutes, and the most recent failure (its kind, time, state and the first 200
+  characters of its error). One bounded read of the job table; numbers only, no chat text of its own.
+- **The Status tab** gains a "Model work" card: one line for the queue ("1,708 waiting: extraction 642, canon 1,010,
+  summaries 56; 2 running"), one for the last 30 minutes (finished, being retried, given up), and the last error
+  with its time. With nothing waiting and no recent failure it says so in one line. Shown only when the sidecar has
+  the route (an older sidecar: nothing). The plugin composes the lines from the numbers with one pure function; it
+  fetches the route when the Status tab is drawn, with the tab's usual deadline, and a failure of the fetch leaves
+  the card out.
+- Not a high-risk addition: it reads counts and writes nothing; no setting, key, schema or packet changes.
+
 ### What it does not change
 
 Any default; any key of an install with an empty body and the switch off; the request path (`/v1/retrieve` makes no
