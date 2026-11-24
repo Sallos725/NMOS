@@ -52,7 +52,7 @@ message whole, so an excerpt from the unread part can still be found; no fact, t
 from it. A scene summary reads the messages themselves, not the facts, so reading further in extraction alone would
 leave every summary where it is; and the opt-in trimming of Phase 60 counts a turn as covered once an extraction
 serves it and a scene summary holds it, so old dialogue can leave the prompt while its second half is in neither.
-Summaries follow the cap in this phase (Q4); vectors do not (Q5).
+Summaries follow the cap in this phase (Q4); vectors need no build, their setting exists (Q5).
 
 ## What it does
 
@@ -96,7 +96,7 @@ limits, vectors, the plugin.
 ## Out of scope
 
 - A cap above 36,000, or a reply read in several calls (Q1 (c)).
-- Vectors past their cap (Q5): recorded in K13, its own decision. A bound on a whole summary window.
+- Anything built for vectors (Q5: `NMOS_EMBED_MAX_CHUNKS` exists). A bound on a whole summary window.
 - The CONTEXT cut. It shows the first 1,000 characters of each earlier message, so a long earlier reply is seen from
   its beginning, not from where it ended. Noted for a later generation; changing it changes every turn's prompt.
 - A paid measurement (Q2), a new default, a release tag.
@@ -126,9 +126,17 @@ limits, vectors, the plugin.
   would cover the text, was wrong: a summary reads the messages, not the facts). A summary is the reader that most
   needs a scene whole, and trimming relies on it. The price: a scene summary's input about doubles (below), and the
   largest windows become one call of about 140,000 input tokens, which the extraction model must be able to take.
-- **Q5 — vectors.** **(a) Unchanged; `NMOS_EMBED_MAX_CHUNKS` already raises it, at the price of a new projection that
-  embeds every chat again (K13).** (b) A cap change that keeps the vectors it has and embeds only the chunks past
-  them. Proposed (a) here; (b) is worth its own spec if recall from long replies proves short.
+- **Q5 — vectors.** **(a) Nothing to build: `NMOS_EMBED_MAX_CHUNKS` already raises the cap (ADR 0062); the value
+  proposed for production, set together with the extraction cap, is 35 (24,500 characters).** (b) A cap change that
+  keeps the vectors it has and embeds only the chunks past them. Proposed (a) (changed 2026-11-24 on the owner's
+  question; the first draft left vectors for later because a new projection embeds every chat again, and the record
+  shows that to be small). Production's projection recorded 0.75 tokens per character, so embedding its 7.7 million
+  characters again at 35 chunks is about 5.8 million tokens: about $0.70 at the embedder's listed $0.12 per million,
+  or nothing while the provider's free allowance lasts. (b) would save about half of that and is not worth a
+  mechanism. What is not known: whether chunks past 5,600 change what recall finds (M0's chats have no reply that
+  long, and word and keyword recall already reach that text), how long the vector step takes with about twice the
+  chunks (5,900 → 11,900 on production), and recall while the new projection is still filling. Step 4 times the
+  vector step without an embedding call.
 
 ## What it costs (estimate; production's recorded usage, `extract-v18`, 643 turns)
 
@@ -174,9 +182,12 @@ prompt sizes on a copy before anything is paid.
 3. **Build** S3 (if Q3 (a)): the action, its preview, tests that it queues exactly the cut turns and none twice.
 4. **The check** (no paid call): on a throwaway copy of production (test PG, never production's database), the
    jobs a change to 24,000 queues before any worker runs (expected 0), row counts and id hashes unchanged; the prompt
-   sizes of the copy's cut turns at 24,000 against this estimate; S3's preview count against a direct count.
+   sizes of the copy's cut turns at 24,000 against this estimate; S3's preview count against a direct count; the
+   vector step's time with stand-in chunks (existing vectors copied to the chunk numbers a cap of 35 would add: no
+   embedding call), against today's.
 5. **The owner's use** on the test install, then production on the owner's go (a fresh dump and an `.env` backup
-   first; the quiet weeks restart).
+   first; the quiet weeks restart): the cap and, if Q5 (a), `NMOS_EMBED_MAX_CHUNKS` in the same change, so the weeks
+   restart once.
 
 ## Acceptance criteria
 
