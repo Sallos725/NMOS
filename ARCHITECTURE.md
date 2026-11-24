@@ -884,6 +884,20 @@ is a `model` change (the owner's choice, carry on by default, PHASE-57 A3). A pr
 job; it is never sent again without it. An image from before this decision reads such a spec as a version change, so a
 rollback clears both settings first.
 
+**D91 — A log of model calls, and what the worker is doing (`model_call`, migration `0039`; ADR 0089; PHASE-61 S5–S6).**
+Every model call made outside the request path (the worker's extraction, reveal checks, summaries, canon facts and
+embeddings; the sidecar's author's-note calls and settings tests) writes one row: when, what kind, the chat and job when
+known, the generation, the model, the endpoint without userinfo or query, the outcome (`ok`, `http`, `timeout`,
+`transport`, `bad_reply`), the HTTP status, the time taken, the usage the provider reported and, for a failure, the
+first 300 characters of the provider's error, with any of the install's own keys replaced. Never a prompt, a reply or
+chat text. The row is written on its own connection outside the job's transaction, with two-second bounds, and a failure to
+write it is logged and dropped: the log can neither fail nor hold a call. `/v1/retrieve` writes none. Rows are
+operational data: kept as long as traces, never archived, deleted with their chat. `GET /v1/worker/status` answers with
+counts of the job table (waiting by kind, running, being tried again, given up on, finished lately, the newest error)
+and the last hour of the log; a queued job of a generation its kind has left is counted apart, since no worker claims
+it. `GET /v1/worker/calls` and the Inspector's Model calls page list recent rows. All of it is read-only and none of it
+changes a key, a packet or a setting.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

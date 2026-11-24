@@ -93,6 +93,18 @@ switch.
   treated as a model change: the same preview appears and the default is to carry on, so nothing is extracted again.
   With both left alone nothing changes, generation keys included. Going back to an older image: clear the body and the
   switch first.
+- **What the model is doing, shown** (Phase 61 S5, `GET /v1/worker/status`). The Status tab has a "Model work" card:
+  how many jobs wait and of which kind, how many run, how many finished, are being tried again or were given up on
+  lately, and the latest error with its time. With nothing waiting and no recent failure it is one line. It reads
+  counts only; an older sidecar shows no card.
+- **A log of model calls** (Phase 61 S6, migration `0039`, ADR 0089). Each call NMOS makes to a model outside a chat
+  request is logged on the server: its time, kind, model, outcome, HTTP status, how long it took, the usage the
+  provider reported and, when it failed, the first 300 characters of the provider's error. No prompt, reply or chat
+  text is logged. The "Model work" card adds the last hour ("96 ok · 35 failed (504 29 · 429 6) · median 3.2 s") and
+  turns to its warning state when calls fail at least as often as they succeed; the browser Inspector has a
+  "Model calls" page with the last 200, and `GET /v1/worker/calls` returns them. Rows are kept as long as traces
+  (`NMOS_TRACE_RETENTION_DAYS`), are not part of a backup, and go with their chat when it is deleted. Writing the log
+  never fails or delays a call.
 - **From the phase's review, before its first use** (Phase 60). A character is marked gone only when the status plainly
   says the character itself is dead, missing or gone for good now: near death, a rumour, someone else's fate, 전사 as
   "warrior", a missing object and a leave not plainly for good no longer count (S3 amended). A regression link's lines
