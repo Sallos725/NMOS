@@ -6,8 +6,8 @@ another memory plugin (2026-11-24); nothing of its code or prompt text is used, 
 own cap, already in the code, made a setting.
 
 **High risk** (`AGENTS.md §14`) once built:
-- **a new extractor generation when the setting is changed**: the cap is part of the extractor's and the reveal
-  check's keys (`target_chars`), so another value is another generation (D20);
+- **new generations when the setting is changed**: the cap is part of the extractor's and the reveal check's keys
+  (`target_chars`) and of the summarizer's (`message_chars`), so another value is another generation of each (D20);
 - **what a generation change queues**: a change of the cap alone must queue no re-extraction (S2), a new class beside
   PHASE-57 Q5 and PHASE-58 S3;
 - **what the model is charged for**: every long turn costs more input from then on (the estimate below).
@@ -45,11 +45,14 @@ How much stays unread at each cap (the 685 replies):
 | Characters not read | 51.7 % | 25.8 % | 14.0 % | 5.8 % | 1.3 % | 0.2 % | 0 % |
 | Replies cut | 63.1 % | 38.5 % | 27.9 % | 18.4 % | 6.3 % | 0.7 % | 0 % |
 
-The same cap stops two other readers, which this phase leaves alone (Q4, Q5): scene summaries
+The same cap stops two other readers: scene summaries
 (`summaries.MESSAGE_CHARS = 6000`; 57 summaries since 2026-11-10 left 49.9 % of their windows' characters unread) and vectors
 (8 chunks of 700; 52.8 % of the accepted chat messages' characters lie past 5,600). Word and keyword recall search a
 message whole, so an excerpt from the unread part can still be found; no fact, thread, secret or summary can come
-from it.
+from it. A scene summary reads the messages themselves, not the facts, so reading further in extraction alone would
+leave every summary where it is; and the opt-in trimming of Phase 60 counts a turn as covered once an extraction
+serves it and a scene summary holds it, so old dialogue can leave the prompt while its second half is in neither.
+Summaries follow the cap in this phase (Q4); vectors do not (Q5).
 
 ## What it does
 
@@ -64,28 +67,36 @@ and another value is another generation. Every reader of the cap reads the gener
   extraction read.
 One model call per turn, as today (Q1). CONTEXT stays 1,000 characters per message.
 
+S1b. **Scene summaries read with the same cap** (Q4). `summaries.MESSAGE_CHARS` becomes the setting's value: the
+summarizer's spec already holds `message_chars`, so at the default its key is unchanged. A window is still one call;
+at 24,000 the largest windows seen (about 198,000 characters over 8 turns) are about 140,000 input tokens in that one
+call. The story so far is made from scene summaries and is not touched.
+
 S2. **Changing the cap queues nothing.** `generations.classify` names a change whose specs differ only in
 `target_chars` (with or without a compiler of `ADDS`) `reads`, and activation queues for it what a carry-on queues
 (ADR 0078): turns no generation serves. Turns already extracted keep their facts (ADR 0014). Reveal checks follow the
-same rule: none is asked again. With the model changed in the same save, the owner's choice for a model change applies
+same rule: none is asked again. So do summaries: a window an earlier summarizer wrote keeps its summary (ADR 0078
+item 1), and only windows that come due afterwards are read at the new cap. With the model changed in the same save, the owner's choice for a model change applies
 as today.
 
 S3. **"Read the cut turns again"** (Q3). A per-chat action beside "extract all history": it queues, for the active
 generation, only the turns whose serving extraction was cut at a cap lower than the active one and lower than the
 turn's length. The panel first shows the count and the estimated input tokens (`POST /v1/config/preview`'s pattern: a
 rolled-back transaction). A re-read turn is extracted whole again (one call); the reveal check and the dropped-fact
-restore of Phase 22 apply as for any re-extraction.
+restore of Phase 22 apply as for any re-extraction. The preview counts separately the scene summaries of the windows
+those turns are in, and the owner chooses whether they are written again with them.
 
 S4. **Said as it is.** K13 is corrected with this measurement (in this spec's pull request). The Status tab's
 extraction line names the cap when it is not the default.
 
 S5. **What it does not change.** The default (6,000), `extract-v16` as the code default, every prompt's wording, the
-packet and recall, canon reading (`canonfacts.PART_CHARS`, its own parts), summaries, vectors, the plugin.
+packet and recall, canon reading (`canonfacts.PART_CHARS`, its own parts), the summaries' prompts and their size
+limits, vectors, the plugin.
 
 ## Out of scope
 
 - A cap above 36,000, or a reply read in several calls (Q1 (c)).
-- Summaries and vectors past their caps (Q4, Q5): recorded in K13, their own decisions.
+- Vectors past their cap (Q5): recorded in K13, its own decision. A bound on a whole summary window.
 - The CONTEXT cut. It shows the first 1,000 characters of each earlier message, so a long earlier reply is seen from
   its beginning, not from where it ended. Noted for a later generation; changing it changes every turn's prompt.
 - A paid measurement (Q2), a new default, a release tag.
@@ -110,9 +121,11 @@ packet and recall, canon reading (`canonfacts.PART_CHARS`, its own parts), summa
   the first exists). Proposed (a); (b) is the only way to count what is gained before production pays.
 - **Q3 — the turns already cut.** **(a) From now on, and S3's action per chat.** (b) From now on only ("extract all
   history" stays the manual fill). (c) Every cut turn of the recent window at the switch. Proposed (a).
-- **Q4 — summaries.** **(a) Unchanged in this phase.** (b) `MESSAGE_CHARS` follows the setting: a scene summary reads
-  8 turns, so its input roughly doubles (about 30,000 input tokens per summary measured now). Proposed (a): a summary
-  is made from text the facts will now cover, and its cost is paid per window whatever its use.
+- **Q4 — summaries.** (a) Unchanged in this phase. **(b) Scene summaries follow the setting.** Proposed (b) (changed
+  2026-11-24 on the owner's question; the first draft proposed (a) for its cost alone, and its reason, that facts
+  would cover the text, was wrong: a summary reads the messages, not the facts). A summary is the reader that most
+  needs a scene whole, and trimming relies on it. The price: a scene summary's input about doubles (below), and the
+  largest windows become one call of about 140,000 input tokens, which the extraction model must be able to take.
 - **Q5 — vectors.** **(a) Unchanged; `NMOS_EMBED_MAX_CHUNKS` already raises it, at the price of a new projection that
   embeds every chat again (K13).** (b) A cap change that keeps the vectors it has and embeds only the chunks past
   them. Proposed (a) here; (b) is worth its own spec if recall from long replies proves short.
@@ -135,11 +148,16 @@ At 24,000 (5,700 more TARGET characters read per turn, 5,607 → about 11,300):
 | Output tokens per turn | 1,780 | 1,780 to 3,600 | +0 to +1,800: cut turns answer today no longer than uncut ones (1,790 and 1,762), so the lower end is as likely |
 | The 643 turns of those six days | 7.63 M input | about 10.2 M to 12.3 M | +2.5 M to +4.6 M input |
 
+A scene summary (one per 8 turns) now takes 29,941 input tokens for 46,371 of its window's 92,566 characters. Read at
+24,000 it takes about 61,000 (+31,000, at the summaries' own 0.69 tokens per character): about +3,900 input tokens
+per turn on top of the table, so the phase as a whole adds about 7,800 to 11,100 input tokens per turn (+50 % to
++70 % of what a turn's extraction and its share of a summary take today, 15,600).
+
 Re-reading a cut turn (S3) is a whole call: about 18,900 to 24,100 input tokens for the mean cut turn (15,487
 characters, 9,211 of them unread today), so the 410 cut turns of that week would take about 7.7 to 9.9 million input
 tokens. At an example rate of $1.50 per million input and $7.50 per million output tokens (a third-party listing for
-one model in the usage log, not checked against the provider's own page; the owner's rate replaces it): about +$0.006
-to +$0.024 per live turn, and about $17 to $26 for those 410 turns. Cached input is not counted. Step 4 measures the
+one model in the usage log, not checked against the provider's own page; the owner's rate replaces it): about +$0.012
+to +$0.030 per live turn with the summaries, and about $17 to $26 for those 410 turns (their summaries not counted). Cached input is not counted. Step 4 measures the
 prompt sizes on a copy before anything is paid.
 
 ## Steps
@@ -150,7 +168,9 @@ prompt sizes on a copy before anything is paid.
    confirmations and the reveal check read the same text; at the default every generation key (`extract-v15`–`v19`,
    reveal, summarize, canon, embed) and prompt is byte-identical to `main`; a change of the cap alone classifies
    `reads` and queues nothing on a covered chat, both ways, and only uncovered turns on a partial one; any other
-   version change keeps PHASE-57 Q5; `coverage` and the Inspector's marks follow each row's own cap.
+   version change keeps PHASE-57 Q5; `coverage` and the Inspector's marks follow each row's own cap; a scene summary's
+   prompt holds a reply's tail at 24,000, its key is unchanged at the default, and a change of the cap queues no
+   summary of a window already written.
 3. **Build** S3 (if Q3 (a)): the action, its preview, tests that it queues exactly the cut turns and none twice.
 4. **The check** (no paid call): on a throwaway copy of production (test PG, never production's database), the
    jobs a change to 24,000 queues before any worker runs (expected 0), row counts and id hashes unchanged; the prompt
@@ -164,8 +184,8 @@ prompt sizes on a copy before anything is paid.
 2. At 24,000, a turn whose messages are each at most 24,000 normalized characters is shown whole, and its coverage
    says so (`target_used = target_chars`).
 3. An assertion whose evidence lies past character 6,000 is kept at 24,000.
-4. Changing the cap on production's copy queues **no** extraction and no reveal check, and changes no row; changing
-   it back too.
+4. Changing the cap on production's copy queues **no** extraction, no reveal check and no summary, and changes no
+   row; changing it back too.
 5. "Read the cut turns again" queues exactly the turns cut below the active cap, shows their count and estimated
    tokens first, and queues nothing on a second press.
 6. A chat's packet is byte-identical before and after the change of the cap, until a turn is extracted at the new cap.
@@ -174,9 +194,11 @@ prompt sizes on a copy before anything is paid.
 
 ## Stop conditions
 
-- A change of the cap would queue extraction or reveal checks on the copy: stop; nothing is deployed until it queues
+- A change of the cap would queue extraction, reveal checks or summaries on the copy: stop; nothing is deployed until it queues
   none.
 - Any key or prompt differs at the default: stop.
+- The extraction model cannot take the largest summary window in one call (its context, or a timeout): stop and
+  bring Q4 back to the owner with the sizes; a bound that cuts the window again is not chosen silently.
 - On the test install, long turns fail or time out (`NMOS_LLM_TIMEOUT_S`), or their answers arrive cut (not JSON)
   more often than short turns': report before production, with the model-call log's counts (Phase 61).
 - The owner's use shows facts getting worse on long turns (missed where they were found, or invented): set the cap
