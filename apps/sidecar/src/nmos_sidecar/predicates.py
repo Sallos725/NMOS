@@ -86,9 +86,15 @@ TOLD = Predicate(
     "the subject passed on to the object something that matters later, which the object did not have: a secret,"
     " news of an event, a fact about someone, a warning or a rumour (value: what was passed on)",
 )
-EXTENSIONS: dict[str, dict[str, Predicate]] = {"extract-v19": {"told": TOLD}}
-# Predicates of a compiler extension that also keep `with` (PHASE-60 S8).
-EXTENSION_PARTICIPANTS: dict[str, frozenset[str]] = {"extract-v19": frozenset({"told"})}
+EXTENSIONS: dict[str, dict[str, Predicate]] = {
+    "extract-v19": {"told": TOLD},
+    "extract-v20": {"told": TOLD},
+}
+# Predicates of a compiler extension that also keep `with` (PHASE-60 S8, PHASE-64).
+EXTENSION_PARTICIPANTS: dict[str, frozenset[str]] = {
+    "extract-v19": frozenset({"told"}),
+    "extract-v20": frozenset({"told"}),
+}
 
 
 def registry_for(compiler: str | None) -> dict[str, Predicate]:
@@ -377,6 +383,84 @@ def when_happened(item: dict[str, Any], limit: int) -> str | None:
     if not value or value.casefold() in ("null", "none", "-"):
         return None
     return value[:limit].strip() or None
+
+
+# extract-v20 / canon-v2 (PHASE-64, ADR 0091): conditional forms of address on `addresses` only.
+ADDRESS_SCOPES = ("public", "private", "situational", "all")
+ADDRESS_CONDITION_MAX = 60
+_SCOPE_LABELS = {
+    "public": ("공적인 자리", "in public"),
+    "private": ("사적인 자리", "in private"),
+}
+
+
+def address_condition(item: dict[str, Any], limit: int = ADDRESS_CONDITION_MAX) -> dict[str, Any] | None:
+    """The `address_condition` of an `addresses` row (PHASE-64, ADR 0091): {scope, when}, or None for default /
+    unconditional addresses, any other predicate, or an invalid/empty payload.
+
+    `scope` is one of `public`, `private`, `situational`, `all`. `when` is a short phrase of at most `limit`
+    characters in the chat's language (required for `situational`, always None for `all`, optional for `public` and
+    `private`). A `situational` payload without a non-empty phrase degrades to None so an unnamed slot is never made."""
+    if item.get("predicate") != "addresses":
+        return None
+    raw = item.get("address_condition")
+    if not isinstance(raw, dict):
+        return None
+    scope = str(raw.get("scope") or "").strip().lower()
+    if scope not in ADDRESS_SCOPES:
+        return None
+    if scope == "all":
+        return {"scope": "all", "when": None}
+    raw_when = raw.get("when")
+    when: str | None = None
+    if isinstance(raw_when, str):
+        cleaned = " ".join(raw_when.split())
+        if cleaned and cleaned.casefold() not in ("null", "none", "-"):
+            when = cleaned[:limit].strip() or None
+    if scope == "situational" and not when:
+        return None
+    return {"scope": scope, "when": when}
+
+
+def address_slot(row: Mapping[str, Any]) -> tuple[str, ...]:
+    """The versioning slot of an `addresses` row (PHASE-64, ADR 0091): `("default",)` for unconditional/legacy rows
+    and for `scope="all"` (whose unification closes other slots in `facts._address_versions`), `("public",)` /
+    `("private",)` for canonical scopes, or `("situational", normalized_when)` for situational conditions."""
+    cond = row.get("address_condition")
+    if not isinstance(cond, Mapping):
+        return ("default",)
+    scope = cond.get("scope")
+    if scope in ("public", "private"):
+        return (scope,)
+    if scope == "situational":
+        when = _casefold(cond.get("when"))
+        return ("situational", when) if when else ("default",)
+    return ("default",)
+
+
+def is_address_all(row: Mapping[str, Any]) -> bool:
+    """Whether an `addresses` row explicitly unifies a prior conditional split (`scope="all"`, PHASE-64)."""
+    cond = row.get("address_condition")
+    return row.get("predicate") == "addresses" and isinstance(cond, Mapping) and cond.get("scope") == "all"
+
+
+def address_label(row: Mapping[str, Any], lang: str | None = None) -> str | None:
+    """Display label for a conditional `addresses` row, or None for default / `all` / non-`addresses` rows."""
+    if row.get("predicate") != "addresses":
+        return None
+    cond = row.get("address_condition")
+    if not isinstance(cond, Mapping):
+        return None
+    scope = cond.get("scope")
+    if scope not in ("public", "private", "situational"):
+        return None
+    when = cond.get("when")
+    if isinstance(when, str) and when.strip():
+        return when.strip()
+    pair = _SCOPE_LABELS.get(scope)
+    if pair is None:
+        return None
+    return pair[0] if lang == "ko" else pair[1]
 
 
 SALIENCES = ("major", "minor")

@@ -32,7 +32,7 @@ from uuid import UUID
 import psycopg
 
 from .entities import Resolution, norm
-from .predicates import OUTCOMES, REGISTRY
+from .predicates import OUTCOMES, REGISTRY, address_slot
 from .secrets import secret_text
 from .statewatch import target as flag_target
 from .threads import MATCH_MIN, similarity
@@ -281,10 +281,13 @@ def _ekey(r: Resolution | None, entity_type: str | None, name: str | None) -> st
 
 def fact_target(f: dict[str, Any]) -> dict[str, Any]:
     """What a repair stores to find this fact again: its turn, the turn's hash, its head, its line and its quote."""
-    return {"turn": f.get("turn"), "turn_hash": f.get("turn_hash"), "predicate": f["predicate"],
-            "source": f.get("source"), "subject": f["subject"], "subject_type": f.get("subject_type"),
-            "object": f.get("object"), "object_type": f.get("object_type"), "text": secret_text(f),
-            "evidence": f.get("evidence")}
+    out = {"turn": f.get("turn"), "turn_hash": f.get("turn_hash"), "predicate": f["predicate"],
+           "source": f.get("source"), "subject": f["subject"], "subject_type": f.get("subject_type"),
+           "object": f.get("object"), "object_type": f.get("object_type"), "text": secret_text(f),
+           "evidence": f.get("evidence")}
+    if f.get("address_condition"):
+        out["address_condition"] = f["address_condition"]
+    return out
 
 
 def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution | None,
@@ -294,12 +297,14 @@ def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution
     subject = _ekey(r, target.get("subject_type"), target.get("subject"))
     obj = _ekey(r, target.get("object_type"), target.get("object"))
     canon = target.get("turn") == -1  # a canon fact's turn (apply_locks); the story's and canon's never cross
+    target_slot = address_slot(target) if target.get("predicate") == "addresses" else None
 
     def same(a: dict[str, Any]) -> bool:
         return (not a.get("owner") and bool(a.get("canon")) == canon and a["predicate"] == target.get("predicate")
                 and (a.get("source") or "narration") == (target.get("source") or "narration")
                 and _ekey(r, a.get("subject_type"), a["subject"]) == subject
-                and _ekey(r, a.get("object_type"), a.get("object")) == obj)
+                and _ekey(r, a.get("object_type"), a.get("object")) == obj
+                and (target_slot is None or address_slot(a) == target_slot))
     return (_closest(target, [a for a in rows if _same_turn(target, a) and same(a)], secret_text)
             or (_by_quote(target, rows, same, lambda a: a.get("evidence")) if quote else None))
 
@@ -321,6 +326,8 @@ def _restates(level: int, a: dict[str, Any], b: dict[str, Any], r: Resolution | 
     if level == 3:
         return quoted(a.get("evidence"), b.get("evidence"))
     if _ekey(r, a.get("object_type"), a.get("object")) != _ekey(r, b.get("object_type"), b.get("object")):
+        return False
+    if a["predicate"] == "addresses" and address_slot(a) != address_slot(b):
         return False
     pred = REGISTRY.get(a["predicate"])
     return level == 2 or (pred is not None and pred.cardinality == "single") or norm(a.get("value")) == norm(b.get("value"))
@@ -457,7 +464,8 @@ def restore_target(f: dict[str, Any]) -> dict[str, Any]:
             "object": f.get("object"), "text": f["text"], "evidence": f.get("evidence"),
             "fact": ({k: f.get(k) for k in RESTORED}
                      | ({"feeling": f["feeling"]} if f.get("feeling") else {})
-                     | ({"when_happened": f["when_happened"]} if f.get("when_happened") else {}))}
+                     | ({"when_happened": f["when_happened"]} if f.get("when_happened") else {})
+                     | ({"address_condition": f["address_condition"]} if f.get("address_condition") else {}))}
 
 
 def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied: dict[str, str | None],
@@ -480,6 +488,8 @@ def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied:
         new["feeling"] = fact["feeling"]
     if fact.get("when_happened"):  # PHASE-60 S7: a restored event or promise keeps when it happened
         new["when_happened"] = fact["when_happened"]
+    if fact.get("address_condition"):  # PHASE-64: a restored conditional address keeps its condition
+        new["address_condition"] = fact["address_condition"]
     new.update({"id": _owner_id(rep), "turn": t["turn"], "turn_hash": t["turn_hash"], "position": at[0],
                 "host_logical_id": None, "generation": None, "compiler": None, "listed_hash": None,
                 "source": "narration", "owner": True, "repair": str(rep["id"])})

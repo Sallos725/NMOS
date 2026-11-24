@@ -39,7 +39,7 @@ FACT_KEYS: tuple[str, ...] = (
     "predicate", "subject", "subject_type", "object", "object_type", "value",
     "epistemic", "confidence", "knowledge", "known_by", "hidden_from",
     "polarity", "modality", "source", "asserted_by", "salience", "participants",
-    "outcome", "because", "feeling", "when_happened", "turn", "position", "compiler",
+    "outcome", "because", "feeling", "when_happened", "address_condition", "turn", "position", "compiler",
 )
 THREAD_KEYS: tuple[str, ...] = (
     "kind", "by", "to", "text", "status", "horizon", "turn", "position",

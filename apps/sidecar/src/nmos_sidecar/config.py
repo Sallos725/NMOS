@@ -168,7 +168,7 @@ class Settings:
     extract_hints: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_HINTS", "40")))
     # The extractor (PHASE-28 Q3): empty is `extraction.DEFAULT_COMPILER` (extract-v16 since 2026-10-04: it lists the roles
     # in force and ends one as listed); "extract-v15" selects the earlier extractor. Part of the extractor generation: a change re-extracts every chat once,
-    # but a switch among extract-v16, extract-v18 and extract-v19 (PHASE-58 S3, PHASE-60 S7) re-extracts nothing.
+    # but a switch among extract-v16, extract-v18, extract-v19 and extract-v20 (PHASE-58 S3, PHASE-60 S7, PHASE-64) re-extracts nothing.
     extract_compiler: str = field(default_factory=lambda: os.environ.get("NMOS_EXTRACT_COMPILER", ""))
     # Scene summaries and the story so far (PHASE-12, ADR 0042, 0043), written by the extraction model; "0" or the
     # plugin's switch turns them off. Needs NMOS_LLM_URL.
@@ -252,9 +252,10 @@ class Settings:
 
     def __post_init__(self) -> None:
         # A misspelt extractor would be a generation of its own (a full re-extraction): refused at startup.
-        if self.extract_compiler not in ("", "extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19"):
-            raise ValueError("NMOS_EXTRACT_COMPILER must be empty, extract-v15, extract-v16, extract-v17, extract-v18 or"
-                             f" extract-v19, not {self.extract_compiler!r}")
+        if self.extract_compiler not in ("", "extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19",
+                                         "extract-v20"):
+            raise ValueError("NMOS_EXTRACT_COMPILER must be empty, extract-v15, extract-v16, extract-v17, extract-v18,"
+                             f" extract-v19 or extract-v20, not {self.extract_compiler!r}")
         # Under 6,000 it would read less than every release did; 36,000 is past the longest reply measured, and a
         # scene summary reads 8 turns of them in one call (PHASE-62 S1b): another value is refused at startup.
         if (isinstance(self.extract_target_chars, bool) or not isinstance(self.extract_target_chars, int)

@@ -44,8 +44,8 @@ def _told_item(**extra):
 
 def test_told_extension_keeps_registry_and_default_prompt_unchanged():
     assert "told" not in P.REGISTRY
-    assert P.EXTENSIONS == {"extract-v19": {"told": P.TOLD}}
-    assert P.EXTENSION_PARTICIPANTS == {"extract-v19": frozenset({"told"})}
+    assert P.EXTENSIONS == {"extract-v19": {"told": P.TOLD}, "extract-v20": {"told": P.TOLD}}
+    assert P.EXTENSION_PARTICIPANTS == {"extract-v19": frozenset({"told"}), "extract-v20": frozenset({"told"})}
     assert P.registry_for(None) is P.REGISTRY
     assert P.registry_for("extract-v18") is P.REGISTRY
     assert "told" in P.registry_for("extract-v19")
@@ -72,7 +72,7 @@ def test_validate_and_participants_accept_told_only_with_extension():
 
 def test_v19_prompt_extends_v18_and_joins_only_v18_compiler_sets():
     assert X.DEFAULT_COMPILER == "extract-v16" and "extract-v19" in X.COMPILERS
-    assert X.HAPPENED == {"extract-v19"}
+    assert X.HAPPENED == {"extract-v19", "extract-v20"}
     assert X.HAPPENED_MAX == 80 and X.CLOCK_MAX == 80
     assert X.CLOCK_LINE == "STORY CLOCK at the TARGET turn (the chat's status window): {clock}"
     v18, v19 = X.prompt_of("extract-v18"), X.prompt_of("extract-v19")
@@ -523,4 +523,4 @@ def test_the_clock_is_not_part_of_validity(migrated, clock_rules):
 def test_settings_accept_v19_and_refuse_a_later_name():
     assert Settings(database_url="", extract_compiler="extract-v19").extract_compiler == "extract-v19"
     with pytest.raises(ValueError, match="extract-v19"):
-        Settings(database_url="", extract_compiler="extract-v20")
+        Settings(database_url="", extract_compiler="extract-v21")

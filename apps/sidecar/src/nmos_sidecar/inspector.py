@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import quote
 
 from .entities import USER_NAMES, norm
-from .predicates import REGISTRY
+from .predicates import REGISTRY, address_label
 from .repairs import offered
 from .facts import STANDING, earlier, first, participant_entities, symmetric
 from . import scene, timeline, tokens
@@ -526,6 +526,9 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     # when it happened, apart from when the turn told it (PHASE-60 S7)
     "happened_told": ("[일어난 때: {when}; t{turn}에 말함]", "[happened: {when}; told t{turn}]"),
     "happened_only": ("[일어난 때: {when}]", "[happened: {when}]"),
+    # conditional forms of address fallback scope labels (PHASE-64)
+    "ac.public": ("공적인 자리", "in public"),
+    "ac.private": ("사적인 자리", "in private"),
 }
 
 
@@ -1011,6 +1014,8 @@ def _named_cell(a: dict[str, Any], side: str) -> str:
 
 def fact_line_text(a: dict[str, Any]) -> str:
     text = f"{_named(a, 'subject')} {a['predicate'].replace('_', ' ')}" + (f" {_named(a, 'object')}" if a.get("object") else "")
+    if label := address_label(a):
+        text = f"{text} [{label}]"
     return f"{text}: {a['value']}" if a.get("value") else text
 
 
@@ -1197,7 +1202,8 @@ def feeling_detail(f: dict[str, Any], lang: str) -> str:
 def _pairs_table(entries: list[dict[str, Any]], lang: str, persona: frozenset[str] | None = None) -> str:
     def said(f: dict[str, Any], directed: bool) -> str:
         who = f"{_named(f, 'subject')} → {_named(f, 'object')}: " if directed else ""
-        text = (_v(who) + feeling_dot(f, lang) + _v(f.get("value") or "") + feeling_detail(f, lang)
+        cond = f'<span class="chip">{_v(label)}</span> ' if (label := address_label(f, lang)) else ""
+        text = (_v(who) + cond + feeling_dot(f, lang) + _v(f.get("value") or "") + feeling_detail(f, lang)
                 + f" <span class=\"muted\">{_turn(f)}</span>")
         if f.get("polarity") == "negative":
             text += f" <span class=\"chip\">{_t(lang, 'negated')}</span>"
@@ -1205,8 +1211,9 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str, persona: frozenset[st
             text += f" <span class=\"muted\">· {_t(lang, 'because')}: {_v(f['because'])}</span>"
         for key, was in (("before", earlier(f)), ("first", first(f))):
             if was:
-                text += (f" <span class=\"muted\">· {_t(lang, key)}: {_v(was.get('value'))}{feeling_detail(was, lang)}"
-                         f" ({_turn(was)})</span>")
+                wcond = f"[{wl}] " if (wl := address_label(was, lang)) else ""
+                text += (f" <span class=\"muted\">· {_t(lang, key)}: {_v(wcond + str(was.get('value') or ''))}"
+                         f"{feeling_detail(was, lang)} ({_turn(was)})</span>")
         return text
 
     def setting_only(p: dict[str, Any]) -> bool:
