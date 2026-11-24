@@ -222,6 +222,14 @@ no repair retracts one; a source persona's name inside free text is carried as w
 its whole frozen reading (bounded by the row cap); a reranker URL holding credentials is logged by the HTTP client as
 the other two endpoints' are; the short-message embedding reads the previous reply as the plugin sends it.
 
+**Phase 62 — a long reply read to its end: draft 2026-11-24 (a correction found by measurement, K13; not approved, Q0–Q5 open).** Extraction shows the model the first 6,000 normalized characters of each message of a turn. On
+production (read-only aggregates, 2026-11-24) 432 of 685 character replies are longer (mean 15,105), and of the 643
+turns `extract-v18` extracted from 2026-11-18 to 11-23, 410 were cut and 51.2 % of their characters were not shown to
+the model; summaries and vectors stop at the same length. The draft makes the cap a setting (default unchanged, so
+every key and prompt stays as it is), a change of it queuing nothing, with a per-chat action that reads the cut turns
+again, and estimates the cost from recorded usage (about +52 % input tokens per turn at 24,000). Nothing is built.
+[Spec](phases/PHASE-62.md).
+
 **Phase 61 — what the model request carries: approved 2026-11-23 (an owner request during the Phase 60 trial; Q1–Q7
 answered the same evening).** One setting, a JSON object added to every request made with the extraction model
 (`llm_extra_body`, empty by default: requests and generation keys byte-identical to today's); in the generation only
