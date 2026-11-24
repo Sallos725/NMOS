@@ -11,6 +11,7 @@ import json
 import re
 import logging
 from collections.abc import Callable
+from datetime import timezone
 from typing import Any
 from uuid import UUID
 
@@ -1737,16 +1738,47 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     return "done"
 
 
-def recent_errors(conn: psycopg.Connection, limit: int = 8) -> list[dict[str, Any]]:
-    """Background jobs that failed for good or are retrying, newest first, each with its last error cut to 300
+def recent_errors(conn: psycopg.Connection, limit: int = 8, chars: int = 300) -> list[dict[str, Any]]:
+    """Background jobs that failed for good or are retrying, newest first, each with its last error cut to `chars`
     characters (an error can quote a model's reply)."""
-    return conn.execute("SELECT kind, status, attempts, updated_at, left(last_error, 300) AS error FROM job"
+    return conn.execute("SELECT kind, status, attempts, updated_at, left(last_error, %s) AS error FROM job"
                         " WHERE last_error IS NOT NULL AND status IN ('dead', 'queued', 'running')"
-                        " ORDER BY updated_at DESC LIMIT %s", (limit,)).fetchall()
+                        " ORDER BY updated_at DESC LIMIT %s", (chars, limit)).fetchall()
 
 
 def job_counts(conn: psycopg.Connection) -> dict[str, int]:
     return {r["status"]: r["n"] for r in conn.execute("SELECT status, count(*) AS n FROM job GROUP BY status").fetchall()}
+
+
+WORKER_KINDS = ("extract", "reveal", "summarize", "canon", "embed")
+RECENT_MINUTES = 30  # finished jobs counted back this far
+DEAD_HOURS = 24  # given-up jobs counted back this far
+_SPACE = re.compile(r"[\s\x00-\x1f\x7f]+")
+
+
+def worker_status(conn: psycopg.Connection) -> dict[str, Any]:
+    """What the worker is doing (PHASE-61 S5), for the panel's Status tab: jobs waiting by kind, running, tried again
+    after a failure, given up on lately, finished lately, and the newest failure's error on one line, cut to 200
+    characters. Counts only; reads `job` and nothing else (no chat text). An obsolete job counts nowhere."""
+    rows = conn.execute(
+        "SELECT kind, count(*) FILTER (WHERE status = 'queued') AS queued,"
+        " count(*) FILTER (WHERE status = 'running') AS running,"
+        " count(*) FILTER (WHERE status IN ('queued', 'running') AND attempts > 0 AND last_error IS NOT NULL)"
+        " AS retrying,"
+        " count(*) FILTER (WHERE status = 'dead' AND updated_at > now() - make_interval(hours => %s)) AS dead_recent,"
+        " count(*) FILTER (WHERE status = 'done' AND updated_at > now() - make_interval(mins => %s)) AS done_recent"
+        " FROM job GROUP BY kind ORDER BY kind", (DEAD_HOURS, RECENT_MINUTES)).fetchall()
+    queued = {kind: 0 for kind in WORKER_KINDS} | {r["kind"]: r["queued"] for r in rows}
+    total = {k: sum(r[k] for r in rows) for k in ("running", "retrying", "dead_recent", "done_recent")}
+    newest = recent_errors(conn, limit=1, chars=1000)
+    last_error = None
+    if newest:
+        row = newest[0]
+        last_error = {"kind": row["kind"], "status": row["status"],
+                      "at": row["updated_at"].astimezone(timezone.utc).isoformat(),
+                      "text": _SPACE.sub(" ", row["error"]).strip()[:200]}
+    return {"queued": queued, "queued_total": sum(queued.values()), **total, "recent_minutes": RECENT_MINUTES,
+            "dead_hours": DEAD_HOURS, "last_error": last_error}
 
 
 def _prompt_print(compiler: str) -> str:
