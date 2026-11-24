@@ -1,9 +1,11 @@
 # Phase 62 — A long reply read to its end
 
-Status: **draft**, 2026-11-24. Not approved: Q0–Q5 below are open, and nothing is built. A correction found by
-measurement (K13), not a roadmap stage. The idea of reading a long reply further came up in the owner's survey of
-another memory plugin (2026-11-24); nothing of its code or prompt text is used, and what is proposed here is NMOS's
-own cap, already in the code, made a setting.
+Status: **approved**, 2026-11-24 (owner, in the session that measured it: "나머지는 제안대로, 그대로 실행해줘", after asking
+about Q4 and Q5 and seeing both proposals changed). Read as: Q0 (a), Q1 (a), Q2 (a), Q3 (a) as first proposed; Q4 (b)
+and Q5 (a) as changed that day. Steps 2–4 are built with no paid call; step 5 (the test install, then production) waits
+for the owner's go, as Q0 (a) says. A correction found by measurement (K13), not a roadmap stage. The idea of reading
+a long reply further came up in the owner's survey of another memory plugin (2026-11-24); nothing of its code or prompt
+text is used, and what is built here is NMOS's own cap, already in the code, made a setting. Linear: AGE-96.
 
 **High risk** (`AGENTS.md §14`) once built:
 - **new generations when the setting is changed**: the cap is part of the extractor's and the reveal check's keys
@@ -86,12 +88,15 @@ rolled-back transaction). A re-read turn is extracted whole again (one call); th
 restore of Phase 22 apply as for any re-extraction. The preview counts separately the scene summaries of the windows
 those turns are in, and the owner chooses whether they are written again with them.
 
-S4. **Said as it is.** K13 is corrected with this measurement (in this spec's pull request). The Status tab's
-extraction line names the cap when it is not the default.
+S4. **Said as it is.** K13 is corrected with this measurement (in this spec's pull request). The Inspector's coverage
+row names the cap when it is not the default (*amended at the build: the Inspector's rows are the sidecar's; the
+Status tab's line is the plugin's and stays as it is*).
 
 S5. **What it does not change.** The default (6,000), `extract-v16` as the code default, every prompt's wording, the
 packet and recall, canon reading (`canonfacts.PART_CHARS`, its own parts), the summaries' prompts and their size
-limits, vectors, the plugin.
+limits, vectors. *Amended at the build:* the first draft listed the plugin here too, but the per-chat action buttons
+are the plugin's (`ui.ts`), so S3 adds one button to it: the plugin build changes and the owner imports it again. The
+button shows only when the sidecar reports cut turns to read, so an older sidecar or the default cap shows nothing.
 
 ## Out of scope
 
@@ -101,7 +106,7 @@ limits, vectors, the plugin.
   its beginning, not from where it ended. Noted for a later generation; changing it changes every turn's prompt.
 - A paid measurement (Q2), a new default, a release tag.
 
-## Questions (open)
+## Questions (answered, owner 2026-11-24: Q0 (a), Q1 (a), Q2 (a), Q3 (a), Q4 (b), Q5 (a))
 
 - **Q0 — when.** R7 keeps new phases to Stage 7 until `1.0.0`, and a new extractor generation is feature work
   (`AGENTS.md §13`). **(a) Build it now behind the setting, default unchanged; production's switch is a separate
@@ -166,7 +171,9 @@ characters, 9,211 of them unread today), so the 410 cut turns of that week would
 tokens. At an example rate of $1.50 per million input and $7.50 per million output tokens (a third-party listing for
 one model in the usage log, not checked against the provider's own page; the owner's rate replaces it): about +$0.012
 to +$0.030 per live turn with the summaries, and about $17 to $26 for those 410 turns (their summaries not counted). Cached input is not counted. Step 4 measures the
-prompt sizes on a copy before anything is paid.
+prompt sizes on a copy before anything is paid. Two more things cost what they did before, on longer prompts: a turn
+whose call fails is tried up to five times at its full input, and "extract all history" after a change of the cap
+reads every older turn again at the new cap, not only the cut ones (the new button reads only those).
 
 ## Steps
 
@@ -210,6 +217,10 @@ prompt sizes on a copy before anything is paid.
 - Any key or prompt differs at the default: stop.
 - The extraction model cannot take the largest summary window in one call (its context, or a timeout): stop and
   bring Q4 back to the owner with the sizes; a bound that cuts the window again is not chosen silently.
+- **Going back to an image without this phase.** An older image knows no `reads`: on a database whose active
+  generations were made at another cap it calls the change a version change and extracts the recent turns again, at
+  the owner's cost. Order: set the cap back to 6,000 on this image first (that queues nothing), then change the
+  image. Step 4 shows both on the copy.
 - On the test install, long turns fail or time out (`NMOS_LLM_TIMEOUT_S`), or their answers arrive cut (not JSON)
   more often than short turns': report before production, with the model-call log's counts (Phase 61).
 - The owner's use shows facts getting worse on long turns (missed where they were found, or invented): set the cap
