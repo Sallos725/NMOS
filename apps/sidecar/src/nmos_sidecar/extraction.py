@@ -71,7 +71,9 @@ COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18", "extrac
 DEFAULT_COMPILER = "extract-v16"
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
-TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
+TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13): the default cap, and the
+#                       cap of a context that names none; a generation's own is its spec's `target_chars`
+#                       (`NMOS_EXTRACT_TARGET_CHARS`, PHASE-62 S1, ADR 0090)
 CONTEXT_CHARS = 1000  # per context message (2,000 before extract-v14: PHASE-19 Q1)
 RECENT_PRIORITY, HISTORY_PRIORITY = 250, 900  # generation rebuild: recent window first, then history
 LIVE_PRIORITY = 100  # a turn that became eligible on a chat already seen, before any backfill
@@ -1006,7 +1008,7 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
     if clock is not None:  # the story clock as of the TARGET turn (PHASE-60 S7); none: the prompt as before
         lines += ["", CLOCK_LINE.format(clock=clock)]
     lines += ["", f"TARGET turn {ctx['target']['turn']}:"]
-    lines += [f"{_speaker(row['metadata'])}: {row['content'][:TARGET_CHARS]}" for row in ctx["members"]]
+    lines += [f"{_speaker(row['metadata'])}: {row['content'][:target_cap(ctx)]}" for row in ctx["members"]]
     if nameless := [h["name"] for h in hints or [] if unnamed(h)]:
         lines += ["", "Before answering, check each UNNAMED CHARACTER: " + ", ".join(nameless) + ". If the TARGET"
                   " turn shows that one is a character it names, add {\"subject\": \"<that name>\","
@@ -1043,7 +1045,7 @@ def target_quotes(ctx: dict[str, Any]) -> list[str]:
     """The TARGET turn's quoted lines in order, as QUOTED LINES lists them (PHASE-45 S1): the quote route's own finder,
     so a stored speaker names the very words the route places."""
     from .quotes import quotes_in
-    return [q.words for r in ctx["members"] for q in quotes_in(r["content"][:TARGET_CHARS])][:QUOTES_LISTED]
+    return [q.words for r in ctx["members"] for q in quotes_in(r["content"][:target_cap(ctx)])][:QUOTES_LISTED]
 
 
 def speakers_of(answer: dict[str, Any], lines: list[str]) -> list[dict[str, str]] | None:
@@ -1061,12 +1063,30 @@ def speakers_of(answer: dict[str, Any], lines: list[str]) -> list[dict[str, str]
     return out or None
 
 
+def target_cap(ctx: dict[str, Any]) -> int:
+    """The normalized characters of each TARGET-turn message the model is shown: the cap of the generation whose job
+    loaded `ctx` (its spec's `target_chars`, set by `with_cap`; PHASE-62 S1), TARGET_CHARS for a context that names
+    none (an evaluation tool, a test)."""
+    return int(ctx.get("target_chars") or TARGET_CHARS)
+
+
+def with_cap(ctx: dict[str, Any], gen: Generation) -> dict[str, Any]:
+    """`ctx` reading its TARGET at `gen`'s cap: the prompt, the listed quotes, the confirmations, the evidence check
+    and the coverage all read `target_cap(ctx)`, so they agree on what the model saw (PHASE-62 S1). The cap comes
+    from the generation the job belongs to, never from the settings in force when it runs."""
+    ctx["target_chars"] = int(gen.spec.get("target_chars") or TARGET_CHARS)
+    return ctx
+
+
 def coverage_of(ctx: dict[str, Any]) -> dict[str, int]:
-    """How much of the normalized target turn/context the model saw (#13)."""
+    """How much of the normalized target turn/context the model saw (#13). `target_cap`: the cap it was read at, only
+    when that is not TARGET_CHARS (PHASE-62 S1): a row without it was read at 6,000, as every row before was."""
     sizes = [len(r["content"]) for r in ctx["members"]]
-    return {"target_chars": sum(sizes), "target_used": sum(min(n, TARGET_CHARS) for n in sizes),
+    cap = target_cap(ctx)
+    return {"target_chars": sum(sizes), "target_used": sum(min(n, cap) for n in sizes),
             "target_messages": len(sizes), "context_messages": len(ctx["context"]),
-            "context_truncated": sum(1 for r in ctx["context"] if len(r["content"]) > CONTEXT_CHARS)}
+            "context_truncated": sum(1 for r in ctx["context"] if len(r["content"]) > CONTEXT_CHARS),
+            **({"target_cap": cap} if cap != TARGET_CHARS else {})}
 
 
 EVIDENCE_MIN = 0.7  # trigram containment of a reveal's quoted evidence in the target turn (PHASE-10)
@@ -1076,9 +1096,11 @@ EVIDENCE_MIN_CHARS = 12
 
 
 def shown_target(ctx: dict[str, Any]) -> str:
-    """The target turn's text as `build_prompt` shows it to the model: each member's normalized text up to TARGET_CHARS,
-    joined by line breaks. The evidence check of extract-v14 looks for a quote here, not in what the model never saw."""
-    return "\n".join(r["content"][:TARGET_CHARS] for r in ctx["members"])
+    """The target turn's text as `build_prompt` shows it to the model: each member's normalized text up to the cap
+    (`target_cap`), joined by line breaks. The evidence check of extract-v14 looks for a quote here, not in what the
+    model never saw."""
+    cap = target_cap(ctx)
+    return "\n".join(r["content"][:cap] for r in ctx["members"])
 
 
 def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: str) -> list[dict[str, Any]]:
@@ -1437,10 +1459,11 @@ def _scene(ctx: dict[str, Any]) -> list[str]:
     """CONTEXT (the last `CONFIRM_TURNS` turns, whole) and TARGET, each message with its speaker, as a confirmation
     shows them."""
     turns = sorted({r["turn"] for r in ctx["context"]})[-CONFIRM_TURNS:]
-    context = [f"[turn {r['turn']}] {_speaker(r['metadata'])}: {r['content'][:TARGET_CHARS]}"
+    cap = target_cap(ctx)
+    context = [f"[turn {r['turn']}] {_speaker(r['metadata'])}: {r['content'][:cap]}"
                for r in ctx["context"] if r["turn"] in turns]
     return ["CONTEXT (preceding turns only):", *(context or ["(No preceding context supplied.)"]), "", "TARGET:",
-            *(f"{_speaker(r['metadata'])}: {r['content'][:TARGET_CHARS]}" for r in ctx["members"])]
+            *(f"{_speaker(r['metadata'])}: {r['content'][:cap]}" for r in ctx["members"])]
 
 
 def alias_prompt(item: dict[str, Any], also: list[str], ctx: dict[str, Any]) -> str:
@@ -1651,6 +1674,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         return "obsolete"  # the head changed; a newer job covers the new window
     if ctx["done"]:
         return "done"
+    with_cap(ctx, gen)  # PHASE-62 S1: everything below reads the TARGET at this generation's cap
     hints: list[dict[str, Any]] | None = None
     promises: list[dict[str, Any]] = []
     secrets: list[dict[str, Any]] = []
@@ -1822,7 +1846,7 @@ def extractor(settings: Settings) -> Generation | None:
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,
         json_mode=settings.llm_json_mode, unit="turn", context_turns=settings.extract_turns,
         **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
-        target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS, hints=settings.extract_hints,
+        target_chars=settings.extract_target_chars, context_chars=CONTEXT_CHARS, hints=settings.extract_hints,
     )
 
 
@@ -1987,6 +2011,87 @@ JOIN projection_generation g ON g.key = x.extractor_key
 WHERE c.id = %(conv)s AND x.discarded_at IS NULL
 ORDER BY am.turn, x.extractor_key = %(key)s DESC, g.activated_at DESC, g.key
 """
+
+
+# PHASE-62 S3 (ADR 0090): turns of a chat's head whose serving extraction (chosen as SERVING_EXTRACTIONS chooses) was
+# shown less than the turn holds, at a cap under the active generation's. `shown`: the characters the active cap would
+# show; `job`: the status of the active generation's job for the turn, if one was ever queued.
+CUT_TURNS = "WITH" + ELIGIBLE + """,
+    serving AS (
+        SELECT DISTINCT ON (e.turn) e.turn, e.rid, e.turn_hash, x.extractor_key, x.coverage, x.usage, x.members
+        FROM elig e
+        JOIN extraction x ON x.source_revision_id = e.rid AND x.window_hash = e.turn_hash
+        JOIN projection_generation g ON g.key = x.extractor_key
+        WHERE e.turn_hash IS NOT NULL AND x.discarded_at IS NULL
+        ORDER BY e.turn, x.extractor_key = %(key)s DESC, g.activated_at DESC, g.key
+    )
+    SELECT s.turn, s.rid, s.turn_hash, (s.coverage->>'target_used')::int AS used,
+           (SELECT coalesce(sum(least(rt.clean_chars, %(cap)s)), 0)::int FROM unnest(s.members) AS m(id)
+            JOIN revision_text rt ON rt.source_revision_id = m.id AND rt.normalizer = %(norm)s) AS shown,
+           (s.usage->>'input')::bigint AS input, j.status AS job
+    FROM serving s
+    LEFT JOIN job j ON j.dedupe_key = 'extract:' || s.rid || ':' || s.turn_hash || ':' || %(key)s
+    WHERE s.extractor_key <> %(key)s
+      AND (s.coverage->>'target_used')::int < (s.coverage->>'target_chars')::int
+      AND coalesce((s.coverage->>'target_cap')::int, %(default)s) < %(cap)s
+    ORDER BY s.turn
+"""
+# What a character of TARGET costs in input tokens, low and high (PHASE-62, measured on the owner's production record:
+# 0.69 for text alone, 1.26 with what grows beside a longer turn), and the prompt's fixed part for a turn whose call
+# recorded no usage. An estimate for the owner to decide by, never a bill.
+TOKENS_PER_CHAR = (0.7, 1.3)
+PROMPT_TOKENS = 5800
+
+
+def estimate(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """What reading these again would take, as a range: each is a whole call, its recorded input (or the fixed part and
+    what it read, when none was recorded) plus the characters the new cap adds."""
+    more = sum(max(0, r["shown"] - r["used"]) for r in rows)
+    low = high = 0.0
+    for r in rows:
+        if r["input"] is not None:
+            low += r["input"]
+            high += r["input"]
+        else:
+            low += PROMPT_TOKENS + r["used"] * TOKENS_PER_CHAR[0]
+            high += PROMPT_TOKENS + r["used"] * TOKENS_PER_CHAR[1]
+    return {"characters": more, "input_tokens": [round(low + more * TOKENS_PER_CHAR[0]),
+                                                 round(high + more * TOKENS_PER_CHAR[1])]}
+
+
+def cut_turns(conn: psycopg.Connection, conv: UUID, gen: Generation) -> dict[str, Any]:
+    """This chat's turns read only in part at an earlier cap (CUT_TURNS), for the active generation `gen`: `rows` the
+    ones "read the cut turns again" would queue (none queued yet, or its job made obsolete since), `pending` and
+    `failed` the ones whose job of `gen` is queued, running or dead (the panel's retry runs a dead one again)."""
+    cap = int(gen.spec.get("target_chars") or TARGET_CHARS)
+    found = conn.execute(CUT_TURNS, {"conv": conv, "key": gen.key, "cap": cap, "default": TARGET_CHARS,
+                                     "norm": normtext.NORMALIZER_VERSION}).fetchall() if cap > TARGET_CHARS else []
+    rows = [r for r in found if r["job"] in (None, "obsolete") and r["shown"] > r["used"]]
+    return {"cap": cap, "rows": rows, "turns": len(rows),
+            "pending": sum(1 for r in found if r["job"] in ("queued", "running")),
+            "failed": sum(1 for r in found if r["job"] == "dead"), **estimate(rows)}
+
+
+def schedule_cut(conn: psycopg.Connection, conv: UUID, gen: Generation) -> int:
+    """Queue this chat's cut turns (`cut_turns`) for the active generation at background priority, oldest first, as
+    "extract all history" queues a turn: one whole call each. The earlier extraction stays and serves until the new
+    one is stored, and stays in the database after it (ADR 0014). Idempotent: a turn queued or running is left alone."""
+    rows = cut_turns(conn, conv, gen)["rows"]
+    if not rows:
+        return 0
+    with conn.transaction():
+        return conn.execute(
+            """
+            INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority)
+            SELECT 'extract', 'extract:' || t.rid || ':' || t.turn_hash || ':' || %(key)s, %(conv)s,
+                   jsonb_build_object('revision_id', t.rid::text, 'window_hash', t.turn_hash, 'generation', %(key)s),
+                   %(priority)s
+            FROM unnest(%(rids)s::uuid[], %(hashes)s::text[], %(turns)s::int[]) AS t(rid, turn_hash, turn)
+            ORDER BY t.turn
+            """ + REQUEUE,
+            {"key": gen.key, "conv": conv, "priority": HISTORY_PRIORITY, "rids": [r["rid"] for r in rows],
+             "hashes": [r["turn_hash"] for r in rows], "turns": [r["turn"] for r in rows]},
+        ).rowcount
 
 
 def joined_turns(conn: psycopg.Connection, conv: UUID, link: dict[str, Any], key: str) -> list[dict[str, Any]]:

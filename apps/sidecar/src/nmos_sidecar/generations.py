@@ -94,14 +94,19 @@ MODEL_FIELDS = ("model", "endpoint", "request", "temperature")
 # spec has extract-v18's fields, so a switch among the three differs in `compiler` and `prompt` alone.
 ADDS = frozenset({"extract-v16", "extract-v18", "extract-v19"})
 ADDS_FIELDS = ("compiler", "prompt")
+# The cap on each message the model is shown (PHASE-62 S1, S2, ADR 0090): `target_chars` in an extract or a reveal
+# generation's spec, `message_chars` in a summarize generation's. A change of it alone re-derives nothing: what was
+# read at the earlier cap stays as good as it was, and only what comes due afterwards is read at the new one.
+READS_FIELDS = ("target_chars", "message_chars")
 
 
 def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) -> str:
     """What making `gen` active is, next to the generation `previous` that was (PHASE-57 A3): "same", "new" (none
     was), "model" (only the model, the endpoint, the extra request body or the temperature switch differs: the owner
     changed the model or how it is called, PHASE-61 S2), "adds" (only the compiler and its prompt differ, between two
-    compilers of ADDS: PHASE-58 S3, PHASE-60 S7; with the model too, "model") or "version" (anything else: a release's
-    version or prompt, or a setting the key hashes)."""
+    compilers of ADDS: PHASE-58 S3, PHASE-60 S7), "reads" (the cap of READS_FIELDS differs, alone or with such a
+    compiler change: PHASE-62 S2; either of the two with the model too is "model") or "version" (anything else: a
+    release's version or prompt, or another setting the key hashes)."""
     if previous == gen.key:
         return "same"
     if previous is None:
@@ -116,9 +121,13 @@ def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) ->
     old, new = row["spec"], json.loads(json.dumps(gen.spec))
     if rest(old) == rest(new):
         return "model"
-    if (old.get("compiler") != new.get("compiler") and {old.get("compiler"), new.get("compiler")} <= ADDS
-            and rest(old, ADDS_FIELDS) == rest(new, ADDS_FIELDS)):
-        return "adds" if all(old.get(k) == new.get(k) for k in MODEL_FIELDS) else "model"
+    adds = old.get("compiler") != new.get("compiler") and {old.get("compiler"), new.get("compiler")} <= ADDS
+    reads = any(old.get(k) != new.get(k) for k in READS_FIELDS)
+    skip = (ADDS_FIELDS if adds else ()) + (READS_FIELDS if reads else ())
+    if skip and rest(old, skip) == rest(new, skip):
+        if not all(old.get(k) == new.get(k) for k in MODEL_FIELDS):
+            return "model"
+        return "reads" if reads else "adds"
     return "version"
 
 

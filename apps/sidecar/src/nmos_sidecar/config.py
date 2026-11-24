@@ -12,6 +12,9 @@ from typing import Any
 from . import rerank
 
 RERANK_TIMEOUT_MS = (50, 5000)  # PHASE-60 S5: the reranker's own wait, in milliseconds, inclusive
+# PHASE-62 S1: the cap on each message the extraction model is shown, in normalized characters, inclusive. The lower
+# bound is the default (`extraction.TARGET_CHARS`, `summaries.MESSAGE_CHARS`): what every earlier release read.
+TARGET_CHARS = (6000, 36000)
 
 # PHASE-61 S1 (ADR 0088 item 1): the extra request body merged into every chat-completions body of the extraction model.
 EXTRA_BODY_MAX_BYTES = 2048  # as canonical JSON (`canonical_body`), UTF-8
@@ -184,6 +187,13 @@ class Settings:
     # the cap since #13, which the owner's long chats stay within once normalized (measured on the M0 copy: 5,481 at
     # most). Part of the projection key: a change re-embeds every chat once (K18); the default does not.
     embed_max_chunks: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_MAX_CHUNKS", "8")))
+    # Normalized characters of each message the extraction model is shown: a TARGET-turn message of an extraction or a
+    # reveal check, a message of a scene summary (PHASE-62, ADR 0090; K13). 6,000 is the cap it always was, and at it
+    # every generation key is unchanged; another value is another extract, reveal and summarize generation, whose
+    # activation queues nothing (`generations.classify`: `reads`). Empty reads as the default (compose files pass an
+    # unset variable as empty).
+    extract_target_chars: int = field(
+        default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_TARGET_CHARS") or TARGET_CHARS[0]))
     worker_concurrency: int = field(default_factory=lambda: int(os.environ.get("NMOS_WORKER_CONCURRENCY", "2")))
     facts_limit: int = field(default_factory=lambda: int(os.environ.get("NMOS_FACTS_LIMIT", "8")))
     # `event` facts among them (PHASE-7 Q4): the newest events of a main character would take every slot.
@@ -245,6 +255,12 @@ class Settings:
         if self.extract_compiler not in ("", "extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19"):
             raise ValueError("NMOS_EXTRACT_COMPILER must be empty, extract-v15, extract-v16, extract-v17, extract-v18 or"
                              f" extract-v19, not {self.extract_compiler!r}")
+        # Under 6,000 it would read less than every release did; 36,000 is past the longest reply measured, and a
+        # scene summary reads 8 turns of them in one call (PHASE-62 S1b): another value is refused at startup.
+        if (isinstance(self.extract_target_chars, bool) or not isinstance(self.extract_target_chars, int)
+                or not TARGET_CHARS[0] <= self.extract_target_chars <= TARGET_CHARS[1]):
+            raise ValueError(f"NMOS_EXTRACT_TARGET_CHARS must be a whole number from {TARGET_CHARS[0]} to"
+                             f" {TARGET_CHARS[1]}, not {self.extract_target_chars!r}")
         # A cap under one would embed nothing and mark every embed job done (ADR 0062): refused at startup.
         if self.embed_max_chunks < 1:
             raise ValueError(f"NMOS_EMBED_MAX_CHUNKS must be at least 1, not {self.embed_max_chunks}")

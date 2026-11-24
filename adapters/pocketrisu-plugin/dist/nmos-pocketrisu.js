@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:62c1881a8f8a".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:45708bcc7cb1".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -540,6 +540,23 @@
     "act.working": ["\uC694\uCCAD \uC911\u2026", "Requesting\u2026"],
     "act.history_done": ["\uD134 {t}\uAC1C \uCD94\uCD9C\uACFC \uBA54\uC2DC\uC9C0 {m}\uAC1C \uC784\uBCA0\uB529\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0 \uB123\uC5C8\uC2B5\uB2C8\uB2E4.", "Queued {t} turns for extraction and {m} messages for embedding."],
     "act.history_none": ["\uC774\uBBF8 \uC804\uBD80 \uCC98\uB9AC\uB418\uC5C8\uAC70\uB098 \uCC98\uB9AC \uC911\uC785\uB2C8\uB2E4.", "Everything is already processed or queued."],
+    "act.cut": ["\uC798\uB9B0 \uD134 \uB2E4\uC2DC \uC77D\uAE30", "Read the cut turns again"],
+    "act.cut_confirm": [
+      "\uD134 {n}\uAC1C \xB7 \uC785\uB825 \uC57D {low}~{high} \uD1A0\uD070 \xB7 \uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC77D\uC2B5\uB2C8\uB2E4",
+      "{n} turns \xB7 about {low}\u2013{high} input tokens \xB7 click again to read"
+    ],
+    "act.cut_confirm_sum": [
+      "\uD134 {n}\uAC1C\uC640 \uC694\uC57D {w}\uAC1C \xB7 \uC785\uB825 \uC57D {low}~{high} \uD1A0\uD070 \xB7 \uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC77D\uC2B5\uB2C8\uB2E4",
+      "{n} turns and {w} summaries \xB7 about {low}\u2013{high} input tokens \xB7 click again to read"
+    ],
+    "act.cut_summaries": [
+      "\uC7A5\uBA74 \uC694\uC57D {w}\uAC1C\uB3C4 \uB2E4\uC2DC \uC4F0\uAE30 (\uC785\uB825 \uC57D {low}~{high} \uD1A0\uD070 \uCD94\uAC00)",
+      "Also write {w} scene summaries again (about {low}\u2013{high} more input tokens)"
+    ],
+    "act.cut_done": [
+      "\uD134 {t}\uAC1C \uB2E4\uC2DC \uC77D\uAE30\uC640 \uC694\uC57D {s}\uAC1C \uB2E4\uC2DC \uC4F0\uAE30\uB97C \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0 \uB123\uC5C8\uC2B5\uB2C8\uB2E4.",
+      "Queued {t} turns to read again and {s} summaries to write again."
+    ],
     "act.rebuild_done": [
       "\uCD94\uCD9C {d}\uAC74\uC744 \uBC84\uB9AC\uACE0 \uD134 {t}\uAC1C\uB97C \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4. \uB05D\uB0A0 \uB54C\uAE4C\uC9C0 \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC774 \uBE44\uC5B4 \uC788\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
       "Discarded {d} extractions; {t} turns are extracted again. Facts of this chat may be missing until then."
@@ -1191,6 +1208,10 @@
     "set.act_history_desc": [
       "\uC544\uC9C1 \uCD94\uCD9C\uD558\uC9C0 \uC54A\uC740 \uACFC\uAC70 \uB300\uD654 \uD134\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uC77D\uC2B5\uB2C8\uB2E4.",
       "Queues older turns that have not been extracted yet."
+    ],
+    "set.act_cut_desc": [
+      '\uC608\uC804 \uC0C1\uD55C\uC5D0\uC11C \uB4B7\uBD80\uBD84\uC774 \uC798\uB9B0 \uCC44 \uC77D\uD78C \uD134 {n}\uAC1C\uB97C \uC9C0\uAE08 \uC0C1\uD55C\uAE4C\uC9C0 \uB2E4\uC2DC \uC77D\uC2B5\uB2C8\uB2E4. \uD134\uB9C8\uB2E4 \uCD94\uCD9C \uBAA8\uB378\uC744 \uD55C \uBC88 \uBD80\uB985\uB2C8\uB2E4(\uC785\uB825 \uC57D {low}~{high} \uD1A0\uD070, \uCD94\uC815). "\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C"\uACFC \uB2EC\uB9AC \uC798\uB9B0 \uD134\uB9CC \uC77D\uC2B5\uB2C8\uB2E4.',
+      'Reads again, up to the cap now, the {n} turns an earlier cap read only in part: one extraction call per turn (about {low}\u2013{high} input tokens, an estimate). Unlike "Extract all history" it reads only those.'
     ],
     "set.act_retry_desc": [
       "\uC624\uB958\uB85C \uBA48\uCD98 \uCD94\uCD9C\xB7\uC784\uBCA0\uB529 \uC791\uC5C5\uB9CC \uB2E4\uC2DC \uC2DC\uB3C4\uD569\uB2C8\uB2E4.",
@@ -4507,6 +4528,11 @@ html,body{margin:0;background:${PALETTE.bg}}
     const inspectorAddress = el("p", { class: "sub mono" });
     const historyButton = el("button", { text: L("act.history") });
     const retryButton = el("button", { text: L("act.retry"), style: "display:none" });
+    const cutButton = el("button", { text: L("act.cut"), style: "display:none" });
+    const cutSummaries = el("input", { type: "checkbox" });
+    const cutSummariesText = el("span");
+    const cutSummariesLabel = el("label", { class: "sub", style: "display:none" }, cutSummaries, cutSummariesText);
+    let cutInfo = null;
     const rebuildButton = el("button", { text: L("act.rebuild") });
     const deleteButton = el("button", { text: L("act.delete") });
     const exportButton = el("button", { text: L("exp.chat") });
@@ -4526,6 +4552,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         { class: "btns" },
         retryButton,
         historyButton,
+        cutButton,
+        cutSummariesLabel,
         rebuildButton,
         exportButton,
         notesButton,
@@ -5070,6 +5098,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         placeMarks(page);
         enhance(page);
         retryButton.style.display = page.querySelector(".has-failed") ? "" : "none";
+        if (page.querySelector(".has-cut") && conversation) void loadCut(conversation);
+        else showCut(null);
         inspectorBody.replaceChildren(page);
         shownPath = path;
         const focusSec = pendingSection;
@@ -5093,6 +5123,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (load !== loads) return;
         shownPath = null;
         retryButton.style.display = "none";
+        showCut(null);
         pinCard.style.display = "none";
         inspectorBody.replaceChildren(el("div", { class: "card err", text: errorText(lang, error) }));
       } finally {
@@ -5527,7 +5558,8 @@ html,body{margin:0;background:${PALETTE.bg}}
     inspectorRefresh.addEventListener("click", () => void showInspector());
     const confirmable = [
       [rebuildButton, "act.rebuild", "primary"],
-      [deleteButton, "act.delete", "danger"]
+      [deleteButton, "act.delete", "danger"],
+      [cutButton, "act.cut", "primary"]
     ];
     let armed = null;
     let armTimer = 0;
@@ -5554,6 +5586,68 @@ html,body{margin:0;background:${PALETTE.bg}}
     function actionError(error) {
       return /HTTP 409/.test(error instanceof Error ? error.message : String(error)) ? L("act.off") : errorText(lang, error);
     }
+    const count2 = (n) => n.toLocaleString("en-US");
+    function showCut(info) {
+      cutInfo = info && info.turns + info.windows > 0 ? info : null;
+      if (armed === cutButton) disarm();
+      cutButton.style.display = cutInfo ? "" : "none";
+      cutSummariesLabel.style.display = cutInfo && cutInfo.windows > 0 ? "" : "none";
+      if (!cutInfo || cutInfo.windows === 0) cutSummaries.checked = false;
+      if (cutInfo) cutSummariesText.textContent = " " + L("act.cut_summaries", { w: cutInfo.windows, low: count2(cutInfo.slow), high: count2(cutInfo.shigh) });
+    }
+    async function loadCut(conversation) {
+      let info = null;
+      try {
+        const r = await deps.api("GET", `/v1/conversations/${conversation}/cut-turns`);
+        const e = r.extract ?? {}, s = r.summarize ?? {};
+        info = {
+          turns: Number(e.turns) || 0,
+          windows: Number(s.windows) || 0,
+          low: Number(e.input_tokens?.[0]) || 0,
+          high: Number(e.input_tokens?.[1]) || 0,
+          slow: Number(s.input_tokens?.[0]) || 0,
+          shigh: Number(s.input_tokens?.[1]) || 0
+        };
+      } catch {
+        info = null;
+      }
+      if (actionConversation === conversation) showCut(info);
+      return cutInfo;
+    }
+    cutButton.addEventListener("click", async () => {
+      const conversation = actionConversation;
+      const info = cutInfo;
+      if (!conversation || !info) return;
+      const both = cutSummaries.checked && info.windows > 0;
+      if (armed !== cutButton) {
+        disarm();
+        armed = cutButton;
+        cutButton.textContent = both ? L("act.cut_confirm_sum", { n: info.turns, w: info.windows, low: count2(info.low + info.slow), high: count2(info.high + info.shigh) }) : L("act.cut_confirm", { n: info.turns, low: count2(info.low), high: count2(info.high) });
+        cutButton.className = "primary";
+        armTimer = window.setTimeout(disarm, 6e3);
+        return;
+      }
+      disarm();
+      cutButton.disabled = true;
+      say(actionMsg, L("act.working"));
+      try {
+        const r = await deps.api(
+          "POST",
+          `/v1/conversations/${conversation}/read-cut`,
+          { summaries: both },
+          3e4
+        );
+        const t2 = r.queued.extract ?? 0, s = r.queued.summarize ?? 0;
+        say(actionMsg, t2 + s ? L("act.cut_done", { t: t2, s }) : L("act.history_none"), "ok");
+        if (t2 + s) deps.hud.background(conversation);
+        await loadCut(conversation);
+        await showInspector();
+      } catch (error) {
+        say(actionMsg, actionError(error), "err");
+      } finally {
+        cutButton.disabled = false;
+      }
+    });
     retryButton.addEventListener("click", async () => {
       const conversation = actionConversation;
       if (!conversation) return;
@@ -5688,9 +5782,9 @@ html,body{margin:0;background:${PALETTE.bg}}
         "aria-label": L("notes.custom_prompt"),
         placeholder: L("notes.custom_placeholder")
       });
-      const count2 = el("p", { class: "sub" });
+      const count3 = el("p", { class: "sub" });
       const counted = () => {
-        count2.textContent = L("notes.custom_count", { n: prompt.value.trim().length, max: PROMPT_MAX });
+        count3.textContent = L("notes.custom_count", { n: prompt.value.trim().length, max: PROMPT_MAX });
       };
       prompt.addEventListener("input", counted);
       counted();
@@ -5699,7 +5793,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         "div",
         { style: "display:none;margin:8px 0 12px" },
         prompt,
-        count2,
+        count3,
         el("div", { class: "check" }, setting, el("span", { text: L("notes.custom_setting") })),
         el("p", { class: "sub", text: L("notes.custom_setting_sub") }),
         el("p", { class: "sub", text: L("notes.custom_unchecked") })
@@ -6232,7 +6326,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       parserSupported = cfg.parsers.spec !== void 0 && Array.isArray(cfg.parsers.presets);
       const spec = cfg.parsers.spec ?? cfg.parsers.rules;
       const bindings = parserBindings(spec);
-      const notes = bindings.cards.map(({ name, count: count2 }) => L("rules.binding", { card: name, n: count2 }));
+      const notes = bindings.cards.map(({ name, count: count3 }) => L("rules.binding", { card: name, n: count3 }));
       if (bindings.unbound) notes.push(L("rules.unbound", { n: bindings.unbound }));
       if (!notes.length) notes.push(L("rules.no_active"));
       if (!parserSupported) notes.push(L("rules.upgrade"));
@@ -7326,7 +7420,16 @@ html,body{margin:0;background:${PALETTE.bg}}
     const legacyActionBtns = actions.firstElementChild;
     function restoreLegacyActions() {
       if (historyButton.parentElement !== legacyActionBtns) {
-        legacyActionBtns.replaceChildren(retryButton, historyButton, rebuildButton, exportButton, notesButton, deleteButton);
+        legacyActionBtns.replaceChildren(
+          retryButton,
+          historyButton,
+          cutButton,
+          cutSummariesLabel,
+          rebuildButton,
+          exportButton,
+          notesButton,
+          deleteButton
+        );
       }
     }
     function groupSettings() {
@@ -7414,8 +7517,26 @@ html,body{margin:0;background:${PALETTE.bg}}
       if (retryButton.style.display !== "none") {
         maintRows.push(maintRow(L("act.retry"), "set.act_retry_desc", "set.badge_llm", "b-llm", retryButton));
       }
+      const cutSlot = el("div", { style: "display:none" });
+      void loadCut(cid).then((info) => {
+        if (!info || !cutSlot.isConnected || actionConversation !== cid) return;
+        cutSlot.replaceChildren(el(
+          "div",
+          { class: "maint-row" },
+          el(
+            "div",
+            { class: "maint-info" },
+            el("div", { class: "maint-title" }, el("span", { text: L("act.cut") }), el("span", { class: "badge b-llm", text: L("set.badge_llm") })),
+            el("div", { class: "maint-desc", text: L("set.act_cut_desc", { n: info.turns, low: count2(info.low), high: count2(info.high) }) }),
+            cutSummariesLabel
+          ),
+          cutButton
+        ));
+        cutSlot.style.display = "";
+      });
       maintRows.push(
         maintRow(L("act.history"), "set.act_history_desc", "set.badge_llm", "b-llm", historyButton),
+        cutSlot,
         maintRow(L("act.rebuild"), "set.act_rebuild_desc", "set.badge_warn", "b-warn", rebuildButton),
         maintRow(L("exp.chat"), "set.act_export_desc", "set.badge_local", "b-free", exportButton),
         maintRow(L("act.delete"), "set.act_delete_desc", "set.badge_danger", "b-danger", deleteButton, true)
@@ -7554,8 +7675,8 @@ html,body{margin:0;background:${PALETTE.bg}}
           if (allChars.length) {
             const boxes = [];
             const syncCap = () => {
-              const count2 = boxes.filter((b) => b.checked).length;
-              for (const b of boxes) b.disabled = !b.checked && count2 >= CARRY_MAX_NAMES;
+              const count3 = boxes.filter((b) => b.checked).length;
+              for (const b of boxes) b.disabled = !b.checked && count3 >= CARRY_MAX_NAMES;
             };
             const charList = el("div", { class: "pins" }, ...allChars.map((name) => {
               const cb = el("input", { type: "checkbox", value: name });

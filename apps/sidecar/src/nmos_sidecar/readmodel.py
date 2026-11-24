@@ -48,7 +48,8 @@ def membership(conn: psycopg.Connection, head: UUID, extractor_key: str | None =
                rt.clean_chars,
                (SELECT max(re.text_end) FROM revision_embedding re
                 WHERE re.source_revision_id = sr.id AND re.projection = %(pj)s) AS embedded_chars,
-               (SELECT least(rt.clean_chars, %(target)s) FROM active_membership a
+               (SELECT least(rt.clean_chars, coalesce((x.coverage->>'target_cap')::int, %(target)s))  -- its own cap
+                FROM active_membership a
                 JOIN extraction x ON x.source_revision_id = a.source_revision_id AND x.window_hash = a.turn_hash
                  AND x.extractor_key = %(ex)s AND x.discarded_at IS NULL
                 WHERE a.commit_id = am.commit_id AND a.turn = am.turn AND a.turn_hash IS NOT NULL) AS extracted_chars
