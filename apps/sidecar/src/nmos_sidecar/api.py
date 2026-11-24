@@ -499,9 +499,17 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     @app.get("/v1/worker/status", dependencies=[Depends(auth)])
     def worker_status_route(request: Request):
         """What the worker is doing (PHASE-61 S5): counts of the job table for the Status tab. Read-only, and never
-        on the request path: `/v1/retrieve` does not call it."""
+        on the request path: `/v1/retrieve` does not call it. With the summary of the last hour's model calls (S6),
+        added here rather than in `extraction.worker_status` so that `extraction` does not import `calls`."""
         with request.app.state.pool.connection() as conn:
-            return worker_status(conn)
+            status = worker_status(conn)
+            try:
+                with conn.transaction():  # a savepoint: a failed statement does not poison the connection
+                    status["calls"] = model_calls.summary(conn, minutes=60)
+            except Exception as e:  # noqa: BLE001 — the counts still answer; the card leaves the line out
+                log.warning("worker status: the call log could not be read (%s)", type(e).__name__)
+                status["calls"] = None
+            return status
 
     @app.get(f"/v1/plugin/{plugin.FILENAME}", dependencies=[Depends(auth)])
     def plugin_download():

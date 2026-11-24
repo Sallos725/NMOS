@@ -8,11 +8,16 @@ from uuid import uuid4
 import psycopg
 
 from conftest import make_client
+from nmos_sidecar import calls
 from nmos_sidecar.extraction import worker_status
+from test_phase61_calls_read import log_row
 
 EMPTY = {"queued": {"extract": 0, "reveal": 0, "summarize": 0, "canon": 0, "embed": 0}, "queued_total": 0,
          "running": 0, "retrying": 0, "dead_recent": 0, "done_recent": 0, "recent_minutes": 30, "dead_hours": 24,
          "last_error": None}
+NO_CALLS = {"minutes": 60, "total": 0, "ok": 0, "failed": 0,
+            "by_fault": {"timeout": 0, "transport": 0, "bad_reply": 0, "http_other": 0},
+            "median_ms": None, "last_ok_at": None, "last_failed_at": None}
 
 
 def _conversation(conn: psycopg.Connection) -> str:
@@ -76,7 +81,7 @@ def test_the_last_error_is_the_newest_cut_and_on_one_line(db):
 def test_the_route_answers_with_the_counts_and_needs_the_token(migrated):
     with make_client(migrated) as c:
         res = c.get("/v1/worker/status")
-        assert res.status_code == 200 and res.json() == EMPTY
+        assert res.status_code == 200 and res.json() == {**EMPTY, "calls": NO_CALLS}
         with psycopg.connect(migrated, autocommit=True) as conn:
             _job(conn, _conversation(conn), "extract", "queued", attempts=1, error="HTTP 429")
         body = c.get("/v1/worker/status").json()
@@ -84,3 +89,37 @@ def test_the_route_answers_with_the_counts_and_needs_the_token(migrated):
         assert set(body["last_error"]) == {"kind", "status", "at", "text"}
         del c.headers["Authorization"]
         assert c.get("/v1/worker/status").status_code == 401
+
+
+def test_the_route_carries_the_last_hour_of_calls(migrated):
+    with psycopg.connect(migrated, autocommit=True) as conn:
+        for ms in (1000, 3000, 5000):
+            log_row(conn, ms=ms, minutes_ago=5)
+        log_row(conn, "http", 429, ms=200, minutes_ago=2)
+        log_row(conn, "timeout", ms=60000, minutes_ago=1)
+        log_row(conn, ms=1, minutes_ago=90)  # outside the hour
+    with make_client(migrated) as c:
+        body = c.get("/v1/worker/status").json()
+    assert {k: v for k, v in body.items() if k != "calls"} == EMPTY
+    out = body["calls"]
+    assert (out["minutes"], out["total"], out["ok"], out["failed"], out["median_ms"]) == (60, 5, 3, 2, 3000)
+    assert out["by_fault"] == {"timeout": 1, "transport": 0, "bad_reply": 0, "http_other": 0, "429": 1}
+    assert out["last_ok_at"] < out["last_failed_at"]
+
+
+def test_a_failed_call_log_read_gives_null_and_keeps_the_rest(migrated, monkeypatch):
+    with make_client(migrated) as c:
+        with psycopg.connect(migrated, autocommit=True) as conn:  # after the start, as the route test does
+            _job(conn, _conversation(conn), "extract", "queued", attempts=1, error="HTTP 429")
+        monkeypatch.setattr(calls, "summary", lambda conn, minutes=60: 1 / 0)
+        body = c.get("/v1/worker/status").json()
+        assert body["calls"] is None and body["queued"]["extract"] == 1 and body["retrying"] == 1
+        monkeypatch.undo()
+        # a failing statement (the table missing on a database not migrated) is undone by its savepoint: the same
+        # connection goes on answering
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            conn.execute("DROP TABLE model_call")
+        for _ in range(3):
+            res = c.get("/v1/worker/status")
+            assert res.status_code == 200 and res.json()["calls"] is None
+            assert res.json()["queued"]["extract"] == 1 and res.json()["last_error"]["text"] == "HTTP 429"
