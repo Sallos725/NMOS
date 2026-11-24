@@ -132,6 +132,29 @@ showed neither the queue nor a model error (S3 said a rejection shows "in the St
   the card out.
 - Not a high-risk addition: it reads counts and writes nothing; no setting, key, schema or packet changes.
 
+### S6 — A log of model calls (amendment 2, owner 2026-11-24; migration `0039`; ADR 0089)
+
+A failed call left one trace: the job's `last_error`, overwritten by the next attempt and deleted with the job. The
+container's own log is lost at every deployment. The owner asked for a log kept on the server.
+
+- **`model_call`** (migration `0039`): one row per call the worker or the sidecar makes to a model outside the
+  request path: `at`, `kind` (`extract`, `reveal`, `summarize`, `canon`, `embed`, `note`, `test`), the conversation
+  and the job when there is one, the generation key, the model and the endpoint (scheme, host and path; never
+  userinfo or a query), `outcome` (`ok`, `http`, `timeout`, `transport`, `bad_reply`), the HTTP status, the time it
+  took, the usage the provider reported, and for a failure the first 300 characters of the provider's error.
+- **Never in it:** a prompt, a reply, any chat text, a key. A reply that could not be read is logged by the kind of
+  fault only (its text is the model's, so it may hold chat text).
+- **Never in the way.** The row is written outside the job's transaction, so it survives a failed job; writing it is
+  bounded and its own failure is swallowed with one warning: a call, a job and a request go on without the log.
+  `/v1/retrieve` writes none: the request path's embedding and rerank calls are not logged (a trace has their times).
+- **Kept as long as traces are** (`NMOS_TRACE_RETENTION_DAYS`, 30 by default); the worker's maintenance prunes it.
+- **Read.** `GET /v1/worker/calls` (the newest first, at most 500) and a summary of the last hour in
+  `GET /v1/worker/status` (`calls`: how many succeeded, how many failed by HTTP status or fault, the median time).
+  The Status tab's "Model work" card says it in one line; the browser Inspector has a "Model calls" page.
+- **Archive, delete, rollback.** The table is in no archive (like `job`); deleting a chat deletes its rows (the
+  foreign key cascades, so an older image deletes a chat cleanly too); an image from before the migration ignores the
+  table.
+
 ### What it does not change
 
 Any default; any key of an install with an empty body and the switch off; the request path (`/v1/retrieve` makes no
