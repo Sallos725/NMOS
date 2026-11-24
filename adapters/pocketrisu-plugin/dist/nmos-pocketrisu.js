@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:870d9e00b6f7".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:62c1881a8f8a".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -1253,6 +1253,31 @@
     "trim.reason.failed": ["NMOS\uC758 \uB2F5\uC744 \uBC1B\uC9C0 \uBABB\uD568", "no answer from NMOS"],
     "trim.reason.unsupported": ["NMOS\uAC00 \uC774 \uAE30\uB2A5\uC744 \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC74C (\uC5C5\uB370\uC774\uD2B8 \uD544\uC694)", "NMOS does not support it yet (update it)"],
     "trim.reason.other": ["\uAE30\uD0C0 ({r})", "other ({r})"],
+    // the Status tab's "Model work" card (PHASE-61 S5)
+    "worker.title": ["\uBAA8\uB378 \uC791\uC5C5", "Model work"],
+    "worker.idle": ["\uBAA8\uB378 \uC791\uC5C5: \uB300\uAE30 \uC5C6\uC74C", "Model work: nothing waiting"],
+    "worker.waiting": ["\uB300\uAE30 {n}\uAC74 ({kinds})", "{n} waiting ({kinds})"],
+    "worker.running": ["\uC2E4\uD589 \uC911 {n}", "{n} running"],
+    "worker.recent": ["\uCD5C\uADFC {m}\uBD84: {parts}", "Last {m} min: {parts}"],
+    "worker.done": ["\uC644\uB8CC {n}\uAC74", "{n} finished"],
+    "worker.retrying": ["\uC7AC\uC2DC\uB3C4 \uC911 {n}\uAC74", "{n} being retried"],
+    "worker.dead": ["\uD3EC\uAE30 {n}\uAC74({h}\uC2DC\uAC04)", "{n} given up ({h} h)"],
+    "worker.error": ["\uB9C8\uC9C0\uB9C9 \uC624\uB958 {at} ({kind}): {text}", "Last error {at} ({kind}): {text}"],
+    "worker.kind.extract": ["\uCD94\uCD9C", "extraction"],
+    "worker.kind.reveal": ["\uACF5\uAC1C \uD655\uC778", "reveal checks"],
+    "worker.kind.summarize": ["\uC694\uC57D", "summaries"],
+    "worker.kind.canon": ["canon", "canon"],
+    "worker.kind.embed": ["\uC784\uBCA0\uB529", "embeddings"],
+    // its line on the last hour of model calls (PHASE-61 S6)
+    "worker.calls.hour": ["\uCD5C\uADFC 1\uC2DC\uAC04 \uD638\uCD9C: {parts}", "Last hour's calls: {parts}"],
+    "worker.calls.minutes": ["\uCD5C\uADFC {m}\uBD84 \uD638\uCD9C: {parts}", "Last {m} min's calls: {parts}"],
+    "worker.calls.ok": ["\uC131\uACF5 {n}", "{n} ok"],
+    "worker.calls.failed": ["\uC2E4\uD328 {n}", "{n} failed"],
+    "worker.calls.median": ["\uC911\uAC04\uAC12 {s}\uCD08", "median {s} s"],
+    "worker.fault.timeout": ["\uC2DC\uAC04 \uCD08\uACFC", "timeout"],
+    "worker.fault.transport": ["\uC5F0\uACB0 \uC2E4\uD328", "connection"],
+    "worker.fault.bad_reply": ["\uC751\uB2F5 \uC624\uB958", "bad reply"],
+    "worker.fault.http_other": ["\uAE30\uD0C0 HTTP", "other HTTP"],
     // carrying another chat's memory (PHASE-60 S6)
     "carry.title": ["\uC774\uC804 \uCC44\uD305 \uC774\uC5B4\uBC1B\uAE30", "Carry an earlier chat's memory"],
     "carry.sub": [
@@ -3674,6 +3699,71 @@ ${GUARD_LINE}` : "";
     pick(g.focus);
   }
 
+  // src/workertext.ts
+  var KINDS2 = /* @__PURE__ */ new Set(["extract", "reveal", "summarize", "canon", "embed"]);
+  var COUNTS = ["queued_total", "running", "retrying", "dead_recent", "done_recent", "recent_minutes", "dead_hours"];
+  var isCount = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0;
+  var isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+  function valid(s) {
+    if (!isObject(s) || !COUNTS.every((k) => isCount(s[k])) || !isObject(s.queued)) return false;
+    if (!Object.values(s.queued).every(isCount)) return false;
+    const e = s.last_error;
+    return e === null || isObject(e) && ["kind", "status", "at", "text"].every((k) => typeof e[k] === "string") && !Number.isNaN(Date.parse(e.at));
+  }
+  function validCalls(c) {
+    if (!isObject(c) || !["minutes", "total", "ok", "failed"].every((k) => isCount(c[k])) || c.minutes < 1)
+      return null;
+    if (!isObject(c.by_fault) || !Object.values(c.by_fault).every(isCount)) return null;
+    return c.median_ms === null || isCount(c.median_ms) ? c : null;
+  }
+  var num3 = (n) => n.toLocaleString("en-US");
+  var two = (n) => String(n).padStart(2, "0");
+  var kindName = (lang, kind) => KINDS2.has(kind) ? t(lang, `worker.kind.${kind}`) : kind;
+  var FAULTS = /* @__PURE__ */ new Set(["timeout", "transport", "bad_reply", "http_other"]);
+  var faultName = (lang, fault) => FAULTS.has(fault) ? t(lang, `worker.fault.${fault}`) : fault;
+  function callsLine(lang, c) {
+    const faults = Object.entries(c.by_fault).filter(([, n]) => n > 0).sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0)).map(([f, n]) => `${faultName(lang, f)} ${num3(n)}`);
+    const parts = [t(lang, "worker.calls.ok", { n: num3(c.ok) })];
+    if (c.failed > 0) {
+      parts.push(t(lang, "worker.calls.failed", { n: num3(c.failed) }) + (faults.length ? ` (${faults.join(" \xB7 ")})` : ""));
+    }
+    if (c.median_ms !== null) {
+      const s = (c.median_ms / 1e3).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      parts.push(t(lang, "worker.calls.median", { s }));
+    }
+    return c.minutes === 60 ? t(lang, "worker.calls.hour", { parts: parts.join(" \xB7 ") }) : t(lang, "worker.calls.minutes", { m: num3(c.minutes), parts: parts.join(" \xB7 ") });
+  }
+  function workerLines(lang, status, now = /* @__PURE__ */ new Date()) {
+    if (!valid(status)) return { level: "idle", lines: [] };
+    const s = status;
+    const kinds = Object.entries(s.queued).filter(([, n]) => n > 0).map(([k, n]) => `${kindName(lang, k)} ${num3(n)}`);
+    const queue = [
+      s.queued_total > 0 ? t(lang, "worker.waiting", { n: num3(s.queued_total), kinds: kinds.join(" \xB7 ") }) : "",
+      s.running > 0 ? t(lang, "worker.running", { n: num3(s.running) }) : ""
+    ].filter(Boolean);
+    const lines = [queue.length ? queue.join(" \xB7 ") : t(lang, "worker.idle")];
+    const calls2 = validCalls(s.calls);
+    if (calls2 && calls2.total > 0) lines.push(callsLine(lang, calls2));
+    const recent = [
+      s.done_recent > 0 ? t(lang, "worker.done", { n: num3(s.done_recent) }) : "",
+      s.retrying > 0 ? t(lang, "worker.retrying", { n: num3(s.retrying) }) : "",
+      s.dead_recent > 0 ? t(lang, "worker.dead", { n: num3(s.dead_recent), h: s.dead_hours }) : ""
+    ].filter(Boolean);
+    if (recent.length) lines.push(t(lang, "worker.recent", { m: s.recent_minutes, parts: recent.join(" \xB7 ") }));
+    if (s.last_error) {
+      const at = new Date(s.last_error.at);
+      const day = at.toDateString() === now.toDateString() ? "" : `${two(at.getMonth() + 1)}-${two(at.getDate())} `;
+      lines.push(t(lang, "worker.error", {
+        at: `${day}${two(at.getHours())}:${two(at.getMinutes())}`,
+        kind: kindName(lang, s.last_error.kind),
+        text: s.last_error.text
+      }));
+    }
+    const failing = calls2 !== null && calls2.failed > 0 && calls2.failed >= calls2.ok;
+    const level = s.retrying > 0 || s.dead_recent > 0 || failing ? "trouble" : s.queued_total + s.running > 0 ? "working" : "idle";
+    return { level, lines };
+  }
+
   // src/carrytext.ts
   var CARRY_MAX_NAMES = 8;
   var REFUSAL_MARKER = /^(?:\/v1\/\S+ -> HTTP 422:\s*)?too_many_rows:\s*rows=(\d+)\s+max=(\d+)\b/;
@@ -4129,8 +4219,11 @@ html,body{margin:0;background:${PALETTE.bg}}
     wrap.append(statusView, inspectorView, notesStudioView, settingsView);
     let shown = tab;
     let usageRound = 0;
+    let workerRound = 0;
     async function refreshStatus() {
       statusView.replaceChildren(el("div", { class: "card muted", text: L("status.checking") }));
+      const round = ++workerRound;
+      const worker = workerCard();
       const s = await deps.status();
       const base = s.sidecarUrl.replace(/\/+$/, "");
       const conn = el("div", { class: "card" }, el("h2", { text: L("status.sidecar") }));
@@ -4305,6 +4398,26 @@ html,body{margin:0;background:${PALETTE.bg}}
       const refresh = el("button", { text: L("refresh") });
       refresh.addEventListener("click", () => void refreshStatus());
       statusView.replaceChildren(...cards, el("div", { class: "btns" }, refresh));
+      void worker.then((card) => {
+        if (card && s.connected && round === workerRound && conn.isConnected) conn.after(card);
+      });
+    }
+    async function workerCard() {
+      let raw;
+      try {
+        raw = await deps.api("GET", "/v1/worker/status", void 0, 5e3);
+      } catch {
+        return null;
+      }
+      const { level, lines } = workerLines(lang, raw);
+      if (!lines.length) return null;
+      const errorLine = raw.last_error && level === "trouble" ? lines.length - 1 : -1;
+      return el(
+        "div",
+        { class: "card" },
+        el("h2", { text: L("worker.title") }),
+        ...lines.map((text2, i) => el("div", { class: i === errorLine ? "warn" : "muted", text: text2 }))
+      );
     }
     async function chatCard(enabled2, connected) {
       const card = el("div", { class: "card" }, el("h2", { text: L("chat.title") }));
