@@ -6,11 +6,12 @@ Also assembles the packet sections: state (Phase 1), facts (Phase 2), excerpts.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import math
 import re
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -22,27 +23,34 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .entities import PERSONA, norm
-from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, lexically_related, memory_view, relevant_facts, thread_entry
-from . import overuse, quotes, scene, spans, statechange, summaries, variants, source_time
+from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, excluded_ids, fact_entry, lexically_related, memory_view, relevant_facts, settled_entry, thread_entry, told_entry
+from . import absence, coverage, mentions, overuse, quotes, rerank, scene, spans, statechange, summaries, variants, source_time
+from .gone import is_gone_place, is_gone_status
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
+from .rerank import Reranker
 from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
-                     CHANGE_POLICIES, CONTENTS, LABEL_POLICIES, STATE_HISTORY_KEYS, STATE_HISTORY_MAX,
-                     STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES, SOURCE_CLOCK_POLICIES,
-                     STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
-                     QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
+                     CHANGE_POLICIES, CONTENTS, COVERAGE_POLICIES, GONE_POLICIES, LABEL_POLICIES, STATE_HISTORY_KEYS,
+                     STATE_HISTORY_MAX, STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES,
+                     SOURCE_CLOCK_POLICIES, STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
+                     QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, RETURN_GAP_POLICIES, SETTLED_POLICIES,
+                     PIN_POLICIES, SEM_QUERY_POLICIES, HAPPENED_POLICIES, TOLD_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
-                     StateItem, anchor_rank, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts,
-                     hidden_entry, secret_line,
+                     StateItem, anchor_rank, clean_text, compile_lines, coverage_note, cut_lines, excerpt, fill,
+                     fits_at, kept_counts, hidden_entry, secret_line,
                      secret_text)
 from .state import current_state, history as state_history, windows as state_windows
 from .threads import relevant_threads, similarity
 from .vectors import vector_candidates
 from .keywords import keywords, particle_lookup
+from . import carry
+from .carry import Carried
+from .packet import CARRY_POLICIES
+from xml.sax.saxutils import escape as xml_escape
 
 CANDIDATE_LIMIT = 50
 # packet-v17 (PHASE-39 Q3b): a message that asks how a status value changed: the past (HISTORY_CUE), when, how much,
@@ -278,6 +286,10 @@ class RecallOptions:
     first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
     name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
+    # PHASE-60 S8: `@name` pins a character for the request (packet-v20). Not recorded: a request records its pins.
+    pin_at_mentions: bool = False
+    # PHASE-60 S5 (ADR 0084): the configured reranker, None when off. Never recorded: it holds a credential.
+    reranker: Reranker | None = None
     # packet-v11's tie-break anchor for the excerpt's best sentence (PHASE-27 Q1b, ADR 0063): "keywords", the question's
     # keywords alone — the question itself when it has none — (the prototype's; the default since step 3, measured: with
     # "focus" the forbidden total rose 93 → 96 over twelve sets, with "keywords" it fell to 87), or "focus", the question
@@ -296,6 +308,10 @@ RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit"
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
+GONE_MAX = 8  # packet-v20: gone characters pinned at most (PHASE-60 S3)
+TOLD_MAX = 2  # packet-v20: lines of who told whom at most (PHASE-60 S8, proposal)
+PIN_EXTRA = 3  # packet-v20: <Cast> groups for pinned characters beyond the cast's own CAST_MAX (PHASE-60 S8)
+REGRESSION_MAX = 6  # packet-v20: lines of a previous timeline in one packet at most (PHASE-60 S6, ADR 0085 item 5)
 
 
 def recorded_options(options: RecallOptions) -> dict[str, Any]:
@@ -334,6 +350,19 @@ def _grown(base: list[dict[str, Any]], ranked: list[dict[str, Any]], extra: int)
             and f["predicate"] != "event"][:extra]
     order = {id(f): i for i, f in enumerate(ranked)}
     return sorted(base + more, key=lambda f: order.get(id(f), -1))
+
+
+SEM_QUERY_MAX_CHARS = 40  # packet-v20 (PHASE-60 S5, ADR 0084): messages shorter than this embed with the previous reply
+SEM_QUERY_REPLY_TAIL = 400
+
+
+def sem_query(query: str, previous_ai: str) -> str | None:
+    """Embedding text for a short message under packet-v20 (PHASE-60 S5, ADR 0084): the previous reply's last
+    400 characters, a line break, and the message when the stripped message is shorter than 40 characters and
+    there is a previous reply; None otherwise. Both inputs are already `clean_text`-normalized."""
+    if not query.strip() or len(query.strip()) >= SEM_QUERY_MAX_CHARS or not previous_ai.strip():
+        return None
+    return f"{previous_ai[-SEM_QUERY_REPLY_TAIL:]}\n{query}"
 
 
 def query_prefix(model: str, setting: str) -> str:
@@ -916,6 +945,19 @@ class Gathered:
     secret_pairs: set[tuple[frozenset[str], frozenset[str]]] = field(default_factory=set)  # (holders, absent) given a Secret line
     story: list[Line] = field(default_factory=list)  # summaries (packet-v8, ADR 0043)
     cast_lines: list[tuple[str, list[Line]]] = field(default_factory=list)  # each scene character's state (packet-v8)
+    secrets: list[dict[str, Any]] | None = None  # head secrets from view, reused by coverage without a second read
+    gone: list[Line] = field(default_factory=list)  # gone characters' status lines not in <Cast> (packet-v20, PHASE-60 S3)
+    cast_marks: dict[str, str] = field(default_factory=dict)  # <Cast> name → back_after value (packet-v20, PHASE-60 S4)
+    settled: list[Line] = field(default_factory=list)  # threads closed lately, after the open ones (packet-v20, PHASE-60 S4)
+    # packet-v20 (PHASE-60 S8): the characters pinned for the request, in pin order (`pinned_characters`); those only a
+    # pin put in the scene's cast; and the facts only a pin named (required, but not the message's own: PHASE-46's fill)
+    pins: list[dict[str, Any]] = field(default_factory=list)
+    pin_only: set[str] = field(default_factory=set)
+    pin_named: set[str] = field(default_factory=set)
+    sem_query: str | None = None  # packet-v20 (PHASE-60 S5, ADR 0084): reply tail + short message for embedding only
+    rerank_used: bool = False  # PHASE-60 S5 (ADR 0084): whether reranking reordered eligible candidates
+    regression: list[Line] = field(default_factory=list)  # a previous timeline the named remember (packet-v20, PHASE-60 S6)
+    regression_names: tuple[str, ...] = ()  # the characters a regression link names, in its order
 
 
 def persona_question_names(r: Any) -> frozenset[str]:
@@ -937,13 +979,25 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
            options: RecallOptions, upto: int | None = None, known_at: datetime | None = None,
            canon_manifest: str | None = None, canon_exact: bool = False, canon_held: Iterable[str] = (),
            canon_facts: Any = LIVE, vectors_now: bool = False,
-           recent: list[overuse.Recent] | None = None) -> Gathered:
+           recent: list[overuse.Recent] | None = None,
+           coverage_info: Mapping[str, int | None] | None = None,
+           served_turns: frozenset[int] | None = None,
+           pins: list[dict[str, Any]] | None = None,
+           recorded_sem_query: Any = LIVE,
+           rerank_scores: Mapping[str, float] | None = None, carried: Carried | None = None) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time. The canon keys the
     prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047).
-    `vectors_now` searches vectors as they are now whatever `known_at` says (a replay's named projection)."""
+    `vectors_now` searches vectors as they are now whatever `known_at` says (a replay's named projection).
+    `served_turns`: the turns an extraction serves as of the request, when the caller has read them (packet-v20's
+    return gap); otherwise they are read here, as of `upto` and `known_at`, and only when a gap is possible.
+    `pins`: a replay's recorded pins (`recall_options.pins`, ADR 0087 item 4), read instead of the message's `@name`s
+    and the owner's pins; None for a live request.
+    `carried`: what the chat's carry link carries (`carry.target_rows`, PHASE-60 S6, ADR 0085), read into every memory
+    view under CARRY_POLICIES only; every other policy reads as if there were none."""
     started = time.perf_counter()
     g = Gathered()
+    carried = carried if options.policy in CARRY_POLICIES else None
     # packet-v14 (PHASE-34 Q2, Q3): the supportive lines overused in the requests before this one rest
     # A question about the past or how it started asks for old memory: nothing rests then
     rest = (overuse.tired(recent or [], options.rest_after)
@@ -964,9 +1018,11 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     focus = f"{query} {previous_ai}"
     # The turn the packet shows: the message's turn index since packet-v7, as facts have it (ADR 0041).
     by_turn = options.policy in TURN_POLICIES
+    if options.policy in SEM_QUERY_POLICIES:
+        g.sem_query = sem_query(query, previous_ai) if recorded_sem_query is LIVE else recorded_sem_query
     if query.strip():
         if options.embedder is not None:  # asked for first, answered while the reads below run (ADR 0061)
-            text = options.query_prefix + query
+            text = options.query_prefix + (g.sem_query if g.sem_query is not None else query)
             # A live request takes the embedding its sync asked for (item 7); a replay compiles from its own reads.
             pending = (prefetched.take(options.embedder, options.embed_projection, text) if known_at is None
                        else None)
@@ -1021,21 +1077,27 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     selected: list[dict[str, Any]] = []  # the facts offered (facts, <Cast>), for packet-v12's replaced values
     if options.facts_limit > 0 or options.threads_limit > 0:
         view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                           options.canon_key, canon_facts)
+                           options.canon_key, canon_facts,
+                           told=options.policy in TOLD_POLICIES and options.facts_limit > 0,  # PHASE-60 S8
+                           carried=carried)
         g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"]
         persona = r.persona_names if r else frozenset()
         aliases = _aliases(r, query, previous_ai, options, view, names_of)
         # Who is in the scene, so facts only some of them know are marked (packet-v3, ADR 0034).
+        now = _head_turn(conn, head, upto)
         g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
-                            _head_turn(conn, head, upto), aliases=aliases,
+                            now, aliases=aliases,
                             marks=_thread_marks(view, aliases))
+        # packet-v20 (PHASE-60 S8, ADR 0087 item 2): a pinned character is present, before any line is judged private
+        _join_pins(g, view, r, query, options, pins)
         if options.threads_limit > 0:
             picked = relevant_threads(view["threads"], query, previous_ai, in_context,
                                       len(view["threads"]) if rest else options.threads_limit, persona,
                                       about=options.policy in ABOUT_POLICIES, aliases=aliases, named=g.named)
             picked = _rested(picked, "thread", rest, g)[:options.threads_limit]
-            g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r)) for t in picked],
+            g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r), options.policy in HAPPENED_POLICIES)
+                                for t in picked],
                                view["threads"], g, r, options)
         if options.facts_limit > 0:
             causes = options.policy in CAUSE_POLICIES
@@ -1053,6 +1115,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             # the label policies rank a risky line after the others before the limits choose (PHASE-34 Q1)
             contradicted = (frozenset(str(c["fact"]) for c in view.get("conflicts") or [] if c.get("fact") is not None)
                             if options.policy in LABEL_POLICIES else None)
+            # packet-v20 (PHASE-60 S8): a pinned character's names make its now and standing facts named
+            pinned = scene.names({p["key"]: p["name"] for p in g.pins}, r, aliases) if g.pins else frozenset()
             ranked = relevant_facts(view["facts"], query, previous_ai, in_context,
                                     len(view["facts"]) if grow or rest else options.facts_limit,
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
@@ -1060,11 +1124,13 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     named=g.named, named_by_words=options.policy in NAMED_POLICIES, risky=contradicted,
                                     keep=(lambda f: bool(_rested([f], "fact", rest, g))) if rest else None,
                                     persona_questions=persona_questions, persona_entity=persona_entity,
-                                    persona_query_names=question_names, persona_added=persona_added)
+                                    persona_query_names=question_names, persona_added=persona_added,
+                                    pinned=pinned, pin_named=g.pin_named)
             # packet-v19 (PHASE-46): a question that names no one and shares no fact's words gets no added fact or
-            # claim slots; the configured limits still choose (small talk took 30 facts and 8 claims at 4,000 tokens)
+            # claim slots; the configured limits still choose (small talk took 30 facts and 8 claims at 4,000 tokens).
+            # A pin names no one in the message (PHASE-60 S8): the facts only a pin named do not count.
             fill_facts = 0 if options.fill_facts and options.policy in RELATED_FILL_POLICIES and unrelated_question(
-                query, g.named, view["facts"] + view["claims"]) else options.fill_facts
+                query, g.named - g.pin_named, view["facts"] + view["claims"]) else options.fill_facts
             if options.policy in LABEL_POLICIES:  # before the limits: a risky fact never takes an ordinary one's slot
                 ranked = _risky_last(ranked, view, g.named)
             if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2); the facts
@@ -1096,28 +1162,57 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             # How the cast stand with each other takes the budget before threads (ADR 0026).
             before, cause = options.policy in BEFORE_POLICIES, causes
             marks = options.history_marks
-            g.lead = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause, marks) for f in facts
-                             if f["predicate"] in STANDING],
+            happened = options.policy in HAPPENED_POLICIES  # packet-v20 (PHASE-60 S7)
+            g.lead = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause, marks, happened=happened)
+                             for f in facts if f["predicate"] in STANDING],
                             facts, g, r, options)
-            g.facts = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause, marks) for f in facts
-                              if f["predicate"] not in STANDING]
+            g.facts = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause, marks, happened=happened)
+                              for f in facts if f["predicate"] not in STANDING]
                              + [claim_entry(c, scene.private(c, g.cast, r), cause) for c in claims], facts + claims, g, r,
                              options)
+            # packet-v20 (PHASE-60 S8): who told whom, after the ordinary facts and claims; chosen after them, so it
+            # changes neither their selection nor the fill decision
+            g.facts += told_lines(g, view, r, query, previous_ai, in_context, options, aliases, rest)
         if options.narrator:
             who = scene.display(r, options.narrator) if r is not None else options.narrator
             g.note = f" The story is told in the first person by {who}: only what they know is listed."
         if options.policy in CAST_POLICIES and r is not None:
-            g.cast_lines, used = cast_groups(view, g.cast, r, query, options, in_context, aliases)
+            g.cast_lines, used = cast_groups(view, g.cast, r, query, options, in_context, aliases,
+                                             pins=[p["key"] for p in g.pins], added=g.pin_only)
             if changes:
                 selected += [f for f in view["facts"] if f["id"] in used]
             if used:  # a line in <Cast> is not said again in another section
                 g.lead = [line for line in g.lead if line.ref.get("assertion") not in used]
                 g.facts = [line for line in g.facts if line.ref.get("assertion") not in used]
                 g.threads = [line for line in g.threads if line.ref.get("assertion") not in used]
+        if options.policy in GONE_POLICIES and options.facts_limit > 0 and r is not None:
+            # packet-v20 (PHASE-60 S3): a gone character's status, whether or not the message names them; like <Cast>,
+            # whether or not its message is in the prompt (the mark is what the prompt lacks)
+            pin_gone(g, view, r, now, options)
+        if options.policy in RETURN_GAP_POLICIES and g.cast_lines and r is not None and now is not None:
+            # packet-v20 (PHASE-60 S4): a <Cast> character back after a long absence; which turns an extraction serves
+            # is read only when some character's appearances leave room for a gap
+            loaded = [served_turns]
+
+            def served(t: int) -> bool:
+                if loaded[0] is None:
+                    loaded[0] = coverage.extraction_state(conn, head, upto, known_at)[0]
+                return t in loaded[0]
+
+            g.cast_marks = return_marks(view, r, g.cast, g.cast_lines, now, served, options.policy)
+        if options.policy in SETTLED_POLICIES and options.threads_limit > 0:
+            # packet-v20 (PHASE-60 S4): threads the story closed lately, outside threads_limit
+            g.settled = settled_lines(g, view, r, query, now, rest, options, aliases)
+        if options.policy in CARRY_POLICIES and view.get("regression") and r is not None:
+            # packet-v20 (PHASE-60 S6): what the named remember of a previous timeline, apart from everything above
+            g.regression = regression_lines(g, view, r, query, previous_ai, in_context, options, aliases)
+            g.regression_names = tuple(view["carried"]["names"])
+    if options.policy in COVERAGE_POLICIES and coverage_info is not None:
+        g.note += coverage_note(coverage_info.get("recorded_through_turn"), coverage_info.get("latest_replied_turn"))
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
         if view is None and options.extractor_key:  # facts and threads off: the secrets still decide what may be told
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                               options.canon_key, canon_facts)
+                               options.canon_key, canon_facts, carried=carried)
             g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"] if view else None
         aliases = _aliases(r, query, previous_ai, options, view, names_of) if view else None
@@ -1125,6 +1220,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
                                 _head_turn(conn, head, upto), aliases=aliases,
                                 marks=_thread_marks(view, aliases))
+            _join_pins(g, view, r, query, options, pins)  # facts and threads off: the summaries' scene (PHASE-60 S8)
         g.story = summaries.packet_lines(conn, head, options.summarize_key, view["secrets"] if view else [], query,
                                          in_context, upto, known_at,
                                          scene.names(g.cast, r, aliases) if r is not None else frozenset(),
@@ -1134,6 +1230,10 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                      if '<Summary kind="story"' in line.xml or overuse.key(line.kind, line.ref) not in rest]
             g.rested += len(g.story) - len(awake)
             g.story = awake
+        if options.policy in CARRY_POLICIES and view and (line := carried_story(
+                view, view["secrets"], scene.names(g.cast, r, aliases) if r is not None else frozenset(),
+                g.hidden_entries if options.policy in LABEL_POLICIES else None)) is not None:
+            g.story.append(line)  # offered last: the first one left out when STORY_SHARE is full; emitted first
     if pending is not None:
         t0 = time.perf_counter()
         try:
@@ -1151,6 +1251,34 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     g.candidates = fuse(lexical, vector, options.threshold, options.vector_min_sim, keyword)
     g.excluded = [c for c in g.candidates if c["host_logical_id"] in in_context]
     eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context]
+    if known_at is None and options.reranker is not None:
+        t0 = time.perf_counter()
+        if query.strip() and eligible:
+            top = eligible[:rerank.MAX_CANDIDATES]
+            docs = [c["clean"][:rerank.MAX_DOC_CHARS] for c in top]
+            # RetrieveRequest carries no remaining client deadline, so the call is bounded by the reranker's own
+            # timeout (`options.reranker.timeout_ms`); any timeout, error or malformed answer leaves the fused order.
+            scores = rerank.score(options.reranker, query, docs)
+            if scores is not None:
+                for c, s in zip(top, scores):
+                    c["rerank"] = float(s)
+                eligible = rerank.reorder(top, scores) + eligible[rerank.MAX_CANDIDATES:]
+                it = iter(eligible)
+                g.candidates = [c if c["host_logical_id"] in in_context else next(it) for c in g.candidates]
+                g.rerank_used = True
+        g.timings["rerank"] = round((time.perf_counter() - t0) * 1000, 2)
+    elif rerank_scores:
+        # Replay (ADR 0084 item 5): never calls a reranker; reapplies recorded scores to the same candidates.
+        scored = [c for c in eligible if str(c["id"]) in rerank_scores]
+        if scored:
+            scores = [float(rerank_scores[str(c["id"])]) for c in scored]
+            for c, s in zip(scored, scores):
+                c["rerank"] = s
+            unscored = [c for c in eligible if str(c["id"]) not in rerank_scores]
+            eligible = rerank.reorder(scored, scores) + unscored
+            it = iter(eligible)
+            g.candidates = [c if c["host_logical_id"] in in_context else next(it) for c in g.candidates]
+            g.rerank_used = True
     stale = _replaced_judge(view, selected, query, previous_ai, options, names_of) if changes and view is not None else None
     scan_slots = stale is not None or options.policy in UNEXTRACTED_POLICIES
     if not scan_slots:  # older policies keep the original top-k cut
@@ -1282,7 +1410,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     if keyword_only and any(e.revision_id in keyword_only for e in g.ranked) and options.extractor_key:
         if view is None:
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                               options.canon_key, canon_facts)
+                               options.canon_key, canon_facts, carried=carried)
         r = view["resolution"]
         aliases = _aliases(r, query, previous_ai, options, view, names_of)
         cast = g.cast
@@ -1311,7 +1439,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         if clocks and options.extractor_key:
             if view is None:
                 view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                                   options.canon_key, canon_facts)
+                                   options.canon_key, canon_facts, carried=carried)
             # A clock is additional text from the source. Conservatively withhold any known secret overlap,
             # including a fabricated parser value, regardless of which characters are in this scene.
             protected = frozenset(norm(n) for secret in view["secrets"] for n in secret.get("open", ()))
@@ -1320,6 +1448,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                  for _, value, _ in clock.fields)}
         g.source_clocks = clocks
         g.timings["source_clock"] = round((time.perf_counter() - started_clock) * 1000, 2)
+    if view is not None:
+        g.secrets = view["secrets"]
     return g
 
 
@@ -1351,6 +1481,68 @@ def _keyword_only(c: dict[str, Any], options: RecallOptions) -> bool:
             and not (c.get("sim") is not None and c["sim"] >= options.vector_min_sim))
 
 
+def pinned_characters(view: dict[str, Any] | None, r: Any, query: str, options: RecallOptions,
+                      recorded: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """packet-v20 (PHASE-60 S8, ADR 0087): the characters pinned for this request, in pin order, one entry each
+    ({"key": entity key, "name": display name, "source": "at" or "owner"}): first those an `@name` in the message
+    names (only with `pin_at_mentions`; `mentions.at_mentions` over every character's normalized names, a name two
+    characters share naming neither), then the owner's pins, newest first (`view["pins"]`). Never the persona, never
+    a character the owner left out (`entity_exclude` wins, item 5). `recorded`: a replay's `recall_options.pins`,
+    resolved by name in its own view; the message and the view's pins are then not read (item 4). Every other policy:
+    none."""
+    if options.policy not in PIN_POLICIES or r is None or view is None:
+        return []
+    persona = scene.key(r, scene.PERSONA)
+    left_out = excluded_ids(view)
+    by_id = {str(e["id"]): e for e in r.entities()}
+    out: dict[str, dict[str, Any]] = {}
+
+    def add(e: dict[str, Any] | None, source: str) -> None:
+        if (e is None or e.get("type") != "character" or e.get("persona") or e["id"] == persona
+                or str(e["id"]) in left_out or str(e["id"]) in out):
+            return
+        out[str(e["id"])] = {"key": e["id"], "name": e["name"], "source": source}
+
+    if recorded is not None:
+        for p in recorded:
+            if isinstance(p, dict) and p.get("name"):
+                add(r.entity("character", p["name"]), "at" if p.get("source") == "at" else "owner")
+        return list(out.values())
+    if options.pin_at_mentions and query:
+        names: dict[str, str] = {}
+        shared: set[str] = set()
+        for e in r.entities():
+            if e.get("type") != "character":
+                continue
+            for n in e["names"]:
+                k = norm(n)
+                if k and names.setdefault(k, str(e["id"])) != str(e["id"]):
+                    shared.add(k)
+        for k in shared:
+            del names[k]
+        for i in mentions.at_mentions(query, names, {str(persona), *left_out}):
+            add(by_id.get(i), "at")
+    for p in view.get("pins") or ():
+        add(by_id.get(str(p.get("entity_id"))), "owner")
+    return list(out.values())
+
+
+def _join_pins(g: Gathered, view: dict[str, Any], r: Any, query: str, options: RecallOptions,
+               recorded: list[dict[str, Any]] | None) -> None:
+    """The request's pins (`pinned_characters`) join the scene's cast after everyone already in it, so knowledge marks,
+    Private, strict and narrator lines treat them as present (ADR 0087 item 2). Every other policy: nothing."""
+    g.pins = pinned_characters(view, r, query, options, recorded)
+    for p in g.pins:
+        if p["key"] not in g.cast:
+            g.cast[p["key"]] = p["name"]
+            g.pin_only.add(p["key"])
+
+
+def recorded_pins(pins: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What a request records of its pins (`recall_options.pins`, ADR 0087 item 4): each name it resolved to."""
+    return [{"name": p["name"], "entity_type": "character", "source": p["source"]} for p in pins]
+
+
 def cast_facts(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, Any]], bool]) -> list[dict[str, Any]]:
     """What <Cast> says of one character (ADR 0043), from their current facts: the newest place and condition, the
     newest feeling toward the persona, and up to CAST_ITEMS things they carry, newest first. The Inspector's state
@@ -1364,7 +1556,8 @@ def cast_facts(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, Any]
 
 
 def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, options: RecallOptions,
-                in_context: set[str] = frozenset(), aliases: dict[str, frozenset[str]] | None = None
+                in_context: set[str] = frozenset(), aliases: dict[str, frozenset[str]] | None = None,
+                pins: Iterable[str] = (), added: Collection[str] = ()
                 ) -> tuple[list[tuple[str, list[Line]]], set[Any]]:
     """Each scene character's current state as the lines it is (PHASE-12 Q4, ADR 0043): place, condition, feeling
     toward the persona, what they carry, and, for a character the message names, their open goals, the one the
@@ -1373,19 +1566,27 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
     (its Private handling), and a narrator's unknowns are left out (ADR 0035). Returns the groups and the assertions
     they use. A canon fact whose text the prompt held is not said again (D3, ADR 0047). With `aliases`
     (`name_variants`, ADR 0058) the characters the user's message names come first: a given name in the previous
-    reply brings more characters into the scene, and the one asked about must keep its group."""
+    reply brings more characters into the scene, and the one asked about must keep its group.
+
+    `pins` (packet-v20, PHASE-60 S8, ADR 0087 item 2): the request's pinned characters' keys, in pin order; `added`,
+    those in `cast` only because they are pinned. The cast's own groups are chosen as before without them; then each
+    pinned character without one of those gets a group of the same shape, at most PIN_EXTRA, in pin order, from its
+    own chat's rows only (a row carried from another chat never fills one)."""
     persona = scene.key(r, scene.PERSONA)
     said = norm(query)
     left_out = frozenset(view.get("excluded") or ())  # PHASE-47: not a character, so no <Cast> group
-    order = [k for k in cast if k != persona and str(k) not in left_out]
+    order = [k for k in cast if k != persona and str(k) not in left_out and k not in added]
     if aliases is not None:
         order.sort(key=lambda k: not any(n in said for n in scene.names({k: cast[k]}, r, aliases)))  # stable
     order = order[:CAST_MAX]
     before, cause = options.policy in BEFORE_POLICIES, options.policy in CAUSE_POLICIES
+    happened = options.policy in HAPPENED_POLICIES  # packet-v20 (PHASE-60 S7)
 
     def shown(row: dict[str, Any]) -> bool:
         if scene.private(row, cast, r) or (row.get("canon") and row["host_logical_id"] in in_context
                                            and not row.get("held_off")):
+            return False
+        if row.get("carried"):  # an earlier chat's (ADR 0085): not where a character stands in this one's scene
             return False
         return not options.narrator or scene.narrator_knows(row, options.narrator, r)
 
@@ -1395,25 +1596,313 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
             mine.setdefault(scene.key(r, f["subject"]), []).append(f)
     groups: list[tuple[str, list[Line]]] = []
     used: set[Any] = set()
-    for k in order:
-        pick = cast_facts(mine.get(k, []), lambda f: scene.key(r, f["object"]) == persona)
+
+    def lines_of(k: str) -> list[Line]:
+        own = mine.get(k, [])
+        if k not in order:  # a group only a pin brings: never from rows carried from another chat (PHASE-60 S8)
+            own = [f for f in own if not f.get("carried")]
+        pick = cast_facts(own, lambda f: scene.key(r, f["object"]) == persona)
         named = any(n in said for n in scene.names({k: cast[k]}, r, aliases))
         goals = [t for t in view["threads"] if named and t.get("kind") == "goal" and t["status"] == "open"
                  and scene.key(r, t["by"]) == k and shown(t)]
         goals.sort(key=lambda t: (similarity(query, t.get("text")) if query else 0.0, t["position"]), reverse=True)
-        lines = [fact_entry(f, False, before, cause, options.history_marks) for f in pick] + [
-            thread_entry(t) for t in goals[:CAST_GOALS]]
+        return [fact_entry(f, False, before, cause, options.history_marks, happened=happened) for f in pick] + [
+            thread_entry(t, happened=happened) for t in goals[:CAST_GOALS]]
+
+    extra = 0
+    for k in [*order, *(k for k in pins if k not in order)]:
+        if k not in order and (extra >= PIN_EXTRA or k not in cast or k == persona or str(k) in left_out):
+            continue
+        lines = lines_of(k)
         if lines:
             groups.append((cast[k], lines))
             used |= {line.ref.get("assertion") for line in lines}
+            extra += k not in order
     return groups, used
+
+
+def _gone_status(f: dict[str, Any]) -> bool:
+    """Whether a current fact says its character is gone (PHASE-60 S3, ADR 0082 item 2): a narrated, positive,
+    undisputed `has_status` the word rule calls gone, or a `located_in` whose whole place name is no place. Canon is
+    left out: it is how things stood before the story, which the story may have changed without saying so, and a
+    character the setting calls dead or missing can be one the story is about (a missed pin is today's behaviour, a
+    wrong pin silences a living character). A row carried from another chat is never one either."""
+    if (f.get("canon") or f.get("carried") or f.get("polarity") != "positive" or f.get("disputed_by")
+            or f.get("subject_type") != "character" or f.get("turn") is None):
+        return False
+    if f["predicate"] == "has_status":
+        return is_gone_status(f.get("value"))
+    return f["predicate"] == "located_in" and is_gone_place(f.get("object"))
+
+
+def gone_rows(view: dict[str, Any], r: Any, now: int | None) -> list[dict[str, Any]]:
+    """The characters who are gone (PHASE-60 S3), each by their newest gone fact, newest first, at most GONE_MAX.
+
+    From the view's current narrated facts only (a later status replaced an earlier one there; a claim is what someone
+    said). Not the persona, nor a character the owner left out (PHASE-47). Not a character the story brought back: one
+    who is a subject, object or typed participant of a row (fact, claim or other) of a turn after the gone fact's, in
+    the scene window `scene.cast` reads (CAST_TURNS turns before `now`). Their own gone rows, canon rows and carried
+    rows bring no one back."""
+    if r is None:
+        return []
+    persona = scene.key(r, scene.PERSONA)
+    left_out = frozenset(view.get("excluded") or ())
+    newest: dict[str, dict[str, Any]] = {}
+    gone_ids: set[int] = set()
+    for f in view["facts"]:
+        if not _gone_status(f):
+            continue
+        gone_ids.add(id(f))
+        k = scene.key(r, f["subject"])
+        if scene.is_persona(r, f["subject"]) or k == persona or str(k) in left_out:
+            continue
+        if k not in newest or (f["turn"], f["position"]) > (newest[k]["turn"], newest[k]["position"]):
+            newest[k] = f
+    if not newest:
+        return []
+    rows = view["facts"] + view["claims"] + view["other"]
+    until = now - 1 if now is not None else max((x["turn"] for x in rows if x.get("turn") is not None), default=-1)
+    since = until - scene.CAST_TURNS + 1
+    last_seen: dict[str, int] = {}  # each character's latest turn in the window, by the rows `scene.cast` reads
+    for x in rows:
+        if (id(x) in gone_ids or x.get("canon") or x.get("carried") or x.get("turn") is None
+                or not since <= x["turn"] <= until):
+            continue
+        names = [x["subject"]] if x.get("subject_type") == "character" else []
+        if x.get("object_type") == "character":
+            names.append(x.get("object"))
+        names += [p["name"] for p in x.get("participants") or () if p.get("type") == "character"]
+        for name in names:
+            if name:
+                k = scene.key(r, name)
+                last_seen[k] = max(last_seen.get(k, x["turn"]), x["turn"])
+    kept = [f for k, f in newest.items() if last_seen.get(k, f["turn"]) <= f["turn"]]
+    kept.sort(key=lambda f: (f["turn"], f["position"]), reverse=True)
+    return kept[:GONE_MAX]
+
+
+def gone_lines(view: dict[str, Any], r: Any, cast: dict[str, str], now: int | None,
+               options: RecallOptions) -> list[Line]:
+    """packet-v20 (PHASE-60 S3): each gone character's status line, marked gone="true", newest first, private as any
+    fact line is in this scene (ADR 0034). Every other policy: none."""
+    if options.policy not in GONE_POLICIES:
+        return []
+    before, cause = options.policy in BEFORE_POLICIES, options.policy in CAUSE_POLICIES
+    return [fact_entry(f, scene.private(f, cast, r), before, cause, options.history_marks, gone=True,
+                       happened=options.policy in HAPPENED_POLICIES) for f in gone_rows(view, r, now)]
+
+
+def pin_gone(g: Gathered, view: dict[str, Any], r: Any, now: int | None, options: RecallOptions) -> list[dict[str, Any]]:
+    """Put each gone character's status line where it goes (PHASE-60 S3, ADR 0082 item 3), once: first in the
+    character's <Cast> group when `cast_groups` gave it the line (it judged privacy, the narrator and D3 there),
+    else in `g.gone` (first in <Facts>, or <Private>) through this chat's memory mode (`_moded`). The same assertion
+    leaves the lead and facts. A gone fact the memory mode already withheld as a fact stays as the mode left it (a
+    strict <Secret> where the fact was), so nothing is withheld twice. Returns the rows pinned."""
+    if options.policy not in GONE_POLICIES:
+        return []
+    withheld = {line.ref.get("assertion") for line in g.withheld_lines}
+    lines = {line.ref.get("assertion"): line for line in gone_lines(view, r, g.cast, now, options)
+             if line.ref.get("assertion") not in withheld}
+    if not lines:
+        return []
+    in_cast: set[Any] = set()
+    groups: list[tuple[str, list[Line]]] = []
+    for name, group in g.cast_lines:
+        own = [line.ref.get("assertion") for line in group if line.ref.get("assertion") in lines]
+        if own:
+            in_cast.update(own)
+            group = [lines[a] for a in own] + [line for line in group if line.ref.get("assertion") not in lines]
+        groups.append((name, group))
+    g.cast_lines = groups
+    g.lead = [line for line in g.lead if line.ref.get("assertion") not in lines]
+    g.facts = [line for line in g.facts if line.ref.get("assertion") not in lines]
+    rows = [f for f in view["facts"] if f["id"] in lines]
+    rows.sort(key=lambda f: (f["turn"], f["position"]), reverse=True)
+    g.gone = _moded([lines[f["id"]] for f in rows if f["id"] not in in_cast], rows, g, r, options)
+    return rows
+
+
+def appearances(view: dict[str, Any], r: Any) -> dict[str, list[int]]:
+    """Each character's turns, by entity key, from every assertion the view read: superseded versions too (a place the
+    story replaced was still an appearance), as subject, object or typed participant (PHASE-60 S4). Canon rows are
+    before the story, and rows carried from another chat are not this chat's story: neither is an appearance."""
+    rows = view.get("assertions")
+    if rows is None:
+        rows = view["facts"] + view["claims"] + view["other"]
+    out: dict[str, set[int]] = {}
+    for x in rows:
+        if x.get("canon") or x.get("carried") or x.get("turn") is None:
+            continue
+        names = [x["subject"]] if x.get("subject_type") == "character" else []
+        if x.get("object_type") == "character":
+            names.append(x.get("object"))
+        names += [p["name"] for p in x.get("participants") or () if p.get("type") == "character"]
+        for name in names:
+            if name:
+                out.setdefault(scene.key(r, name), set()).add(x["turn"])
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def return_marks(view: dict[str, Any], r: Any, cast: dict[str, str], cast_lines: list[tuple[str, list[Line]]],
+                 now: int, served: Callable[[int], bool] | Collection[int], policy: str = "packet-v20") -> dict[str, str]:
+    """packet-v20 (PHASE-60 S4, ADR 0082 item 4): {<Cast> name: back_after value} for each character with a <Cast>
+    group, not the persona, whose current run began at most RUN_START_MAX turns ago after at least GAP_MIN served turns
+    away (`absence.return_gap`). `served` is asked only when a gap is possible even if every turn were served. Every
+    other policy: none."""
+    if policy not in RETURN_GAP_POLICIES or r is None or not cast_lines:
+        return {}
+    persona = scene.key(r, scene.PERSONA)
+    key_of = {name: k for k, name in cast.items()}
+    seen = appearances(view, r)
+    out: dict[str, str] = {}
+    for name, _ in cast_lines:
+        k = key_of.get(name)
+        if k is None or k == persona or scene.is_persona(r, name):
+            continue
+        turns = seen.get(k, [])
+        if absence.return_gap(turns, lambda _t: True, now) is None:  # no gap even if every turn were served
+            continue
+        if (gap := absence.return_gap(turns, served, now)) is not None:
+            out[name] = absence.back_after_label(gap)
+    return out
+
+
+def settled_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, now: int | None,
+                  rest: frozenset[tuple[str, str]], options: RecallOptions,
+                  aliases: dict[str, frozenset[str]] | None = None) -> list[Line]:
+    """packet-v20 (PHASE-60 S4, ADR 0082 item 5): the lines of threads closed within SETTLED_TURNS of `now` whose maker
+    or recipient (not the persona) is in the scene or named in the user's message, under any name they go by
+    (`aliases`): bad endings first, then newest, at most SETTLED_MAX (`absence.settled`). Supportive: a tired one rests
+    as an open thread does and holds no place (`_rested`, the same key as its open line). A thread carried from another
+    chat has none. Private as any thread is in this scene, through this chat's memory mode (`_moded`). Every other
+    policy: none."""
+    if options.policy not in SETTLED_POLICIES or r is None or now is None:
+        return []
+    persona = scene.key(r, scene.PERSONA)
+    present = set(g.cast) - {persona}
+    said = norm(query)
+
+    def involved(t: dict[str, Any]) -> bool:
+        for name in (t.get("by"), t.get("to")):
+            if not name or scene.is_persona(r, name):
+                continue
+            k = scene.key(r, name)
+            if k == persona:
+                continue
+            if k in present or any(n in said for n in scene.names({k: name}, r, aliases)):
+                return True
+        return False
+
+    own = [t for t in view["threads"] if not t.get("carried")]
+    picked = absence.settled(own, now, lambda t: involved(t) and bool(_rested([t], "thread", rest, g)))
+    return _moded([settled_entry(t, scene.private(t, g.cast, r), options.policy in HAPPENED_POLICIES) for t in picked],
+                  view["threads"], g, r, options)
+
+
+def told_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_ai: str, in_context: set[str],
+               options: RecallOptions, aliases: dict[str, frozenset[str]] | None = None,
+               rest: frozenset[tuple[str, str]] = frozenset()) -> list[Line]:
+    """packet-v20 (PHASE-60 S8, ADR 0086): at most TOLD_MAX lines of who told whom (`view["told"]`, read only under
+    TOLD_POLICIES), as <Fact kind="told">.
+
+    A told row is a candidate when its teller or hearer (not the persona, who is in every scene) is in the scene or
+    named in the user's message, under any name they go by (`aliases`), as for a settled thread. The candidates are
+    ranked as facts are (`relevant_facts`: what the message names or its words point at first); one only the scene
+    brings follows, newest first. Neither is said again while its message is in the prompt (D3), and a tired one rests
+    (`_rested`). A line whose value or quote says a secret still kept from someone (`summaries.leaks`, stricter with
+    such a someone in the scene) is left out as a keyword-only excerpt is (D62), recorded as a hidden ledger entry
+    (`secret_gate`); the next candidate may take its place. The rest is any fact line's: private as such in this scene,
+    through this chat's memory mode (`_moded`: strict, narrator). Every other policy: none."""
+    if options.policy not in TOLD_POLICIES or r is None or not view.get("told"):
+        return []
+    persona = scene.key(r, scene.PERSONA)
+    present = set(g.cast) - {persona}
+    said = norm(query)
+
+    def involved(t: dict[str, Any]) -> bool:
+        for name in (t.get("subject"), t.get("object")):
+            if not name or scene.is_persona(r, name):
+                continue
+            k = scene.key(r, name)
+            if k != persona and (k in present or any(n in said for n in scene.names({k: name}, r, aliases))):
+                return True
+        return False
+
+    candidates = [t for t in view["told"] if not t.get("carried") and involved(t)]
+    if not candidates:
+        return []
+    names = scene.names(g.cast, r, aliases)
+    ranked = relevant_facts(candidates, query, previous_ai, in_context, len(candidates), persona=r.persona_names,
+                            present=names, aliases=aliases, named=g.named,
+                            named_by_words=options.policy in NAMED_POLICIES)
+    chosen = {id(t) for t in ranked}
+    ranked += sorted((t for t in candidates if id(t) not in chosen and t["host_logical_id"] not in in_context),
+                     key=lambda t: t["position"], reverse=True)
+    picked: list[dict[str, Any]] = []
+    for t in _rested(ranked, "fact", rest, g):
+        if len(picked) >= TOLD_MAX:
+            break
+        if any(summaries.leaks(form, view["secrets"], names) for form in (t.get("value"), t.get("evidence")) if form):
+            if options.policy in LABEL_POLICIES:
+                g.hidden_entries.append(hidden_entry("fact", {"assertion": t["id"]}, t.get("turn"), "secret_gate"))
+            continue
+        picked.append(t)
+    happened = options.policy in HAPPENED_POLICIES
+    return _moded([told_entry(t, scene.private(t, g.cast, r), happened) for t in picked], picked, g, r, options)
+
+
+def regression_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_ai: str, in_context: set[str],
+                     options: RecallOptions, aliases: dict[str, frozenset[str]] | None = None) -> list[Line]:
+    """packet-v20 (PHASE-60 S6, ADR 0085 item 5): what the characters a regression link names remember of the previous
+    timeline (`view["regression"]`), as the lines of its own <Regression> group. Facts are ranked as facts are
+    (`relevant_facts`), threads as threads are (`relevant_threads`: open and mentioned); the two are merged by how the
+    message names them (in the user's message, then in the previous reply, then by its words only), then each list's own
+    order, the newer source position first on a tie; at most REGRESSION_MAX. Each line says timeline="previous" and its
+    rememberers as known_by, and no turn (none of this chat's); private (limited knowledge), through this chat's memory
+    mode (`_moded`: strict mode withholds it as a Secret line, a narrator who does not remember it never sees it). Its
+    marks name its rememberers (`remembered_by`), a Secret line's too. None of them is a fact, a <Cast> line, a gone pin,
+    a thread, a settled line or a return mark. Every other policy: none."""
+    if options.policy not in CARRY_POLICIES or r is None or not view.get("regression"):
+        return []
+    rows = [{**x, "timeline": "previous"} for x in view["regression"]]
+    persona = r.persona_names
+    facts = relevant_facts([x for x in rows if x["line"] == "fact"], query, previous_ai, in_context, len(rows),
+                           options.events_limit, persona, scene.names(g.cast, r, aliases),
+                           causes=options.policy in CAUSE_POLICIES, aliases=aliases)
+    threads = relevant_threads([x for x in rows if x["line"] == "thread"], query, previous_ai, in_context, len(rows),
+                               persona, about=options.policy in ABOUT_POLICIES, aliases=aliases)
+    said, before = norm(query), norm(previous_ai)
+
+    def mention(x: dict[str, Any]) -> int:
+        names = {n for n in variants.widened(x.get("names") or [], aliases) if len(n) >= 2} - persona
+        return 2 if any(n in said for n in names) else (1 if any(n in before for n in names) else 0)
+
+    ranked = [(x, i) for i, x in enumerate(facts)] + [(x, i) for i, x in enumerate(threads)]
+    ranked.sort(key=lambda p: (-mention(p[0]), p[1], -(p[0].get("position") or 0)))
+    picked = [x for x, _ in ranked[:REGRESSION_MAX]]
+    cause = options.policy in CAUSE_POLICIES
+    lines = []
+    for x in picked:
+        line = (fact_entry(x, True, False, cause, options.history_marks) if x["line"] == "fact"
+                else thread_entry(x, True))
+        lines.append(dataclasses.replace(line, turn=None, marks={**line.marks,
+                                                                 "remembered_by": list(x.get("known_by") or ())}))
+    by_id = {x["id"]: x for x in picked}
+    out: list[Line] = []
+    for line in _moded(lines, picked, g, r, options):
+        row = by_id.get(line.ref.get("assertion"))
+        if row is not None and "remembered_by" not in line.marks:  # a strict Secret line still says who remembers
+            line = dataclasses.replace(line, marks={**line.marks, "remembered_by": list(row.get("known_by") or ())})
+        out.append(line)
+    return out
 
 
 def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
     """One request's packet from what `gather` offered (the request and its replay compile alike)."""
     compiled = compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
                              note=g.note, story=g.story, cast=g.cast_lines, named=frozenset(g.named),
-                             risky=frozenset(g.risky))
+                             risky=frozenset(g.risky), gone=g.gone, cast_marks=g.cast_marks, settled=g.settled,
+                             regression=g.regression, regression_names=g.regression_names)
     compiled = source_time.supplement(compiled, g.ranked, g.source_clocks, budget, policy)
     if policy in LABEL_POLICIES:
         # Diagnostics never take part in selection, token fitting or the rest/echo calculation.
@@ -1692,11 +2181,58 @@ def _head_last(conn: psycopg.Connection, head: UUID, upto: int | None) -> str | 
     return row["host_logical_id"] if row else None
 
 
+def carried_story(view: Mapping[str, Any], secrets: list[dict[str, Any]], present: frozenset[str],
+                  hidden_entries: list[dict[str, Any]] | None = None) -> Line | None:
+    """packet-v20 (PHASE-60 S6, ADR 0085 item 4): the story so far of the earlier chat a `continue` link carries, as one
+    <Summary scope="earlier chat"> line (its provenance the link and the source's summary). Like this chat's own
+    summaries, none when it repeats a secret this chat still keeps from someone (`summaries.leaks`, PHASE-12 Q3)."""
+    held = (view.get("carried") or {})
+    story = held.get("story")
+    if not story or not story.get("text"):
+        return None
+    text = str(story["text"])
+    ref = {"carried": held["link"], "summary": (story.get("from") or {}).get("summary")}
+    if summaries.leaks(text, secrets, present):
+        if hidden_entries is not None:
+            hidden_entries.append(hidden_entry("summary", ref, None, "secret_gate"))
+        return None
+    return Line("summary", f'    <Summary scope="earlier chat">{xml_escape(text)}</Summary>', ref, None,
+                f"earlier chat: {text}", text)
+
+
+def carry_record(link: Mapping[str, Any]) -> dict[str, Any]:
+    """What a trace records of the carry link its request read (PHASE-60 S6, ADR 0085 item 7): ids as strings, the
+    cutoff its reading was taken at, its mode and the characters who remember."""
+    return {"link": str(link["id"]), "source": str(link["source_conversation_id"]),
+            "commit": str(link["cutoff_commit_id"]), "position": link["cutoff_position"], "mode": link["mode"],
+            "names": [str(n) for n in link.get("entity_names") or ()]}
+
+
+def read_carry(conn: psycopg.Connection, conversation: UUID, policy: str) -> tuple[Carried | None, dict[str, Any] | None]:
+    """The chat's carry link in force, as (what it carries, its record), under CARRY_POLICIES only; (None, None)
+    otherwise or without a link: nothing read, nothing recorded."""
+    if policy not in CARRY_POLICIES:
+        return None, None
+    link = carry.in_force(conn, conversation)
+    return (carry.target_rows(link), carry_record(link)) if link is not None else (None, None)
+
+
+_log = logging.getLogger("nmos.retrieval")
+NULL_COVERAGE = {"recorded_through_turn": None, "covered_through_turn": None}
+
+
 def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> dict[str, Any]:
     started = time.perf_counter()
+    trim_req = getattr(request, "trim", None)
     conv = find_conversation(conn, request.host, request.chat_id)
     if conv is None or conv.head_commit_id is None:
-        return {"freshness": "unknown_conversation", "trace_id": None, "text": "", "tokens": 0, "count": 0}
+        out: dict[str, Any] = {
+            "freshness": "unknown_conversation", "trace_id": None, "text": "", "tokens": 0, "count": 0,
+            "coverage": {"recorded_through_turn": None, "covered_through_turn": None},
+        }
+        if trim_req is not None:
+            out["trim"] = {"keep_from_id": None, "keep_from_turn": None, "reason": "stale"}
+        return out
     # The head, its manifest hash and its end in one statement, and every read below bounded by that end: recall
     # takes no conversation lock, and a concurrent sync's append extends the head commit in place (D4).
     snap = conn.execute(
@@ -1713,16 +2249,107 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator,
                                   replies_only=conv.replies_only,
                                   state_pins=dict(options.pins_by_card).get(snap["host_character_name"] or "", ()))
-    in_context = set(request.in_context_ids)
+    original_in_context = set(request.in_context_ids)
+    in_context = original_in_context
+    cov: coverage.Coverage | None = None
+    served: frozenset[int] | None = None
+    latest_replied: int | None = None
+    cov_for_gather: dict[str, int | None] | None = None
+    trim_out: dict[str, Any] | None = None
+    trim_trace: dict[str, Any] | None = None
+    # Coverage reads fail open (PHASE-60 S1 review): any error leaves the request its packet, with null coverage and,
+    # for a trim request, no boundary. Each read runs in a savepoint so a database error cannot spoil the trace
+    # insert, and its time is counted (`latency_ms.coverage`).
+    cov_ms = 0.0
+    cov_error: str | None = None
+
+    def guarded(read: Callable[[], Any]) -> Any:
+        nonlocal cov_ms, cov_error
+        t0 = time.perf_counter()
+        try:
+            with conn.transaction():
+                return read()
+        except Exception as exc:  # noqa: BLE001  (fail open)
+            cov_error = cov_error or type(exc).__name__
+            return None
+        finally:
+            cov_ms += (time.perf_counter() - t0) * 1000
+
+    if trim_req is not None:
+        now_turn = _head_turn(conn, head, upto)
+        if not fresh:
+            trim_out = {"keep_from_id": None, "keep_from_turn": None, "reason": "stale"}
+            trim_trace = {"keep_recent_turns": trim_req.keep_recent_turns, "step": trim_req.step,
+                          "now": now_turn, "cut": None, "keep_from_id": None, "reason": "stale"}
+        else:
+            def decide() -> tuple[coverage.Coverage, str | None, int | None, str | None, set[str]]:
+                # the trim decision tells held summaries apart, so it reads the memory view (secrets) it needs
+                c = coverage.read(conn, conv.id, head, options.summarize_key,
+                                  extractor_key=options.extractor_key, upto=upto)
+                last_id = _head_last(conn, head, upto)
+                window_ids = original_in_context | ({last_id} if last_id is not None else set())
+                w_turns = coverage.window_turns(conn, head, window_ids, upto)
+                decision = coverage.decide_trim(
+                    now_turn, trim_req.keep_recent_turns, trim_req.step,
+                    [(t, t in c.covered_turns) for t in w_turns],
+                    # a narrator chat's packet carries no <Story> (gather), so no summary stands in for cut dialogue
+                    bool(options.summarize_key) and not options.narrator,
+                )
+                kid: str | None = None
+                kturn: int | None = None
+                why: str | None = decision.reason
+                before: set[str] = set()
+                if decision.cut is not None:
+                    kid, before = coverage.trim_boundary(conn, head, decision.cut, upto)
+                    if kid is not None:
+                        kturn = decision.cut
+                    else:
+                        why, before = "short", set()
+                return c, kid, kturn, why, before
+
+            decided = guarded(decide)
+            if decided is not None:
+                cov, keep_from_id, keep_from_turn, reason, before_ids = decided
+                in_context = original_in_context - before_ids
+                if options.policy in COVERAGE_POLICIES:
+                    cov_for_gather = cov.recorded_dict()
+            else:  # coverage unknown: nothing is known covered, so no boundary and nothing left out
+                keep_from_id, keep_from_turn, reason = None, None, "uncovered"
+            trim_out = {"keep_from_id": keep_from_id, "keep_from_turn": keep_from_turn, "reason": reason}
+            trim_trace = {"keep_recent_turns": trim_req.keep_recent_turns, "step": trim_req.step,
+                          "now": now_turn, "cut": keep_from_turn, "keep_from_id": keep_from_id, "reason": reason}
+    elif fresh and options.policy in COVERAGE_POLICIES:
+        state = guarded(lambda: coverage.extraction_state(conn, head, upto))
+        if state is not None:
+            served, latest_replied = state
+            cov_for_gather = {
+                "recorded_through_turn": max(served) if served else None,
+                "latest_replied_turn": latest_replied,
+            }
+    served_now = cov.served_turns if cov is not None else served  # read once; the return gap reuses it (PHASE-60 S4)
     history = (overuse.recent(conn, conv.id, head, n=options.rest_after + 1)
                if options.policy in REST_POLICIES and fresh else None)
+    carried, carry_record = read_carry(conn, conv.id, options.policy) if fresh else (None, None)
     g = (gather(conn, head, query, previous_ai, in_context, filled(options, request.budget_tokens), upto,
                 canon_manifest=getattr(request, "canon_manifest_id", None),
-                canon_held=getattr(request, "canon_held", None) or (), recent=history) if fresh else Gathered())
+                canon_held=getattr(request, "canon_held", None) or (), recent=history,
+                coverage_info=cov_for_gather, served_turns=served_now, carried=carried) if fresh else Gathered())
     def compile_at(budget: int) -> Compiled:
         return compile_gathered(g, budget, options.policy)
 
     compiled = compile_at(request.budget_tokens)
+    if fresh and trim_out is not None and trim_out["keep_from_id"] is not None and not compiled.text:
+        # Empty packet cannot safely drop dialogue (PHASE-60 S1): revert to the unmodified in-context set so the
+        # returned packet and trace match what the request without trimming would have produced.
+        in_context = original_in_context
+        trim_out = {"keep_from_id": None, "keep_from_turn": None, "reason": "empty_packet"}
+        trim_trace = {**trim_trace, "cut": None, "keep_from_id": None, "reason": "empty_packet"}
+        g = gather(conn, head, query, previous_ai, in_context,
+                   dataclasses.replace(filled(options, request.budget_tokens), reranker=None), upto,
+                   canon_manifest=getattr(request, "canon_manifest_id", None),
+                   canon_held=getattr(request, "canon_held", None) or (), recent=history,
+                   coverage_info=cov_for_gather, served_turns=served_now, carried=carried)
+        compiled = compile_at(request.budget_tokens)
     kept = kept_counts(compiled.ledger)
     # Memory the budget left out, and the budget that would hold it all: the panel suggests it (ADR 0036).
     fit_started = time.perf_counter()
@@ -1731,17 +2358,48 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     memory = {"offered": sum(1 for e in compiled.ledger if e["kind"] in MEMORY_KINDS
                             and e["why"] != "restates" and e.get("label") != "hidden"),
               "cut": cut, "fits_at": fit}
-    timings = {**g.timings, "fit": round((time.perf_counter() - fit_started) * 1000, 2),
+    fit_ms = round((time.perf_counter() - fit_started) * 1000, 2)
+    if cov is None and fresh and cov_error is None:
+        # Read only, after the packet: never a memory view of its own (no view at hand -> summaries not counted, so
+        # coverage is under-reported, never over). A stale request reads nothing and answers null coverage.
+        cov = guarded(lambda: coverage.read(conn, conv.id, head, options.summarize_key,
+                                            extractor_key=options.extractor_key, secrets=g.secrets, upto=upto,
+                                            served=served, latest_replied=latest_replied, read_view=False))
+    timings = {**g.timings, "fit": fit_ms, "coverage": round(cov_ms, 2),
                "sidecar_total": round((time.perf_counter() - started) * 1000, 2)}
 
     def brief(c: dict[str, Any]) -> dict[str, Any]:
-        return {"revision_id": str(c["id"]), "position": c["position"], "host_logical_id": c["host_logical_id"],
-                "score": round(float(c.get("score") or 0), 4), "user_score": round(float(c.get("user_score") or 0), 4),
-                "sim": None if c.get("sim") is None else round(float(c["sim"]), 4),
-                "keyword_score": round(float(c.get("keyword_score") or 0), 4), "rrf": round(float(c.get("rrf") or 0), 5)}
+        out = {"revision_id": str(c["id"]), "position": c["position"], "host_logical_id": c["host_logical_id"],
+               "score": round(float(c.get("score") or 0), 4), "user_score": round(float(c.get("user_score") or 0), 4),
+               "sim": None if c.get("sim") is None else round(float(c["sim"]), 4),
+               "keyword_score": round(float(c.get("keyword_score") or 0), 4), "rrf": round(float(c.get("rrf") or 0), 5)}
+        if "rerank" in c:
+            out["rerank"] = float(c["rerank"])
+        return out
 
+    trace_options: dict[str, Any] = {
+        **recorded_options(options), "canon_names": g.canon_names, "canon_facts": g.canon_facts,
+        "fill": fill(request.budget_tokens, options.policy),  # the growth its budget bought (ADR 0049)
+    }
+    if fresh and options.policy in COVERAGE_POLICIES and cov_for_gather is not None:
+        # what gather was fed (its Note sentence), so the replay compiles the same packet whatever the tail read did
+        trace_options["coverage"] = {**cov_for_gather,
+                                     "covered_through_turn": cov.covered_through_turn if cov is not None else None}
+    if fresh and options.policy in PIN_POLICIES and g.pins:  # the names its pins resolved to (ADR 0087 item 4)
+        trace_options["pins"] = recorded_pins(g.pins)
+    if fresh and options.policy in SEM_QUERY_POLICIES:  # ADR 0084 item 1: recorded only under SEM_QUERY_POLICIES
+        trace_options["sem_query"] = g.sem_query
+    if fresh and options.reranker is not None:  # ADR 0084 item 5: absent when unconfigured
+        trace_options["rerank_used"] = g.rerank_used
+        trace_options["rerank_ms"] = g.timings.get("rerank", 0.0)
+    if trim_trace is not None:
+        trace_options["trim"] = trim_trace
+    if carry_record is not None:  # PHASE-60 S6: the link it read, for its replay (ADR 0085 item 7)
+        trace_options["carry"] = carry_record
     placed = [e for e in compiled.ledger if e["placed"]]
     trace_id: UUID = uuid7()
+    if cov_error is not None:  # the type only: a database message may quote chat text
+        _log.warning("coverage read failed trace=%s error=%s; answered null coverage", trace_id, cov_error)
     conn.execute(
         "INSERT INTO retrieval_trace (id, conversation_id, commit_id, query, candidates, selected, excluded_in_context,"
         " token_estimate, latency_ms, freshness, policy, budget_tokens, upto_position, previous_ai, in_context,"
@@ -1774,13 +2432,18 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             options.policy, request.budget_tokens, upto if fresh else None, previous_ai,
             Jsonb(sorted(in_context)), options.extractor_key,
             options.embed_projection if options.embedder else None, options.rules_version,
-            Jsonb({**recorded_options(options), "canon_names": g.canon_names, "canon_facts": g.canon_facts,
-                   "fill": fill(request.budget_tokens, options.policy)}),  # the growth its budget bought (ADR 0049)
+            Jsonb(trace_options),
             Jsonb(compiled.ledger),
             getattr(request, "canon_manifest_id", None),  # ADR 0045
             Jsonb(sorted(set(getattr(request, "canon_held", None) or []))),
         ),
     )
-    return {"freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": compiled.text,
-            "tokens": compiled.tokens, "count": len(compiled.excerpts), "memory": memory, "conversation_id": conv.id,
-            "vectors": ("fallback" if g.vector_note.startswith("fallback") else g.vector_note) if fresh else None}
+    result: dict[str, Any] = {
+        "freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": compiled.text,
+        "tokens": compiled.tokens, "count": len(compiled.excerpts), "memory": memory, "conversation_id": conv.id,
+        "vectors": ("fallback" if g.vector_note.startswith("fallback") else g.vector_note) if fresh else None,
+        "coverage": cov.response_dict() if cov is not None else dict(NULL_COVERAGE),
+    }
+    if trim_out is not None:
+        result["trim"] = trim_out
+    return result

@@ -32,7 +32,12 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-59.md` is the latest, approved
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-61.md` is the latest, approved
+   2026-11-23: an extra JSON body for the extraction model's requests, a reasoning-effort dropdown that writes into
+   it and a switch that sends no temperature, a change of either handled as a model change (high risk); `PHASE-60.md`, approved
+   2026-11-23: memory that knows where it stands — opt-in trimming in steps, `[NMOS.memory]` placement, `packet-v20` (gone,
+   back, settled, happened, told, pins), a short-message embedding and an opt-in reranker, a carry link between chats,
+   `extract-v19` (high risk); `PHASE-59.md`, approved
    2026-11-21: UI/UX redesign — persistent 4-tab shell, chat switcher, unified memory workspace, dedicated Author's Note studio, 2-column settings, refined dark visual system; not high risk; `PHASE-58.md`, approved
    2026-11-18: how a feeling feels, `extract-v18`'s strength, sign and a feeling under it (high risk); `PHASE-57.md`,
    approved 2026-11-08: canon read once per input, a model change carries on, the Inspector's queue in bulk (high
@@ -163,6 +168,8 @@ If two normative documents appear to conflict:
 | 57 — pay once: canon read once per input across chats, summaries served from an earlier generation and a model change that carries on by default, the Inspector's queue applied or retracted in bulk and a conflict corrected where it is shown (an owner request, not a roadmap stage; after `1.0.0`) | **approved** (2026-11-08; Q1–Q5 answered as recommended); merged (#333, #334) and on 6113 and production since 2026-11-17 (the 1.0 quiet weeks restarted); high risk (memory selection across generations, canon copied between chats, bulk repairs, two migrations) | `PHASE-57.md` |
 | 58 — how a feeling feels: `extract-v18` weighs a `feels_toward` (strength, sign, a feeling under it), shown in the panel and the Inspector only; a switch from `extract-v16` re-extracts nothing (an owner request, not a roadmap stage) | **approved** (2026-11-18; Q1–Q4 answered by the owner); built with zero-call tests (#339; ADR 0081, migration `0035`); Q5 answered (the owner's use is the live check); on 6113 and production since 2026-11-18 (quiet weeks restarted, earliest end 2026-12-02); ships in `1.0.0`; high risk (a new extractor generation, a migration, a switch that queues nothing) | `PHASE-58.md` |
 | 59 — panel UI/UX overhaul: persistent 4-tab shell (top bar + mobile bottom nav) with chat switcher, elevated Home hub, unified Memory workspace with sticky TOC and sub-tabs, dedicated Author's Note Studio, 2-column Settings (this chat vs. global), slate-indigo tokens and inline SVG icons (an owner request, not a roadmap stage) | **in progress** (owner approved mockup 2026-11-21); plugin shell, sidecar views/tokens, and automated tests implemented; live PocketRisu desktop/mobile visual check open; not high risk (no DB, extraction, recall, packet, or sanitizer changes) | `PHASE-59.md` |
+| 60 — memory that knows where it stands: opt-in trimming of old dialogue in steps, `[NMOS.memory]` placement and `end` before a prefill (plugin); `packet-v20` (how far memory has got, characters who are gone, a return after an absence, threads just closed, `happened`, `told`, owner pins and `@name`); a short message embedded with the reply before it and an opt-in reranker; a chat that carries another chat's memory (continue or regression); `extract-v19` (`when_happened`, `told`) whose switch queues nothing (an owner request of eight items, not a roadmap stage) | **approved** (owner, 2026-11-23, in the dispatch brief; the 1.0 quiet weeks knowingly broken for a trial on production); built (steps 1–10; sidecar 2,524 and plugin 424 tests, zero-call) and on production 6003 since 2026-11-23 22:34 KST (`exp-phase60-4a8cac1`, `extract-v19` and `packet-v20` selected; the quiet weeks restarted, earliest end 2026-12-07); the owner's trial is the live check; defaults stay `packet-v19` and `extract-v16`; high risk (a new extractor generation and its switch, a packet policy, migrations `0036`–`0038`, memory selection across chats, the request path's rerank call, the plugin's prompt edits) | `PHASE-60.md`, ADRs 0082–0087 |
+| 61 — what the model request carries: a JSON object the owner adds to the extraction model's requests (`llm_extra_body`), part of the generation only when set, a change of it handled as a model change (carry on by default); a reasoning-effort dropdown in the panel that writes `reasoning.effort` into that JSON (an owner request during the Phase 60 trial, not a roadmap stage) | **approved** (owner, 2026-11-23; Q1–Q7 answered: Q4 a temperature of 0 or none sent, Q7 build now and deploy); built (sidecar 2,806 passed with one unrelated timing failure rerun clean, plugin 442; zero-call) and on production 6003 since 2026-11-24 02:41 KST (`exp-phase61-dd36134`; no migration, no generation made, nothing queued; the quiet weeks restarted, earliest end 2026-12-08); amendments 1–2 (the Status tab's "Model work" card; a log of model calls, migration `0039`, ADR 0089, high risk) on production since 2026-11-24 10:35 KST (`exp-phase61-9d2a80d`; the quiet weeks restarted again, earliest end still 2026-12-08); the settings are at their defaults until the owner uses them; high risk (generation keys and what a change queues, a rollback across the new spec fields, credentials kept out of the body) | `PHASE-61.md`, ADR 0088 |
 | Stage 8 (after 1.0, R7) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
@@ -247,7 +254,10 @@ A change that weakens one of these requires an explicit owner decision.
 ### Models
 
 - Generative LLM calls run only in the worker, never on the request path (PHASE-2).
-- The request path may embed the query only, with its own short timeout and lexical fallback (PHASE-3).
+- The request path may embed the query only, with its own short timeout and lexical fallback (PHASE-3). Since
+  PHASE-60 (ADR 0084) it may also make one non-generative rerank call, only when the owner configured a reranker,
+  bounded by its own timeout on the sidecar (the plugin's deadline is around the whole request; keep the embedding
+  and rerank timeouts together well under it, 3 s by default), failing open to the fused order.
 - Do not add model-provider abstractions early merely because the reference architecture will need them.
 
 ### Dependencies

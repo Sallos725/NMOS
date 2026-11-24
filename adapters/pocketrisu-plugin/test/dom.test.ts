@@ -283,6 +283,51 @@ describe('panel', () => {
     answer([]);
   });
 
+  it('shows what the worker is doing after the sidecar card, and no card when the sidecar cannot say (PHASE-61 S5)', async () => {
+    const worker = { queued: { extract: 642, reveal: 0, summarize: 56, canon: 1010, embed: 0 }, queued_total: 1708,
+      running: 2, retrying: 35, dead_recent: 1, done_recent: 96, recent_minutes: 30, dead_hours: 24,
+      last_error: { kind: 'canon', status: 'queued', at: new Date().toISOString(), text: 'HTTP 504: upstream' } };
+    const titles = () => Array.from(document.querySelectorAll('#nmos-panel h2')).map((h) => h.textContent);
+    const show = async (answer: () => Promise<unknown>) => {
+      document.body.replaceChildren();
+      const { d, calls } = deps();
+      const usual = d.api;
+      d.api = <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => (path === '/v1/worker/status'
+        ? (calls.push([method, path, body]), answer() as Promise<T>) : usual<T>(method, path, body));
+      await openPanel(d, 'status');
+      await vi.waitFor(() => expect(document.querySelector('#nmos-panel .card')!.textContent).toContain('NMOS on'));
+      for (let i = 0; i < 3; i++) await settle();
+      expect(calls.filter(([, path]) => path === '/v1/worker/status')).toHaveLength(1);
+    };
+
+    await show(async () => worker);
+    const shown = titles();
+    expect(shown.indexOf('Model work')).toBe(shown.indexOf('Sidecar') + 1);
+    const card = Array.from(document.querySelectorAll<HTMLElement>('#nmos-panel .card'))
+      .find((c) => c.querySelector('h2')?.textContent === 'Model work')!;
+    const lines = Array.from(card.querySelectorAll('div')).map((x) => [x.className, x.textContent]);
+    expect(lines).toEqual([
+      ['muted', '1,708 waiting (extraction 642 · summaries 56 · canon 1,010) · 2 running'],
+      ['muted', 'Last 30 min: 96 finished · 35 being retried · 1 given up (24 h)'],
+      ['warn', expect.stringMatching(/^Last error \d\d:\d\d \(canon\): HTTP 504: upstream$/)]]);
+
+    // the last hour of model calls (S6), between the queue and the recent counts
+    await show(async () => ({ ...worker, calls: { minutes: 60, total: 131, ok: 96, failed: 35, median_ms: 3200,
+      by_fault: { timeout: 0, transport: 0, bad_reply: 0, http_other: 0, '429': 6, '504': 29 } } }));
+    const withCalls = Array.from(document.querySelectorAll<HTMLElement>('#nmos-panel .card'))
+      .find((c) => c.querySelector('h2')?.textContent === 'Model work')!;
+    expect(Array.from(withCalls.querySelectorAll('div')).map((x) => x.textContent).slice(0, 3)).toEqual([
+      '1,708 waiting (extraction 642 · summaries 56 · canon 1,010) · 2 running',
+      "Last hour's calls: 96 ok · 35 failed (504 29 · 429 6) · median 3.2 s",
+      'Last 30 min: 96 finished · 35 being retried · 1 given up (24 h)']);
+
+    const without = shown.filter((x) => x !== 'Model work');
+    await show(async () => { throw new Error('/v1/worker/status -> HTTP 404: Not Found'); });  // an older sidecar
+    expect(titles()).toEqual(without);
+    await show(() => { throw new TypeError('Failed to fetch'); });  // thrown before any promise
+    expect(titles()).toEqual(without);
+  });
+
   it('says when NMOS is off for every chat', async () => {
     const { d } = deps({ enabled: false });
     await openPanel(d, 'status');
@@ -304,6 +349,619 @@ describe('panel', () => {
       if (shown) expect(warning!.textContent).toContain('raise Embedding wait (ms)');
       document.getElementById('nmos-panel')?.remove();
     }
+  });
+
+  describe('trimming on the status card (PHASE-60 S1 "Shown")', () => {
+    const last = { at: Date.now(), ms: 900, packetChars: 10, packet: 'x', outcome: 'injected' as const, deadlineMs: 3000 };
+    const lastCard = (title: string) => [...document.querySelectorAll<HTMLElement>('#nmos-panel .card')]
+      .find((c) => c.querySelector('h2')?.textContent === title)!;
+    const lineOf = (card: HTMLElement, text: string) => [...card.querySelectorAll<HTMLElement>('div')]
+      .find((e) => e.textContent === text);
+    const render = async (status: Partial<StatusInfo>, language: 'ko' | 'en') => {
+      const { d, args } = deps(status);
+      args.language = language;
+      await openPanel(d, 'status');
+      await settle();
+      const card = lastCard(language === 'en' ? 'Last request' : '마지막 요청');
+      document.getElementById('nmos-panel')?.remove();
+      return card;
+    };
+    const dropped = { dropped: 12, savedTokens: 3400, reason: null, keepFromTurn: 40 };
+
+    it('says how many old messages were left out and the tokens saved, right after the "ago · ms" line', async () => {
+      for (const [language, text] of [['ko', '오래된 대화 12개를 빼고 보냈습니다 (약 3,400토큰 절약)'],
+        ['en', 'Left out 12 old messages (about 3,400 tokens saved)']] as const) {
+        const card = await render({ last: { ...last, trim: dropped } }, language);
+        const line = lineOf(card, text)!;
+        expect(line).toBeDefined();
+        expect(line.className).toBe('muted');
+        expect(line.classList.contains('mono')).toBe(false);
+        expect(line.previousElementSibling!.textContent).toContain('900ms');
+      }
+    });
+
+    it('says why nothing was left out', async () => {
+      const card = await render({ last: { ...last, trim: { dropped: 0, savedTokens: 0, reason: 'uncovered', keepFromTurn: null } } },
+        'ko');
+      const line = lineOf(card, '오래된 대화를 빼지 않았습니다: 기억 정리(추출·요약)가 아직 따라오지 못함')!;
+      expect(line).toBeDefined();
+      expect(line.classList.contains('mono')).toBe(false);
+    });
+
+    it('adds nothing without a trimming outcome', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const plain = await render({ last }, language);
+        const trimmed = await render({ last: { ...last, trim: dropped } }, language);
+        const text = language === 'en' ? 'Left out 12 old messages (about 3,400 tokens saved)'
+          : '오래된 대화 12개를 빼고 보냈습니다 (약 3,400토큰 절약)';
+        lineOf(trimmed, text)!.remove();
+        expect(plain.innerHTML).toBe(trimmed.innerHTML);
+        expect(plain.children.length).toBe(4); // title, outcome, "ago · ms", packet
+      }
+    });
+
+    const coverage = { recordedThroughTurn: 48, coveredThroughTurn: 40 };
+    const recorded = { ko: '기억은 48턴까지 기록되어 있습니다', en: 'Memory is recorded through turn 48' } as const;
+
+    it('says the turn memory is recorded through, as a muted line after the trimming line', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const card = await render({ last: { ...last, trim: dropped, coverage } }, language);
+        const line = lineOf(card, recorded[language])!;
+        expect(line).toBeDefined();
+        expect(line.className).toBe('muted');
+        expect(line.classList.contains('mono')).toBe(false);
+        expect(line.previousElementSibling!.textContent).toContain(language === 'en' ? 'Left out 12' : '오래된 대화 12개');
+        expect(line.nextElementSibling!.tagName).toBe('DETAILS');
+        const alone = await render({ last: { ...last, coverage } }, language);  // trimming off: the line still shows
+        expect(lineOf(alone, recorded[language])!.previousElementSibling!.textContent).toContain('900ms');
+      }
+    });
+
+    it('adds nothing without a recorded turn', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const plain = await render({ last }, language);
+        for (const without of [null, { recordedThroughTurn: null, coveredThroughTurn: 40 }]) {
+          const card = await render({ last: { ...last, coverage: without } }, language);
+          expect(card.innerHTML).toBe(plain.innerHTML);
+        }
+        const shown = await render({ last: { ...last, coverage } }, language);
+        lineOf(shown, recorded[language])!.remove();
+        expect(shown.innerHTML).toBe(plain.innerHTML);
+      }
+    });
+  });
+
+  describe('trimming settings (PHASE-60 S1)', () => {
+    const titles = { ko: '오래된 대화 빼기', en: 'Leave out old dialogue' } as const;
+    const sentences = {
+      ko: '기억이 이미 담고 있는 오래된 대화는 보내는 내용에서 뺍니다. 빼는 지점은 아래 턴 수만큼씩 한꺼번에 옮겨서, 제공자의 프롬프트 캐시가 계속 맞습니다. 채팅에서는 아무것도 지우지 않습니다. 장면 요약 만들기가 켜져 있어야 합니다.',
+      en: "Old dialogue that memory already holds is left out of what is sent, in steps of the number of turns below, so the provider's prompt cache keeps working. Nothing is removed from the chat. It needs Scene summaries on.",
+    } as const;
+    const open = async (language: 'ko' | 'en', stored: Record<string, string> = {}, views = false) => {
+      const h = deps(views ? { features: { extraction: true, views: true } } : {});
+      h.args.language = language;
+      Object.assign(h.args, stored);
+      const api = h.d.api;
+      h.d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeout?: number) =>
+        (path.startsWith('/v1/views/') ? { html: '<div class="v"></div>' } as T : api<T>(method, path, body, timeout));
+      const writes: [string, string | number][] = [];
+      const setArg = h.d.setArg;
+      h.d.setArg = async (key, value) => { writes.push([key, value]); await setArg(key, value); };
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      const card = [...panel.querySelectorAll<HTMLElement>('.card')]
+        .find((c) => c.querySelector('h2')?.textContent === titles[language])!;
+      expect(card).toBeDefined();
+      const save = panel.querySelector<HTMLButtonElement>('.bar button.primary')!;
+      return { ...h, writes, panel, card, save, bar: panel.querySelector('.bar .text')!,
+        box: card.querySelector<HTMLInputElement>('input[type="checkbox"]')!,
+        keep: card.querySelector<HTMLInputElement>('input[type="number"]')!,
+        warn: card.querySelector<HTMLElement>('div.warn')! };
+    };
+    const set = (input: HTMLInputElement, value: string | boolean) => {
+      if (typeof value === 'boolean') input.checked = value; else input.value = value;
+      input.dispatchEvent(new Event(typeof value === 'boolean' ? 'change' : 'input', { bubbles: true }));
+    };
+
+    it('shows its own card in the memory group, in plain words', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const { panel, card, keep } = await open(language, {}, true);
+        expect(card.dataset.group).toBe('memory');
+        expect(card.querySelector('p.sub')!.textContent).toBe(sentences[language]);
+        expect(card.querySelector('.check')!.textContent)
+          .toBe(language === 'en' ? 'Leave out old dialogue memory holds' : '기억이 담은 오래된 대화 빼기');
+        expect(keep.previousElementSibling!.textContent).toBe(language === 'en' ? 'Recent turns always sent' : '항상 보내는 최근 턴 수');
+        expect([keep.min, keep.max, keep.step]).toEqual(['4', '200', '1']);
+        panel.querySelector<HTMLButtonElement>('.groups button[data-group="memory"]')!.click();
+        expect(card.style.display).toBe('');
+        panel.querySelector<HTMLButtonElement>('.groups button[data-group="models"]')!.click();
+        expect(card.style.display).toBe('none');
+        panel.remove();
+      }
+    });
+
+    it('loads the stored args, and is off with 20 turns when they are unset', async () => {
+      const stored = await open('en', { trim_old_turns: '1', keep_recent_turns: '40' });
+      expect([stored.box.checked, stored.keep.value, stored.save.disabled]).toEqual([true, '40', true]);
+      stored.panel.remove();
+      const unset = await open('en');
+      expect([unset.box.checked, unset.keep.value, unset.save.disabled]).toEqual([false, '20', true]);
+    });
+
+    it('saves the two plugin args alone, with no sidecar request', async () => {
+      const { box, keep, save, bar, calls, writes } = await open('en');
+      set(box, true);
+      set(keep, '30');
+      expect(bar.textContent).toBe('Unsaved changes: Leave out old dialogue');
+      const before = calls.length;
+      save.click();
+      await vi.waitFor(() => expect(bar.textContent).toBe('Saved.'));
+      expect(writes).toEqual([['trim_old_turns', 1], ['keep_recent_turns', 30]]);
+      expect(calls.slice(before)).toEqual([]);  // no PUT /v1/config, and no reload of the sidecar's settings
+      expect(save.disabled).toBe(true);
+      set(box, false);
+      save.click();
+      await vi.waitFor(() => expect(writes.at(-2)).toEqual(['trim_old_turns', 0]));
+      expect(calls.filter(([method]) => method === 'PUT')).toEqual([]);
+    });
+
+    it('stores and shows a count past the limit as 200', async () => {
+      const { box, keep, save, bar, args } = await open('ko');
+      set(box, true);
+      set(keep, '500');
+      save.click();
+      await vi.waitFor(() => expect(bar.textContent).toBe('저장했습니다.'));
+      expect(save.disabled).toBe(true);
+      expect([args.trim_old_turns, args.keep_recent_turns, keep.value]).toEqual(['1', '200', '200']);
+    });
+
+    it('says a failed write in the bar and keeps the change to save again', async () => {
+      const { box, save, bar, d } = await open('en');
+      const setArg = d.setArg;
+      d.setArg = async (key, value) => {
+        if (key === 'keep_recent_turns') throw new Error('host argument write failed');
+        await setArg(key, value);
+      };
+      set(box, true);
+      save.click();
+      await vi.waitFor(() => expect(bar.textContent).toBe('host argument write failed'));
+      expect(save.disabled).toBe(false);
+    });
+
+    it('warns, in words, only while the switch is on and scene summaries are off', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const { panel, box, warn } = await open(language);
+        const summaries = [...panel.querySelectorAll('.check')]
+          .find((c) => c.textContent === (language === 'en' ? 'Scene summaries' : '장면 요약 만들기'))!
+          .querySelector('input') as HTMLInputElement;
+        expect(warn.textContent).toBe(language === 'en' ? 'Note: Scene summaries are off, so nothing is left out until they are on.'
+          : '주의: 장면 요약 만들기가 꺼져 있어서, 켜기 전까지는 아무것도 빼지 않습니다.');
+        const shown = () => warn.style.display !== 'none';
+        expect(shown()).toBe(false);  // off, summaries on
+        set(summaries, false);
+        expect(shown()).toBe(false);  // off, summaries off
+        set(box, true);
+        expect(shown()).toBe(true);
+        set(summaries, true);
+        expect(shown()).toBe(false);
+        set(summaries, false);
+        set(box, false);
+        expect(shown()).toBe(false);
+        panel.remove();
+      }
+    });
+  });
+
+  describe('optional reranker settings (PHASE-60 S5)', () => {
+    const titles = { ko: '재정렬 모델 (선택)', en: 'Reranker (optional)' } as const;
+    const sentences = {
+      ko: '주소와 모델을 모두 넣으면, 매 요청마다 사용자 메시지와 찾은 기억 후보 최대 30개의 글을 그 주소로 보내 더 알맞은 순서로 다시 매깁니다(임베딩 모델에 대화 글을 보내는 것과 같습니다). 유료 서비스는 요청마다 비용이 들 수 있습니다. 응답이 늦거나 오류가 나면 기억은 원래 순서 그대로 들어갑니다. 임베딩 대기와 재정렬 대기를 합쳐 플러그인의 요청 제한 시간(기본 3초)보다 넉넉히 짧게 두세요. 끄려면 주소나 모델을 비워 두세요.',
+      en: 'With both an address and a model set, each request sends your message and the text of up to 30 recalled memory candidates to that address to put them in a better order, just as chat text goes to the embedder. Paid services may charge for each request. If it is slow or fails, memory goes out in its usual order. Keep the embedding wait plus the reranker wait well under the plugin request deadline (3 s by default). Leave the address or model empty to turn it off.',
+    } as const;
+    const states = {
+      on: { ko: '켜짐: 요청마다 순서를 다시 매깁니다', en: 'On: reorders memory candidates on every request' },
+      off: { ko: '꺼짐: 주소와 모델이 비어 있습니다', en: 'Off: address and model are empty' },
+    } as const;
+    type RerankCfg = { url: string; model: string; timeout_ms: number; format: string; key_set: boolean;
+      configured: boolean; note: string };
+    const defaultRerank = (over: Partial<RerankCfg> = {}): RerankCfg => ({
+      url: '', model: '', timeout_ms: 600, format: 'standard', key_set: false, configured: false,
+      note: 'SIDECAR_ENGLISH_NOTE_NOT_SHOWN', ...over,
+    });
+    const open = async (language: 'ko' | 'en', initial: RerankCfg | null, views = false) => {
+      const h = deps(views ? { features: { extraction: true, views: true } } : {});
+      h.args.language = language;
+      let rr = initial ? { ...initial } : null;
+      const snapshot = () => (rr ? { ...config, rerank: { ...rr } } : { ...config });
+      h.d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => {
+        h.calls.push([method, path, body]);
+        if (path.startsWith('/v1/views/')) return { html: '<div class="v"></div>' } as T;
+        if (path.startsWith('/v1/conversations?')) return [] as T;
+        if (path === '/v1/config/preview') return { model_change: false, queued: {} } as T;
+        if (method === 'PUT' && path === '/v1/config' && rr && body && typeof body === 'object') {
+          const b = body as Record<string, unknown>;
+          if ('rerank_url' in b) rr.url = String(b.rerank_url);
+          if ('rerank_model' in b) rr.model = String(b.rerank_model);
+          if ('rerank_timeout_ms' in b) rr.timeout_ms = Number(b.rerank_timeout_ms);
+          if ('rerank_api_key' in b && String(b.rerank_api_key)) rr.key_set = true;
+          if (!rr.url.trim()) rr.key_set = false;
+          rr.configured = Boolean(rr.url.trim() && rr.model.trim());
+          return { ...snapshot(), queued_jobs: 0 } as T;
+        }
+        return (method === 'PUT' ? { ...snapshot(), queued_jobs: 0 } : snapshot()) as T;
+      };
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      if (views) {
+        panel.querySelector<HTMLButtonElement>('.groups button[data-group="models"]')!.click();
+        await settle();
+      }
+      const card = [...panel.querySelectorAll<HTMLElement>('.card')]
+        .find((c) => c.querySelector('h2')?.textContent === titles[language])!;
+      const inputs = [...card.querySelectorAll<HTMLInputElement>('input')];
+      return { ...h, panel, card,
+        save: panel.querySelector<HTMLButtonElement>('.bar button.primary')!,
+        bar: panel.querySelector('.bar .text')!,
+        state: card.querySelector<HTMLElement>('.line')!,
+        url: inputs[0]!, model: inputs[1]!, key: inputs[2]!, wait: inputs[3]! };
+    };
+    const type = (input: HTMLInputElement, value: string) => {
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    it('renders in the models group right after embeddings with the plain sentence and on/off state (KO and EN)', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        for (const configured of [false, true]) {
+          const initial = configured
+            ? defaultRerank({ url: 'https://rr.example/v1', model: 'rerank-1', timeout_ms: 800, configured: true, key_set: true })
+            : defaultRerank();
+          const { panel, card, state, key, wait } = await open(language, initial, true);
+          expect(card.dataset.group).toBe('models');
+          expect(card.style.display).toBe('');
+          const visibleModels = [...panel.querySelectorAll<HTMLElement>('[data-group="models"]')]
+            .filter((c) => !c.closest('.groups') && c.style.display !== 'none')
+            .map((c) => c.querySelector('h2')?.textContent);
+          expect(visibleModels).toEqual(language === 'en'
+            ? ['Fact extraction LLM', 'Semantic recall embeddings', 'Reranker (optional)']
+            : ['사실 추출 LLM', '의미 검색 임베딩', '재정렬 모델 (선택)']);
+          expect(card.querySelector('p.sub')!.textContent).toBe(sentences[language]);
+          expect(card.textContent).not.toContain('SIDECAR_ENGLISH_NOTE_NOT_SHOWN');
+          expect(state.textContent).toBe(states[configured ? 'on' : 'off'][language]);
+          expect(state.classList.contains(configured ? 'ok' : 'muted')).toBe(true);
+          expect(state.querySelector('.dot')!.classList.contains('ok')).toBe(configured);
+          expect(state.classList.contains('mono')).toBe(false);
+          expect([key.type, key.getAttribute('autocomplete'), key.value]).toEqual(['password', 'off', '']);
+          expect(key.placeholder).toBe(configured
+            ? (language === 'en' ? 'saved — type only to change' : '저장됨 — 바꿀 때만 입력')
+            : (language === 'en' ? 'only if needed' : '필요할 때만 입력'));
+          expect(wait.previousElementSibling!.textContent).toBe(language === 'en' ? 'Reranker wait (ms)' : '재정렬 대기(ms)');
+          expect([wait.type, wait.min, wait.max, wait.value]).toEqual(['number', '50', '5000', configured ? '800' : '600']);
+          // no test action, no format control
+          expect(card.querySelectorAll('button')).toHaveLength(0);
+          expect(card.querySelectorAll('select')).toHaveLength(0);
+          panel.remove();
+        }
+      }
+    });
+
+    it('saves URL, model and wait through the single Save bar, sends the key only when typed, and clears URL and model to turn off', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const { panel, calls, url, model, key, wait, state, save, bar } = await open(language, defaultRerank());
+        // 1. Save URL, model, wait without typing a key
+        type(url, ' https://rr.example/v1 ');
+        type(model, ' rerank-1 ');
+        type(wait, '900');
+        expect(bar.textContent).toBe(language === 'en'
+          ? 'Unsaved changes: Reranker (optional)'
+          : '저장하지 않은 변경: 재정렬 모델 (선택)');
+        const saved = language === 'en' ? 'Saved.' : '저장했습니다.';
+        save.click();
+        await vi.waitFor(() => expect(bar.textContent).toBe(saved));
+        expect(save.disabled).toBe(true);
+        expect(calls.filter(([m]) => m === 'PUT')).toEqual([['PUT', '/v1/config', {
+          rerank_url: 'https://rr.example/v1', rerank_model: 'rerank-1', rerank_timeout_ms: 900,
+        }]]);
+        expect(calls.some(([, p]) => p === '/v1/config/preview')).toBe(false);
+        expect(state.textContent).toBe(states.on[language]);
+        expect(key.value).toBe('');
+        expect(key.placeholder).toBe(language === 'en' ? 'only if needed' : '필요할 때만 입력');
+
+        // 2. Type a key and save: key is sent, then emptied with the saved placeholder
+        type(key, ' rk-live-1 ');
+        save.click();
+        await vi.waitFor(() => expect(bar.textContent).toBe(saved));
+        expect(save.disabled).toBe(true);
+        expect(calls.filter(([m]) => m === 'PUT').at(-1)).toEqual(['PUT', '/v1/config', {
+          rerank_url: 'https://rr.example/v1', rerank_model: 'rerank-1', rerank_timeout_ms: 900, rerank_api_key: 'rk-live-1',
+        }]);
+        expect(key.value).toBe('');
+        expect(key.placeholder).toBe(language === 'en' ? 'saved — type only to change' : '저장됨 — 바꿀 때만 입력');
+
+        // 3. Clear URL and model to turn off: empty strings sent, no key sent, state line returns to off
+        type(url, '');
+        type(model, '');
+        save.click();
+        await vi.waitFor(() => expect(bar.textContent).toBe(saved));
+        expect(save.disabled).toBe(true);
+        expect(calls.filter(([m]) => m === 'PUT').at(-1)).toEqual(['PUT', '/v1/config', {
+          rerank_url: '', rerank_model: '', rerank_timeout_ms: 900,
+        }]);
+        expect(state.textContent).toBe(states.off[language]);
+        expect(state.classList.contains('muted')).toBe(true);
+        expect(key.value).toBe('');
+        panel.remove();
+      }
+    });
+
+    it('never logs the typed reranker key and never shows it again after the save', async () => {
+      const logged: unknown[][] = [];
+      const spies = (['log', 'info', 'warn', 'error', 'debug'] as const)
+        .map((m) => vi.spyOn(console, m).mockImplementation((...args: unknown[]) => { logged.push(args); }));
+      try {
+        const { panel, url, model, key, save, bar } = await open('en', defaultRerank());
+        type(url, 'https://rr.example/v1');
+        type(model, 'rerank-1');
+        type(key, 'rk-secret-7');
+        save.click();
+        await vi.waitFor(() => expect(bar.textContent).toBe('Saved.'));
+        expect(key.value).toBe('');
+        expect([...panel.querySelectorAll<HTMLInputElement>('input')].some((i) => i.value.includes('rk-secret-7')))
+          .toBe(false);
+        expect(panel.textContent).not.toContain('rk-secret-7');
+        expect(JSON.stringify(logged)).not.toContain('rk-secret-7');
+        panel.remove();
+      } finally {
+        for (const s of spies) s.mockRestore();
+      }
+    });
+
+    it('shows no reranker card and sends no rerank keys when /v1/config omits rerank (KO and EN)', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        for (const views of [false, true]) {
+          const { panel, card, calls, save, bar } = await open(language, null, views);
+          expect(card.style.display).toBe('none');
+          if (views) {
+            const visibleModels = [...panel.querySelectorAll<HTMLElement>('[data-group="models"]')]
+              .filter((c) => !c.closest('.groups') && c.style.display !== 'none')
+              .map((c) => c.querySelector('h2')?.textContent);
+            expect(visibleModels).toEqual(language === 'en'
+              ? ['Fact extraction LLM', 'Semantic recall embeddings']
+              : ['사실 추출 LLM', '의미 검색 임베딩']);
+          }
+          // saving another section sends no rerank_* keys
+          const llmEndpoint = [...panel.querySelectorAll<HTMLInputElement>('input')]
+            .find((i) => i.value === 'https://llm.example/v1')!;
+          type(llmEndpoint, 'https://llm.example/v2');
+          save.click();
+          await vi.waitFor(() => expect(bar.textContent).toBe(language === 'en' ? 'Saved.' : '저장했습니다.'));
+          expect(save.disabled).toBe(true);
+          const put = calls.filter(([m]) => m === 'PUT').at(-1)![2] as Record<string, unknown>;
+          expect(Object.keys(put).filter((k) => k.startsWith('rerank_'))).toEqual([]);
+          panel.remove();
+        }
+      }
+    });
+  });
+
+  describe('extra request values on the extraction model (PHASE-61 S4)', () => {
+    const OR = 'https://openrouter.ai/api/v1';
+    const labels = {
+      en: { body: 'Extra request values (JSON)', effort: 'Reasoning effort', noTemp: 'Do not send a temperature',
+        invalid: 'Not a JSON object', title: 'Fact extraction LLM' },
+      ko: { body: '추가 요청 값 (JSON)', effort: '추론 강도', noTemp: 'temperature 보내지 않기',
+        invalid: 'JSON 객체가 아닙니다', title: '사실 추출 LLM' },
+    } as const;
+    const open = async (language: 'ko' | 'en', llm: Record<string, unknown>, preview = true) => {
+      const h = deps();
+      h.args.language = language;
+      const state = { llm: { ...config.llm, ...llm } as Record<string, unknown> };
+      const snapshot = () => ({ ...config, llm: { ...state.llm } });
+      h.d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => {
+        h.calls.push([method, path, body]);
+        if (path.startsWith('/v1/conversations?')) return [] as T;
+        if (path === '/v1/config/test') return { ok: true, ms: 12 } as T;
+        if (path === '/v1/config/preview') {
+          return (preview ? { model_change: true, queued: { continue: { extract: 0 }, recent: { extract: 40 } } }
+            : { model_change: false, queued: {} }) as T;
+        }
+        if (method === 'PUT' && path === '/v1/config') {
+          const b = body as Record<string, unknown>;
+          if ('llm_url' in b) state.llm.url = b.llm_url;
+          if ('llm_model' in b) state.llm.model = b.llm_model;
+          if ('llm_extra_body' in b) state.llm.extra_body = b.llm_extra_body;
+          if ('llm_no_temperature' in b) state.llm.no_temperature = b.llm_no_temperature;
+          return { ...snapshot(), queued_jobs: 0 } as T;
+        }
+        return snapshot() as T;
+      };
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      const L = labels[language];
+      const card = [...panel.querySelectorAll<HTMLElement>('.card')].find((c) => c.querySelector('h2')?.textContent === L.title)!;
+      const button = (text: string) => [...panel.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === text)!;
+      return { ...h, panel, card, L,
+        text: card.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${L.body}"]`)!,
+        effort: card.querySelector<HTMLSelectElement>(`select[aria-label="${L.effort}"]`)!,
+        noTemp: card.querySelector<HTMLInputElement>('input[type="checkbox"]')!,
+        endpoint: card.querySelector<HTMLInputElement>('input[placeholder="https://…/v1"]')!,
+        error: [...card.querySelectorAll<HTMLElement>('.msg.err')].find((e) => e.textContent === L.invalid)!,
+        save: panel.querySelector<HTMLButtonElement>('.bar button.primary')!,
+        bar: panel.querySelector('.bar .text')!,
+        button };
+    };
+    const shown = (node: HTMLElement | null): boolean => {
+      for (let n = node; n; n = n.parentElement) if (n.style.display === 'none') return false;
+      return Boolean(node);
+    };
+    const type = (input: HTMLInputElement | HTMLTextAreaElement, value: string) => {
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    // As a browser does it: picking an option fires `input`, then `change`, both bubbling to the settings view.
+    const choose = (select: HTMLSelectElement, value: string) => {
+      select.value = value;
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    const puts = (calls: [string, string, unknown][]) => calls.filter(([m, p]) => m === 'PUT' && p === '/v1/config').map(([, , b]) => b);
+
+    it('loads the body and the switch, with every label in both languages', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const body = { provider: { sort: 'price' }, reasoning: { effort: 'low' } };
+        const h = await open(language, { url: OR, extra_body: body, no_temperature: true });
+        expect(shown(h.text)).toBe(true);
+        expect(h.text.value).toBe(JSON.stringify(body, null, 2));
+        expect(shown(h.effort)).toBe(true);
+        expect(h.effort.value).toBe('low');
+        expect([...h.effort.options].map((o) => o.value)).toEqual(['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+        expect(h.effort.options[0]!.text).toBe('—');
+        expect(h.noTemp.checked).toBe(true);
+        expect(h.card.textContent).toContain(h.L.noTemp);
+        expect(h.card.textContent).toContain(h.L.effort);
+        expect(shown(h.error)).toBe(false);
+        expect(h.save.disabled).toBe(true);  // loading is no change
+        h.panel.remove();
+        const empty = await open(language, { url: OR, extra_body: {}, no_temperature: false });
+        expect(empty.text.value).toBe('');
+        expect(empty.effort.value).toBe('');
+        expect(empty.noTemp.checked).toBe(false);
+        empty.panel.remove();
+      }
+    });
+
+    it('writes the chosen effort into the text and saves it beside the other keys through the model-change preview', async () => {
+      const h = await open('en', { url: OR, extra_body: { provider: { sort: 'price' } }, no_temperature: false });
+      choose(h.effort, 'high');
+      expect(JSON.parse(h.text.value)).toEqual({ provider: { sort: 'price' }, reasoning: { effort: 'high' } });
+      expect(h.bar.textContent).toBe('Unsaved changes: Fact extraction LLM');
+      h.save.click();
+      await vi.waitFor(() => expect(h.panel.querySelector('.bar .model-change')).not.toBeNull());
+      const sent = { llm_url: OR, llm_model: 'm', llm_extra_body: { provider: { sort: 'price' }, reasoning: { effort: 'high' } } };
+      expect(h.calls.filter(([, p]) => p === '/v1/config/preview').map(([, , b]) => b)).toEqual([sent]);
+      expect(puts(h.calls)).toEqual([]);  // nothing saved before the answer
+      h.button('Save').click();
+      await vi.waitFor(() => expect(h.bar.textContent).toBe('Saved.'));
+      expect(puts(h.calls)).toEqual([{ ...sent, on_model_change: { mode: 'continue', canon: false } }]);
+      // "—" takes it out again, and reasoning with it
+      choose(h.effort, '');
+      expect(JSON.parse(h.text.value)).toEqual({ provider: { sort: 'price' } });
+      h.panel.remove();
+    });
+
+    it('moves the dropdown when the JSON is typed by hand: a value, custom, or disabled while not an object', async () => {
+      const h = await open('ko', { url: OR, extra_body: {}, no_temperature: false });
+      const values = () => [...h.effort.options].map((o) => o.value);
+      type(h.text, '{"reasoning": {"effort": "medium"}, "max_tokens": 900}');
+      expect([h.effort.value, h.effort.disabled, values().includes('custom')]).toEqual(['medium', false, false]);
+      type(h.text, '{"reasoning": {"effort": "turbo"}}');
+      expect([h.effort.value, h.effort.disabled]).toEqual(['custom', false]);
+      expect(h.effort.selectedOptions[0]!.text).toBe('직접 입력');
+      type(h.text, '{"reasoning": {"effort": "medium"');
+      expect(h.effort.disabled).toBe(true);
+      expect(values().includes('custom')).toBe(false);
+      expect(shown(h.error)).toBe(true);
+      type(h.text, '{"a": 1}');
+      expect([h.effort.value, h.effort.disabled, shown(h.error)]).toEqual(['', false, false]);
+      h.panel.remove();
+    });
+
+    it('shows the dropdown only for an OpenRouter address, following the address field and the preset', async () => {
+      const h = await open('en', { url: 'https://llm.example/v1', extra_body: {}, no_temperature: false });
+      expect(shown(h.text)).toBe(true);
+      expect(shown(h.noTemp)).toBe(true);
+      expect(shown(h.effort)).toBe(false);
+      type(h.endpoint, 'https://openrouter.ai/api/v1');
+      expect(shown(h.effort)).toBe(true);
+      type(h.endpoint, 'https://openrouter.ai.example.com/v1');
+      expect(shown(h.effort)).toBe(false);
+      const preset = h.card.querySelector('select')!;
+      choose(preset, String([...preset.options].findIndex((o) => o.text === 'OpenRouter')));
+      expect(h.endpoint.value).toBe(OR);
+      expect(shown(h.effort)).toBe(true);
+      choose(preset, '0');  // "Off" empties the address
+      expect(h.endpoint.value).toBe('');
+      expect(shown(h.effort)).toBe(false);
+      h.panel.remove();
+    });
+
+    it('sends neither field when they did not change, and the switch alone as a model change', async () => {
+      const h = await open('en', { url: OR, extra_body: { b: 2, a: 1 }, no_temperature: false });
+      type(h.text, '{"a":1,"b":2}');  // same object, other text
+      expect(h.save.disabled).toBe(true);
+      const model = [...h.card.querySelectorAll('input')].find((i) => i.value === 'm')!;
+      type(model, 'm2');
+      h.save.click();
+      await vi.waitFor(() => expect(h.panel.querySelector('.bar .model-change')).not.toBeNull());
+      h.button('Save').click();
+      await vi.waitFor(() => expect(h.bar.textContent).toBe('Saved.'));
+      expect(puts(h.calls).at(-1)).toEqual({ llm_url: OR, llm_model: 'm2', on_model_change: { mode: 'continue', canon: false } });
+      h.noTemp.click();
+      h.save.click();
+      await vi.waitFor(() => expect(h.panel.querySelector('.bar .model-change')).not.toBeNull());
+      expect(h.calls.filter(([, p]) => p === '/v1/config/preview').at(-1)![2])
+        .toEqual({ llm_url: OR, llm_model: 'm2', llm_no_temperature: true });
+      h.button('Save').click();
+      await vi.waitFor(() => expect(h.bar.textContent).toBe('Saved.'));
+      expect(puts(h.calls).at(-1)).toEqual({ llm_url: OR, llm_model: 'm2', llm_no_temperature: true,
+        on_model_change: { mode: 'continue', canon: false } });
+      expect(h.noTemp.checked).toBe(true);
+      h.panel.remove();
+    });
+
+    it('sends nothing while the text is not a JSON object, neither the save nor the test', async () => {
+      const h = await open('en', { url: OR, extra_body: {}, no_temperature: false });
+      h.args.trim_old_turns = '0';
+      const trim = [...h.panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((i) =>
+        i.nextElementSibling?.textContent?.startsWith('Leave out old dialogue'))!;
+      type(h.text, '[1, 2]');
+      trim.click();  // another unsaved change: still nothing is written
+      h.save.click();
+      await settle(); await settle();
+      expect(h.bar.textContent).toBe('Not a JSON object');
+      expect(h.calls.filter(([m, p]) => m !== 'GET' && p.startsWith('/v1/config'))).toEqual([]);
+      expect(h.args.trim_old_turns).toBe('0');
+      expect(h.save.disabled).toBe(false);
+      h.button('Test').click();
+      await settle();
+      expect(h.calls.some(([, p]) => p === '/v1/config/test')).toBe(false);
+      expect(h.card.querySelector('.btns ~ .msg')!.textContent).toBe('Not a JSON object');
+      h.panel.remove();
+    });
+
+    it("sends the form's body and switch with the extraction model's test", async () => {
+      const h = await open('en', { url: OR, extra_body: {}, no_temperature: false });
+      choose(h.effort, 'minimal');
+      h.noTemp.click();
+      h.button('Test').click();
+      await vi.waitFor(() => expect(h.calls.some(([, p]) => p === '/v1/config/test')).toBe(true));
+      expect(h.calls.find(([, p]) => p === '/v1/config/test')![2]).toEqual({ kind: 'llm', url: OR, model: 'm',
+        api_key: undefined, extra_body: { reasoning: { effort: 'minimal' } }, no_temperature: true });
+      h.panel.remove();
+    });
+
+    it('shows none of the three and sends neither field to a sidecar from before the setting (KO and EN)', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const h = await open(language, { url: OR });
+        expect(shown(h.text)).toBe(false);
+        expect(shown(h.effort)).toBe(false);
+        expect(shown(h.noTemp)).toBe(false);
+        h.button(language === 'en' ? 'Test' : '연결 테스트').click();
+        await vi.waitFor(() => expect(h.calls.some(([, p]) => p === '/v1/config/test')).toBe(true));
+        expect(h.calls.find(([, p]) => p === '/v1/config/test')![2]).toEqual({ kind: 'llm', url: OR, model: 'm', api_key: undefined });
+        type(h.endpoint, 'https://openrouter.ai/api/v2');
+        h.save.click();
+        await vi.waitFor(() => expect(h.panel.querySelector('.bar .model-change')).not.toBeNull());
+        h.panel.querySelector<HTMLButtonElement>('.bar .model-change button.primary')!.click();
+        await vi.waitFor(() => expect(puts(h.calls)).toHaveLength(1));
+        expect(puts(h.calls)[0]).toEqual({ llm_url: 'https://openrouter.ai/api/v2', llm_model: 'm',
+          on_model_change: { mode: 'continue', canon: false } });
+        h.panel.remove();
+      }
+    });
   });
 
   it('says when no chat is open', async () => {
@@ -470,6 +1128,67 @@ describe('panel', () => {
     await settle();
     const put = calls.find(([method]) => method === 'PUT')!;
     expect((put[2] as Record<string, unknown>).summaries).toBe(false);
+  });
+
+  describe('@name pins (PHASE-60 S8)', () => {
+    const labels = { ko: '메시지에서 @이름으로 인물 고정', en: 'Pin a character with @name in a message' } as const;
+    const hints = {
+      ko: '켜면 "@세라 어디 있어?"처럼 메시지에 @이름으로 쓴 인물은, 장면에 이름이 나오지 않아도 그 답장의 기억에 들어갑니다. 단어 안의 @(이메일 주소, 아이디)나 이 채팅의 인물이 아닌 이름 앞의 @는 아무 일도 하지 않습니다.',
+      en: 'On: a message like "@Sera where are you?" keeps Sera in memory for that reply even when the scene does not name her. An @ inside a word (an e-mail address, a handle) or before a name that is no character of this chat does nothing.',
+    } as const;
+    const open = async (language: 'ko' | 'en', reported?: boolean) => {
+      const h = deps();
+      h.args.language = language;
+      if (reported !== undefined) (config.recall as Record<string, unknown>).pin_at_mentions = reported;
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      const label = [...panel.querySelectorAll('.check')].find((c) => c.textContent === labels[language])!;
+      return { ...h, panel, label, box: label.querySelector('input') as HTMLInputElement,
+        save: panel.querySelector<HTMLButtonElement>('.bar button.primary')! };
+    };
+    const puts = (calls: [string, string, unknown][]) => calls.filter(([method]) => method === 'PUT').map(([, , body]) => body);
+    afterEach(() => { delete (config.recall as Record<string, unknown>).pin_at_mentions; });
+
+    it('shows the setting with its example in the recall tuning card', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const { panel, label } = await open(language, false);
+        expect(label.closest('.card')!.querySelector('h2')!.textContent).toBe(language === 'en' ? 'Recall tuning' : '검색 조정');
+        expect(label.nextElementSibling!.textContent).toBe(hints[language]);
+        expect(label.nextElementSibling!.classList.contains('mono')).toBe(false);
+        panel.remove();
+      }
+    });
+
+    it('loads what the sidecar reports and saves it as pin_at_mentions', async () => {
+      const on = await open('en', true);
+      expect([on.box.checked, on.box.disabled]).toEqual([true, false]);
+      on.box.checked = false;
+      on.box.dispatchEvent(new Event('change', { bubbles: true }));
+      on.save.click();
+      await vi.waitFor(() => expect(puts(on.calls)).toHaveLength(1));
+      expect(puts(on.calls)[0]).toMatchObject({ pin_at_mentions: false });
+      on.panel.remove();
+      const off = await open('ko', false);
+      expect([off.box.checked, off.box.disabled]).toEqual([false, false]);
+      off.box.checked = true;
+      off.box.dispatchEvent(new Event('change', { bubbles: true }));
+      off.save.click();
+      await vi.waitFor(() => expect(puts(off.calls)).toHaveLength(1));
+      expect(puts(off.calls)[0]).toMatchObject({ pin_at_mentions: true });
+    });
+
+    it('is disabled and never sent on a sidecar that has no such setting', async () => {
+      const { panel, box, save, calls } = await open('en');
+      expect([box.checked, box.disabled]).toEqual([false, true]);
+      const topK = [...panel.querySelectorAll<HTMLInputElement>('input[type="number"][max="20"]')][0]!;
+      topK.value = '3';
+      topK.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).toMatchObject({ recall_top_k: 3 });
+      expect(puts(calls)[0]).not.toHaveProperty('pin_at_mentions');
+    });
   });
 
   it('turns canon facts off from the settings (ADR 0047)', async () => {
@@ -953,8 +1672,136 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect(panel().textContent).toContain('Queued 2 turns for re-extraction.');
   });
 
+  describe("the pin switch on a person's page (PHASE-60 S8)", () => {
+    const pin = '0190f3a4-1b2c-7d3e-8f40-0000000000aa';
+    const hanaRow = (extra: Record<string, unknown> = {}) =>
+      ({ id: who, type: 'character', name: '하나', names: ['하나'], mentions: 9, links: [], aliases: [], ...extra });
+    const titles = { ko: '하나 고정', en: 'Pin 하나' } as const;  // the card names whose page it is (SHOTS finding 9)
+    const sentences = {
+      ko: '고정한 인물의 현재 사실은 장면에 이름이 나오지 않아도 매 답장의 기억에 들어갑니다. 그래서 고정은 요청마다 기억 예산의 일부를 씁니다. 언제든 풀 수 있습니다.',
+      en: "A pinned character's current facts go into memory on every reply, even when the scene does not name them, so a pin uses part of the memory budget on every request. You can take it off any time.",
+    } as const;
+    const pages = { inspector: `/inspector/c/${id}/e/${who}`, sheet: `/views/c/${id}/person/${who}` } as const;
+    const cardOf = (language: 'ko' | 'en') => [...panel().querySelectorAll<HTMLElement>('.card')]
+      .find((c) => c.querySelector('h2')?.textContent === titles[language] && c.style.display !== 'none');
+    /** The entity harness, with a person sheet, a language, and rows that follow a pin and an unpin. */
+    const open = async (rows: Record<string, unknown>[] | 'fail', page: keyof typeof pages = 'inspector',
+      language: 'ko' | 'en' = 'en', refuse?: string) => {
+      const h = deps(rows === 'fail' ? [] : rows);
+      const api = h.d.api;
+      h.d.getArg = async (key) => (key === 'language' ? language : '');
+      h.d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeout?: number) => {
+        if (path.startsWith(`/v1/views/c/${id}/person/`)) {
+          h.calls.push([method, path.split('?')[0]!, body]);
+          return { html: '<p>a character</p>' } as T;
+        }
+        if (rows === 'fail' && path.endsWith('/entities')) throw new Error(`${path} -> HTTP 503`);
+        const answer = await api<T>(method, path, body, timeout);
+        if (method === 'POST' && refuse) throw new Error(`/v1/conversations/${id}/repairs -> HTTP 422: ${refuse}`);
+        if (method === 'POST' && rows !== 'fail' && path.endsWith('/repairs')) rows[0]!.pinned = pin;
+        if (method === 'POST' && rows !== 'fail' && path.endsWith('/remove')) delete rows[0]!.pinned;
+        return answer;
+      };
+      await openChat(h.d, pages[page]);
+      return h;
+    };
+    const entityGets = (calls: [string, string, unknown][]) =>
+      calls.filter(([method, path]) => method === 'GET' && path.endsWith('/entities'));
+
+    it('offers an unpinned character a switch that is off, and pins it with one request', async () => {
+      for (const page of ['inspector', 'sheet'] as const) {
+        for (const language of ['ko', 'en'] as const) {
+          const { calls } = await open([hanaRow()], page, language);
+          const card = cardOf(language)!;
+          expect(card, `${page} ${language}`).toBeDefined();
+          expect(card.querySelector('p.sub')!.textContent).toBe(sentences[language]);
+          expect(card.querySelector('.check')!.textContent).toBe(language === 'en' ? 'Always keep in memory' : '항상 기억에 두기');
+          const box = card.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+          expect(box.checked).toBe(false);
+          expect(entityGets(calls)).toHaveLength(1);  // one list for the join card and this one
+          box.click();
+          await settle();
+          expect(posts(calls)).toEqual([['POST', `/v1/conversations/${id}/repairs`, { kind: 'entity_pin', item: who }]]);
+          const after = cardOf(language)!;  // the page was refreshed
+          expect(after.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
+          expect(after.querySelector('.msg')!.textContent).toBe(language === 'en' ? 'Pinned' : '고정했습니다');
+          document.body.replaceChildren();
+        }
+      }
+    });
+
+    it('shows a pin as on and takes it back with its remove request', async () => {
+      for (const language of ['ko', 'en'] as const) {
+        const { calls } = await open([hanaRow({ pinned: pin })], 'sheet', language);
+        const box = cardOf(language)!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+        expect(box.checked).toBe(true);
+        box.click();
+        await settle();
+        expect(posts(calls)).toEqual([['POST', `/v1/conversations/${id}/repairs/${pin}/remove`, {}]]);
+        const after = cardOf(language)!;
+        expect(after.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
+        expect(after.querySelector('.msg')!.textContent).toBe(language === 'en' ? 'Unpinned' : '고정을 풀었습니다');
+        document.body.replaceChildren();
+      }
+    });
+
+    it('shows no card for the persona, an excluded character, another kind, an entity not listed, or no list', async () => {
+      const cases: (Record<string, unknown>[] | 'fail')[] = [[hanaRow({ persona: true })], [hanaRow({ excluded: true })],
+        [hanaRow({ type: 'place' })], [hanaRow({ id: t2 })], 'fail'];
+      for (const rows of cases) {
+        await open(rows, 'inspector');
+        expect(panel().textContent).toContain('a character');  // the page itself is there
+        expect(cardOf('en'), JSON.stringify(rows)).toBeUndefined();
+        document.body.replaceChildren();
+      }
+    });
+
+    it('puts the switch back and says the refusal when the sidecar refuses the pin', async () => {
+      const { calls } = await open([hanaRow()], 'inspector', 'en', '하나 is not mentioned in this chat');
+      const card = cardOf('en')!;
+      const box = card.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      box.click();
+      await settle();
+      expect(posts(calls)).toHaveLength(1);
+      expect(box.checked).toBe(false);
+      expect(box.disabled).toBe(false);
+      expect(card.querySelector('.msg')!.textContent).toBe('Invalid: 하나 is not mentioned in this chat');
+    });
+
+    it("hides one character's switch while another page loads, and when that page fails", async () => {
+      const h = deps([hanaRow()]);
+      const api = h.d.api;
+      let release!: () => void;
+      const held = new Promise<void>((r) => { release = r; });
+      h.d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeout?: number) => {
+        if (path.startsWith(`/v1/inspector/c/${id}/e/${t2}`)) { await held; throw new Error(`${path} -> HTTP 503`); }
+        if (path.startsWith(`/v1/inspector/c/${id}/e/${who}`)) return { html: `<a href="/inspector/c/${id}/e/${t2}">카이토</a>` } as T;
+        return api<T>(method, path, body, timeout);
+      };
+      await openChat(h.d, pages.inspector);
+      expect(cardOf('en')).toBeDefined();
+      panel().querySelector<HTMLAnchorElement>(`a[href="/inspector/c/${id}/e/${t2}"]`)!.click();
+      await settle();
+      expect(cardOf('en')).toBeUndefined();  // loading
+      release();
+      await settle();
+      expect(panel().textContent).toContain('HTTP 503');
+      expect(cardOf('en')).toBeUndefined();
+    });
+
+    it("leaves the sidecar's page as it sent it: the card sits beside it", async () => {
+      for (const page of ['inspector', 'sheet'] as const) {
+        await open([hanaRow()], page);
+        const body = [...panel().querySelectorAll('p')].find((p) => p.textContent === 'a character')!.parentElement!;
+        expect(body.innerHTML).toBe('<p>a character</p>');
+        expect(body.contains(cardOf('en')!)).toBe(false);
+        document.body.replaceChildren();
+      }
+    });
+  });
+
   it('drops a preview answer that arrives after the owner picked another name', async () => {
-    const rows = [...joinable(), { id: 'c3', type: 'character', name: '소라', names: ['소라'], mentions: 2, links: [] }];
+    const rows = [...joinable(), { id: 'c3', type: 'character', name: '유현', names: ['유현'], mentions: 2, links: [] }];
     const { d, state } = deps(rows);
     await openChat(d, `/inspector/c/${id}/e/${who}`);
     let release!: () => void;
@@ -962,7 +1809,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     button('Join').click();
     await settle();
     const pick = panel().querySelector<HTMLSelectElement>('select[aria-label="Same as"]')!;
-    pick.value = '소라';
+    pick.value = '유현';
     pick.dispatchEvent(new Event('change', { bubbles: true }));
     state.hold = null;
     release();
@@ -1106,5 +1953,110 @@ describe('the timeline in the panel (PHASE-32 step 3)', () => {
     section.querySelector<HTMLElement>('.tl-span[data-span="recent"]')!.click();
     await settle();
     expect(calls.at(-1)).toBe(`GET /v1/inspector/c/${id}?part=status&span=recent&lang=en`);
+  });
+});
+
+describe("this chat's pinned characters in the settings (PHASE-60 S8)", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+    document.head.replaceChildren();
+  });
+
+  const pinA = '0190f3a4-1b2c-7d3e-8f40-0000000000a1';
+  const pinB = '0190f3a4-1b2c-7d3e-8f40-0000000000b2';
+  const row = (name: string, extra: Record<string, unknown> = {}) =>
+    ({ id: `e-${name}`, type: 'character', name, names: [name], mentions: 3, ...extra });
+  const titles = { ko: '고정한 인물', en: 'Pinned characters' } as const;
+  const settle = async () => { for (let i = 0; i < 6; i += 1) await new Promise((r) => setTimeout(r, 0)); };
+  const panel = () => document.getElementById('nmos-panel')!;
+  const cardOf = (language: 'ko' | 'en') => [...panel().querySelectorAll<HTMLElement>('.card')]
+    .find((c) => c.querySelector('h2')?.textContent === titles[language])!;
+
+  /** A sidecar with the new screens, its hub on one chat, and that chat's entities (or a failing list). */
+  async function open(language: 'ko' | 'en', entities: Record<string, unknown>[] | 'fail') {
+    const calls: [string, string, unknown][] = [];
+    const d: PanelDeps = {
+      api: async <T>(method: 'GET' | 'POST' | 'PUT', address: string, body?: unknown) => {
+        const path = address.split('?')[0]!;
+        calls.push([method, path, body]);
+        if (path === '/v1/views/hub') {
+          return { html: '<div class="v"><a class="v-block" data-act="settings"><span>Settings</span></a></div>', conversation: id } as T;
+        }
+        if (path.startsWith('/v1/views/')) return { html: '<div class="v"></div>' } as T;
+        if (path === `/v1/conversations/${id}/entities`) {
+          if (entities === 'fail') throw new Error(`${path} -> HTTP 503`);
+          return entities as T;
+        }
+        if (method === 'POST' && path.endsWith('/remove') && entities !== 'fail') {
+          const at = entities.findIndex((e) => path.endsWith(`/repairs/${String(e.pinned)}/remove`));
+          if (at >= 0) delete entities[at]!.pinned;
+          return { removed: path.split('/').at(-2) } as T;
+        }
+        if (path.startsWith('/v1/conversations?')) return [] as T;
+        if (path.includes('/status/candidates') || path.endsWith('/memory-mode')) throw new Error('404');
+        return {} as T;
+      },
+      status: async () => ({ enabled: true, sidecarUrl: 'http://127.0.0.1:8790', language, connected: true,
+        version: '0.6.0', features: { views: true }, last: null }),
+      getArg: async (key) => (key === 'language' ? language : ''),
+      setArg: async () => {},
+      show: async () => {},
+      hide: async () => {},
+      hud: { enable: async () => 'unsupported', disable: async () => {}, problem: () => null, background: () => {} },
+      chat: createChatSwitch({ getArg: async () => '', setArg: async () => {}, currentChatId: async () => 'host-chat-1' }),
+      download: async () => 0,
+    };
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>('a[data-act="settings"]')!.click();
+    await settle();
+    panel().querySelector<HTMLButtonElement>('.groups button[data-group="chat"]')!.click();
+    await settle();
+    return { calls };
+  }
+
+  it("lists the chat's pinned characters and unpins one", async () => {
+    for (const language of ['ko', 'en'] as const) {
+      const entities = [row('하나', { pinned: pinA }), row('카이토'), row('세라', { pinned: pinB }), row('유나', { persona: true })];
+      const { calls } = await open(language, entities);
+      const card = cardOf(language);
+      expect(card.closest('[data-group="chat"]')).not.toBeNull();
+      expect(card.querySelector('p.sub')!.textContent).toContain(language === 'en' ? 'part of the memory budget' : '기억 예산의 일부');
+      const unpin = language === 'en' ? 'Unpin' : '고정 풀기';
+      const rows = () => [...card.querySelectorAll('button')].filter((b) => b.textContent === unpin)
+        .map((b) => b.previousElementSibling!.textContent);
+      expect(rows()).toEqual(['하나', '세라']);
+      const before = calls.length;
+      [...card.querySelectorAll('button')].find((b) => b.previousElementSibling?.textContent === '세라')!.click();
+      await settle();
+      expect(calls.slice(before)).toEqual([['POST', `/v1/conversations/${id}/repairs/${pinB}/remove`, {}],
+        ['GET', `/v1/conversations/${id}/entities`, undefined]]);
+      expect(rows()).toEqual(['하나']);
+      expect(card.querySelector('.msg')!.textContent).toBe(language === 'en' ? 'Unpinned' : '고정을 풀었습니다');
+      document.body.replaceChildren();
+    }
+  });
+
+  it('says so when nothing is pinned', async () => {
+    for (const language of ['ko', 'en'] as const) {
+      await open(language, [row('하나'), row('카이토')]);
+      const line = cardOf(language).querySelector('.muted')!;
+      expect(line.textContent).toBe(language === 'en' ? "No pinned characters. Pin one from a person's page."
+        : '고정한 인물이 없습니다. 인물 페이지에서 고정할 수 있습니다.');
+      expect(cardOf(language).querySelector('button')).toBeNull();
+      document.body.replaceChildren();
+    }
+  });
+
+  it('says it could not load the list, and the rest of the page still shows', async () => {
+    for (const language of ['ko', 'en'] as const) {
+      await open(language, 'fail');
+      const line = cardOf(language).querySelector('.muted')!;
+      expect(line.textContent).toBe(language === 'en' ? 'Could not load the pinned characters.' : '고정한 인물 목록을 불러오지 못했습니다.');
+      const page = panel().querySelector<HTMLElement>('[data-group="chat"]:not(button)')!;
+      expect(page.textContent).toContain(language === 'en' ? 'Extract all history' : '과거 전체 추출');
+      expect(page.querySelector('.maint-list')).not.toBeNull();
+      document.body.replaceChildren();
+    }
   });
 });

@@ -111,8 +111,9 @@ def generation(settings: Settings) -> Generation | None:
     return generations.make(
         "canon", settings.llm_url, settings.llm_model, version=VERSION, prompt=generations.fingerprint(PROMPT),
         predicates=generations.fingerprint(repr(sorted((k, v) for k, v in REGISTRY.items() if k in PREDICATES))),
-        normalizer=normtext.NORMALIZER_VERSION, json_mode=settings.llm_json_mode, temperature=0,
-        part_chars=PART_CHARS, max_parts=MAX_PARTS)
+        normalizer=normtext.NORMALIZER_VERSION, json_mode=settings.llm_json_mode,
+        part_chars=PART_CHARS, max_parts=MAX_PARTS,
+        **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature))
 
 
 def always(key: str) -> bool:

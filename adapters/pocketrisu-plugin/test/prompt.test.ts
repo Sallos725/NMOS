@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { hasPacket, inContextIds, injectPacket, isMainGeneration, PACKET_TAG, queryTexts, userTurnIndex } from '../src/prompt';
+import { findMarker, MEMORY_MARKER } from '../src/placement';
+import {
+  GUARD_LINE,
+  GUARD_RESERVE_TOKENS,
+  hasPacket,
+  inContextIds,
+  injectPacket,
+  isActive,
+  isMainGeneration,
+  landsAfterUserTurn,
+  matchPromptToHost,
+  PACKET_TAG,
+  queryTexts,
+  userTurnAnchor,
+  userTurnIndex,
+  withGuard,
+} from '../src/prompt';
 import type { HostMessage, PromptMessage } from '../src/types';
 
 const host: HostMessage[] = [
@@ -110,6 +126,132 @@ describe('injection (H2 idempotency)', () => {
     expect(injectPacket(mainPrompt, packet, 'end').at(-1)?.content).toBe(packet);
     expect(injectPacket(mainPrompt, '')).toBe(mainPrompt);
   });
+
+  it('places end injection before a trailing run of assistant prefill messages', () => {
+    const onePrefill: PromptMessage[] = [
+      ...mainPrompt,
+      { role: 'assistant', content: '세라 stepped forward.' },
+    ];
+    const outOne = injectPacket(onePrefill, packet, 'end');
+    expect(outOne.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'user', 'system', 'assistant']);
+    expect(outOne[4]?.content).toBe(packet);
+    expect(outOne[5]?.content).toBe('세라 stepped forward.');
+    expect(onePrefill).toHaveLength(5);
+
+    const twoPrefill: PromptMessage[] = [
+      ...mainPrompt,
+      { role: 'assistant', content: '<thought>' },
+      { role: 'assistant', content: '세라 stepped forward.' },
+    ];
+    const outTwo = injectPacket(twoPrefill, packet, 'end');
+    expect(outTwo.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'user', 'system', 'assistant', 'assistant']);
+    expect(outTwo[4]?.content).toBe(packet);
+    expect(outTwo[5]?.content).toBe('<thought>');
+    expect(outTwo[6]?.content).toBe('세라 stepped forward.');
+
+    const noTrailingAssistant: PromptMessage[] = [
+      ...mainPrompt,
+      { role: 'assistant', content: 'Earlier reply.' },
+      { role: 'system', content: 'Continue.' },
+    ];
+    const outNone = injectPacket(noTrailingAssistant, packet, 'end');
+    expect(outNone.at(-1)?.content).toBe(packet);
+    expect(outNone).toHaveLength(noTrailingAssistant.length + 1);
+  });
+
+  it('keeps before_last_user byte-identical across existing fixtures (pinned at 375efa5)', () => {
+    const continuePrompt: PromptMessage[] = [...mainPrompt, { role: 'system', content: 'Continue the last response.' }];
+    const wrapped: PromptMessage[] = [
+      { role: 'user', content: '<user_input>Where did we hide the lantern?</user_input>\n(OOC: stay in character)' },
+    ];
+    const inSystem: PromptMessage[] = [
+      { role: 'system', content: 'Chat log:\nUser: Where did we hide the lantern?\nReply now.' },
+    ];
+    const quoted: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      { role: 'assistant', content: `As the notes say: ${PACKET_TAG} …` },
+      { role: 'user', content: `What is ${PACKET_TAG}?` },
+    ];
+
+    const expectedMain = [
+      { role: 'system', content: 'You are a narrator.' },
+      { role: 'user', content: 'Tell me about the harbor bell again.' },
+      { role: 'assistant', content: 'The harbor bell rang twice at dusk.' },
+      { role: 'system', content: packet },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+    ];
+    expect(JSON.stringify(injectPacket(mainPrompt, packet, 'before_last_user', userTurnIndex(mainPrompt, host))))
+      .toBe(JSON.stringify(expectedMain));
+    expect(JSON.stringify(injectPacket(mainPrompt, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedMain));
+
+    const expectedPreset = [
+      { role: 'system', content: '# System Prompt' },
+      { role: 'user', content: 'Tell me about the harbor bell again.' },
+      { role: 'assistant', content: '<Last output>' },
+      { role: 'assistant', content: 'The harbor bell rang twice at dusk.' },
+      { role: 'assistant', content: '</Last output>' },
+      { role: 'system', content: packet },
+      { role: 'user', content: '<Current Input>\n\n```' },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+      { role: 'user', content: '```\n</Current Input>\n\nTake my current input as inspiration.' },
+      { role: 'user', content: '---\n\n# Feedback\n- Proactive Writer' },
+      { role: 'user', content: '---\n\n# Tags' },
+      { role: 'user', content: 'system: POV : Omniscient Point of View.' },
+    ];
+    expect(JSON.stringify(injectPacket(presetPrompt, packet, 'before_last_user', userTurnIndex(presetPrompt, host))))
+      .toBe(JSON.stringify(expectedPreset));
+    expect(JSON.stringify(injectPacket(presetPrompt, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedPreset));
+
+    const expectedContinue = [
+      { role: 'system', content: 'You are a narrator.' },
+      { role: 'user', content: 'Tell me about the harbor bell again.' },
+      { role: 'assistant', content: 'The harbor bell rang twice at dusk.' },
+      { role: 'system', content: packet },
+      { role: 'user', content: 'Where did we hide the lantern?' },
+      { role: 'system', content: 'Continue the last response.' },
+    ];
+    expect(JSON.stringify(injectPacket(continuePrompt, packet, 'before_last_user', userTurnIndex(continuePrompt, host))))
+      .toBe(JSON.stringify(expectedContinue));
+    expect(JSON.stringify(injectPacket(continuePrompt, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedContinue));
+
+    const expectedWrapped = [
+      { role: 'system', content: packet },
+      { role: 'user', content: '<user_input>Where did we hide the lantern?</user_input>\n(OOC: stay in character)' },
+    ];
+    expect(JSON.stringify(injectPacket(wrapped, packet, 'before_last_user', userTurnIndex(wrapped, host))))
+      .toBe(JSON.stringify(expectedWrapped));
+    expect(JSON.stringify(injectPacket(wrapped, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedWrapped));
+
+    const expectedInSystemWithTurn = [
+      { role: 'system', content: packet },
+      { role: 'system', content: 'Chat log:\nUser: Where did we hide the lantern?\nReply now.' },
+    ];
+    const expectedInSystemNoTurn = [
+      { role: 'system', content: 'Chat log:\nUser: Where did we hide the lantern?\nReply now.' },
+      { role: 'system', content: packet },
+    ];
+    expect(JSON.stringify(injectPacket(inSystem, packet, 'before_last_user', userTurnIndex(inSystem, host))))
+      .toBe(JSON.stringify(expectedInSystemWithTurn));
+    expect(JSON.stringify(injectPacket(inSystem, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedInSystemNoTurn));
+
+    const expectedQuoted = [
+      { role: 'system', content: 'You are a narrator.' },
+      { role: 'user', content: 'Tell me about the harbor bell again.' },
+      { role: 'assistant', content: 'The harbor bell rang twice at dusk.' },
+      { role: 'assistant', content: `As the notes say: ${PACKET_TAG} …` },
+      { role: 'system', content: packet },
+      { role: 'user', content: `What is ${PACKET_TAG}?` },
+    ];
+    expect(JSON.stringify(injectPacket(quoted, packet, 'before_last_user', userTurnIndex(quoted, host))))
+      .toBe(JSON.stringify(expectedQuoted));
+    expect(JSON.stringify(injectPacket(quoted, packet, 'before_last_user', -1)))
+      .toBe(JSON.stringify(expectedQuoted));
+  });
 });
 
 describe('in-context detection (D3)', () => {
@@ -147,10 +289,233 @@ describe('in-context detection (D3)', () => {
   it('returns nothing when the prompt shares no text', () => {
     expect(inContextIds([{ role: 'user', content: 'unrelated' }], host)).toEqual([]);
   });
+
+  it('pins inContextIds output across every fixture before matchPromptToHost refactor', () => {
+    const continuePrompt: PromptMessage[] = [...mainPrompt, { role: 'system', content: 'Continue the last response.' }];
+    const wrapped: PromptMessage[] = [
+      { role: 'user', content: '<user_input>Where did we hide the lantern?</user_input>\n(OOC: stay in character)' },
+    ];
+    const inSystem: PromptMessage[] = [
+      { role: 'system', content: 'Chat log:\nUser: Where did we hide the lantern?\nReply now.' },
+    ];
+    const echoed: PromptMessage[] = [
+      { role: 'system', content: 'Narrate.' },
+      { role: 'assistant', content: 'Where did we hide the lantern?' },
+    ];
+    const withDisabled: HostMessage[] = [
+      ...host,
+      { role: 'user', data: 'hidden', chatId: 'u3', disabled: true },
+    ];
+    const quoted: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      { role: 'assistant', content: `As the notes say: ${PACKET_TAG} …` },
+      { role: 'user', content: `What is ${PACKET_TAG}?` },
+    ];
+    const onePrefill: PromptMessage[] = [
+      ...mainPrompt,
+      { role: 'assistant', content: '세라 stepped forward.' },
+    ];
+
+    expect(inContextIds(mainPrompt, host)).toEqual(['u1', 'c1', 'u2']);
+    expect(inContextIds(presetPrompt, host)).toEqual(['u1', 'c1', 'u2']);
+    expect(inContextIds(continuePrompt, host)).toEqual(['u1', 'c1', 'u2']);
+    expect(inContextIds(wrapped, host)).toEqual(['u2']);
+    expect(inContextIds(inSystem, host)).toEqual(['u2']);
+    expect(inContextIds(echoed, host)).toEqual(['u2']);
+    expect(inContextIds(mainPrompt, withDisabled)).toEqual(['u1', 'c1', 'u2', 'u3']);
+    expect(inContextIds(quoted, host)).toEqual(['u1', 'c1', 'u2']);
+    expect(inContextIds(onePrefill, host)).toEqual(['u1', 'c1', 'u2']);
+    expect(inContextIds([], host)).toEqual([]);
+    expect(inContextIds(mainPrompt, [])).toEqual([]);
+  });
+
+  it('maps host indices to prompt indices directly with matchPromptToHost', () => {
+    expect(matchPromptToHost(mainPrompt, host)).toEqual(new Map([
+      [4, 3],
+      [3, 2],
+      [2, 1],
+    ]));
+    expect(matchPromptToHost(presetPrompt, host)).toEqual(new Map([
+      [4, 6],
+      [3, 3],
+      [2, 1],
+    ]));
+    expect(matchPromptToHost([{ role: 'user', content: 'unrelated' }], host)).toEqual(new Map());
+    expect(matchPromptToHost([], host)).toEqual(new Map());
+    expect(matchPromptToHost(mainPrompt, [])).toEqual(new Map());
+  });
+
+  it('skips short and inactive messages in matchPromptToHost and respects maxMisses', () => {
+    const withShortAndDisabled: HostMessage[] = [
+      { role: 'user', data: '세라 found the bronze compass under the stone bench.', chatId: 'u0' },
+      { role: 'char', data: '응', chatId: 'c0' },
+      { role: 'user', data: 'hidden commentary about the compass', chatId: 'u1', disabled: true },
+      { role: 'char', data: 'author comment line that is ignored', chatId: 'c1', isComment: true },
+      { role: 'user', data: '카이토 checked the clocktower stairs before dusk.', chatId: 'u2' },
+    ];
+    const prompt: PromptMessage[] = [
+      { role: 'system', content: 'Narrator.' },
+      { role: 'user', content: '세라 found the bronze compass under the stone bench.' },
+      { role: 'assistant', content: '응' },
+      { role: 'user', content: '카이토 checked the clocktower stairs before dusk.' },
+    ];
+    expect(matchPromptToHost(prompt, withShortAndDisabled)).toEqual(new Map([
+      [4, 3],
+      [0, 1],
+    ]));
+
+    // Three consecutive misses stop the walk before reaching the older matching message.
+    const withMisses: HostMessage[] = [
+      { role: 'user', data: '하나 kept the silver ring inside her coat pocket.', chatId: 'u0' },
+      { role: 'char', data: 'missed line one long enough to anchor properly.', chatId: 'c1' },
+      { role: 'user', data: 'missed line two long enough to anchor properly.', chatId: 'u2' },
+      { role: 'char', data: 'missed line three long enough to anchor properly.', chatId: 'c3' },
+      { role: 'user', data: '유나 opened the archive door at midnight.', chatId: 'u4' },
+    ];
+    const missedPrompt: PromptMessage[] = [
+      { role: 'user', content: '하나 kept the silver ring inside her coat pocket.' },
+      { role: 'user', content: '유나 opened the archive door at midnight.' },
+    ];
+    expect(matchPromptToHost(missedPrompt, withMisses)).toEqual(new Map([[4, 1]]));
+    expect(matchPromptToHost(missedPrompt, withMisses, 16, 4)).toEqual(new Map([[4, 1], [0, 0]]));
+  });
+
+  it('exports isActive matching disabled and comment semantics', () => {
+    expect(isActive({ role: 'user', data: 'hello' })).toBe(true);
+    expect(isActive({ role: 'user', data: 'hello', disabled: false })).toBe(true);
+    expect(isActive({ role: 'user', data: 'hello', disabled: 'allBefore' })).toBe(true);
+    expect(isActive({ role: 'user', data: 'hello', disabled: true })).toBe(false);
+    expect(isActive({ role: 'char', data: 'note', isComment: true })).toBe(false);
+  });
 });
 
 describe('query texts', () => {
   it('uses the latest user message and the AI message before it', () => {
     expect(queryTexts(host)).toEqual({ query: 'Where did we hide the lantern?', previousAi: 'The harbor bell rang twice at dusk.' });
+  });
+});
+
+describe('guard line and post-turn landing (Phase 60 S2.2)', () => {
+  const packet = `${PACKET_TAG}\n  <Fact subject="세라">holds lantern</Fact>\n</NarrativeMemory>`;
+
+  it('appends the guard line only to non-empty packets and exports the reserve', () => {
+    expect(GUARD_RESERVE_TOKENS).toBe(40);
+    expect(withGuard(packet)).toBe(`${packet}\n${GUARD_LINE}`);
+    expect(withGuard('')).toBe('');
+  });
+
+  it('extracts userTurnAnchor from the latest active user message', () => {
+    expect(userTurnAnchor(host)).toBe('Where did we hide the lantern?');
+    expect(userTurnAnchor([])).toBe('');
+    expect(userTurnAnchor([{ role: 'user', data: '<div>   </div>', chatId: 'u0' }])).toBe('');
+    const longMsg = 'a'.repeat(30) + 'MIDDLE_ANCHOR_TEXT_FOR_SERA_AND_KAITO_TEST' + 'b'.repeat(30);
+    const longHost: HostMessage[] = [{ role: 'user', data: longMsg, chatId: 'u0' }];
+    expect(userTurnAnchor(longHost)).toHaveLength(64);
+    expect(longMsg.includes(userTurnAnchor(longHost))).toBe(true);
+  });
+
+  it('decides landsAfterUserTurn when no marker is present', () => {
+    const turn = userTurnIndex(mainPrompt, host);
+    expect(landsAfterUserTurn(mainPrompt, host, 'end', turn, null)).toBe(true);
+    expect(landsAfterUserTurn(mainPrompt, host, 'before_last_user', turn, null)).toBe(false);
+  });
+
+  it('decides landsAfterUserTurn when turn is unknown (turn < 0)', () => {
+    const marker = { message: 0, part: null, offset: 0 };
+    expect(landsAfterUserTurn(mainPrompt, host, 'end', -1, null)).toBe(true);
+    expect(landsAfterUserTurn(mainPrompt, host, 'before_last_user', -1, null)).toBe(false);
+    expect(landsAfterUserTurn(mainPrompt, host, 'before_last_user', -1, marker)).toBe(true);
+    expect(landsAfterUserTurn(mainPrompt, host, 'end', -1, marker)).toBe(true);
+  });
+
+  it('decides landsAfterUserTurn by message order when marker is in a different message', () => {
+    const markerBefore: PromptMessage[] = [
+      { role: 'system', content: `Header\n${MEMORY_MARKER}` },
+      ...mainPrompt.slice(1),
+    ];
+    const turnBefore = userTurnIndex(markerBefore, host);
+    expect(landsAfterUserTurn(markerBefore, host, 'end', turnBefore, findMarker(markerBefore))).toBe(false);
+
+    const markerAfter: PromptMessage[] = [
+      ...mainPrompt,
+      { role: 'system', content: `Trailer\n${MEMORY_MARKER}` },
+    ];
+    const turnAfter = userTurnIndex(markerAfter, host);
+    expect(landsAfterUserTurn(markerAfter, host, 'before_last_user', turnAfter, findMarker(markerAfter))).toBe(true);
+  });
+
+  it('decides landsAfterUserTurn when marker shares the turn message (string content)', () => {
+    const beforeUserText: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      { role: 'user', content: `${MEMORY_MARKER}\nWhere did we hide the lantern?` },
+    ];
+    const turnA = userTurnIndex(beforeUserText, host);
+    expect(landsAfterUserTurn(beforeUserText, host, 'end', turnA, findMarker(beforeUserText))).toBe(false);
+
+    const afterUserText: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      { role: 'user', content: `Where did we hide the lantern?\n${MEMORY_MARKER}` },
+    ];
+    const turnB = userTurnIndex(afterUserText, host);
+    expect(landsAfterUserTurn(afterUserText, host, 'before_last_user', turnB, findMarker(afterUserText))).toBe(true);
+
+    // Empty anchor defaults to true when marker is in the turn message.
+    expect(landsAfterUserTurn(beforeUserText, [], 'before_last_user', turnA, findMarker(beforeUserText))).toBe(true);
+  });
+
+  it('decides landsAfterUserTurn when marker shares a multipart turn message', () => {
+    const markerEarlierPart: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: `Context: ${MEMORY_MARKER}` },
+          { type: 'image_url', image_url: { url: 'https://example.invalid/a.png' } },
+          { type: 'text', text: 'Where did we hide the lantern?' },
+        ],
+      },
+    ];
+    const turnEarlier = userTurnIndex(markerEarlierPart, host);
+    expect(landsAfterUserTurn(markerEarlierPart, host, 'end', turnEarlier, findMarker(markerEarlierPart))).toBe(false);
+
+    const markerLaterPart: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Where did we hide the lantern?' },
+          { type: 'image_url', image_url: { url: 'https://example.invalid/a.png' } },
+          { type: 'text', text: `Notes: ${MEMORY_MARKER}` },
+        ],
+      },
+    ];
+    const turnLater = userTurnIndex(markerLaterPart, host);
+    expect(landsAfterUserTurn(markerLaterPart, host, 'before_last_user', turnLater, findMarker(markerLaterPart))).toBe(true);
+
+    const markerSamePartBefore: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: 'https://example.invalid/a.png' } },
+          { type: 'text', text: `${MEMORY_MARKER} Where did we hide the lantern?` },
+        ],
+      },
+    ];
+    const turnSameBefore = userTurnIndex(markerSamePartBefore, host);
+    expect(landsAfterUserTurn(markerSamePartBefore, host, 'end', turnSameBefore, findMarker(markerSamePartBefore))).toBe(false);
+
+    const markerSamePartAfter: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: 'https://example.invalid/a.png' } },
+          { type: 'text', text: `Where did we hide the lantern? ${MEMORY_MARKER}` },
+        ],
+      },
+    ];
+    const turnSameAfter = userTurnIndex(markerSamePartAfter, host);
+    expect(landsAfterUserTurn(markerSamePartAfter, host, 'before_last_user', turnSameAfter, findMarker(markerSamePartAfter))).toBe(true);
   });
 });

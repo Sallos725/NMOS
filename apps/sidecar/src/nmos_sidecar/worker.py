@@ -13,10 +13,10 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
-from . import canonfacts, generations, migrate, retention, reveals, summaries
+from . import calls, canonfacts, generations, migrate, retention, reveals, summaries
 from .config import Settings
 from .extraction import claim, extractor, fail, finish, process_extract
-from .llm import ChatModel, Embedder, LLMError
+from .llm import ChatModel, Embedder, LLMError, Observer
 from .runtime import effective, stored
 from .vectors import process_embed, projection
 
@@ -26,16 +26,29 @@ Handlers = dict[str, tuple[str, Callable[[psycopg.Connection, dict[str, Any]], s
 log = logging.getLogger("nmos.worker")
 
 
-def handlers(settings: Settings) -> Handlers:
+def job_observer(log_to: str | None, kind: str, job: dict[str, Any], key: str) -> Observer | None:
+    """The observer of one job's model calls (PHASE-61 S6): a `model_call` row per call with the job's kind,
+    conversation, id and generation, written to `log_to`; None (no log) without one."""
+    if log_to is None:
+        return None
+    return calls.observer(log_to, kind, conversation_id=job.get("conversation_id"), job_id=job.get("id"),
+                          generation=(job.get("payload") or {}).get("generation") or key)
+
+
+def handlers(settings: Settings, log_to: str | None = None) -> Handlers:
+    """The job handlers the settings configure. With `log_to` (a database URL; the worker's maintenance passes its own)
+    every model call a job makes is logged there (PHASE-61 S6); without it nothing is."""
     out: Handlers = {}
     ex = extractor(settings)
     sm = summaries.summarizer(settings)
     if ex is not None:
         model = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
-                          settings.llm_json_mode)
+                          settings.llm_json_mode, extra_body=settings.llm_extra_body,
+                          no_temperature=settings.llm_no_temperature)
 
         def extract(conn: psycopg.Connection, job: dict[str, Any]) -> str:
-            status = process_extract(conn, job, model.complete_metered, ex, settings.extract_turns)
+            observed = model.observed(job_observer(log_to, "extract", job, ex.key))
+            status = process_extract(conn, job, observed.complete_metered, ex, settings.extract_turns)
             if status == "done" and sm is not None:  # a secret it stated may be one a summary was not told about
                 with conn.transaction():
                     summaries.schedule_stale(conn, job["conversation_id"], sm.key)
@@ -45,10 +58,12 @@ def handlers(settings: Settings) -> Handlers:
         rv = reveals.generation(settings)
         if rv is not None:
             checker = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
-                                settings.llm_json_mode)
+                                settings.llm_json_mode, extra_body=settings.llm_extra_body,
+                                no_temperature=settings.llm_no_temperature)
 
             def check(conn: psycopg.Connection, job: dict[str, Any]) -> str:
-                status = reveals.process(conn, job, checker.complete_metered, rv, settings.extract_turns)
+                observed = checker.observed(job_observer(log_to, "reveal", job, rv.key))
+                status = reveals.process(conn, job, observed.complete_metered, rv, settings.extract_turns)
                 if status == "done" and sm is not None:  # a secret found out changes what a summary may say
                     with conn.transaction():
                         summaries.schedule_stale(conn, job["conversation_id"], sm.key)
@@ -57,17 +72,22 @@ def handlers(settings: Settings) -> Handlers:
             out["reveal"] = (rv.key, check)
     if sm is not None:
         writer = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
-                           settings.llm_json_mode)
-        out["summarize"] = (sm.key, lambda conn, job: summaries.process(conn, job, writer.complete_metered, sm))
+                           settings.llm_json_mode, extra_body=settings.llm_extra_body,
+                           no_temperature=settings.llm_no_temperature)
+        out["summarize"] = (sm.key, lambda conn, job: summaries.process(
+            conn, job, writer.observed(job_observer(log_to, "summarize", job, sm.key)).complete_metered, sm))
     cg = canonfacts.generation(settings)
     if cg is not None:
         reader = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
-                           settings.llm_json_mode)
-        out["canon"] = (cg.key, lambda conn, job: canonfacts.process(conn, job, reader.complete_metered, cg))
+                           settings.llm_json_mode, extra_body=settings.llm_extra_body,
+                           no_temperature=settings.llm_no_temperature)
+        out["canon"] = (cg.key, lambda conn, job: canonfacts.process(
+            conn, job, reader.observed(job_observer(log_to, "canon", job, cg.key)).complete_metered, cg))
     pj = projection(settings)
     if pj is not None:
         embedder = Embedder(settings.embed_url, settings.embed_model, settings.embed_api_key)
-        out["embed"] = (pj.key, lambda conn, job: process_embed(conn, job, embedder, pj))
+        out["embed"] = (pj.key, lambda conn, job: process_embed(
+            conn, job, embedder.observed(job_observer(log_to, "embed", job, pj.key)), pj))
     return out
 
 
@@ -94,11 +114,12 @@ def run_once(conn: psycopg.Connection, jobs: Handlers) -> bool:
 
 
 def prune(conn: psycopg.Connection, trace_days: int) -> None:
-    """Derived data only: finished jobs after 7 days, retrieval traces after `trace_days`, and superseded
-    embeddings the active projection replaced (O5, ADR 0015); full-manifest host observations are compacted
-    losslessly (O5, ADR 0018)."""
+    """Derived data only: finished jobs after 7 days, retrieval traces and the log of model calls (PHASE-61 S6) after
+    `trace_days`, and superseded embeddings the active projection replaced (O5, ADR 0015); full-manifest host
+    observations are compacted losslessly (O5, ADR 0018)."""
     conn.execute("DELETE FROM job WHERE status IN ('done', 'obsolete') AND updated_at < now() - interval '7 days'")
     conn.execute("DELETE FROM retrieval_trace WHERE created_at < now() - make_interval(days => %s)", (trace_days,))
+    conn.execute("DELETE FROM model_call WHERE at < now() - make_interval(days => %s)", (trace_days,))
     if pruned := retention.prune_embeddings(conn):
         log.info("superseded embeddings pruned: %d rows", pruned)
     if compacted := retention.compact_observations(conn):
@@ -132,7 +153,7 @@ def maintenance(settings: Settings, stop: threading.Event, holder: dict[str, Any
         try:
             with psycopg.connect(settings.database_url, row_factory=dict_row, autocommit=True) as conn:
                 current = effective(settings, stored(conn))
-                jobs = handlers(current)
+                jobs = handlers(current, log_to=current.database_url)  # every job's model calls logged (S6)
                 new_signature = (tuple(sorted((k, key) for k, (key, _) in jobs.items())), current.llm_api_key,
                                  current.embed_api_key, current.llm_timeout_s)
                 if new_signature != signature:

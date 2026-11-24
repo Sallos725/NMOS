@@ -6,7 +6,8 @@ import type { InjectPosition } from './prompt';
 import type { HostCard, HostLoreEntry } from './canon';
 import { CHAT_OFF_ARG, createChatSwitch, parseChatIds, type ChatState } from './chatoff';
 import type { HostChat, HostPersonas } from './types';
-import { DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, MAX_DEADLINE_MS, MAX_RESERVED_TOKENS } from './form';
+import { DEFAULT_DEADLINE_MS, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_RESERVED_TOKENS, MAX_DEADLINE_MS, MAX_KEEP_RECENT_TURNS,
+  MAX_RESERVED_TOKENS, MIN_KEEP_RECENT_TURNS } from './form';
 import { createHud, type HudDocument } from './hud-host';
 import { NMOS_ICON, namedIcon } from './icon';
 import { routeFor } from './route';
@@ -69,6 +70,9 @@ export const risuHost: HostPort = {
       injectPosition: (position === 'end' ? 'end' : 'before_last_user') as InjectPosition,
       language: langOf(await arg('language')),
       offChats: parseChatIds(await arg(CHAT_OFF_ARG)),
+      trimOldTurns: Number(await arg('trim_old_turns')) === 1,
+      keepRecentTurns: Math.max(MIN_KEEP_RECENT_TURNS,
+        positiveInt(await arg('keep_recent_turns'), DEFAULT_KEEP_RECENT_TURNS, MAX_KEEP_RECENT_TURNS)),
     };
   },
 

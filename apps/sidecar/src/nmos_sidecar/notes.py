@@ -19,8 +19,9 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
-from . import divergence
+from . import calls, divergence
 from .config import Settings
 from .entities import norm
 from .facts import symmetric
@@ -427,12 +428,18 @@ class Ask:
                    bool(body.get("model", True)), prompt, setting)
 
 
-def model_for(settings: Settings) -> Callable[..., tuple[Any, ...]] | None:
-    """The extraction model and endpoint (PHASE-50 Q3), or None when none is configured."""
+def model_for(settings: Settings, *, log_to: str | None = None,
+              conversation_id: UUID | None = None) -> Callable[..., tuple[Any, ...]] | None:
+    """The extraction model and endpoint (PHASE-50 Q3), or None when none is configured. With `log_to` (a database
+    URL) each call is logged there as a `note` of the conversation (PHASE-61 S6); without it nothing is."""
     if not (settings.llm_url and settings.llm_model):
         return None
     return ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
-                     settings.llm_json_mode).complete_metered
+                     settings.llm_json_mode, extra_body=settings.llm_extra_body,
+                     no_temperature=settings.llm_no_temperature,
+                     observer=None if log_to is None else calls.observer(log_to, "note",
+                                                                         conversation_id=conversation_id)
+                     ).complete_metered
 
 
 def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn: int | None,

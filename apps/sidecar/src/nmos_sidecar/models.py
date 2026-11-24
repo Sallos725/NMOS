@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, BeforeValidator, Field, PlainValidator
+from pydantic import BaseModel, BeforeValidator, Field, PlainValidator, model_serializer, model_validator
 
 from .canonical import storable
 
@@ -122,6 +122,18 @@ class CanonSyncResponse(BaseModel):
     in_force: int | None = None
 
 
+class TrimRequest(BaseModel):
+    """Opt-in step-quantized old-turn trim parameters (PHASE-60 S1, ADR 0083 item 5)."""
+    keep_recent_turns: int = Field(default=20, ge=4, le=200)
+    step: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _default_step(self) -> TrimRequest:
+        if self.step is None:
+            self.step = self.keep_recent_turns
+        return self
+
+
 class RetrieveRequest(BaseModel):
     host: Literal["pocketrisu"] = "pocketrisu"
     chat_id: str
@@ -134,6 +146,7 @@ class RetrieveRequest(BaseModel):
     client_timings_ms: dict[str, float] = Field(default_factory=dict)
     canon_manifest_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")  # the canon this prompt was built with
     canon_held: list[str] = Field(default_factory=list, max_length=5000)  # canon keys this prompt holds (ADR 0045)
+    trim: TrimRequest | None = None
 
 
 class Packet(BaseModel):
@@ -151,6 +164,19 @@ class MemoryFit(BaseModel):
     fits_at: int | None = None
 
 
+class CoverageResponse(BaseModel):
+    """Extraction and scene-summary coverage of the head as of the request (PHASE-60 S1)."""
+    recorded_through_turn: int | None = None
+    covered_through_turn: int | None = None
+
+
+class TrimResponse(BaseModel):
+    """The sidecar's step-quantized trim boundary decision (PHASE-60 S1, ADR 0083 item 5)."""
+    keep_from_id: str | None = None
+    keep_from_turn: int | None = None
+    reason: Literal["off", "short", "uncovered", "no_summaries", "stale", "empty_packet"] | None = None
+
+
 class RetrieveResponse(BaseModel):
     trace_id: UUID
     freshness: Literal["fresh", "stale", "unknown_conversation"]
@@ -159,6 +185,15 @@ class RetrieveResponse(BaseModel):
     # Whether vector search ran (PHASE-15 Q5, K34): "on", "off" (no embedder, or nothing to search), or "fallback" (the
     # embedder failed or did not answer in time, so recall was lexical only). None: not recalled (stale or unknown).
     vectors: Literal["on", "off", "fallback"] | None = None
+    coverage: CoverageResponse | None = None
+    trim: TrimResponse | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        if self.trim is None:
+            data.pop("trim", None)
+        return data
 
 
 class OutputRequest(BaseModel):
@@ -187,9 +222,10 @@ class RepairRequest(BaseModel):
     a secret's character, a correction's new object or value, a split's other name, and the turn it takes effect.
     `fact_lock` keeps a canon fact or a correction current against the story (ADR 0047); `fact_restore` adds back a fact
     a re-extraction dropped (PHASE-22 Q7); `state_dismiss` dismisses a status flag (PHASE-39 Q4); `entity_exclude`
-    leaves a name (`item`) out of the cast, or with `scope` "memory" out of memory too (PHASE-47)."""
+    leaves a name (`item`) out of the cast, or with `scope` "memory" out of memory too (PHASE-47); `entity_pin` pins a
+    character (`item`, a name or an entity id) for every request of the chat (PHASE-60 S8, ADR 0087)."""
     kind: Literal["thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-                  "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude"]
+                  "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude", "entity_pin"]
     item: Text = Field(min_length=1, max_length=120)
     outcome: Text | None = Field(default=None, max_length=32)
     character: Text | None = Field(default=None, max_length=120)
@@ -228,6 +264,16 @@ class EntityLinkRequest(BaseModel):
 class ReextractRequest(BaseModel):
     """The turns an undo's preview listed for re-extraction (PHASE-20 Q7): at most these are queued."""
     turns: list[int] | None = Field(default=None, max_length=10_000)
+
+
+class CarryRequest(BaseModel):
+    """A chat carries another chat's memory (PHASE-60 S6, ADR 0085): its source, the mode and, for `regression`, the
+    characters who remember; a turn of the source's current head to stop at, or None for its end now."""
+    source_conversation_id: UUID
+    mode: Literal["continue", "regression"]
+    entity_names: list[Annotated[Text, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=8)
+    cutoff_turn: int | None = Field(default=None, ge=0)
+    expect: str | None = Field(default=None, max_length=64)  # the preview's fingerprint
 
 
 class ExpectRequest(BaseModel):

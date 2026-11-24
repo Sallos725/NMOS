@@ -34,3 +34,18 @@ export function budgetAdvice(r: RequestMemory | null | undefined, current?: numb
   if (suggest <= r.budgetTokens || (current !== undefined && current >= suggest)) return null;
   return { cut: r.memory.cut, offered: r.memory.offered, budget: r.budgetTokens, suggest, all };
 }
+
+/**
+ * Display-only token estimate at the sidecar packet policy's rate (ASCII ~3.5 chars/token,
+ * non-ASCII ~1.2 tokens/code point). Iterates over code points so a surrogate pair counts once.
+ */
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  let asciiChars = 0;
+  let otherChars = 0;
+  for (const ch of text) {
+    if (ch.charCodeAt(0) < 128) asciiChars += 1;
+    else otherChars += 1;
+  }
+  return Math.ceil(asciiChars / 3.5 + otherChars * 1.2);
+}

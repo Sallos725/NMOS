@@ -28,14 +28,17 @@ immutable source ledger, without a model call:
 from __future__ import annotations
 
 import dataclasses
+import math
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 import psycopg
 
-from . import overuse, spans
-from .packet import POLICIES, REST_POLICIES, clean_text
+from . import carry, overuse, spans
+from .carry import Carried
+from .facts import LIVE
+from .packet import CARRY_POLICIES, POLICIES, REST_POLICIES, clean_text
 from .retrieval import RECORDED, RecallOptions, compile_gathered, filled, gather, rested
 
 echo, echoed = spans.reuse, spans.reused
@@ -127,6 +130,40 @@ def _canon_of(t: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _recorded_rerank(t: dict[str, Any]) -> dict[str, float] | None:
+    """Recorded per-candidate rerank scores when the request used a reranker (ADR 0084 item 5); None otherwise."""
+    if not (t.get("recall_options") or {}).get("rerank_used"):
+        return None
+    scores: dict[str, float] = {}
+    for c in t.get("candidates") or ():
+        if isinstance(c, dict) and "rerank" in c and c.get("revision_id") is not None:
+            val = c["rerank"]
+            if isinstance(val, (int, float)) and not isinstance(val, bool) and math.isfinite(float(val)):
+                scores[str(c["revision_id"])] = float(val)
+    return scores or None
+
+
+def _carried_of(conn: psycopg.Connection, t: dict[str, Any], policy: str, at: datetime,
+                notes: list[str]) -> Carried | None:
+    """What a replay under `policy` carries (PHASE-60 S6, ADR 0085 item 7). Under CARRY_POLICIES: the link the trace
+    recorded, removed since or not (deleted with its chat: none, and the note says so); none when the trace recorded
+    none under a policy that reads links (it had none); for an older trace, the link that was in force at `at`. Every
+    other policy: none."""
+    if policy not in CARRY_POLICIES:
+        return None
+    recorded = (t.get("recall_options") or {}).get("carry")
+    if recorded:
+        link = carry.by_id(conn, recorded["link"])
+        if link is None:
+            notes.append("carry link gone")
+            return None
+        return carry.target_rows(link)
+    if t["policy"] in CARRY_POLICIES:
+        return None
+    link = carry.as_of(conn, t["conversation_id"], at)
+    return carry.target_rows(link) if link is not None else None
+
+
 def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, policy: str | None = None,
            known_at: datetime | None = None, query: str | None = None, budget: int | None = None,
            projection: str | None = None, recent: list[Any] | None = None, **overrides: Any) -> dict[str, Any] | None:
@@ -179,16 +216,28 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     if overrides:
         opts = dataclasses.replace(opts, **overrides)
         notes.append("options changed: " + ", ".join(sorted(overrides)))
+    opts = dataclasses.replace(opts, reranker=None)  # ADR 0084 item 5: a replay never calls a reranker
     if query is not None:
         query = clean_text(query)  # as the live request normalizes it
         notes.append("query replaced")
     if recent is None and policy in REST_POLICIES:  # the requests before it, as it read them (PHASE-34 Q5)
         recent = overuse.recent(conn, t["conversation_id"], t["head_commit_id"], before=t["created_at"],
                                 n=opts.rest_after + 1)
+    recorded_coverage = (t.get("recall_options") or {}).get("coverage")
+    # PHASE-60 S8 (ADR 0087 item 4): the pins it recorded, never the message's `@name`s or the pins in force again; a
+    # trace without them had none
+    recorded_pins = list((t.get("recall_options") or {}).get("pins") or [])
+    # PHASE-60 S5 (ADR 0084 item 1): embed the recorded sem_query; a trace without the key replays with it off.
+    raw_sem = (t.get("recall_options") or {}).get("sem_query")
+    recorded_sem: Any = LIVE if query is not None else (raw_sem if isinstance(raw_sem, str) and raw_sem.strip() else None)
+    recorded_rerank = None if query is not None else _recorded_rerank(t)
+    carried = _carried_of(conn, t, policy, known_at or t["created_at"], notes)
     g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
                set(t["in_context"] or []), filled(opts, t["budget_tokens"] if budget is None else budget),
                upto=kept, known_at=known_at or t["created_at"],
-               canon_held=t.get("canon_held") or (), vectors_now=other, recent=recent, **_canon_of(t))
+               canon_held=t.get("canon_held") or (), vectors_now=other, recent=recent,
+               coverage_info=recorded_coverage, pins=recorded_pins, recorded_sem_query=recorded_sem,
+               rerank_scores=recorded_rerank, carried=carried, **_canon_of(t))
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     if budget is not None:

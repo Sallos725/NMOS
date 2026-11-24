@@ -2,8 +2,129 @@
 
 from __future__ import annotations
 
+import json
+import math
 import os
+import re
 from dataclasses import dataclass, field
+from typing import Any
+
+from . import rerank
+
+RERANK_TIMEOUT_MS = (50, 5000)  # PHASE-60 S5: the reranker's own wait, in milliseconds, inclusive
+
+# PHASE-61 S1 (ADR 0088 item 1): the extra request body merged into every chat-completions body of the extraction model.
+EXTRA_BODY_MAX_BYTES = 2048  # as canonical JSON (`canonical_body`), UTF-8
+EXTRA_BODY_MAX_DEPTH = 16  # nesting of objects and lists; deeper is refused before anything recurses into it
+# From here on a float's shortest text has an exponent (`1e+16`), which JSONB stores and returns as an integer.
+FLOAT_EXPONENT_FROM = 1e16
+# The request's own fields: JSON mode owns `response_format`, `llm_no_temperature` owns `temperature` (S1b).
+RESERVED_BODY_KEYS = frozenset({"model", "messages", "stream", "response_format", "temperature", "n", "tools",
+                                "tool_choice", "functions", "function_call"})
+# A key name is plain ASCII: letters, digits, `_`, `-` and `.` (provider parameters are), so no look-alike letter or
+# compatibility form can hide a credential's name. Such a name is credential-like when, lower-cased with everything
+# but letters and digits removed, it contains one of CREDENTIAL_PARTS, is one of CREDENTIAL_NAMES, or ends with
+# `token` (`token`, `access_token`, `oauth_token`; `max_tokens` and `tokenizer` are legitimate).
+PLAIN_KEY = re.compile(r"[A-Za-z0-9_.\-]*")
+CREDENTIAL_PARTS = ("apikey", "authorization", "secret", "password", "passwd", "bearer", "credential", "privatekey",
+                    "accesskey", "subscriptionkey", "cookie")
+CREDENTIAL_NAMES = frozenset({"auth", "key"})
+
+
+def canonical_body(body: Any) -> str:
+    """The body as canonical JSON: sorted keys, no spaces, non-ASCII kept (the size limit is counted on it)."""
+    return json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+
+def plain_key(key: str) -> bool:
+    return PLAIN_KEY.fullmatch(key) is not None
+
+
+def credential_like(key: str) -> bool:
+    name = re.sub(r"[^a-z0-9]", "", key.lower())
+    return (any(part in name for part in CREDENTIAL_PARTS) or name in CREDENTIAL_NAMES
+            or name.endswith("token"))
+
+
+def _unstorable(text: str) -> bool:
+    """A NUL or a lone surrogate: PostgreSQL's JSONB refuses both, and neither belongs in a request."""
+    return "\x00" in text or any(0xD800 <= ord(ch) <= 0xDFFF for ch in text)
+
+
+def extra_body_error(body: Any) -> str | None:
+    """Why `body` may not be the extra request body (PHASE-61 S1), or None when it may. One check for the panel's save,
+    the settings test, a saved value read back and the environment. The reason names a key path, never a value."""
+    if not isinstance(body, dict):
+        return "must be a JSON object"
+    for key in body:
+        if key in RESERVED_BODY_KEYS:
+            return f"may not set {key!r}: the request sets it itself"
+    stack: list[tuple[Any, str, int]] = [(body, "", 1)]
+    while stack:  # iterative: a deeply nested value is refused, never a RecursionError
+        value, path, depth = stack.pop()
+        if isinstance(value, (dict, list)) and depth > EXTRA_BODY_MAX_DEPTH:
+            return f"is nested deeper than {EXTRA_BODY_MAX_DEPTH} levels"
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if not isinstance(key, str):
+                    return f"has a key that is not text{f' in {path}' if path else ''}"
+                if _unstorable(key):
+                    return f"has a key with a NUL or an unpaired surrogate{f' in {path}' if path else ''}"
+                where = f"{path}.{key}" if path else key
+                if not plain_key(key):
+                    return (f"has a key that is not plain ASCII ({ascii(where)}): key names are plain ASCII letters,"
+                            " digits, '_', '-' and '.'")
+                if credential_like(key):
+                    return (f"may not hold a credential-like key ({where}): an API key belongs in the key field, which"
+                            " is never shown or archived")
+                stack.append((item, where, depth + 1))
+        elif isinstance(value, list):
+            stack.extend((item, f"{path}[{i}]", depth + 1) for i, item in enumerate(value))
+        elif isinstance(value, float):
+            if not math.isfinite(value):
+                return f"holds a number JSON cannot carry at {path}"
+            # PostgreSQL's JSONB writes a number back without an exponent or a signed zero: such a float would come
+            # back in another form (1e300 as a 301-digit integer), so the stored body would not be the one checked.
+            if abs(value) >= FLOAT_EXPONENT_FROM or (value == 0 and math.copysign(1.0, value) < 0):
+                return (f"holds a number at {path} the database would store in another form (a decimal or exponent"
+                        " number of 1e16 or more, or -0.0): write it as an integer")
+        elif isinstance(value, str):
+            if _unstorable(value):
+                return f"holds text with a NUL or an unpaired surrogate at {path}"
+        elif not (value is None or isinstance(value, (bool, int))):
+            return f"holds a value that is not JSON at {path}"
+    if len(canonical_body(body).encode("utf-8")) > EXTRA_BODY_MAX_BYTES:
+        return f"must be at most {EXTRA_BODY_MAX_BYTES} bytes as compact JSON"
+    return None
+
+
+def secret_path(body: Any, secrets: list[str]) -> str | None:
+    """Where a string of an accepted `body` holds one of `secrets` (review F2): the path of that value, or for a key name
+    the object that holds it, so the answer never repeats the string; None when no string does."""
+    stack: list[tuple[Any, str]] = [(body, "")]
+    while stack:
+        value, path = stack.pop()
+        if isinstance(value, str) and any(s in value for s in secrets):
+            return path or "the top level"
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if any(s in key for s in secrets):
+                    return path or "the top level"
+                stack.append((item, f"{path}.{key}" if path else key))
+        elif isinstance(value, list):
+            stack.extend((item, f"{path}[{i}]") for i, item in enumerate(value))
+    return None
+
+
+def _env_extra_body() -> Any:
+    """`NMOS_LLM_EXTRA_BODY` as JSON text; unset or empty (as the compose files pass an unset variable) is `{}`."""
+    text = os.environ.get("NMOS_LLM_EXTRA_BODY", "").strip()
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except (ValueError, RecursionError):
+        raise ValueError("NMOS_LLM_EXTRA_BODY must be a JSON object: it is not valid JSON") from None
 
 
 @dataclass(frozen=True)
@@ -31,13 +152,20 @@ class Settings:
     llm_api_key: str = field(default_factory=lambda: os.environ.get("NMOS_LLM_API_KEY", ""))
     llm_json_mode: bool = field(default_factory=lambda: os.environ.get("NMOS_LLM_JSON_MODE", "1") != "0")
     llm_timeout_s: float = field(default_factory=lambda: float(os.environ.get("NMOS_LLM_TIMEOUT_S", "120")))
+    # PHASE-61 S1 (ADR 0088): a JSON object merged at the top level into every request to the extraction model (a
+    # reasoning effort, a provider preference); `{}` sends nothing more. Part of those generations only when not empty.
+    llm_extra_body: dict[str, Any] = field(default_factory=_env_extra_body, hash=False)
+    # PHASE-61 S1b: send no `temperature` (for a model that refuses one); off sends `temperature: 0` as before. Off when
+    # unset, empty or "0". Part of those generations (`temperature: null`) only when on.
+    llm_no_temperature: bool = field(
+        default_factory=lambda: os.environ.get("NMOS_LLM_NO_TEMPERATURE", "0") not in ("", "0"))
     # Previous turns an extraction sees as context (ADR 0008); part of the extractor generation.
     extract_turns: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_TURNS", "3")))
     # Known entity names shown to extraction (ADR 0012); 0 turns hints off. Part of the extractor generation.
     extract_hints: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_HINTS", "40")))
     # The extractor (PHASE-28 Q3): empty is `extraction.DEFAULT_COMPILER` (extract-v16 since 2026-10-04: it lists the roles
     # in force and ends one as listed); "extract-v15" selects the earlier extractor. Part of the extractor generation: a change re-extracts every chat once,
-    # but a switch between extract-v16 and extract-v18 (PHASE-58 S3) re-extracts nothing.
+    # but a switch among extract-v16, extract-v18 and extract-v19 (PHASE-58 S3, PHASE-60 S7) re-extracts nothing.
     extract_compiler: str = field(default_factory=lambda: os.environ.get("NMOS_EXTRACT_COMPILER", ""))
     # Scene summaries and the story so far (PHASE-12, ADR 0042, 0043), written by the extraction model; "0" or the
     # plugin's switch turns them off. Needs NMOS_LLM_URL.
@@ -45,6 +173,9 @@ class Settings:
     # Canon facts (PHASE-14 Q3, ADR 0047): the extraction model reads the card, the persona, the author's note and each
     # lorebook entry a prompt held; "0" or the plugin's switch turns it off. Needs NMOS_LLM_URL.
     canon_facts: bool = field(default_factory=lambda: os.environ.get("NMOS_CANON_FACTS", "1") != "0")
+    # PHASE-60 S8 (ADR 0087 item 3): `@name` in the user's message pins that character for the request. Off when unset,
+    # empty (as the compose files pass an unset variable) or "0"; the plugin's switch sets it too.
+    pin_at_mentions: bool = field(default_factory=lambda: os.environ.get("NMOS_PIN_AT_MENTIONS", "0") not in ("", "0"))
     # Turns extracted when NMOS first sees a chat (ADR 0008: turns, not messages).
     extract_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_BACKFILL", "100")))
     # Embeddings are cheap (local models): cover far more history on first sight than LLM extraction.
@@ -64,6 +195,15 @@ class Settings:
     embed_model: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_MODEL", ""))
     embed_api_key: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_API_KEY", ""))
     embed_timeout_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_TIMEOUT_MS", "300")))
+    # PHASE-60 S5 (ADR 0084): an optional reranker, off unless both a URL and a model are set. When on, the request's
+    # candidate text is sent to this endpoint, as the embedder's is. The key is a credential like the other two. An
+    # empty timeout or format (as the compose files pass an unset variable) is the default.
+    rerank_url: str = field(default_factory=lambda: os.environ.get("NMOS_RERANK_URL", ""))
+    rerank_model: str = field(default_factory=lambda: os.environ.get("NMOS_RERANK_MODEL", ""))
+    rerank_api_key: str = field(default_factory=lambda: os.environ.get("NMOS_RERANK_API_KEY", ""))
+    rerank_timeout_ms: int = field(
+        default_factory=lambda: int(os.environ.get("NMOS_RERANK_TIMEOUT_MS") or rerank.DEFAULT_TIMEOUT_MS))
+    rerank_format: str = field(default_factory=lambda: os.environ.get("NMOS_RERANK_FORMAT") or "standard")
     # Budget for the lexical recall query; beyond it lexical abstains for that request (#12).
     lexical_timeout_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_LEXICAL_TIMEOUT_MS", "300")))
     # packet-v14: placements in a row before an unused supportive line rests (PHASE-34 Q2)
@@ -73,8 +213,9 @@ class Settings:
     # model name contains "qwen3-embedding", none otherwise. Documents are embedded without it.
     embed_query_instruction: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_QUERY_INSTRUCTION", "auto"))
     trace_retention_days: int = field(default_factory=lambda: int(os.environ.get("NMOS_TRACE_RETENTION_DAYS", "30")))
-    # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043, 0049, 0053, 0063, 0066, 0067, 0068). Empty or
-    # unknown: `packet.DEFAULT_POLICY` (packet-v19: small talk keeps the configured fact limits; packet-v18: explicit
+    # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043, 0049, 0053, 0063, 0066, 0067, 0068, 0082).
+    # Empty or unknown: `packet.DEFAULT_POLICY` (packet-v19: small talk keeps the configured fact limits; packet-v20 is
+    # selectable, not the default — PHASE-60; packet-v18: explicit
     # persona questions and bounded Korean particle recall;
     # packet-v17: status history; packet-v16: named facts by words; packet-v15: content anchors;
     # packet-v14: packet-v13 that knows what each line is for — labels, and supportive memory that rests after
@@ -101,9 +242,20 @@ class Settings:
 
     def __post_init__(self) -> None:
         # A misspelt extractor would be a generation of its own (a full re-extraction): refused at startup.
-        if self.extract_compiler not in ("", "extract-v15", "extract-v16", "extract-v17", "extract-v18"):
-            raise ValueError("NMOS_EXTRACT_COMPILER must be empty, extract-v15, extract-v16, extract-v17 or extract-v18,"
-                             f" not {self.extract_compiler!r}")
+        if self.extract_compiler not in ("", "extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19"):
+            raise ValueError("NMOS_EXTRACT_COMPILER must be empty, extract-v15, extract-v16, extract-v17, extract-v18 or"
+                             f" extract-v19, not {self.extract_compiler!r}")
         # A cap under one would embed nothing and mark every embed job done (ADR 0062): refused at startup.
         if self.embed_max_chunks < 1:
             raise ValueError(f"NMOS_EMBED_MAX_CHUNKS must be at least 1, not {self.embed_max_chunks}")
+        # A format NMOS does not speak, or a wait no reranker answers in (or one that holds the request too long).
+        if self.rerank_format not in rerank.FORMATS:
+            raise ValueError(f"NMOS_RERANK_FORMAT must be {' or '.join(rerank.FORMATS)}, not {self.rerank_format!r}")
+        if not RERANK_TIMEOUT_MS[0] <= self.rerank_timeout_ms <= RERANK_TIMEOUT_MS[1]:
+            raise ValueError(f"NMOS_RERANK_TIMEOUT_MS must be between {RERANK_TIMEOUT_MS[0]} and {RERANK_TIMEOUT_MS[1]},"
+                             f" not {self.rerank_timeout_ms}")
+        # A body the panel would refuse (PHASE-61 S3): the message names the setting and the reason, never the value.
+        if (reason := extra_body_error(self.llm_extra_body)) is not None:
+            raise ValueError(f"NMOS_LLM_EXTRA_BODY {reason}")
+        if not isinstance(self.llm_no_temperature, bool):
+            raise ValueError("NMOS_LLM_NO_TEMPERATURE must be a boolean")

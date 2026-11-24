@@ -80,6 +80,9 @@ details.meta{margin:6px 0 0;font-size:13px;background:var(--sunken);border:1px s
 LANGS = ("ko", "en")
 
 T: dict[str, tuple[str, str]] = {  # key: (ko, en)
+    "told": ("누가 누구에게 들었나", "Who told whom"),
+    "toc.told": ("누가 누구에게 들었나", "Who told whom"),
+    "told_about": ("{who}에 대해", "about {who}"),
     "title": ("NMOS 인스펙터", "NMOS inspector"),
     "new_views": ("새 화면으로 보기 (채팅 목록 · 허브 · 기억)", "Open the new screens (chats · hub · memory)"),
     "intro": ("원장(source ledger) 읽기 전용 화면입니다. 백그라운드 작업:", "Read-only view of the source ledger. Background jobs:"),
@@ -208,6 +211,26 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "errors.none": ("실패했거나 다시 시도 중인 백그라운드 작업이 없습니다.", "No background job has failed or is retrying."),
     "h.job": ("작업", "Job"), "h.status": ("상태", "Status"), "h.attempts": ("시도", "Attempts"),
     "h.when": ("시각", "When"), "h.error": ("오류", "Error"),
+    # the log of model calls (PHASE-61 S6, ADR 0089)
+    "calls.title": ("모델 호출", "Model calls"),
+    "calls.link": ("모델 호출 기록 (최근 200건)", "Model calls (the last 200)"),
+    "calls.intro": ("워커와 사이드카가 요청 경로 밖에서 모델을 부른 기록입니다. 프롬프트와 답, 키는 남기지 않습니다.",
+                    "Calls the worker and the sidecar made to a model outside the request path. No prompt, reply or "
+                    "key is kept."),
+    "calls.summary": ("최근 {m}분: {total}건, 성공 {ok}, 실패 {failed}", "Last {m} minutes: {total} calls, {ok} succeeded,"
+                      " {failed} failed"),
+    "calls.median": ("중앙값 {ms} ms", "median {ms} ms"),
+    "calls.last_ok": ("마지막 성공 {when}", "last success {when}"),
+    "calls.last_failed": ("마지막 실패 {when}", "last failure {when}"),
+    "calls.none": ("기록된 모델 호출이 없습니다.", "No model call is logged."),
+    "calls.http_other": ("다른 HTTP 오류", "other HTTP errors"),
+    "h.ms": ("시간 (ms)", "Time (ms)"), "h.tokens_io": ("토큰 입력/출력", "Tokens in/out"), "h.model": ("모델", "Model"),
+    "call.extract": ("추출", "extraction"), "call.reveal": ("공개 확인", "reveal check"),
+    "call.summarize": ("요약", "summary"), "call.canon": ("설정 사실", "canon facts"),
+    "call.embed": ("임베딩", "embedding"), "call.note": ("작가 노트", "author's note"),
+    "call.test": ("설정 테스트", "settings test"),
+    "outcome.ok": ("성공", "ok"), "outcome.http": ("HTTP 오류", "HTTP error"), "outcome.timeout": ("시간 초과", "timeout"),
+    "outcome.transport": ("연결 실패", "transport failure"), "outcome.bad_reply": ("읽을 수 없는 답", "unreadable reply"),
     "ids": ("식별자", "Identifiers"),
     # contents: short names of the detail sections
     "toc.state": ("상태", "State"), "toc.coverage": ("처리 현황", "Coverage"), "toc.conflicts": ("충돌", "Conflicts"),
@@ -440,6 +463,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "rk.fact_restore": ("사실 복원", "restore a fact"), "rk.fact_retract": ("사실 철회", "retract a fact"), "rk.fact_correct": ("사실 정정", "correct a fact"),
     "rk.name_split": ("이름 분리", "split two names"),
     "rk.entity_exclude": ("캐릭터 아님", "not a character"),
+    "rk.entity_pin": ("고정", "pinned"),  # PHASE-60 S8: a character the owner pinned
     "ex.cast": ("인물 목록에서만", "out of the cast"), "ex.memory": ("기억에서도", "out of memory too"),
     "ex.hidden": ("가린 사실 {n}개", "{n} facts hidden"), "ex.now": ("캐릭터 아님으로 표시됨", "marked not a character"),
     "rk.state_dismiss": ("상태창 확인 표시 넘김", "status flag dismissed"),
@@ -491,6 +515,9 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "p.fulfilled": ("약속 이행", "fulfilled"),
     "e.character": ("인물", "character"), "e.item": ("아이템", "item"), "e.place": ("장소", "place"),
     "e.group": ("집단", "group"), "e.concept": ("개념", "concept"),
+    # when it happened, apart from when the turn told it (PHASE-60 S7)
+    "happened_told": ("[일어난 때: {when}; t{turn}에 말함]", "[happened: {when}; told t{turn}]"),
+    "happened_only": ("[일어난 때: {when}]", "[happened: {when}]"),
 }
 
 
@@ -739,6 +766,8 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
     ver = f"<span class=\"muted\">{_t(lang, 'version')} {_v(version)}</span>" if version else ""
     # the panel's new screens (PHASE-52 D9), in the browser too; the panel opens them from its hub
     views_link = "" if embed else f"<p><a href=\"/views/chats{q_lang(lang)}\">{_t(lang, 'new_views')}</a></p>"
+    # PHASE-61 S6: the log of model calls, a page of its own (the browser's; the panel has its Status card)
+    views_link += "" if embed else f"<p><a href=\"/inspector/calls{q}\">{_t(lang, 'calls.link')}</a></p>"
     body = (f"<div class=\"top\"><h1>{_t(lang, 'title')}</h1>{ver}{refresh}{switch}</div>"
             f"<p class=\"muted\">{_t(lang, 'intro')} {queue}</p>"
             f"{views_link}"
@@ -749,6 +778,61 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
             + _plugin_status(plugin or {}, q, lang, embed) + listing
             + (_errors(errors, lang) if errors is not None else ""))
     return body if embed else page(_t(lang, "title"), body, lang, token)
+
+
+def _call_time(value: Any) -> str:
+    try:
+        return timestamp(datetime.fromisoformat(value)) if isinstance(value, str) else _v(value)
+    except ValueError:
+        return _v(value)
+
+
+def _calls_summary(summary: dict[str, Any], lang: str) -> str:
+    """The summary line of the log of model calls (`calls.summary`): counts, failures by fault, the median time and the
+    last success and failure."""
+    t = lambda k: _t(lang, k)  # noqa: E731
+    parts = [_v(t("calls.summary").format(m=summary.get("minutes"), total=summary.get("total", 0),
+                                          ok=summary.get("ok", 0), failed=summary.get("failed", 0)))]
+    def fault(k: str) -> str:
+        return t(f"outcome.{k}") if f"outcome.{k}" in T else t("calls.http_other") if k == "http_other" else f"HTTP {k}"
+
+    faults = [f"{_v(fault(k))} {_v(n)}" for k, n in (summary.get("by_fault") or {}).items() if n]
+    if faults:
+        parts[0] += " (" + ", ".join(faults) + ")"
+    if summary.get("median_ms") is not None:
+        parts.append(_v(t("calls.median").format(ms=summary["median_ms"])))
+    for key in ("last_ok", "last_failed"):
+        if summary.get(f"{key}_at"):
+            parts.append(_v(t(f"calls.{key}").format(when="\0")).replace("\0", _call_time(summary[f"{key}_at"])))
+    return "<p>" + " · ".join(parts) + "</p>"
+
+
+def _tokens_io(usage: Any) -> str:
+    if not isinstance(usage, dict) or not any(k in usage for k in ("input", "output")):
+        return "<span class=\"muted\">—</span>"
+    return f"{_v(usage.get('input', '—'))} / {_v(usage.get('output', '—'))}"
+
+
+def model_calls(rows: list[dict[str, Any]], summary: dict[str, Any], token: str | None, lang: str = "ko",
+                embed: bool = False) -> str:
+    """The log of model calls (PHASE-61 S6, ADR 0089): the summary of the last hour, then the newest calls with their
+    time, kind, outcome (and HTTP status), time taken, tokens in and out when reported, model and error. Every value
+    is escaped: an error is a provider's text."""
+    t = lambda k: _t(lang, k)  # noqa: E731
+    table_rows = [[_call_time(r.get("at")),
+                   _v(t(f"call.{r['kind']}") if f"call.{r['kind']}" in T else r.get("kind")),
+                   _v(t(f"outcome.{r['outcome']}") if f"outcome.{r['outcome']}" in T else r.get("outcome"))
+                   + (f" <span class=\"mono\">{_v(r['http_status'])}</span>" if r.get("http_status") else ""),
+                   _v(r.get("ms")), _tokens_io(r.get("usage")),
+                   f"<span title=\"{_v(r.get('endpoint'))}\">{_v(r.get('model'))}</span>",
+                   _v(r.get("error") or "")] for r in rows]
+    listing = (table([t(k) for k in ("h.when", "h.kind", "h.outcome", "h.ms", "h.tokens_io", "h.model", "h.error")],
+                     table_rows) if table_rows else f"<p class=\"muted\">{t('calls.none')}</p>")
+    switch = "" if embed else _lang_switch("/inspector/calls", token, lang)
+    back = "" if embed else f"<p><a href=\"/inspector{query(token, lang)}\">{t('title')}</a></p>"
+    body = (f"<div class=\"top\"><h1>{t('calls.title')}</h1>{switch}</div>{back}"
+            f"<p class=\"muted\">{t('calls.intro')}</p>" + _calls_summary(summary, lang) + listing)
+    return body if embed else page(t("calls.title"), body, lang, token)
 
 
 def _plugin_status(plugin: dict[str, Any], q: str, lang: str, embed: bool) -> str:
@@ -919,7 +1003,7 @@ def _step(h: dict[str, Any], lang: str) -> str:
         said = f"{_t(lang, 'w.not')} {said}" if lang == "en" else f"{said} {_t(lang, 'w.not')}"
     turn = h["turn"] if h.get("turn") is not None else h["position"]
     outcome = h.get("outcome", "superseded")
-    return (f"<span class=\"muted\">{_v(turn)}</span> {_v(said)} "
+    return (f"<span class=\"muted\">{_v(turn)}</span>{_happened_span(h, lang)} {_v(said)} "
             f"<span class=\"chip\" title=\"{_v(outcome)}\">{_v(_t(lang, f'o.{outcome}'))}</span>")
 
 
@@ -945,10 +1029,36 @@ def turn_link(turn: Any, text: str | None = None) -> str:
     return f"<a href=\"{href.replace('{turn}', str(turn))}\">{shown}</a>"
 
 
-def _turn(a: dict[str, Any]) -> str:
+def _turn(a: dict[str, Any], lang: str | None = None) -> str:
     if a.get("canon"):  # before turn 0 (ADR 0047): the canon text it came from
-        return f"<span class=\"chip\" title=\"{_v(a['canon'])}\">canon</span>"
-    return turn_link(a["turn"]) if a.get("turn") is not None else _v(a["position"])
+        base = f"<span class=\"chip\" title=\"{_v(a['canon'])}\">canon</span>"
+    else:
+        base = turn_link(a["turn"]) if a.get("turn") is not None else _v(a["position"])
+    return base + (_happened_span(a, lang) if lang else "")
+
+
+def happened_text(row: dict[str, Any], lang: str) -> str:
+    """When a fact or thread happened, apart from when its turn told it (PHASE-60 S7), plain text; "" when absent."""
+    raw = row.get("when_happened")
+    when = raw.strip() if isinstance(raw, str) else ""
+    if not when:
+        return ""
+    turn = row.get("turn")
+    if isinstance(turn, int) and not isinstance(turn, bool) and not row.get("canon"):
+        return _t(lang, "happened_told").format(when=when, turn=turn)
+    return _t(lang, "happened_only").format(when=when)
+
+
+def happened_mark(row: dict[str, Any], lang: str) -> str:
+    """HTML-escaped `[happened: …; told tN]` mark for a row with `when_happened` (PHASE-60 S7), or ""."""
+    text = happened_text(row, lang)
+    return _v(text) if text else ""
+
+
+def _happened_span(row: dict[str, Any], lang: str) -> str:
+    """Plain-text muted span for the Inspector's turn cells and history steps; never monospace."""
+    mark = happened_mark(row, lang)
+    return f' <span class="muted">{mark}</span>' if mark else ""
 
 
 def with_participants(view: dict[str, Any]) -> dict[str, Any]:
@@ -1167,7 +1277,7 @@ def _facts_rows(facts: list[dict[str, Any]], active: str | None, lang: str, anch
           + (_act("fact_lock", f["id"]) if (f.get("canon") or f.get("owner")) and not f.get("locked") else ""),
           _with(f, lang),
           _knowledge(f, lang),
-          _turn(f)
+          _turn(f, lang)
           # a canon fact carries its canon generation, whose reads the Canon section covers (ADR 0047)
           + (older if active and f.get("generation") not in (None, active) and not f.get("owner")
              and not f.get("canon") else "")
@@ -1210,7 +1320,7 @@ def _threads_table(threads: list[dict[str, Any]], lang: str, anchors: bool = Fal
                                                   "h.restated")],
                  [[chip(lang, "k", t.get("kind", "promise")) + (" " + chip(lang, "hz", t["horizon"]) if t.get("horizon") else ""),
                    _v(t["by"]), _v(t.get("to") or ""), _v(t.get("text")),
-                   _turn(t), chip(lang, "t", t["status"])
+                   _turn(t, lang), chip(lang, "t", t["status"])
                    + (_close(t) if t["status"] == "open"
                       else _act("thread_reopen", t["id"]) if not (t.get("closed_by") or {}).get("owner") else ""),
                    closed(t), _v(", ".join(str(r["turn"] if r.get("turn") is not None else r["position"])
@@ -1399,7 +1509,7 @@ def _repair_target(rep: dict[str, Any]) -> str:
     t = rep["target"] or {}
     if rep["kind"] == "name_split":
         return _v(f"{t.get('name')} ≠ {t.get('other')}")
-    if rep["kind"] == "entity_exclude":
+    if rep["kind"] in ("entity_exclude", "entity_pin"):
         return _v(t.get("name"))
     if rep["kind"].startswith("thread_"):
         text = _who_to(t) + f": {t.get('text')}"
@@ -1872,6 +1982,10 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
             [t(k) for k in ("h.secret", "h.holders", "h.turn", "h.found", "h.evidence")],
             [[_v(s["text"]), _v(", ".join(s["holders"])), _turn(s), _turn(when(s)), _v(when(s).get("evidence") or "")]
              for s in found[:100]]), True))
+    if told_rows := view.get("told"):
+        from .memorymap import told_chains
+        if chains := told_chains(told_rows):
+            parts.append(("told", t("told"), len(chains), _told_table(chains, lang), True))
     if claims:
         parts.append(("claims", t("who_claims"), len(claims), _claims_table(claims, lang), True))
     if other:
@@ -1956,3 +2070,29 @@ def source_turn(conv: dict[str, Any], turn: int, messages: list[dict[str, Any]],
                                 ("used", t("toc.used"), len(uses), used, True)]
         body = head + sections(lang, parts)
     return body if embed else page(f"NMOS · {title}", body, lang, token)
+
+
+def _told_table(chains: list[list[dict[str, Any]]], lang: str) -> str:
+    """Grouped `told` chains, oldest first, one line each (PHASE-60 S8): who passed it to whom, what, about whom and
+    the turns. Lines, not a four-column table: on a phone a narrow column broke Korean words mid-syllable."""
+    lines = []
+    for chain in chains:
+        people = [chain[0]["teller"], *(link["hearer"] for link in chain)]
+        who = " → ".join(_v(name) for name in people)
+        about = list(dict.fromkeys(w for link in chain for w in link.get("about") or ()))
+        turns = [turn_link(link["turn"], f"t{link['turn']}") for link in chain
+                 if isinstance(link.get("turn"), int) and not isinstance(link.get("turn"), bool)]
+        meta = [_v(_t(lang, "told_about").format(who=", ".join(about))) if about else "", " → ".join(turns)]
+        tail = " · ".join(x for x in meta if x)
+        lines.append(f"<p>{who}: {_v(chain[0]['what'])}" + (f" <span class=\"muted\">· {tail}</span>" if tail else "")
+                     + "</p>")
+    return "".join(lines)
+
+
+def told_section(rows: list[dict[str, Any]] | None, lang: str = "ko") -> str:
+    """Who told whom chains as an Inspector section body (PHASE-60 S8), oldest first; empty without rows."""
+    if not rows:
+        return ""
+    from .memorymap import told_chains
+    chains = told_chains(rows)
+    return _told_table(chains, lang) if chains else ""

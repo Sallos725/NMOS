@@ -44,6 +44,17 @@ def make(kind: str, url: str, model: str, **spec: Any) -> Generation:
     return Generation(kind=kind, model=model, endpoint=endpoint, spec=full, key=f"{kind}-{key}")
 
 
+def request_spec(extra_body: dict[str, Any], no_temperature: bool) -> dict[str, Any]:
+    """What a generation built from the model settings says about its request (PHASE-61 S2, ADR 0088 item 2):
+    `temperature` 0, or None when none is sent; `request`, the extra body in canonical form (sorted keys at every
+    level), only when it is not empty. At the defaults this is `{"temperature": 0}`, the spec field every one of them
+    had before, so their keys do not move."""
+    out: dict[str, Any] = {"temperature": None if no_temperature else 0}
+    if extra_body:
+        out["request"] = json.loads(json.dumps(extra_body, sort_keys=True, ensure_ascii=False))
+    return out
+
+
 def fingerprint(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 
@@ -74,18 +85,23 @@ def activate(conn: psycopg.Connection, gen: Generation) -> str | None:
     return previous
 
 
-MODEL_FIELDS = ("model", "endpoint")
+# PHASE-61 S2 (ADR 0088 item 3): the extra request body and the temperature switch are part of how the model is called,
+# so a change of either alone is a model change (the owner's choice, carry on by default), never a version change.
+MODEL_FIELDS = ("model", "endpoint", "request", "temperature")
 # Extractor compilers a switch between re-extracts nothing for (PHASE-58 S3, ADR 0081 item 4): extract-v18 is extract-v16
-# with a field on rows both write the same way, so the facts older turns have stay as good as they were.
-ADDS = frozenset({"extract-v16", "extract-v18"})
+# with a field on rows both write the same way, so the facts older turns have stay as good as they were. extract-v19
+# (PHASE-60 S7, ADR 0086 item 6) is extract-v18 with fields and a predicate on rows the others write the same way; its
+# spec has extract-v18's fields, so a switch among the three differs in `compiler` and `prompt` alone.
+ADDS = frozenset({"extract-v16", "extract-v18", "extract-v19"})
 ADDS_FIELDS = ("compiler", "prompt")
 
 
 def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) -> str:
     """What making `gen` active is, next to the generation `previous` that was (PHASE-57 A3): "same", "new" (none
-    was), "model" (only the model or the endpoint differs: the owner changed the model), "adds" (only the compiler
-    and its prompt differ, between two compilers of ADDS: PHASE-58 S3; with the model too, "model") or "version"
-    (anything else: a release's version or prompt, or a setting the key hashes)."""
+    was), "model" (only the model, the endpoint, the extra request body or the temperature switch differs: the owner
+    changed the model or how it is called, PHASE-61 S2), "adds" (only the compiler and its prompt differ, between two
+    compilers of ADDS: PHASE-58 S3, PHASE-60 S7; with the model too, "model") or "version" (anything else: a release's
+    version or prompt, or a setting the key hashes)."""
     if previous == gen.key:
         return "same"
     if previous is None:

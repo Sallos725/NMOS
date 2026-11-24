@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -19,24 +20,39 @@ from urllib.parse import urlsplit
 import psycopg
 from psycopg.types.json import Jsonb
 
-from .config import Settings
-from . import vertex
-from .llm import ChatModel, Embedder, LLMError, chat_headers
+from .config import RERANK_TIMEOUT_MS, Settings, extra_body_error
+from . import rerank, vertex
+from .llm import ChatModel, Embedder, LLMError, Observer, chat_headers
 from .parsers import RuleSet, compile_rules, load_rules
 
 EDITABLE: dict[str, type] = {
     "llm_url": str, "llm_model": str, "llm_api_key": str, "llm_json_mode": bool,
+    # PHASE-61 S1/S1b (ADR 0088): the extra request body (a JSON object, stored as one JSONB value) and the switch
+    "llm_extra_body": dict, "llm_no_temperature": bool,
     "embed_url": str, "embed_model": str, "embed_api_key": str, "embed_query_instruction": str,
     "embed_timeout_ms": int,  # a slow or remote embedder needs more than the 300 ms default (K34)
     "recall_threshold": float, "vector_min_sim": float, "recall_top_k": int, "facts_limit": int,
     "events_limit": int, "threads_limit": int,
     "extract_backfill": int, "summaries": bool, "canon_facts": bool,
+    "pin_at_mentions": bool,  # PHASE-60 S8: `@name` pins a character for the request
+    # PHASE-60 S5 (ADR 0084): the optional reranker; its key is a credential like the other two
+    "rerank_url": str, "rerank_model": str, "rerank_api_key": str, "rerank_timeout_ms": int, "rerank_format": str,
 }
-SECRET = {"llm_api_key", "embed_api_key"}
-KEY_HOSTS = {"llm_api_key": "llm_url", "embed_api_key": "embed_url"}  # each key belongs to its endpoint's host
+SECRET = {"llm_api_key", "embed_api_key", "rerank_api_key"}
+# each key belongs to its endpoint's host
+KEY_HOSTS = {"llm_api_key": "llm_url", "embed_api_key": "embed_url", "rerank_api_key": "rerank_url"}
 RANGES = {"recall_threshold": (0.05, 1.0), "vector_min_sim": (0.0, 1.0), "recall_top_k": (0, 20),
           "facts_limit": (0, 30), "events_limit": (0, 30), "threads_limit": (0, 10), "extract_backfill": (0, 5000),
-          "embed_timeout_ms": (100, 5000)}
+          "embed_timeout_ms": (100, 5000), "rerank_timeout_ms": RERANK_TIMEOUT_MS}
+CHOICES = {"rerank_format": rerank.FORMATS}  # a value outside these would refuse the next startup (`Settings`)
+RERANK_NOTE = ("When a URL and a model are set, each request sends the user's message and the text of up to "
+               f"{rerank.MAX_CANDIDATES} recalled candidates to this endpoint, as the embedder is sent chat text."
+               " It waits at most its own timeout: keep the embedding timeout plus the rerank timeout well under the"
+               " plugin's request deadline (3 s by default).")
+# Saved settings `Settings` checks at startup (PHASE-60 S5): a saved value it would refuse (a restored row, a downgrade)
+# is ignored, so the environment's value applies and the sidecar still starts. The panel refuses such a value (422).
+# PHASE-61 S3: the extra request body and the temperature switch too.
+STARTUP_CHECKED = ("rerank_format", "rerank_timeout_ms", "llm_extra_body", "llm_no_temperature")
 PARSERS_KEY = "parsers"
 PRESETS_KEY = "parser_presets"
 STATUS_PINS_KEY = "status_pins"  # PHASE-43: {card: [status keys told every time]}
@@ -112,8 +128,31 @@ def stored(conn: psycopg.Connection) -> dict[str, Any]:
     return {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM app_config").fetchall()}
 
 
+log = logging.getLogger("nmos.runtime")
+_ignored: set[tuple[str, str]] = set()  # (key, saved value) already warned about in this process; held, never logged
+
+
+def _refused(key: str, value: Any) -> bool:
+    """A saved value of a STARTUP_CHECKED key that `Settings` would refuse."""
+    coerced = _typed(EDITABLE[key], value)
+    return (coerced is None or (key in RANGES and not RANGES[key][0] <= coerced <= RANGES[key][1])
+            or (key in CHOICES and coerced not in CHOICES[key])
+            or (EDITABLE[key] is dict and extra_body_error(coerced) is not None))
+
+
 def effective(base: Settings, overrides: dict[str, Any]) -> Settings:
-    changes = {k: v for k, v in overrides.items() if k in EDITABLE}
+    changes = {}
+    for key, value in overrides.items():
+        if key not in EDITABLE:
+            continue
+        if key in STARTUP_CHECKED and _refused(key, value):
+            seen = (key, json.dumps(value, sort_keys=True))
+            if seen not in _ignored:  # once per saved value; the message names the key only
+                _ignored.add(seen)
+                log.warning("saved setting %s would be refused at startup and is ignored; the environment's value"
+                            " applies", key)
+            continue
+        changes[key] = value
     return dataclasses.replace(base, **changes)
 
 
@@ -160,13 +199,21 @@ def keys_follow_hosts(base: Settings, overrides: dict[str, Any], clean: dict[str
     return out
 
 
+def reranker(settings: Settings) -> rerank.Reranker | None:
+    """The configured reranker, or None when its URL or model is empty (ADR 0084 item 4: then nothing calls one)."""
+    if not settings.rerank_url.strip() or not settings.rerank_model.strip():
+        return None
+    return rerank.Reranker(url=settings.rerank_url, model=settings.rerank_model, api_key=settings.rerank_api_key,
+                           timeout_ms=settings.rerank_timeout_ms, format=settings.rerank_format)
+
+
 def ruleset(base: Settings, overrides: dict[str, Any]) -> RuleSet:
     if PARSERS_KEY in overrides:
         return compile_rules(overrides[PARSERS_KEY])
     return load_rules(base.parsers_file)
 
 
-_TYPE_NAMES = {bool: "a JSON boolean", int: "an integer", float: "a number", str: "a string"}
+_TYPE_NAMES = {bool: "a JSON boolean", int: "an integer", float: "a number", str: "a string", dict: "a JSON object"}
 
 
 def _typed(kind: type, value: Any) -> Any:
@@ -174,6 +221,8 @@ def _typed(kind: type, value: Any) -> Any:
     integer, any number as a float), else None. No truthiness or string parsing (#19)."""
     if kind is bool:
         return value if isinstance(value, bool) else None
+    if kind is dict:
+        return value if isinstance(value, dict) else None
     if isinstance(value, bool):
         return None  # bool is an int subclass: true is not 1 here
     if kind is int:
@@ -215,12 +264,21 @@ def validate_update(update: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         if value is None:
             clean[key] = None  # reset to the environment default
             continue
+        if kind is dict:  # the extra request body (PHASE-61 S1): the reason names a key path, never the value
+            if (reason := extra_body_error(value)) is not None:
+                errors.append(f"{key}: {reason}")
+            else:
+                clean[key] = value
+            continue
         coerced = _typed(kind, value)
         if coerced is None:
             errors.append(f"{key}: expected {_TYPE_NAMES[kind]}, got {type(value).__name__} {value!r:.40}")
             continue
         if key in RANGES and not RANGES[key][0] <= coerced <= RANGES[key][1]:
             errors.append(f"{key}: must be between {RANGES[key][0]} and {RANGES[key][1]}")
+            continue
+        if key in CHOICES and coerced not in CHOICES[key]:
+            errors.append(f"{key}: must be {' or '.join(CHOICES[key])}")
             continue
         if key.endswith("_url") and coerced and not coerced.startswith(("http://", "https://")):
             errors.append(f"{key}: must start with http:// or https://")
@@ -234,7 +292,7 @@ def validate_update(update: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             except vertex.VertexAuthError as exc:
                 errors.append(f"{key}: {exc}")
                 continue
-        if key == "embed_api_key" and coerced.strip().startswith("{"):
+        if key in ("embed_api_key", "rerank_api_key") and coerced.strip().startswith("{"):
             errors.append(f"{key}: service-account JSON keys are supported for the extraction LLM only")
             continue
         clean[key] = coerced.strip() if isinstance(coerced, str) else coerced
@@ -258,7 +316,8 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
     return {
         "install": settings.install or None,  # `bundle` from the portable launcher: the panel's Ollama address
         "llm": {"url": settings.llm_url, "model": settings.llm_model, "api_key_set": bool(settings.llm_api_key),
-                "json_mode": settings.llm_json_mode},
+                "json_mode": settings.llm_json_mode, "extra_body": settings.llm_extra_body,
+                "no_temperature": settings.llm_no_temperature},
         "embeddings": {"url": settings.embed_url, "model": settings.embed_model,
                        "api_key_set": bool(settings.embed_api_key),
                        "query_instruction": settings.embed_query_instruction},
@@ -266,7 +325,11 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
                    "embed_timeout_ms": settings.embed_timeout_ms,
                    "top_k": settings.recall_top_k, "facts_limit": settings.facts_limit,
                    "events_limit": settings.events_limit,
-                   "threads_limit": settings.threads_limit},
+                   "threads_limit": settings.threads_limit, "pin_at_mentions": settings.pin_at_mentions},
+        "rerank": {"url": settings.rerank_url, "model": settings.rerank_model,
+                   "timeout_ms": settings.rerank_timeout_ms, "format": settings.rerank_format,
+                   "key_set": bool(settings.rerank_api_key), "configured": reranker(settings) is not None,
+                   "note": RERANK_NOTE},
         "extraction": {"backfill": settings.extract_backfill, "summaries": settings.summaries,
                        "canon_facts": settings.canon_facts},
         "parsers": {"rules": overrides.get(PARSERS_KEY) if PARSERS_KEY in overrides else None,
@@ -277,10 +340,14 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
     }
 
 
-def test_llm(url: str, model: str, api_key: str, json_mode: bool) -> dict[str, Any]:
+def test_llm(url: str, model: str, api_key: str, json_mode: bool, extra_body: dict[str, Any] | None = None,
+             no_temperature: bool = False, observer: Observer | None = None) -> dict[str, Any]:
+    """One call as the worker would make it, with the body and the switch under test (PHASE-61 S3): a provider's
+    rejection of them shows here, before anything is saved. `observer` is told how the call ended (S6)."""
     started = time.perf_counter()
     try:
-        parsed, _ = ChatModel(url, model, api_key, timeout_s=60, json_mode=json_mode).complete_json(
+        parsed, _ = ChatModel(url, model, api_key, timeout_s=60, json_mode=json_mode, extra_body=extra_body,
+                              no_temperature=no_temperature, observer=observer).complete_json(
             "Reply with JSON only.", 'Return exactly {"ok": true, "language": "<the language of: 안녕하세요>"}')
         return {"ok": bool(parsed.get("ok")), "ms": round((time.perf_counter() - started) * 1000), "reply": parsed}
     except LLMError as exc:
@@ -291,10 +358,12 @@ def test_llm(url: str, model: str, api_key: str, json_mode: bool) -> dict[str, A
         return {"ok": False, "ms": round((time.perf_counter() - started) * 1000), "error": error}
 
 
-def test_embeddings(url: str, model: str, api_key: str) -> dict[str, Any]:
+def test_embeddings(url: str, model: str, api_key: str, observer: Observer | None = None) -> dict[str, Any]:
     started = time.perf_counter()
     try:
-        (vec,) = Embedder(url, model, api_key).embed(["기억 테스트 문장입니다."], timeout_s=60)
+        embedder = Embedder(url, model, api_key)
+        embedder.observer = observer  # PHASE-61 S6: told how the call ended (a fresh embedder: nothing shares it)
+        (vec,) = embedder.embed(["기억 테스트 문장입니다."], timeout_s=60)
         return {"ok": True, "ms": round((time.perf_counter() - started) * 1000), "dimensions": len(vec)}
     except LLMError as exc:
         return {"ok": False, "ms": round((time.perf_counter() - started) * 1000), "error": str(exc)}

@@ -29,7 +29,10 @@ from .entities import Resolution, norm
 from .threads import MATCH_MIN, Event, fire, similarity
 
 PREDICATE = "learned"
-NOT_SECRETS = frozenset({PREDICATE, "also_called", "fulfilled"})
+NOT_SECRETS = frozenset({PREDICATE, "also_called", "fulfilled",
+                         # PHASE-60 S8, owner decision 2026-11-23: a told row keeps its marks, but no reveal check
+                         # tracks it; a known limit of this phase
+                         "told"})
 
 
 def secret_text(a: dict[str, Any]) -> str:

@@ -11,13 +11,14 @@ import json
 import re
 import logging
 from collections.abc import Callable
+from datetime import timezone
 from typing import Any
 from uuid import UUID
 
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import generations, normtext
+from . import generations, normtext, predicates
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
@@ -26,9 +27,11 @@ from .entities import PERSONA, UNNAMED, node, norm, resolve
 from .facts import _versions, fact_text, links_of, persona_of, served_assertions, version_key
 from . import canon
 from .repairs import repairs_of, splits_of
-from .predicates import (DERIVED, REGISTRY, alias_evidenced, because, feeling, fill_types, knowledge, outcome,
-                         participants, horizon, registry_prompt, salience, semantics, validate)
+from .predicates import (DERIVED, EXTENSION_PARTICIPANTS, REGISTRY, alias_evidenced, because, feeling, fill_types,
+                         knowledge, outcome, participants, horizon, registry_for, registry_prompt, salience, semantics,
+                         validate, when_happened)
 from .secrets import fold as fold_secrets, reveal_value
+from .source_time import KEYS
 from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity
 from .reconcile import Entry, RevKey, turn_layout
 from .variants import FAMILY
@@ -61,8 +64,10 @@ COMPILER_VERSION = "extract-v15"  # v2: known_by / hidden_from; v3: knowledge sc
 # `assertion.salience`) and who says each quoted line of the TARGET turn (`speakers`, stored in `extraction.speakers`).
 # Selectable, not the default until its live gate passes (PHASE-45 S5).
 # extract-v18 (PHASE-58, ADR 0081): extract-v16 with how a feeling feels (`feeling`, stored in `assertion.feeling`).
+# extract-v19 (PHASE-60 S7, S8, ADR 0086): extract-v18 with when it happened (`when_happened`, `story_clock`) and
+# `told` (a per-compiler extension outside REGISTRY, `predicates.EXTENSIONS`).
 # Selectable; the default stays extract-v16 until the owner decides at the 1.0.0 tag.
-COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18")
+COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19")
 DEFAULT_COMPILER = "extract-v16"
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
@@ -397,17 +402,48 @@ def _v18(prompt: str) -> str:
 
 SYSTEM_V18 = _v18(SYSTEM_V16)
 SYSTEM_V18_ROLES = _v18(SYSTEM_V16_ROLES)
+# extract-v19 (PHASE-60 S7, S8, ADR 0086): extract-v18 with when it happened, the story clock, and `told`.
+HAPPENED_RULE = """- `when_happened`, for `event` and `promised` only: when the TARGET turn places it at another time than the turn
+  itself (a past event told now, a flashback or memory, a day set for later), that time as a short phrase of at
+  most 80 characters in the story's own words ("3년 전 겨울", "다음 보름날"). When a STORY CLOCK is shown,
+  resolve a relative phrase against it ("어제" with the clock at 4월 12일 → "4월 11일"); otherwise keep it as
+  written. null when it happens in the TARGET turn itself or the turn gives no time. Never guess one.
+"""
+TOLD_RULE = """- `told` when a character passes on to another something that matters later and that the TARGET turn shows the
+  hearer did not have: a secret, news of an event, a fact about a third person, a warning or a rumour. Subject:
+  who tells; object: who hears; `value`: what was passed on, in the chat's language; `with`: whom it is about,
+  when that is someone else. `evidence` quotes the telling itself. Ordinary conversation, greetings, small talk
+  and what the hearer already knew are not `told`.
+"""
+_HAPPENED_ANSWER = _FEELING_ANSWER + '\n"when_happened": "... or null (event and promised only)",'
+HAPPENED_MAX = 80
+CLOCK_MAX = 80
+CLOCK_LINE = "STORY CLOCK at the TARGET turn (the chat's status window): {clock}"
+
+
+def _v19(prompt: str) -> str:
+    """extract-v18's prompt with the when_happened and told rules and answer (PHASE-60 S7, S8)."""
+    assert prompt.count(_BECAUSE_AT) == 1 and prompt.count(_FEELING_ANSWER) == 1, "a v18 rule's place moved"
+    return (prompt.replace(_BECAUSE_AT, HAPPENED_RULE + TOLD_RULE + _BECAUSE_AT, 1)
+            .replace(_FEELING_ANSWER, _HAPPENED_ANSWER, 1))
+
+
+SYSTEM_V19 = _v19(SYSTEM_V18)
+SYSTEM_V19_ROLES = _v19(SYSTEM_V18_ROLES)
 PROMPTS = {"extract-v15": SYSTEM_PROMPT, "extract-v16": SYSTEM_V16_ROLES,
-           "extract-v17": SYSTEM_V17_ROLES, "extract-v18": SYSTEM_V18_ROLES}  # the full form, which the generation names
+           "extract-v17": SYSTEM_V17_ROLES, "extract-v18": SYSTEM_V18_ROLES,
+           "extract-v19": SYSTEM_V19_ROLES}  # the full form, which the generation names
 assert all(x in SYSTEM_V16_ROLES for x in (ROLE_ENDINGS, ALIAS_RULE, ANSWER_ROLES)), "a v16 rule's place moved"
 assert ROLE_ENDINGS not in SYSTEM_V16 and ALIAS_CHECK not in SYSTEM_V16_ROLES and PAIRS_RULE not in SYSTEM_V16_ROLES
 assert HORIZON_RULE not in SYSTEM_V16_ROLES and "speakers" not in SYSTEM_V16_ROLES
 assert FEELING_RULE not in SYSTEM_V16_ROLES and FEELING_RULE not in SYSTEM_V17_ROLES
-ROLES = frozenset({"extract-v16", "extract-v17", "extract-v18"})  # the compilers that list CURRENT ROLES
-PARTS_APART = frozenset({"extract-v16", "extract-v17", "extract-v18"})  # the compilers whose alias of a name and its part needs the part on its own
+assert HAPPENED_RULE not in SYSTEM_V18_ROLES and TOLD_RULE not in SYSTEM_V18_ROLES
+ROLES = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19"})  # the compilers that list CURRENT ROLES
+PARTS_APART = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19"})  # the compilers whose alias of a name and its part needs the part on its own
 HORIZONS = frozenset({"extract-v17"})  # the compilers whose threads carry a horizon (PHASE-51)
 SPEAKERS = frozenset({"extract-v17"})  # the compilers that name each quoted line's speaker (PHASE-45)
-FEELINGS = frozenset({"extract-v18"})  # the compilers that weigh a feeling (PHASE-58); a switch: generations.ADDS
+FEELINGS = frozenset({"extract-v18", "extract-v19"})  # the compilers that weigh a feeling (PHASE-58); a switch: generations.ADDS
+HAPPENED = frozenset({"extract-v19"})  # the compilers that place an event in time and read the story clock (PHASE-60 S7)
 # The same compilers' rule that a known name the turn does not write stands in only for a character the turn names
 # (`alias_evidenced`, ADR 0064 item 2): not in the prompt, so its own part of the generation names it.
 ALIASES_PRESENT = ("a known name stands in only for a ?-description or a character the turn writes by another name"
@@ -424,7 +460,7 @@ def prompt_of(compiler: str, roles: bool = True) -> str:
     upgrade by renaming it); the settings only select a compiler of PROMPTS (`Settings.__post_init__`). extract-v16's
     leaves the role-ending rules out when no CURRENT ROLE is listed (`roles` false)."""
     if compiler in ROLES and not roles:
-        return {"extract-v17": SYSTEM_V17, "extract-v18": SYSTEM_V18}.get(compiler, SYSTEM_V16)
+        return {"extract-v17": SYSTEM_V17, "extract-v18": SYSTEM_V18, "extract-v19": SYSTEM_V19}.get(compiler, SYSTEM_V16)
     return PROMPTS.get(compiler, SYSTEM_PROMPT)
 
 
@@ -611,6 +647,50 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, tu
     members = [r for r in rows if r["turn"] == target["turn"]]
     context = [r for r in rows if r["turn"] < target["turn"]]
     return {"target": target, "members": members, "context": context, "done": bool(done)}
+
+
+def story_clock(conn: psycopg.Connection, ctx: dict[str, Any]) -> str | None:
+    """The literal status-window clock as of the TARGET turn (PHASE-60 S7, ADR 0086 item 3), or None.
+
+    Read from `state_observation` as stored, on the target's commit up to the target's last member, after the latest
+    `allBefore` cut (as `state.current_state`), on accepted, enabled, non-comment revisions. Observations of more than
+    one `rules_version` give no clock. Per category (`date`, then `time`, by `source_time.KEYS`), only the rows at the
+    greatest position that has one count: exactly one, with a value non-empty and at most `CLOCK_MAX` characters, gives
+    the field; otherwise that category is left out (as `source_time.read`). The text is `key: value` pairs, as stored,
+    joined by "; ". A recorded input like the hints: never part of validity or of any key."""
+    upto = max(r["position"] for r in ctx["members"])
+    rows = conn.execute(
+        """
+        WITH m AS (
+            SELECT am.position, sr.id, sr.lifecycle, sr.metadata
+            FROM active_membership am
+            JOIN source_revision sr ON sr.id = am.source_revision_id
+            WHERE am.commit_id = %(head)s AND am.position <= %(upto)s
+        )
+        SELECT st.key, st.value, st.rules_version, m.position
+        FROM state_observation st
+        JOIN m ON m.id = st.source_revision_id
+        WHERE m.lifecycle = 'accepted'
+          AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')
+          AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+          AND coalesce(m.metadata->>'isComment', 'false') <> 'true'
+          AND lower(btrim(st.key)) = ANY(%(keys)s)
+        ORDER BY m.position, st.key, st.rule_id
+        """,
+        {"head": ctx["target"]["commit_id"], "upto": upto, "keys": list(KEYS)},
+    ).fetchall()
+    if len({r["rules_version"] for r in rows}) != 1:
+        return None
+    fields = []
+    for category in ("date", "time"):
+        candidates = [r for r in rows if KEYS[r["key"].strip().lower()] == category]
+        if not candidates:
+            continue
+        latest = max(r["position"] for r in candidates)
+        there = [r for r in candidates if r["position"] == latest]
+        if len(there) == 1 and there[0]["value"].strip() and len(there[0]["value"]) <= CLOCK_MAX:
+            fields.append(f"{there[0]['key']}: {there[0]['value']}")
+    return "; ".join(fields) or None
 
 
 def _speaker(meta: dict[str, Any]) -> str:
@@ -915,13 +995,16 @@ def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
 def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                  promises: list[dict[str, Any]] | None = None, secrets: list[dict[str, Any]] | None = None,
                  threads: list[dict[str, Any]] | None = None, roles: list[dict[str, Any]] | None = None,
-                 pairs: list[dict[str, Any]] | None = None, *, compiler: str = COMPILER_VERSION) -> str:
+                 pairs: list[dict[str, Any]] | None = None, *, compiler: str = COMPILER_VERSION,
+                 clock: str | None = None) -> str:
     lines = (hints_block(hints or []) + pairs_block(pairs or []) + promises_block(promises or [])
              + threads_block(threads or []) + roles_block(roles or []) + secrets_block(secrets or []) + ["CONTEXT:"])
     for row in ctx["context"]:
         lines.append(f"[turn {row['turn']}] {_speaker(row['metadata'])}: {row['content'][:CONTEXT_CHARS]}")
     if len(lines) == 1:
         lines.append("(none)")
+    if clock is not None:  # the story clock as of the TARGET turn (PHASE-60 S7); none: the prompt as before
+        lines += ["", CLOCK_LINE.format(clock=clock)]
     lines += ["", f"TARGET turn {ctx['target']['turn']}:"]
     lines += [f"{_speaker(row['metadata'])}: {row['content'][:TARGET_CHARS]}" for row in ctx["members"]]
     if nameless := [h["name"] for h in hints or [] if unnamed(h)]:
@@ -1208,7 +1291,7 @@ Match the listed role's place and counterpart to the arrangement the TARGET actu
 Packing, a stripped bed or farewell gifts are preparations, not checkout. If the person is still staying in the room at the TARGET's end and the move is later, the guest role is still held: answer no, not yes. For yes, quote the completed departure or termination itself, not luggage, an emptied shelf or a farewell.
 Return only JSON: {"ended":"yes" or "no","evidence":"one verbatim passage from TARGET, at most 160 characters"}.
 The evidence must support your answer. For yes, quote what happens in TARGET that ends this exact arrangement. A reason, arrangement or plan in CONTEXT is not ending evidence. Never quote CONTEXT or join separate passages with an ellipsis. Do not add explanations or other fields."""
-CONFIRMS = frozenset({"extract-v16", "extract-v17", "extract-v18"})  # the compilers whose listed role endings are confirmed
+CONFIRMS = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19"})  # the compilers whose listed role endings are confirmed
 CONFIRM_TURNS = 2  # preceding turns the confirmation shows, each as the TARGET is shown (TARGET_CHARS per message)
 HELD = "role ending not confirmed"  # the reason prefix of a held ending (a pending row: no fact)
 
@@ -1481,7 +1564,7 @@ def summed(*usages: dict[str, Any] | None) -> dict[str, Any] | None:
 ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic",
                      "confidence", "evidence", "status", "reason", "knowledge", "known_by", "hidden_from",
                      "polarity", "modality", "source", "asserted_by", "salience", "participants", "outcome", "because",
-                     "feeling")
+                     "feeling", "when_happened")
 JSON_COLUMNS = frozenset({"participants", "feeling"})  # jsonb columns of ASSERTION_COLUMNS
 
 
@@ -1492,19 +1575,21 @@ def assertion_values(a: dict[str, Any]) -> tuple[Any, ...]:
 
 def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
               shown: str | None = None, apart: bool = False, horizons: bool = False,
-              feelings: bool = False) -> list[dict[str, Any]]:
+              feelings: bool = False, compiler: str | None = None) -> list[dict[str, Any]]:
     """Model output → assertion rows (at most 40): missing entity types filled from the reply or the
     hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
     (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). `shown` (the turn worker, since extract-v14,
     ADR 0054: the target turn as the model saw it, `shown_target`): a quote of EVIDENCE_MIN_CHARS or more that is
     not in it parks the row. `feelings` (extract-v18, PHASE-58 S2) keeps a feeling's strength, sign and the feeling
-    under it. Pure,
+    under it. `compiler` (extract-v19, PHASE-60 S7, S8): its extension predicates (`told`) validate, and a
+    `when_happened` is kept. Pure,
     so the real-model evaluation (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
     out = []
+    also = EXTENSION_PARTICIPANTS.get(compiler or "", frozenset())
     for item, inferred in fill_types(items[:40], hints):
         if not isinstance(item, dict):
             continue
-        status, reason = validate(item)
+        status, reason = validate(item, registry_for(compiler))
 
         def text(key: str, limit: int = 300) -> str | None:
             value = item.get(key)
@@ -1530,6 +1615,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
         if status == "valid" and item.get("predicate") == "resolved" and outcome(item) is None:
             status, reason = "pending", "resolved without an outcome"
         quote = text("evidence")
+        if status == "valid" and item.get("predicate") == "told" and not quote:  # PHASE-60 S8: it needs its quote
+            status, reason = "pending", "told without its quote"
         if (status == "valid" and shown is not None and quote and len(quote) >= EVIDENCE_MIN_CHARS
                 and similarity(quote, shown) < EVIDENCE_MIN):
             status, reason = "pending", "evidence not in the turn"
@@ -1544,9 +1631,10 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
                     "knowledge": scope, "known_by": known_by, "hidden_from": hidden_from, "polarity": polarity,
                     "modality": modality, "source": source, "asserted_by": asserted_by,
                     "salience": salience(item) or (horizon(item) if horizons else None),  # PHASE-51 S2
-                    "participants": participants(item) if status == "valid" else None,
+                    "participants": participants(item, also) if status == "valid" else None,
                     "outcome": outcome(item), "because": because(item),
-                    "feeling": feeling(item) if feelings else None})
+                    "feeling": feeling(item) if feelings else None,
+                    "when_happened": when_happened(item, HAPPENED_MAX) if compiler in HAPPENED else None})
     return out
 
 
@@ -1569,6 +1657,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     threads: list[dict[str, Any]] = []
     roles: list[dict[str, Any]] = []
     pairs: list[dict[str, Any]] = []
+    clock: str | None = None
     compiler = gen.spec.get("compiler", COMPILER_VERSION)
     turn_text = "\n".join(r["content"] for r in ctx["members"])
     if sum(len(r["content"]) for r in ctx["members"]) < MIN_CONTENT_CHARS:
@@ -1583,9 +1672,12 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         roles = role_hints(ctx, earlier) if compiler in ROLES else []
         if compiler in PARTS_APART:
             pairs = name_pairs(hints, turn_text, persona_of(ctx["target"].get("host_persona_name")))
-        parsed, raw, usage = metered(complete, prompt_of(compiler, bool(roles)).format(registry=registry_prompt()),
+        if compiler in HAPPENED:  # a recorded input like the hints, never part of validity (PHASE-60 S7)
+            clock = story_clock(conn, ctx)
+        system = prompt_of(compiler, bool(roles)).format(registry=registry_prompt(compiler=compiler))  # PHASE-60 S7
+        parsed, raw, usage = metered(complete, system,
                                      build_prompt(ctx, hints, promises, secrets, threads, roles, pairs,
-                                                  compiler=compiler))
+                                                  compiler=compiler, clock=clock))
     items = parsed.get("assertions")
     if not isinstance(items, list):  # not an empty answer: fail the job, so it is retried and then counted failed
         raise LLMError("model reply has no `assertions` list")
@@ -1618,7 +1710,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         extraction_id = uuid7()
         inserted = conn.execute(
             "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
-            " coverage, members, hints, usage, speakers) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " coverage, members, hints, usage, speakers, story_clock)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " ON CONFLICT DO NOTHING RETURNING id",
             (extraction_id, revision_id, window_hash, compiler, gen.key, gen.model,
              Jsonb({"reply": raw[:20000], **({"confirmations": confirmations} if confirmations else {}),
@@ -1627,13 +1720,13 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
              None if hints is None and not promises and not secrets and not threads and not roles
              else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets, "threads": threads,
                          **({"roles": roles} if roles else {}), **({"names": pairs} if pairs else {})}),
-             Jsonb(usage) if usage is not None else None, Jsonb(spoken) if spoken else None),
+             Jsonb(usage) if usage is not None else None, Jsonb(spoken) if spoken else None, clock),
         ).fetchone()
         if inserted is None:
             return "done"
         rows = [(extraction_id, revision_id, *assertion_values(a))
                 for a in normalize(items, turn_text, hints, shown_target(ctx), compiler in PARTS_APART,
-                                  compiler in HORIZONS, compiler in FEELINGS)]
+                                  compiler in HORIZONS, compiler in FEELINGS, compiler=compiler)]
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(
@@ -1645,16 +1738,70 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     return "done"
 
 
-def recent_errors(conn: psycopg.Connection, limit: int = 8) -> list[dict[str, Any]]:
-    """Background jobs that failed for good or are retrying, newest first, each with its last error cut to 300
+def recent_errors(conn: psycopg.Connection, limit: int = 8, chars: int = 300) -> list[dict[str, Any]]:
+    """Background jobs that failed for good or are retrying, newest first, each with its last error cut to `chars`
     characters (an error can quote a model's reply)."""
-    return conn.execute("SELECT kind, status, attempts, updated_at, left(last_error, 300) AS error FROM job"
+    return conn.execute("SELECT kind, status, attempts, updated_at, left(last_error, %s) AS error FROM job"
                         " WHERE last_error IS NOT NULL AND status IN ('dead', 'queued', 'running')"
-                        " ORDER BY updated_at DESC LIMIT %s", (limit,)).fetchall()
+                        " ORDER BY updated_at DESC LIMIT %s", (chars, limit)).fetchall()
 
 
 def job_counts(conn: psycopg.Connection) -> dict[str, int]:
     return {r["status"]: r["n"] for r in conn.execute("SELECT status, count(*) AS n FROM job GROUP BY status").fetchall()}
+
+
+WORKER_KINDS = ("extract", "reveal", "summarize", "canon", "embed")
+RECENT_MINUTES = 30  # finished jobs counted back this far
+DEAD_HOURS = 24  # given-up jobs counted back this far
+_SPACE = re.compile(r"[\s\x00-\x1f\x7f]+")
+
+
+def worker_status(conn: psycopg.Connection) -> dict[str, Any]:
+    """What the worker is doing (PHASE-61 S5), for the panel's Status tab: jobs waiting by kind, running, tried again
+    after a failure, given up on lately, finished lately, and the newest failure's error on one line, cut to 200
+    characters. Counts only; reads `job` and the generation keys, nothing else (no chat text). An obsolete job counts
+    nowhere. A queued job of a generation its kind has left is `set_aside`, not waiting and not tried again: no
+    worker claims it (`claim`), so counted as waiting it would wait on the card for ever."""
+    rows = conn.execute(
+        "WITH active AS (SELECT DISTINCT ON (kind) kind, key FROM projection_generation"
+        "                ORDER BY kind, activated_at DESC, key),"
+        " seen AS (SELECT j.kind, j.status, j.attempts, j.last_error, j.updated_at,"
+        "                 coalesce(j.status = 'queued' AND j.payload->>'generation' <> a.key, false) AS aside"
+        "          FROM job j LEFT JOIN active a ON a.kind = j.kind)"
+        " SELECT kind, count(*) FILTER (WHERE status = 'queued' AND NOT aside) AS queued,"
+        " count(*) FILTER (WHERE aside) AS set_aside,"
+        " count(*) FILTER (WHERE status = 'running') AS running,"
+        " count(*) FILTER (WHERE status IN ('queued', 'running') AND NOT aside AND attempts > 0"
+        "                  AND last_error IS NOT NULL) AS retrying,"
+        " count(*) FILTER (WHERE status = 'dead' AND updated_at > now() - make_interval(hours => %s)) AS dead_recent,"
+        " count(*) FILTER (WHERE status = 'done' AND updated_at > now() - make_interval(mins => %s)) AS done_recent"
+        " FROM seen GROUP BY kind ORDER BY kind", (DEAD_HOURS, RECENT_MINUTES)).fetchall()
+    queued = {kind: 0 for kind in WORKER_KINDS} | {r["kind"]: r["queued"] for r in rows}
+    total = {k: sum(r[k] for r in rows) for k in ("set_aside", "running", "retrying", "dead_recent", "done_recent")}
+    newest = recent_errors(conn, limit=1, chars=1000)
+    last_error = None
+    if newest:
+        row = newest[0]
+        last_error = {"kind": row["kind"], "status": row["status"],
+                      # whole seconds: a browser's date parser need not read microseconds
+                      "at": row["updated_at"].astimezone(timezone.utc).isoformat(timespec="seconds"),
+                      "text": _SPACE.sub(" ", row["error"]).strip()[:200]}
+    return {"queued": queued, "queued_total": sum(queued.values()), **total, "recent_minutes": RECENT_MINUTES,
+            "dead_hours": DEAD_HOURS, "last_error": last_error}
+
+
+def _prompt_print(compiler: str) -> str:
+    """The `prompt` fingerprint of a compiler's generation. Every extractor key hashes `repr(REGISTRY)`, so a
+    compiler's extension predicates (`predicates.EXTENSIONS`, only extract-v19's `told`) and its other output-changing
+    constants (the story clock line, the caps) are hashed here instead: its spec keeps extract-v18's field names, so a
+    switch between them differs in `compiler` and `prompt` alone (PHASE-60 S7, ADR 0086 item 5). Every other
+    compiler's is the fingerprint of its prompt, as before."""
+    if compiler not in predicates.EXTENSIONS:
+        return generations.fingerprint(prompt_of(compiler))
+    return generations.fingerprint(
+        prompt_of(compiler) + "\n" + repr(sorted(predicates.EXTENSIONS[compiler].items())) + "\n"
+        + repr(sorted(predicates.EXTENSION_PARTICIPANTS.get(compiler, frozenset()))) + "\n" + CLOCK_LINE + "\n"
+        + f"{HAPPENED_MAX}|{CLOCK_MAX}")
 
 
 def extractor(settings: Settings) -> Generation | None:
@@ -1664,7 +1811,7 @@ def extractor(settings: Settings) -> Generation | None:
     compiler = compiler_of(settings)
     return generations.make(
         "extract", settings.llm_url, settings.llm_model,
-        compiler=compiler, prompt=generations.fingerprint(prompt_of(compiler)),
+        compiler=compiler, prompt=_prompt_print(compiler),
         **({"confirm": generations.fingerprint(ROLE_CONFIRM_SYSTEM + str(CONFIRM_TURNS) + "|".join(DOUBTS)
                                                 + ALIAS_CONFIRM_SYSTEM + ALIAS_ASKED + ENDINGS_POST)}
            if compiler in CONFIRMS else {}),
@@ -1673,7 +1820,8 @@ def extractor(settings: Settings) -> Generation | None:
         **({"speakers": generations.fingerprint(f"{SPEAKER_RULE}|{QUOTES_LISTED}|{QUOTE_SHOWN}|{SYSTEM_V17}")}
            if compiler in SPEAKERS else {}),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,
-        json_mode=settings.llm_json_mode, temperature=0, unit="turn", context_turns=settings.extract_turns,
+        json_mode=settings.llm_json_mode, unit="turn", context_turns=settings.extract_turns,
+        **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
         target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS, hints=settings.extract_hints,
     )
 

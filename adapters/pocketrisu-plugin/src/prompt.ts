@@ -2,9 +2,12 @@
 
 import { normalizeText } from './canonical';
 import { selectedContent } from './manifest';
+import { isTextPart, MEMORY_MARKER, type MarkerAt } from './placement';
 import type { HostMessage, PromptMessage } from './types';
 
 export const PACKET_TAG = '<NarrativeMemory version="0" source="nmos">';
+export const GUARD_LINE = "(The user's most recent message comes before this memory and has already happened; where the two differ, that message wins.)";
+export const GUARD_RESERVE_TOKENS = 40;
 
 export function contentText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -14,16 +17,26 @@ export function contentText(content: unknown): string {
 
 const norm = (value: unknown): string => normalizeText(value).trim();
 
-function isActive(message: HostMessage): boolean {
-  return message.disabled !== true && !message.isComment;
+export function isActive(message: HostMessage | null | undefined): boolean {
+  return message != null && message.disabled !== true && !message.isComment;
 }
 
 export function latestUserIndex(messages: HostMessage[]): number {
+  if (!Array.isArray(messages)) return -1;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const m = messages[i] as HostMessage;
-    if (m.role === 'user' && isActive(m)) return i;
+    const m = messages[i];
+    if (m && m.role === 'user' && isActive(m)) return i;
   }
   return -1;
+}
+
+/** Cleaned middle-64 anchor of the latest active user host message, or empty string when none. */
+export function userTurnAnchor(hostMessages: HostMessage[]): string {
+  if (!Array.isArray(hostMessages)) return '';
+  const hostIndex = latestUserIndex(hostMessages);
+  if (hostIndex < 0) return '';
+  const expected = cleanText(selectedContent(hostMessages[hostIndex]));
+  return expected ? anchorOf(expected, 64) : '';
 }
 
 /**
@@ -33,16 +46,13 @@ export function latestUserIndex(messages: HostMessage[]): number {
  */
 export function userTurnIndex(prompt: PromptMessage[], hostMessages: HostMessage[]): number {
   if (!Array.isArray(prompt)) return -1;
-  const hostIndex = latestUserIndex(hostMessages);
-  if (hostIndex < 0) return -1;
+  const anchor = userTurnAnchor(hostMessages);
+  if (!anchor) return -1;
   // Cleaned-text containment instead of equality: input scripts may wrap or reshape the user turn.
-  const expected = cleanText(selectedContent(hostMessages[hostIndex]));
-  if (!expected) return -1;
-  const anchor = anchorOf(expected, 64);
   for (let i = prompt.length - 1; i >= 0; i -= 1) {
     if (prompt[i]?.role === 'assistant') continue;
     const sent = cleanText(contentText(prompt[i]?.content));
-    if (sent === expected || sent.includes(anchor)) return i;
+    if (sent.includes(anchor)) return i;
   }
   return -1;
 }
@@ -75,19 +85,24 @@ export function anchorOf(text: string, size = 48): string {
 }
 
 /**
- * Host message ids whose text is already in the outgoing prompt. PocketRisu sends a contiguous tail
- * of the chat in order, so match host messages newest→oldest against prompt messages newest→oldest
- * with a moving pointer: an older duplicate line can never claim a prompt slot a newer copy used.
- * Stops after a few anchorable misses (the start of the sent window).
+ * Pointer-matches active, anchorable host messages newest→oldest against outgoing prompt messages
+ * newest→oldest, returning a map of host index → prompt index. An older duplicate line can never
+ * claim a prompt slot a newer copy used; stops after `maxMisses` consecutive anchorable misses.
  */
-export function inContextIds(prompt: PromptMessage[], hostMessages: HostMessage[], minAnchor = 16, maxMisses = 3): string[] {
+export function matchPromptToHost(
+  prompt: PromptMessage[],
+  hostMessages: HostMessage[],
+  minAnchor = 16,
+  maxMisses = 3,
+): Map<number, number> {
+  const matches = new Map<number, number>();
+  if (!Array.isArray(prompt) || !Array.isArray(hostMessages)) return matches;
   const texts = prompt.map((m) => cleanText(contentText(m?.content)));
   let pointer = texts.length - 1;
-  let boundary = hostMessages.length;
   let misses = 0;
   for (let i = hostMessages.length - 1; i >= 0 && pointer >= 0; i -= 1) {
-    const m = hostMessages[i] as HostMessage;
-    if (!isActive(m)) continue;
+    const m = hostMessages[i];
+    if (!m || !isActive(m)) continue;
     const text = cleanText(selectedContent(m));
     if (text.length < minAnchor) continue;
     const anchor = anchorOf(text);
@@ -99,12 +114,27 @@ export function inContextIds(prompt: PromptMessage[], hostMessages: HostMessage[
       }
     }
     if (found >= 0) {
-      boundary = i;
+      matches.set(i, found);
       pointer = found - 1;
       misses = 0;
     } else if (++misses >= maxMisses) {
       break;
     }
+  }
+  return matches;
+}
+
+/**
+ * Host message ids whose text is already in the outgoing prompt. PocketRisu sends a contiguous tail
+ * of the chat in order, so `matchPromptToHost` finds the smallest matched host index and every
+ * message from there to the end of `hostMessages` is reported as in context.
+ */
+export function inContextIds(prompt: PromptMessage[], hostMessages: HostMessage[], minAnchor = 16, maxMisses = 3): string[] {
+  const matches = matchPromptToHost(prompt, hostMessages, minAnchor, maxMisses);
+  if (matches.size === 0) return [];
+  let boundary = hostMessages.length;
+  for (const i of matches.keys()) {
+    if (i < boundary) boundary = i;
   }
   return hostMessages.slice(boundary).map((m) => String(m.chatId ?? '')).filter(Boolean);
 }
@@ -123,7 +153,9 @@ export function injectPacket(prompt: PromptMessage[], packet: string, position: 
   const message: PromptMessage = { role: 'system', content: packet };
   const out = prompt.slice();
   if (position === 'end') {
-    out.push(message);
+    let index = out.length;
+    while (index > 0 && out[index - 1]?.role === 'assistant') index -= 1;
+    out.splice(index, 0, message);
     return out;
   }
   let index = turn >= 0 && turn < out.length && out[turn]?.role !== 'assistant' ? turn : out.length;
@@ -133,6 +165,49 @@ export function injectPacket(prompt: PromptMessage[], packet: string, position: 
   while (index > 0 && out[index]?.role === 'user' && out[index - 1]?.role === 'user') index -= 1;
   out.splice(index, 0, message);
   return out;
+}
+
+/** Appends the post-turn guard line right after `</NarrativeMemory>` (empty packet stays empty). */
+export function withGuard(packet: string): string {
+  return packet ? `${packet}\n${GUARD_LINE}` : '';
+}
+
+function textAfterMarker(message: PromptMessage | undefined, marker: MarkerAt): string {
+  const content = message?.content;
+  const start = marker.offset + MEMORY_MARKER.length;
+  if (marker.part === null) {
+    return typeof content === 'string' ? content.slice(start) : '';
+  }
+  if (!Array.isArray(content)) return '';
+  const chunks: string[] = [];
+  const part = content[marker.part];
+  if (isTextPart(part)) chunks.push(part.text.slice(start));
+  for (let j = marker.part + 1; j < content.length; j += 1) {
+    const later = content[j];
+    if (isTextPart(later)) chunks.push(later.text);
+  }
+  return chunks.join('\n');
+}
+
+/**
+ * True when the packet will land after the latest user turn (by `end` placement or a placeholder),
+ * so the guard line applies and its token reserve is deducted from the requested budget (Phase 60 S2.2).
+ */
+export function landsAfterUserTurn(
+  prompt: PromptMessage[],
+  hostMessages: HostMessage[],
+  position: InjectPosition,
+  turn: number,
+  marker: MarkerAt | null,
+): boolean {
+  if (turn < 0) return position === 'end' || marker !== null;
+  if (marker === null) return position === 'end';
+  if (marker.message > turn) return true;
+  if (marker.message < turn) return false;
+  const anchor = userTurnAnchor(hostMessages);
+  if (!anchor) return true;
+  const after = Array.isArray(prompt) ? textAfterMarker(prompt[marker.message], marker) : '';
+  return !cleanText(after).includes(anchor);
 }
 
 /** Text of the latest active user message and of the AI message just before it. */

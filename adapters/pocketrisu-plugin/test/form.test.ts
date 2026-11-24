@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { configBody, connArgs, dirtySections, embedWaitTooLong, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, VERTEX_URL,
+import { configBody, connArgs, dirtySections, embedWaitTooLong, modelChange, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, trimArgs, VERTEX_URL,
   type FormValues } from '../src/form';
+import { risuHost } from '../src/host';
 import { STRING_KEYS, langOf, t } from '../src/i18n';
 
 const base: FormValues = {
@@ -36,6 +37,46 @@ describe('batch save', () => {
     expect(embedWaitTooLong('2600', '3000')).toBe(true);
     expect(embedWaitTooLong('3000', '')).toBe(true);  // the default deadline, 3000
     expect(embedWaitTooLong('', '1000')).toBe(false);  // an older sidecar: no wait to compare
+  });
+
+  it('sends the @name pin setting only when the sidecar reported it (PHASE-60 S8)', () => {
+    const edited = structuredClone(base);
+    edited.tune = { ...edited.tune, pinAt: true };
+    expect(configBody(['tune'], edited, { pinAt: true })).toMatchObject({ pin_at_mentions: true });
+    edited.tune.pinAt = false;
+    expect(configBody(['tune'], edited, { pinAt: true })).toMatchObject({ pin_at_mentions: false });
+    expect(configBody(['tune'], edited, { pinAt: false })).not.toHaveProperty('pin_at_mentions');
+    expect(configBody(['tune'], edited)).not.toHaveProperty('pin_at_mentions');  // an older sidecar refuses the key
+    expect(configBody(['llm'], edited, { pinAt: true })).not.toHaveProperty('pin_at_mentions');  // only with tune
+    const before = { ...structuredClone(base), tune: { ...base.tune, pinAt: false } };
+    expect(dirtySections(before, { ...before, tune: { ...before.tune, pinAt: true } })).toEqual(['tune']);
+  });
+
+  it('sends reranker settings only when dirty and reported by the sidecar, and the key only when typed (PHASE-60 S5)', () => {
+    const before = { ...structuredClone(base), rerank: { url: '', model: '', key: '', timeout: '600' } };
+    const edited = structuredClone(before);
+    expect(dirtySections(before, edited)).toEqual([]);
+    edited.rerank = { url: ' https://rerank.example/v1 ', model: ' rr-1 ', key: '   ', timeout: '800' };
+    expect(dirtySections(before, edited)).toEqual(['rerank']);
+    expect(configBody(['rerank'], edited, { rerank: true })).toEqual({
+      rerank_url: 'https://rerank.example/v1', rerank_model: 'rr-1', rerank_timeout_ms: 800,
+    });
+    edited.rerank.key = ' rk-secret ';
+    expect(configBody(['rerank'], edited, { rerank: true })).toEqual({
+      rerank_url: 'https://rerank.example/v1', rerank_model: 'rr-1', rerank_timeout_ms: 800, rerank_api_key: 'rk-secret',
+    });
+    expect(configBody(['rerank'], edited, { rerank: true })).not.toHaveProperty('rerank_format');
+    // bad timeout passes through so the sidecar refuses it with a message
+    edited.rerank = { url: '', model: '', key: '', timeout: '' };
+    expect(configBody(['rerank'], edited, { rerank: true })).toEqual({
+      rerank_url: '', rerank_model: '', rerank_timeout_ms: '',
+    });
+    edited.rerank.timeout = 'abc';
+    expect(configBody(['rerank'], edited, { rerank: true })).toMatchObject({ rerank_timeout_ms: 'abc' });
+    // absent on an older sidecar, or not dirty: nothing sent
+    expect(configBody(['rerank'], edited, { rerank: false })).toEqual({});
+    expect(configBody(['rerank'], edited)).toEqual({});
+    expect(configBody(['llm'], edited, { rerank: true })).not.toHaveProperty('rerank_url');
   });
 
   it('sends an API key only when one was typed and never includes status rules', () => {
@@ -80,6 +121,87 @@ describe('batch save', () => {
     const deadline = (value: string) => connArgs({ ...base.conn, deadline: value }).deadline_ms;
     expect([deadline(''), deadline('abc'), deadline('50'), deadline('4500.7'), deadline('99999')])
       .toEqual([3000, 3000, 200, 4500, 30000]);
+  });
+});
+
+describe('extra request values in the save (PHASE-61 S4)', () => {
+  const loaded: FormValues = { ...structuredClone(base), llm: { ...base.llm, extra: '{\n  "a": 1,\n  "b": 2\n}', noTemp: false } };
+
+  it('counts the body by its object: spacing and key order are no change', () => {
+    const edited = structuredClone(loaded);
+    edited.llm.extra = '{"b":2,"a":1}';
+    expect(dirtySections(loaded, edited)).toEqual([]);
+    expect(modelChange(loaded, edited)).toBe(false);
+    edited.llm.extra = '{"b": 2, "a": 1, "reasoning": {"effort": "low"}}';
+    expect(dirtySections(loaded, edited)).toEqual(['llm']);
+    expect(modelChange(loaded, edited)).toBe(true);
+  });
+
+  it('sends the body and the switch only when they changed, beside the model fields', () => {
+    const edited = structuredClone(loaded);
+    edited.llm.key = ' sk-new ';  // another llm change: neither new field goes with it
+    expect(configBody(['llm'], edited, {}, loaded)).toEqual({ llm_url: 'http://llm/v1', llm_model: 'm', llm_api_key: 'sk-new' });
+    edited.llm.key = '';
+    edited.llm.extra = '{"a": 1, "b": 2, "reasoning": {"effort": "low"}}';
+    expect(configBody(['llm'], edited, {}, loaded)).toEqual({ llm_url: 'http://llm/v1', llm_model: 'm',
+      llm_extra_body: { a: 1, b: 2, reasoning: { effort: 'low' } } });
+    edited.llm.extra = '';  // emptied: {} is sent
+    expect(configBody(['llm'], edited, {}, loaded)).toMatchObject({ llm_extra_body: {} });
+    edited.llm.extra = loaded.llm.extra;
+    edited.llm.noTemp = true;
+    expect(dirtySections(loaded, edited)).toEqual(['llm']);
+    expect(modelChange(loaded, edited)).toBe(true);
+    expect(configBody(['llm'], edited, {}, loaded)).toEqual({ llm_url: 'http://llm/v1', llm_model: 'm', llm_no_temperature: true });
+    expect(configBody(['tune'], edited, {}, loaded)).not.toHaveProperty('llm_no_temperature');  // only with llm
+  });
+
+  it('never sends a text that is not a JSON object, nor anything to a sidecar that has no such setting', () => {
+    const edited = structuredClone(loaded);
+    edited.llm.extra = '{"a": 1';
+    expect(dirtySections(loaded, edited)).toEqual(['llm']);
+    expect(configBody(['llm'], edited, {}, loaded)).not.toHaveProperty('llm_extra_body');
+    const older = structuredClone(base);
+    const moved = { ...structuredClone(base), llm: { ...base.llm, model: 'm2' } };
+    expect(configBody(['llm'], moved, {}, older)).toEqual({ llm_url: 'http://llm/v1', llm_model: 'm2' });
+    expect(modelChange(older, moved)).toBe(true);
+    expect(modelChange(older, structuredClone(older))).toBe(false);
+  });
+});
+
+describe('leaving out old dialogue (PHASE-60 S1)', () => {
+  it('stores the switch as 1 or 0 and keeps the recent turns within 4..200, 20 by default', () => {
+    const keep = (value: string) => trimArgs({ on: true, keep: value }).keep_recent_turns;
+    expect([keep(''), keep('abc'), keep('0'), keep('-5'), keep('0.5'), keep('3'), keep('4'), keep('30.9'), keep(' 40 '),
+      keep('200'), keep('500')]).toEqual([20, 20, 20, 20, 20, 4, 4, 30, 40, 200, 200]);
+    expect(trimArgs({ on: true, keep: '30' })).toEqual({ trim_old_turns: 1, keep_recent_turns: 30 });
+    expect(trimArgs({ on: false, keep: '' })).toEqual({ trim_old_turns: 0, keep_recent_turns: 20 });
+  });
+
+  it('is a section of its own that sends nothing to the sidecar', () => {
+    const before: FormValues = { ...structuredClone(base), trim: { on: false, keep: '20' } };
+    const edited = structuredClone(before);
+    expect(dirtySections(before, edited)).toEqual([]);
+    edited.trim = { on: true, keep: '30' };
+    expect(dirtySections(before, edited)).toEqual(['trim']);
+    expect(configBody(['trim'], edited)).toEqual({});
+    edited.tune.topK = '3';
+    expect(dirtySections(before, edited)).toEqual(['tune', 'trim']);
+    expect(configBody(dirtySections(before, edited), edited)).not.toHaveProperty('trim_old_turns');
+    expect(configBody(dirtySections(before, edited), edited)).not.toHaveProperty('keep_recent_turns');
+  });
+
+  it('stores what the plugin reads back', async () => {
+    try {
+      for (const v of [{ on: true, keep: '30' }, { on: false, keep: '' }, { on: true, keep: '500' }, { on: true, keep: '2' }]) {
+        const args: Record<string, number> = trimArgs(v);
+        (globalThis as { risuai?: unknown }).risuai = { getArgument: async (key: string) => args[key.split('::').pop()!] };
+        const s = await risuHost.settings();
+        expect([s.trimOldTurns ? 1 : 0, s.keepRecentTurns], JSON.stringify(v))
+          .toEqual([args.trim_old_turns, args.keep_recent_turns]);
+      }
+    } finally {
+      delete (globalThis as { risuai?: unknown }).risuai;
+    }
   });
 });
 

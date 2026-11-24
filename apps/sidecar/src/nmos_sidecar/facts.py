@@ -11,7 +11,7 @@ import re
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import psycopg
@@ -20,12 +20,15 @@ from xml.sax.saxutils import escape, quoteattr
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .keywords import keywords
-from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
+from .predicates import EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
 from . import canon, canonfacts
-from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, exclusions, live, quoted_turns,
+from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, exclusions, live, pins, quoted_turns,
                       secret_events, splits_of, thread_events, unedited_quotes)
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
+
+if TYPE_CHECKING:  # carry imports this module: never at run time
+    from .carry import Carried
 
 # `unit` is the turn (a message without one counts alone). `live` holds every extraction that still
 # matches the head, and `chosen` the one generation that serves its unit: the active one first, then the
@@ -64,7 +67,7 @@ live AS (
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence, a.evidence,
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
-       a.participants::text AS participants, a.outcome, a.because, a.feeling::text AS feeling,
+       a.participants::text AS participants, a.outcome, a.because, a.feeling::text AS feeling, a.when_happened,
        -- a check's rows read as the extraction it checked
        l.position, l.turn, l.host_logical_id, l.chosen AS generation, l.chosen_compiler AS compiler,
        -- the turn's hash: a secret's (ADR 0033 amendment 2) and an owner repair's target (ADR 0044); and the hash a
@@ -118,7 +121,26 @@ def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, 
             stored_knowledge(r)
         if (detail := r.pop("feeling")) is not None:  # extract-v18 only (PHASE-58): other rows read as before
             r["feeling"] = _parse_feeling(detail)
+        if (when := r.pop("when_happened")) is not None:  # extract-v19 only (PHASE-60 S7): other rows read as before
+            r["when_happened"] = when
     return rows
+
+
+def told_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The `told` rows among served rows whose own compiler has `told` in its extension (PHASE-60 S8: only
+    extract-v19 asks for it and only its rows are read), in the order given (served rows: oldest first). A told row
+    of another compiler (one forced valid by hand) is left out."""
+    return [r for r in rows
+            if r["predicate"] == "told" and "told" in EXTENSIONS.get(r.get("compiler") or "", {})]
+
+
+def served_told(conn: psycopg.Connection, head: UUID, extractor_key: str, upto: int | None = None,
+                known_at: datetime | None = None) -> list[dict[str, Any]]:
+    """Who told whom in the head (PHASE-60 S8): the served `told` rows, oldest first, read with the same `upto` and
+    `known_at` as every served read, so a replay as of a request reads what the request read. The reader packet-v20
+    and the Inspector use; the packet's fact read (`memory_view`, whose rows keep `in REGISTRY`) keeps excluding
+    `told`, so the facts served to a packet never gain a told row."""
+    return told_rows(served_assertions(conn, head, extractor_key, upto, known_at))
 
 
 @lru_cache(maxsize=65536)
@@ -253,8 +275,12 @@ def _entry(h: dict[str, Any], outcome: dict[int, str], closer: dict[int, dict[st
            "known_by": h.get("known_by"), "hidden_from": h.get("hidden_from")}
     if h.get("feeling"):  # PHASE-58: how the feeling felt then
         out["feeling"] = h["feeling"]
+    if h.get("when_happened"):  # PHASE-60 S7: when it happened, apart from when the turn told it
+        out["when_happened"] = h["when_happened"]
     if h.get("canon"):
         out["canon"] = h["canon"]
+    if h.get("carried"):  # ADR 0085: a statement an earlier chat made
+        out["carried"] = h["carried"]
     by = (closer or {}).get(id(h))
     if by is not None and out["outcome"] != "current":
         out["closed_turn"] = by["turn"] if by.get("turn") is not None else (0 if by.get("canon") else None)
@@ -387,7 +413,8 @@ LIVE: Any = object()  # `canon_facts` of a live read: decided from the manifest 
 def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None, upto: int | None = None,
                 known_at: datetime | None = None, canon_manifest: str | None = None,
                 canon_exact: bool = False, canon_key: str | None = None,
-                canon_facts: Any = LIVE, what_if: dict[str, Any] | None = None) -> dict[str, list[dict[str, Any]]]:
+                canon_facts: Any = LIVE, what_if: dict[str, Any] | None = None,
+                told: bool = False, carried: Carried | None = None) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -418,12 +445,27 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     They come from the manifest a request names only: while the sidecar lacks it (its upload is under way), the read
     has none, as it cannot tell which of the canon in force still holds. `canon_facts` (a replay) names the manifest
     exactly, None for none; the view's `canon_facts_manifest` says which one a read used.
+
+    With `told` (packet-v20 and the pages that draw chains, PHASE-60 S8, ADR 0086), the view also has `told`: who told
+    whom (`told_view`), from the same read, a list of its own. It is never a fact, claim, thread or assertion of the
+    view and never shapes its resolution, so nothing else in the view changes; without `told` the key is absent.
+
+    With `carried` (PHASE-60 S6, ADR 0085: what the target's link carries, `carry.target_rows`), a `continue` link's
+    rows enter the resolution after the target's own rows (so the target's story names its entities) and fold as facts
+    from before turn 0, after the canon facts: the
+    story supersedes them, the owner's repairs and exclusions apply to them, a carried opening opens its thread (marked
+    `carried`) and the story can close it by text; they take no part in secrets and keep their stored marks. A
+    `regression` link's rows are listed apart (`regression`), annotated with the target's resolution, and enter
+    neither the resolution nor a fold; the owner's `memory` exclusions leave them out as they leave rows out and take
+    the excluded from their rememberers (`_regression_kept`). Either way the view gains `carried` and `regression`;
+    without it, neither.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
                 "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "repairs": [],
-                "assertions": [], "resolution": None}
-    rows = [r for r in served_assertions(conn, head, extractor_key, upto, known_at) if r["predicate"] in REGISTRY]
+                "assertions": [], "resolution": None, **({"told": []} if told else {})}
+    served = served_assertions(conn, head, extractor_key, upto, known_at)
+    rows = [r for r in served if r["predicate"] in REGISTRY]
     # The conversation, the owner's repairs as of the read (ADR 0044) and the read's last turn, in one query.
     found = conn.execute(
         "SELECT w.conversation_id, c.host_persona_name, c.canon_manifest_id, r.id, r.kind, r.target, r.value, r.note,"
@@ -447,8 +489,15 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if what_if:
         links = [x for x in links if str(x["id"]) not in what_if.get("drop_links", ())] + list(
             what_if.get("add_links", ()))
-    r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]), links, splits_of(in_force),
-                canon_names)
+    # Carried rows (ADR 0085), copied: a read annotates and folds its rows in place, and the link's rows are reused. The
+    # source's persona is this chat's (S6): its stored marker reads as the persona name the host reports here.
+    if carried is not None:
+        carried = carried.for_persona(conv["host_persona_name"])
+    carried_all = [{**x, "known_by": list(x["known_by"]) if x.get("known_by") else None,
+                    "hidden_from": list(x["hidden_from"]) if x.get("hidden_from") else None}
+                   for x in carried.rows] if carried is not None and carried.mode == "continue" else []
+    r = resolve(conv["conversation_id"], rows + carried_all if carried_all else rows,
+                persona_of(conv["host_persona_name"]), links, splits_of(in_force), canon_names)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
@@ -469,7 +518,14 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                   if c["predicate"] in REGISTRY and c["predicate"] != "also_called"] if canon_key and canon_facts else []
     for row in canon_rows:
         _annotate(row, r)
-    rows = canon_rows + kept
+    # Carried rows (ADR 0085): after the canon, before every row of the story; their openings open threads first.
+    carried_rows = [x for x in carried_all if x["predicate"] in REGISTRY and x["predicate"] != "also_called"]
+    for row in carried_rows:
+        _annotate(row, r)
+    carried_openings = [x for x in carried_rows if x["predicate"] in THREAD_PREDICATES]
+    if carried_openings:
+        promises = carried_openings + promises
+    rows = canon_rows + carried_rows + kept
     # The owner's repairs (ADR 0044): retracted and corrected facts first, then events of their turn in the secret and
     # thread folds, and name splits in the resolution above.
     applied: dict[str, str | None] = {}
@@ -508,7 +564,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
     # and a narrator must count them as knowing it). `learned` is not a fact itself. Before the threads, which copy
     # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
-    secrets, unrevealed, reveals = fold_secrets([x for x in rows if not x.get("canon")] if canon_rows else rows, r,
+    secrets, unrevealed, reveals = fold_secrets([x for x in rows if not x.get("canon") and not x.get("carried")]
+                                                if canon_rows or carried_rows else rows, r,
                                                 secret_events(in_force, r, applied))
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     by_repair = {s["id"]: s["repair"] for s in secrets if s.get("repair")}
@@ -520,6 +577,12 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             row["known_by"] = list(row.get("known_by") or []) + sorted(ended[row["id"]] - set(row.get("known_by") or []))
             row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
     threads, unmatched, consumed = fold_threads(promises, r, thread_events(in_force, r, applied))
+    if carried_openings:
+        assert carried is not None
+        opened = {x["id"]: x for x in carried_openings}
+        for t in threads:
+            if t["id"] in opened:
+                t["carried"], t["carried_from"] = carried.link, opened[t["id"]].get("carried_from")
     consumed |= reveals
     for row in rows:
         if row["id"] in consumed:
@@ -572,11 +635,98 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                 "position": f["position"], "history": f["history"]})
     entities = [{**e, "excluded": excluded[str(e["id"])]["scope"]} if str(e["id"]) in excluded else e
                 for e in r.entities()]
-    return {"facts": facts, "claims": claims, "other": other, "entities": entities, "excluded": excluded,
+    pinned = pins(in_force, r)  # PHASE-60 S8: the characters the owner pinned, newest first; an exclusion wins
+    view = {"facts": facts, "claims": claims, "other": other, "entities": entities, "excluded": excluded,
+            "pins": pinned,
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
-            "repairs": [_report(rep, applied, r, excluded) for rep in repairs], "assertions": rows, "resolution": r,
+            "repairs": [_report(rep, applied, r, excluded, pinned) for rep in repairs], "assertions": rows,
+            "resolution": r,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
+    if told:
+        view["told"] = told_view(told_rows(served), r, excluded)
+    if carried is not None:
+        view["carried"] = {"link": carried.link, "source": carried.source, "mode": carried.mode,
+                           "names": carried.names, "rows": len(carried_rows), "story": carried.story}
+        forgotten = {i for i, x in excluded.items() if x["scope"] == "memory"}  # as the rows above leave them out
+        view["regression"] = [line for x in carried.regression
+                              if (line := _regression_kept(_regression_line(x, r), r, forgotten)) is not None]
+    return view
+
+
+TOLD_SHOWN = ("id", "turn", "position", "subject", "object", "value", "knowledge", "known_by", "hidden_from",
+              "subject_entity", "object_entity", "evidence")
+
+
+def told_chain(rows: list[dict[str, Any]], entity_id: str | None = None) -> list[dict[str, Any]]:
+    """What the pages that draw chains get of `view["told"]` (PHASE-60 S8), oldest first: each row's teller, hearer,
+    what, turn, participants and knowledge marks (and `when_happened` when it has one). With `entity_id`, only the rows
+    whose teller or hearer is that entity. The view already left out what the pages leave out (`told_view`)."""
+    out = []
+    for t in rows:
+        if entity_id is not None and entity_id not in {
+                str((t.get(f"{side}_entity") or {}).get("id")) for side in ("subject", "object")}:
+            continue
+        shown = {k: t.get(k) for k in TOLD_SHOWN}
+        shown["participants"] = [dict(p) for p in t.get("participants") or ()]
+        if t.get("when_happened"):
+            shown["when_happened"] = t["when_happened"]
+        out.append(shown)
+    return out
+
+
+def told_view(rows: list[dict[str, Any]], r: Resolution, excluded: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Who told whom (PHASE-60 S8), oldest first: the served told rows (`told_rows`) taken as facts are (narrated,
+    actual, positive), each annotated with the view's entities (`_annotate`). A tie between two characters, as a pair
+    is: a row whose teller or hearer the owner left out, either scope (PHASE-47 S2, `excluded_ids`), is left out. The
+    knowledge marks are the row's own: a told row is no secret and infers no knowledge (ADR 0086 item 4)."""
+    out = []
+    for row in rows:
+        if ((row.get("source") or "narration") != "narration" or (row.get("modality") or "actual") != "actual"
+                or row.get("polarity") == "negative"):
+            continue
+        _annotate(row, r)
+        if any(str((row.get(f"{side}_entity") or {}).get("id")) in excluded for side in ("subject", "object")):
+            continue
+        out.append(row)
+    return out
+
+
+def _regression_line(stored: dict[str, Any], r: Resolution) -> dict[str, Any]:
+    """A copy of a regression row (ADR 0085 item 5) annotated with the target's resolution like a fact: a thread by
+    its opening (else its maker and recipient as characters), so a later slice can rank and name it."""
+    line = dict(stored)
+    if line.get("line") != "thread":
+        _annotate(line, r)
+        return line
+    opening = line.get("opening")
+    basis: dict[str, Any] = dict(opening) if opening else {
+        "subject": line.get("by"), "subject_type": "character", "object": line.get("to"),
+        "object_type": "character" if line.get("to") else None, "participants": None}
+    _annotate(basis, r)
+    for k in ("subject_entity", "object_entity", "names"):
+        if k in basis:
+            line[k] = basis[k]
+    return line
+
+
+def _regression_kept(line: dict[str, Any], r: Resolution, out: set[str]) -> dict[str, Any] | None:
+    """An annotated regression line (`_regression_line`) under the target's `memory` exclusions (PHASE-47 S2, the
+    entity ids in `out`), as a target row is: None when its subject (a thread's maker) is left out, or the other end
+    of a standing; else the line with the left-out characters gone from its rememberers (`known_by`), None when no one
+    is left to remember it. A `cast` exclusion changes no line."""
+    if not out:
+        return line
+    s, o = (str((line.get(f"{side}_entity") or {}).get("id")) for side in ("subject", "object"))
+    if s in out or (line.get("predicate") in STANDING and o in out):
+        return None
+    known = line.get("known_by") or []
+    kept = [n for n in known if str((r.entity("character", n) or {}).get("id")) not in out]
+    if known and not kept:
+        return None
+    if len(kept) != len(known):
+        line["known_by"] = kept
+    return line
 
 
 # Predicates whose story statement, replacing a canon one, is listed as a conflict (PHASE-14 Q4, ADR 0047 amendment 1):
@@ -653,9 +803,16 @@ def _hold(history: list[dict[str, Any]],
 
 
 def _report(rep: dict[str, Any], applied: dict[str, str | None], r: Resolution,
-            excluded: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+            excluded: dict[str, dict[str, Any]] | None = None,
+            pinned: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """A repair with what it applies to now (ADR 0044); a name split, the entity it left and the names that still
-    join the two when it could not separate them; an exclusion, the entity it leaves out and how many rows (PHASE-47)."""
+    join the two when it could not separate them; an exclusion, the entity it leaves out and how many rows (PHASE-47);
+    a pin, the character it pins (PHASE-60 S8), or None when its name is no character now or the owner left it out."""
+    if rep["kind"] == "entity_pin":
+        t = rep.get("target") or {}
+        e = r.entity(t.get("entity_type") or "character", t.get("name")) if r is not None else None
+        on = e is not None and any(str(p["entity_id"]) == str(e["id"]) for p in pinned or ())
+        return {**rep, "applied": e["id"] if on else None}
     if rep["kind"] == "entity_exclude":
         hit = next(((i, x) for i, x in (excluded or {}).items() if str(x["repair"]) == str(rep["id"])), None)
         return {**rep, "applied": hit[0] if hit else None, "hidden": hit[1].get("hidden", 0) if hit else 0}
@@ -887,6 +1044,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    persona_questions: bool = False, persona_entity: str | None = None,
                    persona_query_names: frozenset[str] | None = None,
                    persona_added: set[str] | None = None,
+                   pinned: frozenset[str] = frozenset(), pin_named: set[str] | None = None,
                    _question_facts: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
@@ -933,6 +1091,11 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
 
     `risky` (the label policies, PHASE-34 Q1): the ids of contradicted facts; with it, a disputed or contradicted fact
     that is not named, private or secret ranks after the others, before `limit` and `events_limit` choose.
+
+    `pinned` (packet-v20, PHASE-60 S8, ADR 0087 item 2): the normalized names of the characters pinned for the request.
+    A fact of theirs about how they stand now or with another (NOW, STANDING) is mentioned and named as if the message
+    held the name; their other facts are ranked as before. A row carried from another chat (`carried`) is never one.
+    `pin_named` collects the facts only a pin named.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
@@ -980,6 +1143,10 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
         if _question_facts and str(f["id"]) in _question_facts:
             mention = max(mention, 1.5)
+        pin = (bool(pinned) and f["predicate"] in NOW | STANDING and not f.get("carried")  # another chat's: never
+               and any(n in pinned for n in names))
+        if pin:  # a pinned character's now and standing facts, as a name in the message brings them
+            mention = max(mention, 2.0)
         hidden = [n for n in _widened(f.get("hidden_from") or [], aliases) if len(n) >= 2 and n not in user]
         grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
@@ -987,6 +1154,10 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                 not named_by_words or f["predicate"] in NOW | STANDING | asked or f.get("known_by")
                 or f.get("hidden_from") or lexical >= LEXICAL_BAR or any(n in fact_text(f) for n in nouns)):
             named.add(str(f["id"]))
+        elif pin and named is not None:
+            named.add(str(f["id"]))
+            if pin_named is not None:
+                pin_named.add(str(f["id"]))
         if any(n in q for n in hidden):
             mention += 2.5
         elif mention and any(n in present for n in hidden):
@@ -1089,17 +1260,32 @@ def first(f: dict[str, Any], marks: bool = False) -> dict[str, Any] | None:
     return prior[0] if len(prior) > 1 and _norm(prior[0]["value"]) != _norm(prior[-1]["value"]) else None
 
 
-def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, marks: bool = False) -> str:
+def happened_attr(a: dict[str, Any]) -> str:
+    """packet-v20 (PHASE-60 S7, ADR 0086): ` happened="…"` for an assertion that says when it happened, else nothing.
+    Always in double quotes (the Note's mark), the value escaped as attribute text."""
+    when = a.get("when_happened")
+    return f' happened="{escape(when, {chr(34): "&quot;"})}"' if when else ""
+
+
+def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, marks: bool = False,
+              gone: bool = False, happened: bool = False, body: str | None = None) -> str:
     """One <Fact> with its knowledge marks exactly as stored (D19): knowledge="public", or known_by /
     hidden_from for limited facts, or no mark at all when who knows is unknown. A negated fact is
     explicitly not (or no longer) true (ADR 0013). A disputed fact carries what contradicts it in the same
     line, and neither side is presented as certain (PHASE-6 Q1). With `before` (packet-v5), a standing fact that
     replaced another names it and its turn (ADR 0038); with `cause` (packet-v6), the cause the story states (ADR 0040).
-    A canon fact says so in place of a turn, and a fact the owner locked says that (ADR 0047)."""
-    turn = f["turn"] if f.get("turn") is not None else f["position"]
-    attrs = f" kind={quoteattr(f['predicate'])}" + (' source="canon"' if f.get("canon") else f" turn=\"{turn}\"")
+    A canon fact says so in place of a turn, and a fact the owner locked says that (ADR 0047). With `gone` (packet-v20,
+    PHASE-60 S3), the status line of a character who is dead or gone is marked so (ADR 0082 item 3). With `happened`
+    (packet-v20, PHASE-60 S7), a fact that says when it happened carries it right after its turn. `body`: the line's
+    text in place of `fact_text` (a told line, `told_entry`). A carried row (ADR 0085) says where it comes from in
+    place of its turn (`_from_attr`)."""
+    attrs = f" kind={quoteattr(f['predicate'])}" + _from_attr(f)
+    if happened:
+        attrs += happened_attr(f)
     if f.get("locked"):
         attrs += ' locked="true"'
+    if gone:
+        attrs += ' gone="true"'
     if f.get("polarity") == "negative":
         attrs += ' negated="true"'
     if f.get("disputed_by"):
@@ -1107,7 +1293,7 @@ def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, mark
     if f.get("epistemic") == "implied":
         attrs += ' certainty="implied"'
     attrs += _knowledge_attrs(f)
-    text = fact_text(f)
+    text = fact_text(f) if body is None else body
     if against := f.get("disputed_by"):
         when = against["turn"] if against.get("turn") is not None else against["position"]
         text += f"; but turn {when}: {fact_text(against)}"
@@ -1120,10 +1306,26 @@ def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, mark
     return f"    <Fact{attrs}>{escape(text)}</Fact>"
 
 
+def _from_attr(f: dict[str, Any]) -> str:
+    """Where a fact or thread line comes from, as its attribute: its turn, canon (ADR 0047), a previous timeline (a
+    regression line, ADR 0085 item 5), or a chat this one continues (`carried`, item 4). Only packet-v20 reads rows
+    carried by a link (PHASE-60 S6)."""
+    if f.get("canon"):
+        return ' source="canon"'
+    if f.get("timeline"):  # a regression line (ADR 0085 item 5): a previous timeline's, which nobody here knows
+        return f" timeline={quoteattr(f['timeline'])}"
+    if f.get("carried"):
+        return ' source="carried"'
+    return f" turn=\"{f['turn'] if f.get('turn') is not None else f['position']}\""
+
+
 def _when(h: dict[str, Any]) -> str:
-    """Where a history entry comes from, for a packet line: its turn, or canon (ADR 0047)."""
+    """Where a history entry comes from, for a packet line: its turn, canon (ADR 0047), or an earlier chat this one
+    continues (ADR 0085)."""
     if h.get("canon"):
         return "in canon"
+    if h.get("carried"):
+        return "in an earlier chat"
     return f"turn {h['turn'] if h.get('turn') is not None else h['position']}"
 
 
@@ -1139,13 +1341,26 @@ def _knowledge_attrs(f: dict[str, Any]) -> str:
     return attrs
 
 
-def thread_line(t: dict[str, Any]) -> str:
-    """An open promise (PHASE-7 Q5), with the knowledge marks of the turn that made it."""
-    turn = t["turn"] if t.get("turn") is not None else t["position"]
+def thread_line(t: dict[str, Any], happened: bool = False) -> str:
+    """An open promise (PHASE-7 Q5), with the knowledge marks of the turn that made it; a carried one says so in place
+    of its turn (ADR 0085 item 4). With `happened` (packet-v20, PHASE-60 S7), when the assertion that opened it says
+    it happens, right after its turn."""
     attrs = f" kind={quoteattr(t['kind'])} by={quoteattr(t['by'])}"
     if t.get("to"):
         attrs += f" to={quoteattr(t['to'])}"
-    attrs += f" turn=\"{turn}\"" + _knowledge_attrs(t)
+    attrs += _from_attr(t) + (happened_attr(t) if happened else "") + _knowledge_attrs(t)
+    return f"    <Thread{attrs}>{escape(t.get('text') or '')}</Thread>"
+
+
+def settled_line(t: dict[str, Any], happened: bool = False) -> str:
+    """packet-v20 (PHASE-60 S4): a thread the story closed, as its open line with how it ended first (`status`, so the
+    open kinds' Note marks never match it) and the closing turn after its own; `happened` as for `thread_line`."""
+    turn = t["turn"] if t.get("turn") is not None else t["position"]
+    attrs = f" status={quoteattr(t['status'])} kind={quoteattr(t['kind'])} by={quoteattr(t['by'])}"
+    if t.get("to"):
+        attrs += f" to={quoteattr(t['to'])}"
+    attrs += (f" turn=\"{turn}\"" + (happened_attr(t) if happened else "")
+              + f" closed_turn=\"{t['closed_by']['turn']}\"" + _knowledge_attrs(t))
     return f"    <Thread{attrs}>{escape(t.get('text') or '')}</Thread>"
 
 
@@ -1169,13 +1384,29 @@ def _marks(f: dict[str, Any]) -> dict[str, Any]:
 
 
 def fact_entry(f: dict[str, Any], private: bool = False, before: bool = False, cause: bool = False,
-               marks: bool = False) -> Line:
+               marks: bool = False, gone: bool = False, happened: bool = False) -> Line:
     """A fact as a packet line with its provenance (ADR 0027): the assertion, and the words a reply can
     echo (its value, else its object). `private`: only some characters in the scene know it (ADR 0034).
     `before`: name the version a standing fact replaced (packet-v5, ADR 0038); `cause`: the stated cause (ADR 0040);
-    `marks`: only versions the line's knowledge marks cover (ADR 0038 amendment 1)."""
-    return Line("fact", fact_line(f, before, cause, marks), _ref(f), f.get("turn"), fact_text(f),
-                f.get("value") or f.get("object") or "", _marks(f), private)
+    `marks`: only versions the line's knowledge marks cover (ADR 0038 amendment 1); `gone`: a gone character's status
+    line (packet-v20), marked in its XML and its ledger marks; `happened`: when it happened, in its XML only (packet-v20,
+    PHASE-60 S7)."""
+    return Line("fact", fact_line(f, before, cause, marks, gone, happened), _ref(f), f.get("turn"), fact_text(f),
+                f.get("value") or f.get("object") or "", {**_marks(f), "gone": True} if gone else _marks(f), private)
+
+
+def told_text(t: dict[str, Any]) -> str:
+    """A told row as a line says it (PHASE-60 S8): teller told hearer: what, and whom it is about when it names them."""
+    about = [p["name"] for p in t.get("participants") or () if p.get("name")]
+    return fact_text(t) + (f"; about: {', '.join(about)}" if about else "")
+
+
+def told_entry(t: dict[str, Any], private: bool = False, happened: bool = False) -> Line:
+    """packet-v20 (PHASE-60 S8, ADR 0086): who told whom as a <Fact kind="told"> line, its knowledge marks as stored, the
+    words a reply can echo its value. Ledger kind `fact`, like any fact line."""
+    text = told_text(t)
+    return Line("fact", fact_line(t, happened=happened, body=text), _ref(t), t.get("turn"), text,
+                t.get("value") or "", _marks(t), private)
 
 
 def claim_entry(c: dict[str, Any], private: bool = False, cause: bool = False) -> Line:
@@ -1188,10 +1419,25 @@ def claim_entry(c: dict[str, Any], private: bool = False, cause: bool = False) -
 
 
 def _ref(a: dict[str, Any]) -> dict[str, Any]:
-    """A line's provenance (ADR 0027): its assertion, and the owner's repair that changed it (ADR 0044)."""
-    return {"assertion": a["id"], "repair": a["repair"]} if a.get("repair") else {"assertion": a["id"]}
+    """A line's provenance (ADR 0027): its assertion, and the owner's repair that changed it (ADR 0044); a carried
+    row's also names its link and the source chat's assertion it was read from (ADR 0085)."""
+    ref = {"assertion": a["id"], "repair": a["repair"]} if a.get("repair") else {"assertion": a["id"]}
+    if a.get("carried"):
+        ref.update(carried=a["carried"], source_assertion=(a.get("carried_from") or {}).get("assertion"))
+    return ref
 
 
-def thread_entry(t: dict[str, Any], private: bool = False) -> Line:
-    return Line("thread", thread_line(t), _ref(t), t.get("turn"),
+def thread_entry(t: dict[str, Any], private: bool = False, happened: bool = False) -> Line:
+    """An open thread's line; `happened` (packet-v20, PHASE-60 S7) changes its XML only."""
+    return Line("thread", thread_line(t, happened), _ref(t), t.get("turn"),
                 f"{t['by']} → {t.get('to') or '?'}: {t.get('text') or ''}", t.get("text") or "", _marks(t), private)
+
+
+def settled_entry(t: dict[str, Any], private: bool = False, happened: bool = False) -> Line:
+    """A closed thread's line (packet-v20, PHASE-60 S4): ledger kind `thread`, the same assertion as its open line (one
+    thread is one line across requests, `overuse.key`), `marks["settled"]` its status. The status is in the text's
+    head, so the line never restates a similar promise opened afresh (`packet.restated`). `happened` as for
+    `thread_entry`."""
+    return Line("thread", settled_line(t, happened), _ref(t), t.get("turn"),
+                f"{t['by']} → {t.get('to') or '?'} ({t['status']}): {t.get('text') or ''}", t.get("text") or "",
+                {**_marks(t), "settled": t["status"]}, private)

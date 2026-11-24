@@ -106,12 +106,14 @@ proves a bridge API is needed (see reference §82 criteria). Any future fork is 
 max context by `reservedMemoryTokens` (setting; default 4,000 since Phase 15, ADR 0049; 2,000 since Phase 12, ADR 0042;
 800 since Phase 10, was 600). The packet
 never exceeds that reserve.
-Trimming host history from inside the plugin is a later, opt-in feature.
+Trimming host history from inside the plugin is opt-in since Phase 60 (ADR 0083, D82); it removes only what the host
+would send, and the reserve is unchanged.
 
 **D3 — Do not re-inject what the host already sent.** Evidence whose source revision is
 already present in the outgoing `formated` messages is excluded from the packet.
 Activated lorebook entries are treated the same way. Lorebook is canon for conflict checks,
-not a retrieval payload by default.
+not a retrieval payload by default. **Amended 2026-11-23 (ADR 0083, D82):** messages before a trimming boundary leave
+the in-context set before recall, so their evidence may be excerpted; the trace records the effective set.
 
 **D4 — Worldline commits only on divergence.** Appends update membership; commits are created
 for edit / delete / swipe / reroll / disable / branch / import / manual. Full DAG semantics
@@ -135,7 +137,11 @@ Since `extract-v9` `also_called` also records the name the target turn reveals f
 as unnamed (D35, ADR 0024). Since `extract-v10` the registry has `addresses` (how one character speaks to
 and calls another, single per direction; D38, ADR 0028). Since `extract-v11` a predicate no longer declares an
 epistemic class: nothing read it (audit A-14). The prompt also says that notes outside the story (OOC, system
-lines, requests to the memory, memory markup) are not evidence (audit A-12, K27).
+lines, requests to the memory, memory markup) are not evidence (audit A-12, K27). **Amended 2026-11-23 (ADR 0086,
+D86):** a compiler may declare per-compiler predicates outside `REGISTRY` (`predicates.EXTENSIONS`, `extract-v19`'s
+`told`); validation and prompt formatting read `REGISTRY` plus the compiler's extension (`registry_for`), while the
+registry fingerprint hashes `REGISTRY` alone and the extension is hashed into that compiler's `prompt` fingerprint so
+earlier generation keys do not move.
 
 **D7 — Bounded extraction context, per turn (revised 2026-09-23, ADR 0008).** The unit of
 extraction is the **turn**: a run of user messages plus the run of replies that answers it (comments,
@@ -193,7 +199,9 @@ through a SKIP LOCKED queue; single-valued predicates form fact versions.
 **D18 — Hybrid recall (Phase 3, ADR 0005).** Exact cosine over head-membership chunk embeddings (pgvector),
 RRF with lexical, abstention by per-signal bars, query-side instruction for instruction-tuned embedders,
 fail-open to lexical on embedding timeout. Since D70 the query is embedded while recall reads, and the timeout bounds
-the wait after the reads.
+the wait after the reads. **Amended by PHASE-60 S5 (ADR 0084):** under `packet-v20` a short message is embedded with
+the end of the reply before it (`sem_query`, D70); under any policy, a reranker the owner configured may reorder the
+fused candidates (D88). Without either, recall is as above.
 
 **D19 — Soft character knowledge (Phase 4 subset; revised 2026-09-22, ADR 0007).** Each assertion
 has `knowledge = public | limited | unknown`. `public` is openly known and needs no list; `limited`
@@ -605,6 +613,13 @@ such a request waits for nothing. Fail-open to lexical, the vector search, the f
 the trace records the embedder's time (`embed`), the wait after the reads (`embed_wait`), the search (`vector`) and,
 for a prefetched embedding, how long before recall its call began (`embed_lead`). Nothing recorded changes: requests
 replay as they were.
+**Amended by PHASE-60 S5 (ADR 0084):** under `packet-v20` (`SEM_QUERY_POLICIES`) a message shorter than 40 normalized
+characters with a previous reply is embedded as that reply's last 400 characters, a line break and the message
+(`retrieval.sem_query`). Only the embedding input changes: lexical and keyword recall, fact relevance and excerpt
+anchors read the message alone. Recorded as `recall_options.sem_query` (null when it did not apply); a replay embeds
+the recorded text, and a trace without the key replays with it off. The sync-time prefetch builds the same text with
+the same function from the reply before the synced message (the sync's bodies, else the head's stored revision), so a
+short message still finds its embedding waiting; a failed lookup or a mismatch costs only the bounded wait above.
 
 **D71 — The chunk cap, a setting of the projection (ADR 0062; K13, AGE-24).** A message is embedded in chunks of 700
 normalized characters from its start, at most `NMOS_EMBED_MAX_CHUNKS` of them (default 8: 5,600 characters, the cap
@@ -705,6 +720,184 @@ sharing the cap across both. An unshared Korean given name is accepted only on t
 mentions, entity resolution and Cast are unchanged. Existing history, event, rest, mode and token rules apply.
 The owner includes the correction in `0.4.0`; zero-call replay found no new majority failure (see `docs/perf/phase40-persona-questions.md`). The reduced live host answer check is open. After actual-model synthetic verification and
 6113 trial deployment, the owner selected `packet-v18` as the 0.4.0 default (2026-10-09).
+
+**D82 — Old dialogue left out in steps (ADR 0083; PHASE-60 S1).** Opt-in: with the plugin's `trim_old_turns` on (off by
+default; `keep_recent_turns` 20, 4–200) `/v1/retrieve` carries `trim: {keep_recent_turns, step}`, `step` equal to
+`keep_recent_turns`; a request without it is served as before. The sidecar decides the boundary (its turn numbers,
+ADR 0008): `cut = floor((now − keep_recent_turns) / step) × step`, lowered to the first turn of the prompt's window
+not covered — served by an extraction (D20) and held by a current scene summary not held back for a secret (D52) —
+rounded down to a multiple of `step`, so the boundary moves only in whole steps. No boundary (`keep_from_id: null`
+with a `reason`: `short`, `uncovered`, `no_summaries`, `stale`, `empty_packet`) when nothing can be cut, the head is
+stale, summaries are off or the packet is empty. The cut messages leave the in-context set before recall (D3);
+`recall_options.trim` records the decision. Every answer carries `coverage` (`recorded_through_turn`,
+`covered_through_turn`). The plugin applies the boundary to a copy in `beforeRequest`, never to the host chat, and
+drops nothing (reason `format`) unless every dropped prompt message is `user` or `assistant`, carries exactly one host
+message and lies in one contiguous run before the boundary and before the latest user turn; no answer, a stale one,
+an empty packet or any error drops nothing. The Status tab and the HUD say what was left out and the tokens saved.
+
+**D83 — Where memory goes (ADR 0083; PHASE-60 S2.2–S2.3).** `[NMOS.memory]` in any outgoing message (string content or
+text parts) is replaced at its first occurrence by the packet (by nothing when there is none) and removed everywhere
+else, on every path out of `beforeRequest` (an auxiliary request, the plugin or the chat off, the turn not found, a
+failure); with a marker the default placement is not used. `end` inserts before the trailing run of `assistant`
+messages. When the packet lands after the latest user turn (`end`, or a marker after it: `landsAfterUserTurn`),
+`GUARD_LINE` follows `</NarrativeMemory>` in the same message and the plugin asks for `reservedMemoryTokens` − 40, so
+the reserve bounds the whole message (D2). Idempotence is by content, not role (H2): a prompt that already holds the
+packet text being placed is returned as it is, and a prompt the plugin returned (the last 4, for 2 minutes) is
+returned unchanged when it comes back. Canon observation, the turn index and the in-context ids read the prompt as the
+host sent it; a marker in canon text is stored as written and `clean-v3` is unchanged, so nothing is re-derived.
+
+**D84 — A packet that knows where it stands (`packet-v20`; ADR 0082; PHASE-60 S2.1, S3, S4).** `packet-v19` plus four
+reads of what is stored, no model call, each gated on a policy set that holds `packet-v20` alone. *How far memory has
+got:* when the head has a replied turn after the latest one an extraction serves, the Note says memory is recorded
+through turn N and the chat is right where a newer message disagrees (or that nothing is recorded yet); recorded as
+`recall_options.coverage`. *Gone:* a character (not the persona, not one the owner left out) whose current, narrated,
+positive, undisputed `has_status` holds a word of `gone.py`'s lists as a whole word, with no recovered word, negation
+or near miss, or whose `located_in` is a whole name on its short list of non-places, has that status line marked
+`gone="true"`, `required`, first in its `<Cast>` group or first in `<Facts>` (`<Private>` when private; strict and
+narrator modes apply as to any fact, D44, D45), at most 8, newest first, within 10 % of the budget, whether or not the
+turn names it. Canon and carried rows never pin; a character a row of a later turn in
+the scene window names is not pinned. The rule errs toward not pinning; the lists are policy constants, so a change is
+a new policy. *Return gap:* a `<Cast>` character whose current run (appearances at most 5 turns apart, begun at most 5
+turns ago) follows at least 40 served turns without it carries `back_after="~N turns"`; turns no extraction serves are
+not counted (invariant 4). *Settled:* up to 3 threads closed in the last 15 turns whose maker or recipient is in the
+scene or named, broken, failed and abandoned before the rest, then newest, follow the open threads as `<Thread
+status="…" … closed_turn="…">`, `supportive`, not counted in `threads_limit` (none when it is 0). Each mark is explained in the Note only when a
+kept line uses it. Not the default; older policies compile as before, fresh or replayed (D39).
+
+**D85 — The owner pins a character (ADR 0087; PHASE-60 S8).** `owner_repair` kind `entity_pin` (migration `0038` widens
+the kind check) names a character by name and type as `entity_exclude` names its target, resolved on every read, so a
+name the story joins to it follows and a split one does not; `entity_exclude` wins over a pin. Removed like any
+repair, kept by rebuilds, archived, deleted with the chat. A chat's entities and a person's sheet name the pin. The
+setting `pin_at_mentions` (`NMOS_PIN_AT_MENTIONS`; off when unset, empty or `0`; a runtime setting that queues nothing)
+enables `@name` pinning for one request. Under `packet-v20` (`PIN_POLICIES`), `pinned_characters` collects the
+request's pins in order, never the persona and never an excluded character: first `@name` matches in the user's message
+(only with `pin_at_mentions` on: `@` at the start of a word followed by a character's normalized name or alias, up to
+two words, with at most one trailing Korean particle; an `@` inside a word, an unknown name or a name two characters
+share does nothing), then the owner's pins, newest first. Each pinned character joins the scene's cast after everyone
+already in it, so knowledge marks, `<Private>`, strict and narrator modes, and scene summaries treat it as present. Its
+own chat's `NOW` and `STANDING` facts rank as if the message named it and are marked `required` (facts named only by a
+pin do not count as a message name for `packet-v19`'s unrelated-question fill); its other facts rank as before. After
+the cast's own 4 groups, each pinned character without one gets a `<Cast>` group of the same shape, at most 3 beyond
+the 4 (`PIN_EXTRA`), in pin order, from its own chat's rows only (carried rows never fill a pinned group or become
+required by a pin); a pinned gone character keeps its `gone="true"` line first in that group. A live request with pins
+records each resolved character's name and source (`at` / `owner`) as `recall_options.pins`; its replay reads that
+record instead of the message or the pins in force (a trace without it replays with none). Older policies ignore pins
+and `@name`.
+
+**D86 — `extract-v19`: when it happened and who was told (ADR 0086; PHASE-60 S7, S8).** Selectable
+(`NMOS_EXTRACT_COMPILER=extract-v19`, not the default; `extract-v16` stays the default). Built on `extract-v18`
+(keeping roles, name pairs and `feeling`), adding `when_happened`, `story_clock` and `told`.
+`when_happened` (`assertion.when_happened`, migration `0037`, 1–80 characters) is kept on `event` and `promised` only
+when the target turn places it at another time than the turn itself — a short phrase in the story's own words, resolved
+against the story clock when one is shown, never a computed timestamp and never used to order rows; dropped on any
+other predicate or compiler, and carried through `ASSERTION_COLUMNS`, fact reads and archives.
+`story_clock` (`extraction.story_clock`, migration `0037`) records the literal `date` / `time` status-window values as
+of the target turn (single `rules_version`, latest position per category, at most 80 characters each), shown as one
+prompt line (`CLOCK_LINE`) and recorded on the extraction like the hints (D7), never part of validity.
+`told` (character → character, multi, with typed participants `with` via `EXTENSION_PARTICIPANTS`) records that a
+character passed on something that matters later which the hearer did not have; it requires a quote (`evidence`), else
+is parked `pending`. It stays outside `REGISTRY` in `predicates.EXTENSIONS["extract-v19"]` (D6 amended), hashed with
+`EXTENSION_PARTICIPANTS`, `CLOCK_LINE` and the length caps into `extract-v19`'s `prompt` fingerprint so the keys of
+`extract-v15`–`extract-v18` and of canon, summarize, reveal and embed do not move. `told` changes no knowledge marks by
+itself; `memory_view` keeps reading `REGISTRY` alone, while `facts.served_told` reads served `told` rows of compilers
+whose extension declares it, oldest first, as of `upto` / `known_at` (`packet-v20`'s `happened` and `told` lines:
+D87). `extract-v19` joins `generations.ADDS` with `extract-v16` and `extract-v18`, so switching among them
+with the same model and endpoint is classified `adds` in both directions and queues no already-served turns.
+`fact_restore` keeps `when_happened` beside `repairs.RESTORED` (the dropped-facts listing reads it; it does not read
+`feeling`, so a restored `feels_toward` loses its feeling detail, since Phase 58). Known limits: a `told` row kept from someone keeps its knowledge marks but is in `secrets.NOT_SECRETS`, so it
+is not tracked as a secret and no reveal check ends it. No owner repair retracts a `told` row: it is never a fact of the
+view. `told` rows take no part in entity resolution, so a teller or hearer named only in them has no entity.
+
+**D87 — When it happened, and who told whom, in the packet (`packet-v20`; ADR 0086; PHASE-60 S7, S8).** Under
+`packet-v20` (`HAPPENED_POLICIES`) a line whose assertion has a `when_happened` (D86) carries `happened="…"` right after
+its `turn`: fact lines (in `<Facts>`, `<Private>`, a `<Cast>` group and a gone line), thread lines (a cast group's goals
+included), settled lines and told lines; claim lines carry none. The Note then says `happened` is when it happened in
+the story and `turn` when it was told. Under `TOLD_POLICIES`, with `facts_limit` above 0, at most 2 (`TOLD_MAX`) served
+`told` rows (`facts.served_told`, D86) follow the facts as `<Fact kind="told">` lines (teller told hearer: what, and whom
+it is about when it names them), only when the teller or the hearer (never the persona) is in the scene or named in the
+user's message under any name they go by: ranked as facts are, then the scene's newest; not said again while its
+message is in the prompt (D3); a tired one rests (D77's rest key); never a carried row. A line whose value or quote says a
+secret still kept from someone is left out as a keyword-only excerpt is (D62, a hidden `secret_gate` entry), and the
+next may take its place; the rest is any fact line's: private in its scene, strict and narrator modes (D44, D45). The
+Note says a told Fact does not show that the hearer believed it. Older policies emit neither. Known limit: the pages that draw told chains (the person sheet, the Inspector's
+character page, the memory map) show them as they show facts, the owner's view, not filtered by strict or narrator
+mode; only a row whose teller or hearer the owner left out is dropped.
+
+**D88 — An optional reranker (ADR 0084; PHASE-60 S5; amends `AGENTS.md §4` "Models").** Opt-in: a reranker exists only
+when both `NMOS_RERANK_URL` and `NMOS_RERANK_MODEL` are set (`runtime.reranker`; also settable in the panel); otherwise
+no code path calls one. Not tied to a policy: a live request, after the fusion and with the in-context messages left
+out, sends the user's message (not `sem_query`) and the top 30 (`rerank.MAX_CANDIDATES`) eligible candidates, each cut
+to 1,000 characters, in one `POST <url>/rerank` over the sidecar's `httpx` client, and the scores reorder those 30
+ahead of the rest; at most one call per live request (the trim's empty-packet re-read, D82, calls none). The call is
+bounded by its own timeout on the sidecar (`NMOS_RERANK_TIMEOUT_MS`, 600 by default, 50–5,000): `/v1/retrieve` carries
+no remaining deadline, and the plugin's deadline (3,000 ms by default) still fails the whole request open on its side,
+so `NMOS_EMBED_TIMEOUT_MS` + `NMOS_RERANK_TIMEOUT_MS` should stay well under it. A timeout, an error or a malformed
+answer (not every index exactly once with a finite score) leaves the fused order. With a reranker configured the
+trace records `rerank_used`, `rerank_ms` and each scored candidate's `rerank`; a replay never calls one and reapplies
+the recorded scores to the same candidates (a request whose call failed replays in fused order; a replay with a
+replaced query applies none). The key is a credential (`runtime.SECRET`): bound to its endpoint's host, never in a
+trace, a log or an archive (an archive holding it is refused, D60); `/v1/health` says only whether one is configured.
+Only the `standard` format exists (`NMOS_RERANK_FORMAT`: `{model, query, documents, top_n}`, answered by `results[]` or
+`data[]` of `{index, relevance_score}`); no other is built. It derives nothing stored and is part of no generation key.
+
+**D89 — A chat that carries another chat's memory (`conversation_carry`; ADR 0085; PHASE-60 S6).** Owner input
+(migration `0036`): one link in force per target (a partial unique index), never a chat to itself, a source's own link
+not followed. *The frozen reading:* at link time the source is read once, as of its head and a cutoff position (the
+head's end, or the last message of a turn the owner chose on the current head), with the readers a request uses, and
+the rows are stored with the link as `snapshot`: names and types, never entity ids (the source's persona written as
+the persona), no verbatim text (no `evidence`), each row's provenance in `from` (source conversation, assertion,
+revision, generation, repair, source turn). Nothing is re-read; the owner links again for a newer reading (the old link
+gets `removed_at`). More than 2,000 rows (`carry.MAX_ROWS`) is refused with 422 `too_many_rows: rows=<N> max=<M> (…)`;
+`POST …/carry` with the preview's fingerprint (`expect`) answers 409 with a fresh preview when the source's reading
+changed since. *Only `packet-v20` reads a link* (`CARRY_POLICIES`), resolving carried rows by name in the target (D26).
+`continue`: facts, aliases, open threads and the story so far fold after the target's canon and before turn 0
+(`CARRY_BASE`, turn -1, negative ids), resolved after the target's own rows, and the target's story supersedes them as
+it does canon (D57); lines say `source="carried"` and the earlier story is a `<Summary scope="earlier chat">`; they
+take no part in the scene cast, gone pins, the return gap, settled lines, told lines, pins or secrets. `regression`:
+rows are listed apart, never in current facts, cast, gone pins or open threads, and at most 6 (`REGRESSION_MAX`) are
+offered as `timeline="previous"` lines in a `<Regression remembered_by="…">` group, private, through strict and narrator
+modes (D44, D45); a row's rememberers are all the named for a public row, the named in `known_by` for a limited one,
+otherwise only the named the row involves, always minus `hidden_from`, and a row with none is not carried. A request
+records the link it read as `recall_options.carry` (link, source, commit, position, mode, names); its replay reads that
+link, removed since or not. Both foreign keys are `ON DELETE CASCADE` and deleting either chat counts the links
+(`carry_links`); an archive holds a link only when both chats are in it (`carry_left_out` in the manifest). The
+read-only lists and screens show carried rows (`view_of(carried=True)`: `/facts`, `/entities`, `/threads`, `/secrets`,
+the panel's memory document and person sheet, which also get the link's `carry` block); previews, repairs, the
+author's note, dropped facts, endings, the Inspector's pages, the hub and the map read the chat alone. Known limits: a
+source's very last reply may not be in a reading, since it is extracted only once the user continues from it (D5).
+Closed regression threads are stored but never offered. A restore that renumbers assertions moves the snapshot's
+`from.assertion` but not a recorded trace line's `ref.source_assertion`. Amended 2026-11-23 (the phase's
+review): a regression link's lines follow the target's `memory` exclusions as its own rows do (an excluded character
+is no rememberer, and a line left with none is dropped); a carried persona marker reads as the target's host persona
+name (ADR 0023) in every line, screen and link preview, the stored snapshot unchanged; a replaced link's `removed_at`
+is its successor's `created_at`, read under the locks.
+
+**D90 — What the model request carries (`llm_extra_body`, `llm_no_temperature`; ADR 0088; PHASE-61).** One JSON object
+the owner writes is merged at the top level into every chat-completions request made with the extraction model
+(extraction and its confirmations, reveal checks, summaries, canon facts, the author's-note calls, the settings test); a
+switch sends the request without a `temperature`, the only alternative to 0. The body may not name the request's own
+fields, hold a credential-like or non-ASCII key name or one of the install's own credentials, exceed 2,048 bytes, or
+hold a number PostgreSQL would store in another form. A generation's spec gains `request` (the body, keys sorted) only
+when the body is not empty and says `temperature: null` only when none is sent, so with both at their defaults every key
+is the key before; `request` and `temperature` are model fields of `generations.classify`, so a change of either alone
+is a `model` change (the owner's choice, carry on by default, PHASE-57 A3). A provider that rejects the body fails the
+job; it is never sent again without it. An image from before this decision reads such a spec as a version change, so a
+rollback clears both settings first.
+
+**D91 — A log of model calls, and what the worker is doing (`model_call`, migration `0039`; ADR 0089; PHASE-61 S5–S6).**
+Every model call made outside the request path (the worker's extraction, reveal checks, summaries, canon facts and
+embeddings; the sidecar's author's-note calls and settings tests) writes one row: when, what kind, the chat and job when
+known, the generation, the model, the endpoint without userinfo or query, the outcome (`ok`, `http`, `timeout`,
+`transport`, `bad_reply`), the HTTP status, the time taken, the usage the provider reported and, for a failure, the
+first 300 characters of the provider's error, with any of the install's own keys replaced. Never a prompt or a reply;
+the one free text is the provider's own error message, which may quote the request as a job's `last_error` already does.
+The row is written on its own connection outside the job's transaction, with two-second bounds, and a failure to write
+it is logged and dropped: the log cannot fail a call, and cannot hold one beyond those bounds. `/v1/retrieve` writes
+none. Rows are operational data: kept as long as traces, never archived, deleted with their chat. `GET
+/v1/worker/status` answers with counts of the job table (waiting by kind, running, being tried again, given up on,
+finished lately, the newest error) and the last hour of the log; a queued job of a generation its kind has left is
+counted apart, since no worker claims it. `GET /v1/worker/calls` and the Inspector's Model calls page list recent rows.
+All of it is read-only and none of it changes a key, a packet or a setting.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

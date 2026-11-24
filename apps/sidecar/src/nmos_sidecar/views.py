@@ -18,8 +18,9 @@ from typing import Any
 
 from . import tokens
 from .facts import symmetric
-from .inspector import _act, _close, _v, feeling_detail, feeling_dot
+from .inspector import _act, _close, _v, feeling_detail, feeling_dot, happened_mark, happened_text
 from .summaries import content
+from .threads import KINDS as THREAD_KINDS
 
 # The hub's blocks are flex rows that always end flush: each block grows to fill what its row leaves (PHASE-52 D1, PHASE-59).
 STYLE = """
@@ -84,6 +85,8 @@ STYLE = """
 .nmos .v-diff-new{background:rgba(232,172,67,0.13);color:var(--c-warn);padding:1px 7px;border-radius:6px;font-weight:600}
 .nmos .v a.v-name{color:var(--c-link);font-weight:600}
 .nmos .v a.v-name:hover{text-decoration:underline}
+.nmos .v a.v-src{color:var(--c-link)}
+.nmos .v a.v-src:hover{text-decoration:underline}
 .nmos .v-text{color:var(--c-text-soft);margin:0}
 .nmos .v-note{font-size:var(--t-caption,13px);color:var(--c-text-muted);margin:8px 0 0}
 .nmos .v-more>summary{cursor:pointer;list-style:none;font-size:var(--t-secondary,14px);color:var(--c-link);padding:8px 0 2px;font-weight:500}
@@ -131,6 +134,20 @@ STYLE = """
 """
 
 T: dict[str, tuple[str, str]] = {
+    "s-told": ("누가 누구에게 들었나", "Who told whom"),
+    "told_about": ("{who}에 대해", "about {who}"),
+    # a chat that carries another chat's memory (PHASE-60 S6)
+    "s-carry": ("이전 채팅에서 이어받은 기억", "Carried from an earlier chat"),
+    "carry_from": ("{source}에서 이어받음 · 이 채팅의 턴이 아님", "Carried from {source} · not this chat's own turns"),
+    "carry_regress": ("이전 타임라인 · {names}만 기억", "Earlier timeline · remembered only by {names}"),
+    "carry_upto": ("t{t}까지", "up to t{t}"),
+    "carry_turn": ("이전 채팅 t{t}", "earlier chat t{t}"),
+    "carry_left": ("외 {n}줄", "{n} more"),
+    "carry_forgot": ("이 채팅은 이전 타임라인을 이어받았지만, 이 인물은 그것을 기억하지 않습니다",
+                     "This chat carries an earlier timeline, which this person does not remember"),
+    "carry_aka": ("다른 이름", "also called"), "carry_has": ("가진 것", "has"), "carry_told": ("말해 줌", "told"),
+    "carry_not": ("(아님)", "(not)"),
+    "carried": ("이어받음", "carried"),
     "ok": ("작동 중", "Working"),
     "warn": ("확인이 필요해요", "Needs a look"),
     "err": ("작동하지 않아요", "Not working"),
@@ -439,9 +456,21 @@ def _pair_bits(p: dict[str, Any], lang: str) -> list[str]:
     for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
         for f in p[k]:
             value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
+            h = happened_mark(_own(f), lang)
+            m = carried_mark(f, lang)
             bits.append(_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)} ") + feeling_dot(f, lang)
-                        + _v(f"{value}") + feeling_detail(f, lang))
+                        + _v(f"{value}") + feeling_detail(f, lang) + (f" {h}" if h else "") + (f" {m}" if m else ""))
     return bits
+
+
+def carried_mark(row: dict[str, Any], lang: str) -> str:
+    """A small word on a row that came through a carry link (PHASE-60 S6), or "" (the row then reads as before)."""
+    return f'<span class="v-tag">{_v(t(lang, "carried"))}</span>' if row.get("carried") else ""
+
+
+def _own(row: dict[str, Any]) -> dict[str, Any]:
+    """A carried row without its turn, which is not this chat's (it sits before turn 0); any other row as it is."""
+    return {k: v for k, v in row.items() if k != "turn"} if row.get("carried") else row
 
 
 def line(main: str, meta: str = "", extra: str = "") -> str:
@@ -458,10 +487,24 @@ def more(items: list[str], lang: str, n: int = 3) -> str:
 
 
 def thread_meta(th: dict[str, Any], lang: str) -> str:
-    """A thread's kind, how long it is meant to last when known (PHASE-51), and since when."""
+    """A thread's kind, how long it is meant to last when known (PHASE-51), since when, and when it happened (PHASE-60 S7);
+    a carried thread (PHASE-60 S6) has no "since": its turn is not this chat's."""
     kind = t(lang, th["kind"]) if th["kind"] in T else th["kind"]
     horizon = t(lang, f"hz.{th['horizon']}") if th.get("horizon") in ("scene", "arc", "lasting") else None
-    return " · ".join(x for x in (kind, horizon, t(lang, "since", t=th.get("turn"))) if x)
+    since = None if th.get("carried") else t(lang, "since", t=th.get("turn"))
+    return " · ".join(x for x in (kind, horizon, since, happened_text(_own(th), lang)) if x)
+
+
+def _close_own(th: dict[str, Any]) -> str:
+    """The thread's close button, or "" for a carried thread (PHASE-60 S6): it is the other chat's, and closing it
+    here answers 422, so the row stays readable with its carried mark and offers nothing."""
+    return "" if th.get("carried") else _close(th)
+
+
+def _thread_meta(th: dict[str, Any], lang: str) -> str:
+    """`thread_meta` escaped, with the carried mark when the thread came through a link."""
+    m = carried_mark(th, lang)
+    return _v(thread_meta(th, lang)) + (f" · {m}" if m else "")
 
 
 def name_link(cid: str, entities: dict[str, str], name: str | None) -> str:
@@ -475,6 +518,121 @@ def _named(f: dict[str, Any], side: str) -> str:
     return str(e.get("name") or f.get(side) or "")
 
 
+# A chat that carries another chat's memory (PHASE-60 S6, ADR 0085): `d["carry"]` is there only while a link is in force.
+CARRY_MAX = 50  # carried lines shown in one section; the rest are counted
+# A carried line reads subject, word, object/value; where the panel's word reads the other way ("held by") or has none
+# in Korean, its own word.
+CARRY_WORDS = {"also_called": "carry_aka", "possesses": "carry_has", "told": "carry_told"}
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
+
+
+def _turn_of(value: Any) -> int | None:
+    """A turn the panel's sanitizer keeps in a link (`/t/` and at most seven digits), or None."""
+    if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 10_000_000:
+        return value
+    return None
+
+
+def carry_href(row: dict[str, Any]) -> str | None:
+    """Where a carried line came from, in the only two shapes the panel keeps: the source chat's turn
+    (`/inspector/c/<id>/t/<turn>`) or, without one, the source chat (`/inspector/c/<id>`); None without a source id."""
+    src = row.get("carried_from")
+    conv = str(src.get("conversation") or "") if isinstance(src, dict) else ""
+    if not _UUID.fullmatch(conv):
+        return None
+    turn = _turn_of(src.get("turn"))
+    return f"/inspector/c/{conv}" + (f"/t/{turn}" if turn is not None else "")
+
+
+def _is_thread(row: dict[str, Any]) -> bool:
+    if row.get("line") in ("fact", "thread"):
+        return row["line"] == "thread"
+    if row.get("kind") in ("fact", "thread"):  # the carry line's own mark (`d['carry']['lines']`)
+        return row["kind"] == "thread"
+    return "predicate" not in row and ("by" in row or "text" in row)
+
+
+def carry_text(row: dict[str, Any], lang: str) -> str:
+    """A carried line as plain text (not escaped): "세라 위치 등대", "세라 → 카이토 관계 소꿉친구", or a thread's
+    "세라 → 카이토: 등대에서 만나기"."""
+    if _is_thread(row):  # a thread row's by / to / text, or a carry line's subject / object / value
+        by = row.get("by") if "by" in row else _named(row, "subject")
+        to = row.get("to") if "by" in row else _named(row, "object")
+        text = row.get("text") if "text" in row else row.get("value")
+        who = " → ".join(str(x) for x in (by, to) if x)
+        return f"{who}: {text or ''}" if who else str(text or "")
+    pred = str(row.get("predicate") or "")
+    said = t(lang, CARRY_WORDS[pred]) if pred in CARRY_WORDS else word(pred, lang)
+    subject, obj, value = _named(row, "subject"), _named(row, "object"), row.get("value")
+    if pred == "event" and value not in (None, ""):  # what happened, as the timeline shows an event
+        text = f"{subject}: {value}" if subject else str(value)
+    elif obj and value not in (None, ""):
+        text = f"{subject} → {obj} {said} {value}"
+    else:
+        text = " ".join(str(x) for x in (subject, said, obj or value) if x not in (None, ""))
+    return text + (" " + t(lang, "carry_not") if row.get("polarity") == "negative" else "")
+
+
+def carry_head(c: dict[str, Any], lang: str) -> str:
+    """Where the carried lines come from, in words (plain text, not escaped)."""
+    if c.get("mode") == "regression":
+        head = t(lang, "carry_regress", names=", ".join(str(n) for n in c.get("names") or []))
+    else:
+        src = c.get("source") or {}
+        label = " · ".join(str(x) for x in (src.get("character"), src.get("chat")) if x)
+        head = t(lang, "carry_from", source=label or str(src.get("id") or "")[:8])
+    cut = _turn_of(c.get("cutoff_turn"))
+    return head + (" · " + t(lang, "carry_upto", t=cut) if cut is not None else "")
+
+
+def carry_line(row: dict[str, Any], lang: str) -> str:
+    """One carried line: a thread's kind, its words linked to where it was said in the source chat, when it happened
+    (without a turn: a carried row's turn is not this chat's), and the source chat's turn under it."""
+    text = _v(carry_text(row, lang))
+    href = carry_href(row)
+    main = f'<a class="v-src" href="{_v(href)}">{text}</a>' if href else text
+    if _is_thread(row):  # a carry line's kind is the mark "thread": its opening's predicate names the kind, and
+        # without an opening the data side sends the thread's kind itself in its place ("promise")
+        p = str(row.get("predicate"))
+        kind = (THREAD_KINDS.get(p, p if p in THREAD_KINDS.values() else None) if row.get("kind") == "thread"
+                else row.get("kind"))
+        main = _kind_tag(kind, lang) + main
+    h = happened_mark({k: v for k, v in row.items() if k != "turn"}, lang)
+    src = row.get("carried_from")
+    turn = _turn_of(src.get("turn")) if isinstance(src, dict) else None
+    return line(main + (f" {h}" if h else ""), _v(t(lang, "carry_turn", t=turn)) if turn is not None else "")
+
+
+def carry_lines(c: dict[str, Any], lang: str, empty: str) -> str:
+    """The section's body: where from, then at most CARRY_MAX lines folded as the other lists, and how many more."""
+    rows = c.get("lines") or []
+    body = f'<p class="v-text">{_v(carry_head(c, lang))}</p>'
+    body += more([carry_line(r, lang) for r in rows[:CARRY_MAX]], lang) or empty
+    if len(rows) > CARRY_MAX:
+        left = _v(t(lang, "carry_left", n=len(rows) - CARRY_MAX))
+        src = str((c.get("source") or {}).get("id") or "")
+        body += (f'<p class="v-note">'
+                 + (f'<a class="v-src" href="/inspector/c/{src}">{left}</a>' if _UUID.fullmatch(src) else left)
+                 + "</p>")
+    return body
+
+
+def _person_carry(c: dict[str, Any] | None, e: dict[str, Any], lang: str, empty: str) -> str:
+    """The person sheet's carried lines (only theirs, chosen by the data side). Without any: for `continue` no section;
+    for `regression`, where from and nothing yet when they are one of those who remember, else a note that they do not."""
+    if not c:
+        return ""
+    n = len(c.get("lines") or [])
+    if n:
+        return section("s-carry", lang, carry_lines(c, lang, empty), n)
+    if c.get("mode") != "regression":
+        return ""
+    names = {str(x).casefold() for x in [e.get("name"), *(e.get("names") or [])] if x}
+    if names & {str(x).casefold() for x in c.get("names") or []}:
+        return section("s-carry", lang, carry_lines(c, lang, empty))
+    return section("s-carry", lang, f'<p class="v-note">{_v(t(lang, "carry_forgot"))}</p>')
+
+
 def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     """A chat's memory as one document (PHASE-52 D2, PHASE-59 D3): now, open threads, people, so far, secrets, changed
     from the setting; sticky desktop TOC + mobile jump pills; at the foot, the way into everything else."""
@@ -485,8 +643,8 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     now = [line(nm(x["name"]), " · ".join(_v(s) for s in x["said"])) for x in d.get("now") or []]
     threads = d.get("threads") or []
     opened = [line(f"{_kind_tag(th.get('kind'), lang)}{nm(th['by'])}{' → ' + nm(th['to']) if th.get('to') else ''}: {_v(th['text'])}",
-                   _v(thread_meta(th, lang)),
-                   _close(th)) for th in threads]
+                   _thread_meta(th, lang),
+                   _close_own(th)) for th in threads]
     stale = f'<p class="v-note">{_v(t(lang, "stale", n=d["stale"]))}</p>' if d.get("stale") else ""
     people = []
     for p in d.get("pairs") or []:
@@ -496,7 +654,12 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
         bits = _pair_bits(p, lang)
         if len(p["relationship"]) > 1 or any(not symmetric(f.get("value")) for f in p["relationship"]):
             bits = [_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, 'relationship')} {f.get('value')}")
+                    + (f" {h}" if (h := happened_mark(_own(f), lang)) else "")
+                    + (f" {m}" if (m := carried_mark(f, lang)) else "")
                     for f in p["relationship"]] + bits
+        else:
+            bits = [h for f in p["relationship"]
+                    if (h := " ".join(x for x in (happened_mark(_own(f), lang), carried_mark(f, lang)) if x))] + bits
         people.append(line(head, " · ".join(bits)))
     story, scenes = d.get("story"), d.get("scenes") or []
     sofar = (f'<p class="v-text">{_v(story["text"])}</p><div class="v-meta">{_v(t(lang, "story"))} · '
@@ -506,21 +669,31 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
                   + "".join(line(_v(s["text"]), f"t{s['first_turn']}–{s['last_turn']}") for s in scenes) + "</details>")
     secrets = [line(_v(content(s)), _v(" · ".join(x for x in (
         t(lang, "by", who=", ".join(s.get("holders") or [])) if s.get("holders") else "",
-        t(lang, "kept", who=", ".join(s.get("open") or [])), f"t{s.get('turn')}") if x)))
+        t(lang, "kept", who=", ".join(s.get("open") or [])), f"t{s.get('turn')}",
+        happened_text(s, lang)) if x)))
         for s in d.get("secrets") or [] if s.get("open")]
     changed = [line(
         f"{nm(_named(c['fact'], 'subject'))} {_v(t(lang, c['fact']['predicate']) if c['fact']['predicate'] in T else c['fact']['predicate'])}",
         f'<span class="v-diff"><span class="v-diff-old">{_v(c["old"])}</span> → <span class="v-diff-new">{_v(c["new"])}</span>'
-        f'<span>· t{c["fact"].get("turn")}</span></span>')
+        + ("" if c["fact"].get("carried") else f'<span>· t{c["fact"].get("turn")}</span>') + "</span>"
+        + (f' · {h}' if (h := happened_mark(_own(c["fact"]), lang)) else "")
+        + (f' · {m}' if (m := carried_mark(c["fact"], lang)) else ""))
                for c in d.get("changes") or []]
     counts = {"s-now": len(now), "s-open": len(threads), "s-people": len(people),
               "s-sofar": len(scenes) + (1 if story else 0), "s-secrets": len(secrets), "s-changed": len(changed)}
     keys = ["s-now", "s-open", "s-people", "s-sofar", "s-secrets", "s-changed"]
+    link = d.get("carry")
+    carried = ""
+    if link:  # PHASE-60 S6: only while a link is in force
+        n = len(link.get("lines") or [])
+        counts["s-carry"] = n
+        keys.insert(1, "s-carry")
+        carried = section("s-carry", lang, carry_lines(link, lang, nothing), n or None)
     chips = '<div class="v-chips">' + "".join(
         f'<a href="#{k}"><span>{_v(t(lang, k))}</span>'
         + (f'<span class="v-chip-n">{counts[k]}</span>' if counts[k] else "") + "</a>"
         for k in keys) + "</div>"
-    body = (section("s-now", lang, more(now, lang, 6) or nothing)
+    body = (section("s-now", lang, more(now, lang, 6) or nothing) + carried
             + section("s-open", lang, (more(opened, lang) or nothing) + stale, len(threads))
             + section("s-people", lang, more(people, lang) or nothing, len(people))
             + section("s-sofar", lang, sofar or nothing)
@@ -553,8 +726,16 @@ def change_text(text: str, predicate: str | None, lang: str) -> str:
 
 def _event(m: tuple[Any, ...], major: bool, lang: str) -> str:
     text = change_text(str(m[2]), m[3] if len(m) > 3 else None, lang)
+    extra = m[4] if len(m) > 4 else None
+    if isinstance(extra, dict):
+        row = extra if "turn" in extra else {"turn": m[0], **extra}
+    elif isinstance(extra, str):
+        row = {"turn": m[0], "when_happened": extra}
+    else:
+        row = None
+    mark = happened_mark(row, lang) if row is not None else ""
     return (f'<div class="v-ev{" major" if major else ""}"><span class="v-t">t{m[0]}</span><span class="v-d"></span>'
-            f'<span class="v-x">{_v(text)}</span></div>')
+            f'<span class="v-x">{_v(text)}{f" {mark}" if mark else ""}</span></div>')
 
 
 def _timeline(d: dict[str, Any], lang: str) -> str:
@@ -599,15 +780,17 @@ def person(d: dict[str, Any], lang: str) -> str:
         rel = [str(f.get("value")) for f in p["relationship"] if f.get("value")]
         rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), " · ".join(_pair_bits(p, lang))))
     threads = [line(f"{_v(th['text'])}" + (f" → {nm(th['to'])}" if th.get("to") and th.get("by") == e.get("name") else ""),
-                    _v(thread_meta(th, lang)),
-                    _close(th)) for th in d.get("threads") or []]
+                    _thread_meta(th, lang),
+                    _close_own(th)) for th in d.get("threads") or []]
     knows = [line(_v(content(s)), _v(t(lang, "knows") + f" · t{s.get('turn')}")) for s in d.get("knows") or []]
     knows += [line(_v(content(s)), _v(t(lang, "unaware", who=", ".join(s.get("holders") or [])) + f" · t{s.get('turn')}"))
               for s in d.get("kept") or []]
     time = (_timeline(d, lang) + f'<p class="v-note">{_v(t(lang, "tl_hint"))}</p>') if d.get("marks") else nothing
     body = (section("s-now", lang, now) + section("s-rels", lang, more(rels, lang) or nothing, len(rels))
             + section("s-threads", lang, more(threads, lang) or nothing, len(threads))
-            + section("s-knows", lang, more(knows, lang) or nothing, len(knows)) + section("s-time", lang, time))
+            + section("s-knows", lang, more(knows, lang) or nothing, len(knows))
+            + _told_section(cid, d.get("told"), ents, lang) + _person_carry(d.get("carry"), e, lang, nothing)
+            + section("s-time", lang, time))
     cap = t(lang, "aka", names=", ".join(aka)) if aka else ""
     if not e.get("persona"):  # PHASE-47 S6: the button, behind a tap like every repair here
         body += (f'<p class="v-note">{_v(t(lang, "is_not_char"))}</p>' if e.get("excluded")
@@ -972,15 +1155,37 @@ def memory_map(d: dict[str, Any], lang: str, focus: str | None = None, everyone:
         foot = (f'<div class="v-foot"><a href="/views/c/{cid}/map">{_v(t(lang, "whole_map"))}</a> · '
                 f'<a href="/views/c/{cid}/person/{focus}">{_v(t(lang, "sheet"))}</a></div>')
     else:
-        keys = ["s-src", "s-ties", "s-events", "s-depth"]
+        told = _told_section(cid, d.get("told"), ents, lang)
+        keys = ["s-src", "s-ties", "s-events", "s-depth"] + (["s-told"] if told else [])
         chips = '<div class="v-chips">' + "".join(f'<a href="#{k}">{_v(t(lang, k))}</a>' for k in keys) + "</div>"
         head = t(lang, "map")
         body = (chips + section("s-src", lang, _sources(m["sources"], lang)) + ties
                 + section("s-events", lang, _events(cid, m["events"], m["last"], ents, lang), len(m["events"]))
-                + section("s-depth", lang, _depth(m["depth"], lang)))
+                + section("s-depth", lang, _depth(m["depth"], lang)) + told)
         foot = (f'<div class="v-foot"><a href="/views/c/{cid}/memory">{_v(t(lang, "back_memory"))}</a> · '
                 f'<a href="/inspector/c/{cid}">{_v(t(lang, "details"))}</a></div>')
     cap = " · ".join(str(x) for x in (conv.get("name"), f"t{conv['turns']}" if conv.get("turns") is not None else None)
                      if x)
     return (f'<div class="v v-doc v-map"><div class="v-head"><h1 class="v-h1">{_v(head)}</h1>'
             f'<span class="v-cap">{_v(cap)}</span></div>{body}{foot}</div>')
+
+
+def _told_section(cid: str, rows: list[dict[str, Any]] | None, ents: dict[str, str], lang: str) -> str:
+    """Who told whom (PHASE-60 S8): chains oldest first, names linked to their sheet; empty without rows."""
+    if not rows:
+        return ""
+    from .memorymap import told_chains
+    chains = told_chains(rows)
+    if not chains:
+        return ""
+    items = []
+    for chain in chains:
+        people = [chain[0]["teller"], *(link["hearer"] for link in chain)]
+        who = " → ".join(name_link(cid, ents, name) for name in people)
+        turns = [f"t{link['turn']}" for link in chain
+                 if isinstance(link.get("turn"), int) and not isinstance(link.get("turn"), bool)]
+        when = f" ({' → '.join(turns)})" if turns else ""
+        about = list(dict.fromkeys(w for link in chain for w in link.get("about") or ()))
+        meta = _v(t(lang, "told_about", who=", ".join(about))) if about else ""
+        items.append(line(f"{who}: {_v(chain[0]['what'])}{when}", meta))
+    return section("s-told", lang, more(items, lang), len(items))

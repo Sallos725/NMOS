@@ -268,3 +268,78 @@ def rings(middle: list[str], inner: list[str], outer: list[str]) -> tuple[dict[s
             angle = -math.pi / 2 + offset + 2 * math.pi * j / len(ring)
             pos[key] = (round(radius * math.cos(angle), 1), round(radius * math.sin(angle), 1))
     return pos, radius
+
+
+# --- who told whom chains (PHASE-60 S8) ---------------------------------------------------------------------------------
+
+def _told_person(row: dict[str, Any], side: str) -> tuple[str, str | None, frozenset[str]]:
+    """(display name, resolved entity id or None, normalized names) for one end of a `told` row."""
+    ent = row.get(f"{side}_entity")
+    eid = str(ent["id"]) if isinstance(ent, dict) and ent.get("id") else None
+    raw = str(row.get(side) or "").strip()
+    resolved = str(ent.get("name") or "").strip() if isinstance(ent, dict) else ""
+    display = resolved or raw
+    names = frozenset(n for n in (norm(display), norm(raw)) if n)
+    return display, eid, names
+
+
+def _same_person(a: tuple[str | None, frozenset[str]], b: tuple[str | None, frozenset[str]]) -> bool:
+    if a[0] and b[0]:
+        return a[0] == b[0]
+    return bool(a[1] & b[1])
+
+
+def _told_about(row: dict[str, Any]) -> list[str]:
+    """Whom a `told` row is about (`with`, stored in `participants` / `participant_entities`), deduplicated."""
+    out: list[str] = []
+    for p in row.get("participant_entities") or row.get("participants") or ():
+        if isinstance(p, dict):
+            name = str((p.get("entity") or {}).get("name") or p.get("name") or "").strip()
+        else:
+            name = str(p or "").strip()
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def told_chains(rows: list[dict[str, Any]] | None) -> list[list[dict[str, Any]]]:
+    """Group `told` rows oldest first into chains (PHASE-60 S8): a row starts a new chain unless an earlier chain's
+    last hearer is this row's teller and the passed-on content is the same (normalized `value`, case/space-insensitive),
+    in which case it extends that chain (A -> B -> C). Each link holds {teller, hearer, what, about, turn}; chains are
+    ordered by their first turn."""
+    if not rows:
+        return []
+
+    def order(item: tuple[int, dict[str, Any]]) -> tuple[int, int, int]:
+        idx, row = item
+        turn = row.get("turn")
+        pos = row.get("position")
+        t_key = turn if isinstance(turn, int) and not isinstance(turn, bool) else -1
+        p_key = pos if isinstance(pos, int) and not isinstance(pos, bool) else -1
+        return t_key, p_key, idx
+
+    ordered = [row for _, row in sorted(enumerate(rows), key=order)]
+    chains: list[list[dict[str, Any]]] = []
+    tails: list[tuple[tuple[str | None, frozenset[str]], str]] = []
+    for row in ordered:
+        teller, teller_id, teller_names = _told_person(row, "subject")
+        hearer, hearer_id, hearer_names = _told_person(row, "object")
+        what = str(row.get("value") or "").strip()
+        if not teller or not hearer or not what:
+            continue
+        turn_raw = row.get("turn")
+        turn = turn_raw if isinstance(turn_raw, int) and not isinstance(turn_raw, bool) else None
+        link: dict[str, Any] = {"teller": teller, "hearer": hearer, "what": what, "about": _told_about(row),
+                                "turn": turn}
+        what_norm = norm(what)
+        teller_key = (teller_id, teller_names)
+        hearer_key = (hearer_id, hearer_names)
+        for i, (last_hearer, chain_what) in enumerate(tails):
+            if chain_what == what_norm and _same_person(last_hearer, teller_key):
+                chains[i].append(link)
+                tails[i] = (hearer_key, chain_what)
+                break
+        else:
+            chains.append([link])
+            tails.append((hearer_key, what_norm))
+    return chains

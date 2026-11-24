@@ -20,6 +20,32 @@ describe('plugin arguments', () => {
   });
 });
 
+describe('trimming old dialogue (PHASE-60 S1)', () => {
+  it('is off with 20 recent turns when unset', async () => {
+    withArgs({});
+    const s = await risuHost.settings();
+    expect([s.trimOldTurns, s.keepRecentTurns]).toEqual([false, 20]);
+    withArgs({ trim_old_turns: 0, keep_recent_turns: 0 });  // PocketRisu's unset int
+    const d = await risuHost.settings();
+    expect([d.trimOldTurns, d.keepRecentTurns]).toEqual([false, 20]);
+  });
+
+  it('is on with trim_old_turns 1', async () => {
+    withArgs({ trim_old_turns: 1 });
+    expect((await risuHost.settings()).trimOldTurns).toBe(true);
+    withArgs({ trim_old_turns: 2 });
+    expect((await risuHost.settings()).trimOldTurns).toBe(false);
+  });
+
+  it('keeps keep_recent_turns within 4..200, 0 or invalid meaning 20', async () => {
+    const cases: [string | number, number][] = [[0, 20], [2, 4], [999, 200], [33, 33], ['x', 20], [-5, 20]];
+    for (const [value, expected] of cases) {
+      withArgs({ keep_recent_turns: value });
+      expect((await risuHost.settings()).keepRecentTurns, String(value)).toBe(expected);
+    }
+  });
+});
+
 describe('chats NMOS is off for (ADR 0048)', () => {
   it('are read from their plugin arg', async () => {
     withArgs({ disabled_chats: 'a  b,c a' });

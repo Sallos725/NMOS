@@ -613,7 +613,8 @@ A call that failed (an HTTP error, a reply that is not the JSON asked for) write
 it, and a failing job is tried up to five times. An embedding job embeds every chunk of a message before it stores
 any, so when a later chunk fails the earlier calls are not kept and the retry makes them again. A result dropped
 because its turn changed while the model answered is not counted either. The line therefore undercounts most while a
-provider keeps failing.
+provider keeps failing. Since Phase 61 (S6) the model-call log lists failed calls too, with any usage the provider
+reported for them (the Inspector's Model calls page); the model-use line itself is unchanged.
 *Workaround:* check the provider's own usage; the progress display counts failed jobs (`⚠ 실패 N`).
 
 **K51 — "Remember AI replies only" covers recall, not yet extraction.** With the flag on (PHASE-48 step 2, ADR 0077),

@@ -1,6 +1,8 @@
 // Settings form model: which sections changed, and the single sidecar update they add up to.
 
-export type Section = 'conn' | 'llm' | 'emb' | 'tune';
+import { bodyKey, bodyOf } from './extrabody';
+
+export type Section = 'conn' | 'llm' | 'emb' | 'rerank' | 'tune' | 'trim';
 
 /** Request-path deadline when the plugin arg is unset (0). 3 s: on PocketRisu v1.12.0 a warm
  *  generation needs ≈1.5 s at 5,000 messages and ≈2.7 s at 10,000 (docs/perf/scale.md). */
@@ -17,7 +19,18 @@ export const DEFAULT_RESERVED_TOKENS = 4000;
 export const MAX_RESERVED_TOKENS = 20_000;
 /** The largest budget the panel saves (ADR 0049): recall grows up to it, and a larger one recalls as it does. */
 export const PANEL_MAX_RESERVED_TOKENS = 8000;
-export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune'];
+/** Old-dialogue trimming (PHASE-60 S1, ADR 0083): recent turns always sent, and the step the cut moves by.
+ *  20 when the plugin arg is unset (0); kept within 4..200. */
+export const DEFAULT_KEEP_RECENT_TURNS = 20;
+export const MIN_KEEP_RECENT_TURNS = 4;
+export const MAX_KEEP_RECENT_TURNS = 200;
+/** Optional reranker wait (PHASE-60 S5, ADR 0084): 600 ms default, accepted within 50..5000 ms by the sidecar. */
+export const DEFAULT_RERANK_TIMEOUT_MS = 600;
+export const MIN_RERANK_TIMEOUT_MS = 50;
+export const MAX_RERANK_TIMEOUT_MS = 5000;
+/** `trim` is plugin args only, apart from `conn`: a connection save resets what the sidecar can do, and it has no
+ *  part in the sidecar update `configBody` builds. */
+export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'rerank', 'tune', 'trim'];
 
 /** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0022). */
 export const VERTEX_URL = 'https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi';
@@ -75,15 +88,33 @@ export interface ModelValues { url: string; model: string; key: string }
 
 export interface FormValues {
   conn: { url: string; route: string; enabled: boolean; reserved: string; deadline: string; token: string };
-  llm: ModelValues;
+  /** `extra` (the JSON text) and `noTemp` only when the sidecar reports them (PHASE-61 S4, ADR 0088). */
+  llm: ModelValues & { extra?: string; noTemp?: boolean };
   emb: ModelValues;
+  /** Optional reranker (PHASE-60 S5, ADR 0084); sent only when the sidecar reported it. */
+  rerank: { url: string; model: string; key: string; timeout: string };
   tune: { threshold: string; minSim: string; embedWait: string; topK: string; facts: string; backfill: string;
-    summaries: boolean; canonFacts: boolean };
+    summaries: boolean; canonFacts: boolean;
+    /** Pin a character with @name in a message (PHASE-60 S8, ADR 0087); sent only when the sidecar has the setting. */
+    pinAt: boolean };
+  /** Leaving out old dialogue (PHASE-60 S1): the switch and the recent turns always sent, as typed. */
+  trim: { on: boolean; keep: string };
 }
 
 /** Sections whose values differ from the last loaded or saved baseline. */
 export function dirtySections(baseline: FormValues, current: FormValues): Section[] {
-  return SECTIONS.filter((s) => JSON.stringify(baseline[s]) !== JSON.stringify(current[s]));
+  // the extra body counts by its object, not its spacing or key order
+  const view = (v: FormValues, s: Section) => s === 'llm' && v.llm.extra !== undefined
+    ? { ...v.llm, extra: bodyKey(v.llm.extra) } : v[s];
+  return SECTIONS.filter((s) => JSON.stringify(view(baseline, s)) !== JSON.stringify(view(current, s)));
+}
+
+/** A save that changes what the extraction model is asked with: its address, its model, the extra body or the
+ *  temperature switch (PHASE-61 S2: a body or switch change alone is a model change). */
+export function modelChange(baseline: FormValues, current: FormValues): boolean {
+  const [b, c] = [baseline.llm, current.llm];
+  return c.url.trim() !== b.url.trim() || c.model.trim() !== b.model.trim()
+    || bodyKey(c.extra ?? '') !== bodyKey(b.extra ?? '') || Boolean(c.noTemp) !== Boolean(b.noTemp);
 }
 
 /** A number field as the sidecar expects it; anything unparsable is sent as typed so the sidecar
@@ -93,14 +124,29 @@ function num(value: string): number | string {
   return value.trim() !== '' && Number.isFinite(n) ? n : value;
 }
 
-/** One PUT /v1/config body for every changed server-side section (validated and saved atomically). */
-export function configBody(dirty: Section[], v: FormValues): Record<string, unknown> {
+/** Settings a sidecar reports only from the version that has them; one it did not report is never sent. */
+export interface KnownSettings { pinAt?: boolean; rerank?: boolean }
+
+/** One PUT /v1/config body for every changed server-side section (validated and saved atomically). With `base`, the
+ *  extra body and the temperature switch are sent when they differ from it (PHASE-61 S4). */
+export function configBody(dirty: Section[], v: FormValues, known: KnownSettings = {}, base?: FormValues): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   for (const [section, prefix] of [['llm', 'llm'], ['emb', 'embed']] as const) {
     if (!dirty.includes(section)) continue;
     body[`${prefix}_url`] = v[section].url.trim();
     body[`${prefix}_model`] = v[section].model.trim();
     if (v[section].key.trim()) body[`${prefix}_api_key`] = v[section].key.trim();
+  }
+  if (dirty.includes('llm') && base) {
+    const extra = v.llm.extra === undefined ? null : bodyOf(v.llm.extra);  // null: an older sidecar, or not an object
+    if (extra && bodyKey(v.llm.extra as string) !== bodyKey(base.llm.extra ?? '')) body.llm_extra_body = extra;
+    if (v.llm.noTemp !== undefined && v.llm.noTemp !== Boolean(base.llm.noTemp)) body.llm_no_temperature = v.llm.noTemp;
+  }
+  if (dirty.includes('rerank') && known.rerank) {
+    body.rerank_url = v.rerank.url.trim();
+    body.rerank_model = v.rerank.model.trim();
+    body.rerank_timeout_ms = num(v.rerank.timeout);
+    if (v.rerank.key.trim()) body.rerank_api_key = v.rerank.key.trim();
   }
   if (dirty.includes('tune')) {
     Object.assign(body, {
@@ -110,6 +156,7 @@ export function configBody(dirty: Section[], v: FormValues): Record<string, unkn
     });
     // empty when the sidecar is older than the setting: sending it would be refused as not editable
     if (v.tune.embedWait.trim() !== '') body.embed_timeout_ms = num(v.tune.embedWait);
+    if (known.pinAt) body.pin_at_mentions = v.tune.pinAt;  // likewise: an older sidecar has no such setting
   }
   return body;
 }
@@ -136,5 +183,17 @@ export function connArgs(v: FormValues['conn']): Record<string, string | number>
       ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
     deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS)),
     auth_token: v.token.trim(),
+  };
+}
+
+/** Plugin args for leaving out old dialogue (PHASE-60 S1, ADR 0083; stored in PocketRisu, not the sidecar): the switch
+ *  as 1 or 0, and the recent turns always sent, a whole number within 4..200 that is 20 when empty or not positive.
+ *  `host.ts` reads every value this returns back as it is. */
+export function trimArgs(v: { on: boolean; keep: string }): { trim_old_turns: 0 | 1; keep_recent_turns: number } {
+  const n = Math.floor(Number(v.keep.trim()));
+  const keep = Number.isFinite(n) && n > 0 ? n : DEFAULT_KEEP_RECENT_TURNS;
+  return {
+    trim_old_turns: v.on ? 1 : 0,
+    keep_recent_turns: Math.min(MAX_KEEP_RECENT_TURNS, Math.max(MIN_KEEP_RECENT_TURNS, keep)),
   };
 }

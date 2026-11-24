@@ -29,16 +29,17 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
+from . import (__version__, archive, audit, canon, canonfacts, carry, dropped, endings, extraction, generations, inspector, ledger,
                memorymap, normtext, notes, overuse, views,
                plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
                vectors)
+from . import calls as model_calls  # `calls` is a local name in the notes route
 from . import usage as model_usage
-from .config import Settings
+from .config import Settings, extra_body_error, secret_path
 from .db import make_pool
 from .entities import norm
-from .extraction import enqueue_after_apply, job_counts, recent_errors
-from .facts import STANDING, excluded_ids, links_of as facts_links_of, memory_view, version_key
+from .extraction import enqueue_after_apply, job_counts, recent_errors, worker_status
+from .facts import STANDING, excluded_ids, links_of as facts_links_of, memory_view, told_chain, version_key
 from .ids import uuid7
 from .models import (
     ArchiveUploadChunk,
@@ -47,6 +48,7 @@ from .models import (
     BodiesRequest,
     BodiesResponse,
     CanonSyncRequest, CanonSyncResponse,
+    CarryRequest,
     EntityLinkRequest, ExpectRequest, MemoryModeRequest, ReextractRequest, RepairRequest, RepliesOnlyRequest,
     OutputRequest,
     Packet,
@@ -59,8 +61,8 @@ from .models import (
 from .canonical import manifest_hash, manifest_hashes, normalize_text, storable
 from .reconcile import Entry, plan, plan_append
 from .llm import Embedder
-from .packet import DEFAULT_POLICY, POLICIES, clean_text
-from .retrieval import RecallOptions, prefetched, query_prefix, retrieve
+from .packet import DEFAULT_POLICY, POLICIES, SEM_QUERY_POLICIES, clean_text
+from .retrieval import RecallOptions, SEM_QUERY_MAX_CHARS, prefetched, query_prefix, retrieve, sem_query
 from .state import current_state, rebuild_state, reparse_conversation, sync_rules, write_state
 from . import statusshape
 from .parsers import _clean as clean_value, needs_card, parse as parse_rules, watched
@@ -156,7 +158,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             vector_min_sim=cur.vector_min_sim, query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),
             policy=cur.packet_policy if cur.packet_policy in POLICIES else DEFAULT_POLICY,
             summarize_key=sm.key if sm else None, canon_key=rt.get("active_canon") if cur.canon_facts else None,
-            pins_by_card=runtime.pins_by_card(overrides),
+            pins_by_card=runtime.pins_by_card(overrides), pin_at_mentions=cur.pin_at_mentions,
+            reranker=runtime.reranker(cur),
         ))
 
     def rebuild(overrides: dict[str, Any]) -> None:
@@ -249,9 +252,23 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     rebuild({})
 
-    def view_of(conn, head: UUID) -> dict[str, Any]:
-        """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047)."""
-        return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"))
+    def view_of(conn, head: UUID, told: bool = False, carried: bool = False) -> dict[str, Any]:
+        """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047). `told`: with who told
+        whom (`view["told"]`, PHASE-60 S8), for the pages that draw chains. `carried`: with the chat's carry link in
+        force (ADR 0085), only for the read-only lists and screens that show carried memory; previews, repairs, the
+        author's note and every other reader keep the chat's own memory (PHASE-60 S6)."""
+        link = carried_of(conn, head) if carried else None
+        if link is None:
+            return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told)
+        return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told,
+                           carried=link)
+
+    def with_told(out: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+        """A page's data with `told` (PHASE-60 S8) only when there is some: a chat without told rows keeps its data as
+        it was. The pages are the owner's view: no memory mode filters them, for facts and told rows alike (ADR 0035)."""
+        if rows:
+            out["told"] = rows
+        return out
 
     held_seen: dict[tuple[UUID, str | None], frozenset[str]] = {}  # canon keys a prompt held, already scheduled
 
@@ -314,7 +331,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(settings.cors_origins),
-            allow_methods=["GET", "POST", "PUT"],  # PUT: settings panel saves /v1/config directly
+            # PUT: settings panel saves /v1/config directly; DELETE: the panel unlinks a carried chat with
+            # DELETE /v1/conversations/{id}/carry (PHASE-60 S6)
+            allow_methods=["GET", "POST", "PUT", "DELETE"],
             allow_headers=["Authorization", "Content-Type"],
             max_age=600,
         )
@@ -473,8 +492,24 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                              "map_graph": True},  # and its drawing as data, for the panel (step 6)
                 "generations": {"extract": rt["active_extractor"],
                                 "embed": rt["projection"].key if rt["projection"] else None},
+                "rerank": {"configured": rt["recall"].reranker is not None},  # PHASE-60 S5: never its URL or key
                 "plugin": {"expected": plugin.expected(), "seen": plugins.recent()},
                 "install": settings.install or None}
+
+    @app.get("/v1/worker/status", dependencies=[Depends(auth)])
+    def worker_status_route(request: Request):
+        """What the worker is doing (PHASE-61 S5): counts of the job table for the Status tab. Read-only, and never
+        on the request path: `/v1/retrieve` does not call it. With the summary of the last hour's model calls (S6),
+        added here rather than in `extraction.worker_status` so that `extraction` does not import `calls`."""
+        with request.app.state.pool.connection() as conn:
+            status = worker_status(conn)
+            try:
+                with conn.transaction():  # a savepoint: a failed statement does not poison the connection
+                    status["calls"] = model_calls.summary(conn, minutes=60)
+            except Exception as e:  # noqa: BLE001 — the counts still answer; the card leaves the line out
+                log.warning("worker status: the call log could not be read (%s)", type(e).__name__)
+                status["calls"] = None
+            return status
 
     @app.get(f"/v1/plugin/{plugin.FILENAME}", dependencies=[Depends(auth)])
     def plugin_download():
@@ -490,10 +525,43 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with request.app.state.pool.connection() as conn:
             return do_reconcile(conn, body)
 
-    def prefetch_query(body: BodiesRequest) -> None:
+    def _prefetch_previous_reply(conn: psycopg.Connection, body: BodiesRequest) -> str:
+        """Normalized text of the active `char` message before the synced user message (PHASE-60 S5, ADR 0084).
+
+        Reads from `body.bodies` first, else one indexed lookup of that stored revision. Fails open to "" on any
+        error so the prefetch falls back to the message alone; a mismatch with `/v1/retrieve` only misses
+        `prefetched.take` and costs the usual bounded wait (`embed_timeout_ms` after recall's reads, D70)."""
+        assert body.then_reconcile is not None
+        prev = None
+        for m in reversed(body.then_reconcile.messages[:-1]):
+            if m.disabled == "allBefore":
+                break
+            if m.role == "char" and not m.disabled and not m.is_comment:
+                prev = m
+                break
+        if prev is None:
+            return ""
+        raw = next((b.content for b in body.bodies if b.host_logical_id == prev.host_logical_id
+                    and b.revision_hash == prev.revision_hash), None)
+        if raw is None:
+            with conn.transaction():
+                row = conn.execute(
+                    "SELECT sr.content FROM conversation c"
+                    " JOIN source_object so ON so.conversation_id = c.id AND so.host_logical_id = %s"
+                    " JOIN source_revision sr ON sr.source_object_id = so.id AND sr.revision_hash = %s"
+                    " WHERE c.host = %s AND c.host_chat_ref = %s",
+                    (prev.host_logical_id, prev.revision_hash, body.host, body.chat_id),
+                ).fetchone()
+            raw = row["content"] if row is not None else None
+        return clean_text(normalize_text(raw)) if raw else ""
+
+    def prefetch_query(body: BodiesRequest, conn: psycopg.Connection) -> None:
         """The newest user message's embedding is asked for as soon as its text arrives (ADR 0061 item 7): the
         retrieve that follows this sync sends the same text as its query (the plugin's `queryTexts`) and takes it from
-        `retrieval.prefetched`. Nothing is stored; a text no retrieve asks for is dropped after a minute."""
+        `retrieval.prefetched`. Under `SEM_QUERY_POLICIES` (ADR 0084 item 2), a short message is combined with the
+        previous reply using `retrieval.sem_query`; any lookup error falls back to the message alone, and a mismatch
+        with `/v1/retrieve` costs only the usual bounded wait (D70). Nothing is stored; a text no retrieve asks for
+        is dropped after a minute."""
         recall = rt["recall"]
         if recall.embedder is None or body.then_reconcile is None or not body.then_reconcile.messages:
             return
@@ -505,14 +573,23 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         if content is None:
             return
         text = clean_text(normalize_text(content))
-        if text.strip():
-            prefetched.start(recall.embedder, recall.embed_projection, recall.query_prefix + text,
-                             recall.embed_timeout_ms)
+        if not text.strip():
+            return
+        embed_text = text
+        if recall.policy in SEM_QUERY_POLICIES and len(text.strip()) < SEM_QUERY_MAX_CHARS:
+            try:
+                sem = sem_query(text, _prefetch_previous_reply(conn, body))
+                if sem is not None:
+                    embed_text = sem
+            except Exception:  # noqa: BLE001 — fail open to today's text; a mismatch costs only the bounded wait
+                pass
+        prefetched.start(recall.embedder, recall.embed_projection, recall.query_prefix + embed_text,
+                         recall.embed_timeout_ms)
 
     @app.post("/v1/sync/bodies", response_model=BodiesResponse, dependencies=[Depends(auth)])
     def bodies(body: BodiesRequest, request: Request):
-        prefetch_query(body)  # before the database work: the embedder gets that time too
         with request.app.state.pool.connection() as conn:
+            prefetch_query(body, conn)  # before the sync's lock and writes: the embedder gets that time too
             conv = ledger.lock_conversation(conn, body.host, body.chat_id, None)
             def derive(rid: UUID, content: str, meta: dict[str, Any]) -> None:
                 normtext.write(conn, rid, content)
@@ -568,6 +645,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             packet=Packet(text=out["text"], token_estimate=out["tokens"], excerpt_count=out["count"]),
             memory=out.get("memory"),
             vectors=out.get("vectors"),
+            coverage=out.get("coverage"),
+            trim=out.get("trim"),
         )
 
     @app.post("/v1/output", status_code=202, dependencies=[Depends(auth)])
@@ -606,7 +685,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         if policy is not None and policy not in POLICIES:
             raise HTTPException(status_code=422, detail=f"policy must be one of {', '.join(POLICIES)}")
         with request.app.state.pool.connection() as conn:
-            out = audit.replay(conn, trace_id, rt["recall"], policy)
+            out = audit.replay(conn, trace_id, dataclasses.replace(rt["recall"], reranker=None), policy)
         if out is None:
             raise HTTPException(status_code=404, detail="trace not found")
         return out
@@ -635,7 +714,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            facts = view_of(conn, conv["head_commit_id"])["facts"] if conv["head_commit_id"] else []
+            # PHASE-60 S6: a read-only list, with the facts a link in force carries (each marked `carried`)
+            facts = view_of(conn, conv["head_commit_id"], carried=True)["facts"] if conv["head_commit_id"] else []
         return [{k: v for k, v in f.items() if history or k != "history"} for f in facts]
 
     @app.get("/v1/conversations/{conv_id}/entities", dependencies=[Depends(auth)])
@@ -645,9 +725,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            view = (view_of(conn, conv["head_commit_id"])
+            # PHASE-60 S6: a read-only list the panel links a person from, a carried person among them
+            view = (view_of(conn, conv["head_commit_id"], carried=True)
                     if conv["head_commit_id"] else {"entities": []})
-        return view["entities"]
+        pinned = {str(p["entity_id"]): str(p["repair"]) for p in view.get("pins") or ()}  # PHASE-60 S8: the pin's id
+        return [{**e, "pinned": pinned[str(e["id"])]} if str(e["id"]) in pinned else e for e in view["entities"]]
 
     @app.get("/v1/conversations/{conv_id}/memory-mode", dependencies=[Depends(auth)])
     def get_memory_mode(conv_id: UUID, request: Request):
@@ -922,6 +1004,101 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return {"turns": [t["turn"] for t in turns], "discarded": discarded, "queued": queued,
                     "coverage": coverage_view(conn, conv_id)}
 
+    # --- a chat that carries another chat's memory (PHASE-60 S6, ADR 0085) --------------------------------------
+    def carried_of(conn, head: UUID) -> carry.Carried | None:
+        """What the chat at `head` carries from its link in force now, or None."""
+        row = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
+        link = carry.in_force(conn, row["conversation_id"]) if row is not None else None
+        return carry.target_rows(link) if link is not None else None
+
+    def carry_keys() -> carry.Keys:
+        """The readers a request uses now: a link's frozen reading is taken with them."""
+        return carry.Keys(extractor=rt["active_extractor"],
+                          summarize=rt["summarizer"].key if rt["summarizer"] else None,
+                          canon=rt.get("active_canon"))
+
+    def carry_refused(error: carry.CarryError) -> HTTPException:
+        if isinstance(error, carry.NoSuchChat):
+            return HTTPException(status_code=404, detail=str(error))
+        if isinstance(error, carry.CarryChanged):
+            return HTTPException(status_code=409, detail={"message": "the source changed since its preview",
+                                                          "preview": jsonable_encoder(error.preview)})
+        if isinstance(error, carry.TooManyRows):
+            return HTTPException(status_code=422,
+                                 detail=f"too_many_rows: rows={error.rows} max={error.max} ({error})")
+        return HTTPException(status_code=422, detail=str(error))
+
+    def carry_labelled(conn, link: dict[str, Any] | None) -> dict[str, Any] | None:
+        if link is None:
+            return None
+        source = readmodel.conversation(conn, link["source_conversation_id"])
+        return {**link, "source": {"id": link["source_conversation_id"], "character": source["host_character_name"],
+                                   "chat": source["host_chat_name"]}}
+
+    def carry_data(conn, conv_id: UUID, view: dict[str, Any], entity_id: str | None = None) -> dict[str, Any] | None:
+        """What the panel's memory screen or a person's sheet shows of the chat's link in force (ADR 0085), from the
+        view the screen reads; None when the view carries nothing (no SQL then) or its link is gone since."""
+        carried = view.get("carried")
+        if carried is None:
+            return None
+        link = carry_labelled(conn, carry.in_force(conn, conv_id, snapshot=False))
+        if link is None or str(link["id"]) != str(carried["link"]):
+            return None
+        return {"source": jsonable_encoder(link["source"]), "mode": carried["mode"],
+                "names": [str(n) for n in link.get("entity_names") or ()],
+                "created_at": jsonable_encoder(link["created_at"]),
+                "lines": carry.panel_lines(view, entity_id)}
+
+    @app.get("/v1/conversations/{conv_id}/carry", dependencies=[Depends(auth)])
+    def get_carry(conv_id: UUID, request: Request, snapshot: bool = False):
+        """The link this chat carries another chat's memory by, and the links it carried before, newest first."""
+        with request.app.state.pool.connection() as conn:
+            if readmodel.conversation(conn, conv_id) is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            links = carry.history(conn, conv_id, snapshot=snapshot)
+            return {"in_force": carry_labelled(conn, links["in_force"]),
+                    "removed": [carry_labelled(conn, x) for x in links["removed"]]}
+
+    @app.post("/v1/conversations/{conv_id}/carry/preview", dependencies=[Depends(auth)])
+    def preview_carry(conv_id: UUID, body: CarryRequest, request: Request):
+        """What this chat would carry of the source, read now (`expect` is ignored). Writes nothing."""
+        with request.app.state.pool.connection() as conn:
+            try:
+                return carry.preview(conn, conv_id, body.source_conversation_id, body.mode, body.entity_names,
+                                     carry_keys(), cutoff_turn=body.cutoff_turn)
+            except carry.CarryError as error:
+                raise carry_refused(error) from None
+
+    @app.post("/v1/conversations/{conv_id}/carry", dependencies=[Depends(auth)])
+    def add_carry(conv_id: UUID, body: CarryRequest, request: Request):
+        """The owner links this chat to carry the source's memory (ADR 0085): the source is read once now and the
+        reading is stored with the link; a link in force before is replaced. With `expect`, the preview's
+        fingerprint: 409 with a fresh preview when the source's reading changed since. 409 "try again" when another
+        writer of the two chats (a delete of a branched chat) held a lock the link needed: nothing was written."""
+        with request.app.state.pool.connection() as conn:
+            try:
+                made = carry.link(conn, conv_id, body.source_conversation_id, body.mode, body.entity_names,
+                                  carry_keys(), cutoff_turn=body.cutoff_turn, expect=body.expect)
+            except carry.CarryError as error:
+                raise carry_refused(error) from None
+            except (psycopg.errors.DeadlockDetected, psycopg.errors.LockNotAvailable):
+                # The link's transaction rolled back (review F4); the locking itself is as it was.
+                raise HTTPException(status_code=409,
+                                    detail="the chats were busy: nothing was linked, try again") from None
+        log.info("carry link conversation=%s link=%s source=%s mode=%s", conv_id, made["link"]["id"],
+                 body.source_conversation_id, body.mode)
+        return made
+
+    @app.delete("/v1/conversations/{conv_id}/carry", dependencies=[Depends(auth)])
+    def remove_carry(conv_id: UUID, request: Request):
+        """The owner takes the link in force back: the row stays with `removed_at` for the record."""
+        with request.app.state.pool.connection() as conn:
+            removed = carry.unlink(conn, conv_id)
+        if removed is None:
+            raise HTTPException(status_code=404, detail="no link in force")
+        log.info("carry link removed conversation=%s link=%s", conv_id, removed["id"])
+        return {"removed": removed}
+
     def repair_rows(conn, conv_id: UUID, live: list[dict[str, Any]],
                     flags: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
         """Every repair of a chat, newest first, with the item each in force applies to now (ADR 0044); a status
@@ -951,7 +1128,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             if conv["head_commit_id"] is None:
                 return []
-            return view_of(conn, conv["head_commit_id"])[key]
+            # PHASE-60 S6: the read-only thread and secret lists, with what a link in force carries
+            return view_of(conn, conv["head_commit_id"], carried=True)[key]
 
     @app.get("/v1/conversations/{conv_id}/threads", dependencies=[Depends(auth)])
     def conversation_threads(conv_id: UUID, request: Request):
@@ -1009,7 +1187,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def add_repair(conv_id: UUID, body: RepairRequest, request: Request):
         """The owner repairs one item of this chat's memory (ADR 0044): `item` is the id the Inspector shows for a
         thread or a secret. The repair stores what the item says, not the id, so it survives rebuilds and new
-        extractor generations; it applies on every read until the owner takes it back."""
+        extractor generations; it applies on every read until the owner takes it back. A pin (`entity_pin`, PHASE-60
+        S8) names a character as an exclusion names its entity, and needs no preview."""
         with request.app.state.pool.connection() as conn:
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
@@ -1298,7 +1477,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             told = summaries.current(conn, conv_id, head, key) if key and calls else None
             setting = "diverged" in ask.sections or ("custom" in ask.sections and ask.custom_setting)
             manifest = canon.manifest(conn, conv_id) if setting else None
-        model = notes.model_for(rt["settings"]) if ask.model and calls else None
+        # PHASE-61 S6: each call logged as a `note` of this chat, outside the request's connection
+        model = (notes.model_for(rt["settings"], log_to=rt["settings"].database_url, conversation_id=conv_id)
+                 if ask.model and calls else None)
         out = notes.make(ask, view, told, last, model, date.today().isoformat(), canon=manifest)
         log.info("author notes conversation=%s sections=%s made=%s", conv_id, ",".join(ask.sections),
                  ",".join(s["made"] for s in out["sections"]))
@@ -1625,6 +1806,31 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                                          '{"mode": "continue" | "recent", "canon": bool}'])
         return update, choice
 
+    BODY_KEY = "llm_extra_body"
+
+    def body_secret_errors(conn: psycopg.Connection, clean: dict[str, Any]) -> list[str]:
+        """After a save, in its transaction: the body in force holding one of this install's credentials, as the
+        archive's scan lists them (review F2). Such a body would sit in every generation spec, show in `/v1/config` and
+        refuse every later archive. A new body is refused; a key saved while the body holds it is refused too. Checked
+        only when the save touches the body or a key and the body in force is not empty."""
+        touched = set(clean) & ({BODY_KEY} | runtime.SECRET)
+        if not touched:
+            return []
+        current = runtime.effective(settings, runtime.stored(conn))
+        if not current.llm_extra_body:
+            return []
+        where = secret_path(current.llm_extra_body, archive._secrets(conn, [settings, current]))
+        if where is None:
+            return []
+        if clean.get(BODY_KEY) is not None:
+            return [f"{BODY_KEY}: {held_secret(where)}"]
+        return [f"{key}: the extra request body holds this key (at {where}); remove it from the body first"
+                for key in sorted(touched & runtime.SECRET)]
+
+    def held_secret(where: str) -> str:
+        return (f"{where} holds one of this install's credentials: a key belongs in the key field, which is never shown"
+                " or archived")
+
     def previous_keys() -> tuple[str | None, ...]:
         return tuple(rt[k].key if rt[k] else None for k in ("extractor", "projection", "summarizer", "canon"))
 
@@ -1647,7 +1853,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 counts: dict[str, int] = {}
                 with conn.transaction(force_rollback=True):
                     runtime.lock_config(conn)
-                    runtime.save(conn, runtime.keys_follow_hosts(settings, runtime.stored(conn), clean))
+                    saving = runtime.keys_follow_hosts(settings, runtime.stored(conn), clean)
+                    runtime.save(conn, saving)
+                    if errors := body_secret_errors(conn, saving):
+                        raise HTTPException(status_code=422, detail=errors)
                     prepared = configuration(runtime.stored(conn))
                     activate(conn, *before, choice=choice, cfg=prepared, counts=counts, changes=changes)
                 out[name] = counts
@@ -1670,6 +1879,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     latest = runtime.stored(conn)
                     clean = runtime.keys_follow_hosts(settings, latest, clean)
                     runtime.save(conn, clean)
+                    if errors := body_secret_errors(conn, clean):  # raised in the transaction: nothing is saved
+                        raise HTTPException(status_code=422, detail=errors)
                     overrides = runtime.stored(conn)
                     prepared = configuration(overrides) if set(clean) - {runtime.PRESETS_KEY} else None
                     if runtime.PARSERS_KEY in clean:
@@ -1706,17 +1917,32 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return {**result, "error": result["error"] + note} if note and not result.get("ok") and "error" in result else result
 
     @app.post("/v1/config/test", dependencies=[Depends(auth)])
-    def test_config(body: dict[str, Any]):
+    def test_config(body: dict[str, Any], request: Request):
         cur = rt["settings"]
         kind = body.get("kind")
         if kind == "llm":
+            # PHASE-61 S3: the body and the switch under test, checked as a save checks them; absent, the saved ones
+            extra_body = body.get("extra_body") if "extra_body" in body else cur.llm_extra_body
+            no_temperature = body.get("no_temperature") if "no_temperature" in body else cur.llm_no_temperature
+            errors = [f"extra_body: {reason}"] if (reason := extra_body_error(extra_body)) is not None else []
+            if not errors and extra_body:  # review F2: never send one of this install's credentials as a value
+                with request.app.state.pool.connection() as conn:
+                    where = secret_path(extra_body, archive._secrets(conn, [settings, cur]))
+                if where is not None:
+                    errors.append(f"extra_body: {held_secret(where)}")
+            if not isinstance(no_temperature, bool):
+                errors.append("no_temperature: expected a JSON boolean")
+            if errors:
+                raise HTTPException(status_code=422, detail=errors)
             key, note = key_for(body, kind)
             return noted(runtime.test_llm(body.get("url") or cur.llm_url, body.get("model") or cur.llm_model, key,
-                                          bool(body.get("json_mode", cur.llm_json_mode))), note)
+                                          bool(body.get("json_mode", cur.llm_json_mode)), extra_body=extra_body,
+                                          no_temperature=no_temperature,
+                                          observer=model_calls.observer(cur.database_url, "test")), note)
         if kind == "embeddings":
             key, note = key_for(body, kind)
             return noted(runtime.test_embeddings(body.get("url") or cur.embed_url, body.get("model") or cur.embed_model,
-                                                 key), note)
+                                                 key, observer=model_calls.observer(cur.database_url, "test")), note)
         raise HTTPException(status_code=422, detail="kind must be 'llm' or 'embeddings'")
 
     @app.post("/v1/config/models", dependencies=[Depends(auth)])
@@ -1866,12 +2092,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def memory_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """What the panel's memory screen holds (PHASE-52 D2), from what the Inspector's chat page reads."""
         cid, head = conv["id"], conv["head_commit_id"]
-        view = inspector.with_participants(view_of(conn, head))
+        view = inspector.with_participants(view_of(conn, head, carried=True))  # PHASE-60 S6: shows carried memory
+        # what needs a look is the chat's own memory (PHASE-60 S6): a link in force reads it once more without
+        # the carried rows, so its dropped facts, role endings, repairs and threads are counted as before linking
+        own = view if "carried" not in view else view_of(conn, head)
         last = head_turn(conn, head)
-        lost, role_ends, flags, fixed = attention_inputs(conn, conv, head, view)
+        lost, role_ends, flags, fixed = attention_inputs(conn, conv, head, own)
         off_keys = statewatch.dismissed(fixed)
-        queue = inspector._attention({"threads": view["threads"], "unmatched": view["unmatched"],
-                                      "conflicts": view["conflicts"], "ambiguous": view["ambiguous"],
+        queue = inspector._attention({"threads": own["threads"], "unmatched": own["unmatched"],
+                                      "conflicts": own["conflicts"], "ambiguous": own["ambiguous"],
                                       "dropped": lost, "endings": role_ends,
                                       "state_flags": [f for f in flags if f["id"] not in off_keys]}, fixed, last, "ko")
         trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
@@ -1885,27 +2114,31 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         key = rt.get("active_summarizer")
         told = summaries.current(conn, cid, head, key) if key else {"scenes": [], "story": None}
         scenes = [x["summary"] for x in told["scenes"] if x.get("summary")]
-        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
-                         "turns": last},
-                "now": now,
-                "threads": [th for th in threads if not inspector.stale(th, last)],
-                "stale": sum(1 for th in threads if inspector.stale(th, last)),
-                "pairs": inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING], excluded_ids(view)),
-                "story": told.get("story"), "scenes": list(reversed(scenes)),
-                "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
-                "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+        d = {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
+                      "turns": last},
+             "now": now,
+             "threads": [th for th in threads if not inspector.stale(th, last)],
+             "stale": sum(1 for th in threads if inspector.stale(th, last)),
+             "pairs": inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING], excluded_ids(view)),
+             "story": told.get("story"), "scenes": list(reversed(scenes)),
+             "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
+             "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+        if (carried := carry_data(conn, cid, view)) is not None:  # PHASE-60 S6: only a chat with a link in force
+            d["carry"] = carried
+        return d
 
     def map_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """The memory map (PHASE-55), from the read every request makes, and the newest request's scene."""
         cid, head = conv["id"], conv["head_commit_id"]
-        view = inspector.with_participants(view_of(conn, head))
+        view = inspector.with_participants(view_of(conn, head, told=True))
         trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
                              " ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
         cast = [str(n) for n in ((trace or {}).get("latency_ms") or {}).get("scene_cast") or []]
         last = head_turn(conn, head)
-        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
-                         "turns": last},
-                "map": memorymap.build(view, last, cast), "entities": character_ids(view)}
+        return with_told({"conv": {"id": str(cid), "name": conv.get("host_chat_name"),
+                                   "character": conv.get("host_character_name"), "turns": last},
+                          "map": memorymap.build(view, last, cast), "entities": character_ids(view)},
+                         told_chain(view["told"]))  # PHASE-60 S8: every chain of the chat
 
     def scene_now(view: dict[str, Any], cast: list[str]) -> list[dict[str, Any]]:
         """Each character of the scene once, with where and how they are now (PHASE-52): the scene's cast may name
@@ -1938,7 +2171,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def person_data(conn, conv: dict[str, Any], entity_id: UUID) -> dict[str, Any]:
         """A person's sheet (PHASE-52 D3, D4), from the view the Inspector's character page reads."""
         cid, head = conv["id"], conv["head_commit_id"]
-        view = inspector.with_participants(view_of(conn, head))
+        view = inspector.with_participants(view_of(conn, head, told=True, carried=True))  # PHASE-60 S6: shows carried
         e = next((x for x in view["entities"] if str(x["id"]) == str(entity_id)), None)
         if e is None:
             raise HTTPException(status_code=404, detail="person not found")
@@ -1953,7 +2186,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             history = f.get("history") or [f]
             for i, h in enumerate(history):
                 turn = h.get("turn")
-                if h.get("canon") or not isinstance(turn, int) or norm(h.get("subject")) not in names:
+                # canon and a carried version (ADR 0085) are before this chat's story: listed, never a mark
+                if (h.get("canon") or h.get("carried") or not isinstance(turn, int)
+                        or norm(h.get("subject")) not in names):
                     continue
                 # a ring: a major event, or a relationship or role that replaced an earlier one (not its first word)
                 changed = f["predicate"] in ("relationship", "role_toward") and i > 0 \
@@ -1961,13 +2196,17 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 text = " → ".join(str(x) for x in (h.get("object"), h.get("value")) if x)
                 if text and (turn, f["predicate"], text) not in seen:
                     seen.add((turn, f["predicate"], text))
-                    marks.append((turn, event_major or changed, text, f["predicate"]))
+                    mark = (turn, event_major or changed, text, f["predicate"])
+                    # PHASE-60 S7: when it happened rides as a fifth element, only when the row has one
+                    marks.append((*mark, when) if (when := h.get("when_happened")) else mark)
         open_ = [th for th in view["threads"] if th["status"] == "open" and not inspector.stale(th, last)
                  and (norm(th.get("by")) in names or norm(th.get("to")) in names)]
-        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
+        data = {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
                          "turns": last},
                 "entity": {"id": eid, "name": e.get("name"), "names": list(e.get("names") or []),
-                           "persona": bool(e.get("persona")), "excluded": e.get("excluded")},
+                           "persona": bool(e.get("persona")), "excluded": e.get("excluded"),
+                           "pinned": next((str(p["repair"]) for p in view.get("pins") or ()  # PHASE-60 S8
+                                           if str(p["entity_id"]) == eid), None)},
                 "now": views.now_said(view["facts"], str(e.get("name") or "")),
                 "pairs": [p for p in inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING],
                                                      excluded_ids(view)) if eid in {str(i) for i in p["ids"]}],
@@ -1975,6 +2214,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "knows": [s for s in view["secrets"] if s.get("open") and names & {norm(n) for n in s.get("holders") or []}],
                 "kept": [s for s in view["secrets"] if names & {norm(n) for n in s.get("open") or []}],
                 "marks": marks, "first": 0, "last": last, "entities": character_ids(view)}
+        if (carried := carry_data(conn, cid, view, eid)) is not None:  # PHASE-60 S6: only a chat with a link in force
+            data["carry"] = carried
+        return with_told(data, told_chain(view["told"], eid))  # PHASE-60 S8: the chains this person tells or hears
 
     def working_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """The panel's working screen (PHASE-52 D5): the newest request's ledger, processing and usage."""
@@ -2142,7 +2384,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            view = inspector.with_participants(view_of(conn, conv["head_commit_id"]))
+            view = inspector.with_participants(view_of(conn, conv["head_commit_id"], told=True))
+            # PHASE-60 S8: the chains this entity tells or hears, in the page's data only when there are some
+            told = told_chain(view.pop("told"), str(entity_id))
+            with_told(view, told)
             with inspector.turn_links(conv_id, token, inspector.lang_of(lang)):
                 if part:  # the timeline alone, for the panel (PHASE-32 step 3)
                     return inspector.character_timeline(conv, str(entity_id), view, inspector.lang_of(lang),
@@ -2173,6 +2418,25 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_index(request: Request, token: str | None = None, lang: str | None = None):
         return inspector_index_html(request, token, lang)
+
+    # PHASE-61 S6 (ADR 0089): the log of model calls, newest first, with a summary of the last hour
+    @app.get("/v1/worker/calls", dependencies=[Depends(auth)])
+    def worker_calls(request: Request, limit: int = 200, conversation_id: UUID | None = None):
+        with request.app.state.pool.connection() as conn:
+            return {"calls": model_calls.recent(conn, limit, conversation_id), "summary": model_calls.summary(conn)}
+
+    def model_calls_html(request: Request, token: str | None, lang: str | None, embed: bool = False) -> str:
+        with request.app.state.pool.connection() as conn:
+            rows, summary = model_calls.recent(conn, 200), model_calls.summary(conn)
+        return inspector.model_calls(rows, summary, token, inspector.lang_of(lang), embed=embed)
+
+    @app.get("/inspector/calls", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def inspector_calls(request: Request, token: str | None = None, lang: str | None = None):
+        return model_calls_html(request, token, lang)
+
+    @app.get("/v1/inspector/calls", dependencies=[Depends(auth)])
+    def inspector_calls_embed(request: Request, lang: str | None = None):
+        return {"html": model_calls_html(request, None, lang, embed=True)}
 
     # The Docker-free bundles' tray and menu bar open this (PHASE-23 Q8): the Inspector's first page, which holds
     # the version, the plugin build, the generations in use, the background jobs and their recent errors.

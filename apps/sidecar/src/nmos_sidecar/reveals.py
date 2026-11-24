@@ -62,7 +62,8 @@ def generation(settings: Settings) -> Generation | None:
     return generations.make(
         "reveal", settings.llm_url, settings.llm_model, version=VERSION, prompt=generations.fingerprint(PROMPT),
         compiler=COMPILER_VERSION, normalizer=normtext.NORMALIZER_VERSION,  # its input and its answer's check
-        json_mode=settings.llm_json_mode, temperature=0, context_turns=settings.extract_turns,
+        json_mode=settings.llm_json_mode, context_turns=settings.extract_turns,
+        **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
         target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS)
 
 

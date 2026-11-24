@@ -14,7 +14,8 @@ def test_config_roundtrip_masks_secrets_and_validates(client):
     assert bad.status_code == 422 and len(bad.json()["detail"]) == 3
     ok = client.put("/v1/config", json={"llm_url": "http://llm.example/v1", "llm_model": "m", "llm_api_key": "sk-secret",
                                          "recall_threshold": 0.5}).json()
-    assert ok["llm"] == {"url": "http://llm.example/v1", "model": "m", "api_key_set": True, "json_mode": True}
+    assert ok["llm"] == {"url": "http://llm.example/v1", "model": "m", "api_key_set": True, "json_mode": True,
+                         "extra_body": {}, "no_temperature": False}  # PHASE-61 S4: the two new fields at defaults
     assert "sk-secret" not in str(ok) and ok["recall"]["threshold"] == 0.5
     assert client.get("/v1/health").json()["features"]["extraction"] is True
     reset = client.put("/v1/config", json={"llm_url": None, "llm_model": None, "llm_api_key": None}).json()
@@ -119,7 +120,7 @@ def test_a_saved_key_is_sent_only_to_its_own_host(client, monkeypatch):
     sent: list[tuple[str, str]] = []
 
     class Model:
-        def __init__(self, url, model, api_key, timeout_s=60, json_mode=True):
+        def __init__(self, url, model, api_key, timeout_s=60, json_mode=True, **kwargs):  # PHASE-61: + body, switch
             self.url, self.key = url, api_key
 
         def complete_json(self, system, user):

@@ -38,9 +38,10 @@ from .statewatch import target as flag_target
 from .threads import MATCH_MIN, similarity
 
 KINDS = ("thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-         "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude")
+         "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude", "entity_pin")
 # threads and secrets since step 3, facts and names since step 4, locks since Phase 14, restores since Phase 22, a
-# status flag's dismissal since Phase 39 (Q4: no memory read applies it; the Inspector leaves the flag out)
+# status flag's dismissal since Phase 39 (Q4: no memory read applies it; the Inspector leaves the flag out), a pin since
+# Phase 60 (S8, ADR 0087: stored and listed; the packet's read of it is packet-v20's)
 ENABLED = frozenset(KINDS)
 PROMISE_OUTCOMES = ("kept", "broken")
 # A quote names the same item when it shares this many characters with the stored one: extract-v14's own minimum for
@@ -454,7 +455,9 @@ def restore_target(f: dict[str, Any]) -> dict[str, Any]:
     and its line and quote to show it."""
     return {"turn": f["turn"], "turn_hash": f["turn_hash"], "predicate": f["predicate"], "subject": f["subject"],
             "object": f.get("object"), "text": f["text"], "evidence": f.get("evidence"),
-            "fact": {k: f.get(k) for k in RESTORED} | ({"feeling": f["feeling"]} if f.get("feeling") else {})}
+            "fact": ({k: f.get(k) for k in RESTORED}
+                     | ({"feeling": f["feeling"]} if f.get("feeling") else {})
+                     | ({"when_happened": f["when_happened"]} if f.get("when_happened") else {}))}
 
 
 def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied: dict[str, str | None],
@@ -475,6 +478,8 @@ def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied:
     new["participants"] = tuple(fact["participants"]) if fact.get("participants") else None
     if fact.get("feeling"):  # PHASE-58: a restored feeling keeps how it felt
         new["feeling"] = fact["feeling"]
+    if fact.get("when_happened"):  # PHASE-60 S7: a restored event or promise keeps when it happened
+        new["when_happened"] = fact["when_happened"]
     new.update({"id": _owner_id(rep), "turn": t["turn"], "turn_hash": t["turn_hash"], "position": at[0],
                 "host_logical_id": None, "generation": None, "compiler": None, "listed_hash": None,
                 "source": "narration", "owner": True, "repair": str(rep["id"])})
@@ -522,6 +527,8 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
         return _plan_split(item, other, entity_type, r)
     if kind == "entity_exclude":
         return _plan_exclude(item, entity_type, scope, view)
+    if kind == "entity_pin":
+        return _plan_pin(item, entity_type, view)
     if kind == "state_dismiss":  # the caller lists the chat's undismissed status flags (`state_flags`, PHASE-39 Q4)
         flag = next((f for f in view.get("state_flags") or () if f["id"] == item), None)
         if flag is None:
@@ -635,6 +642,51 @@ def exclusions(repairs: list[dict[str, Any]], r: Resolution | None) -> dict[str,
         if was is None or (t.get("scope") == "memory" and was["scope"] != "memory"):
             out[str(e["id"])] = {"scope": t.get("scope") or "cast", "repair": rep["id"], "name": e["name"]}
     return out
+
+
+def _plan_pin(name: str, entity_type: str, view: dict[str, Any]) -> tuple[dict, dict]:
+    """Pin a character (PHASE-60 S8, ADR 0087): named as the owner saw it, as an exclusion names its target, and matched
+    on every read through entity resolution. A name that is no character of the chat, the persona, an entity the owner
+    left out (item 5: the exclusion wins) and a character already pinned are refused."""
+    r = view.get("resolution")
+    by_id = next((e for e in view.get("entities") or () if str(e["id"]) == name.strip()), None)
+    if by_id is not None:  # the panel names the entity by its id; the repair stores the name it goes by now
+        name, entity_type = by_id["name"], by_id["type"]
+    if entity_type != "character":
+        raise RepairError("only a character can be pinned")
+    if r is not None and (r.is_persona(entity_type, name) or norm(name) in r.persona_names):
+        raise RepairError("the persona is not pinned: it is in every scene already")
+    if r is None or not name.strip() or r.status(entity_type, name) == "unresolved":
+        raise RepairError("the name is not mentioned in this chat")
+    e = r.entity(entity_type, name)
+    if e is None:
+        raise RepairError("the name is not one character now")
+    if str(e["id"]) in (view.get("excluded") or exclusions(view.get("repairs") or [], r)):
+        raise RepairError("that name is marked not a character: take that back first")
+    if any(str(p["entity_id"]) == str(e["id"]) for p in pins(view.get("repairs") or [], r)):
+        raise RepairError("that character is pinned already")
+    return {"entity_type": entity_type, "name": name.strip()}, {}
+
+
+def pins(repairs: list[dict[str, Any]], r: Resolution | None) -> list[dict[str, Any]]:
+    """The characters the owner pinned (PHASE-60 S8), newest pin first, one entry a character: each pin's name resolved
+    now, so a name the story joins to it follows and a split name does not; one that resolves to nothing pins nothing.
+    An entity the owner left out is not pinned (ADR 0087 item 5), whatever the exclusion's scope. `repairs` oldest
+    first, as every read fetches them; of two pins that name one character now, the newer counts."""
+    if r is None:
+        return []
+    left_out = exclusions(repairs, r)
+    out: dict[str, tuple[int, dict[str, Any]]] = {}
+    for i, rep in enumerate(repairs):
+        if rep["kind"] != "entity_pin":
+            continue
+        t = rep.get("target") or {}
+        e = r.entity(t.get("entity_type") or "character", t.get("name"))
+        if e is None or str(e["id"]) in left_out:
+            continue
+        out[str(e["id"])] = (i, {"entity_id": e["id"], "name": e["name"], "repair": rep["id"],
+                                 "created_at": rep.get("created_at")})
+    return [p for _, p in sorted(out.values(), key=lambda x: x[0], reverse=True)]
 
 
 def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None, new_object: str | None,

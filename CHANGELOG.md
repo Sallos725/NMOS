@@ -3,6 +3,128 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
+## Unreleased
+
+Phase 60, in progress: nothing below changes a default (`packet-v19`, `extract-v16`, `clean-v3`); each item is behind a
+switch.
+
+- **Old dialogue left out in steps** (Phase 60 S1, plugin args `trim_old_turns` and `keep_recent_turns`, off by
+  default; 20 turns kept, 4–200). Once memory has extracted the older turns and a scene summary holds them, the plugin
+  leaves their messages out of the copy of the prompt it returns, never out of the chat. The sidecar picks the first
+  message to keep and moves it only in whole steps of `keep_recent_turns`, so the start of the prompt stays the same
+  for up to that many turns. Only plain user or assistant messages that each carry one chat message, before the latest
+  user turn, are left out; any other layout, or an empty packet, leaves out nothing. The Status tab and the HUD say how
+  many messages were left out, the tokens saved, or why none were. Needs summaries on.
+- **`[NMOS.memory]`** (Phase 60 S2.3). Put the marker in a preset or a lorebook entry and memory goes there: the first
+  marker is replaced by the memory, every other one is removed, and no marker ever reaches the model, also when
+  memory is skipped or fails. A retried request gets the same prompt.
+- **Memory placed at the end goes before a prefill** (Phase 60 S2.2). With `inject_position` `end`, memory now goes
+  before a trailing run of assistant messages. Whenever memory lands after the latest user message, one fixed line
+  after it says that message already happened and wins where the two differ, and the plugin asks for 40 tokens less.
+- **`packet-v20`, selectable, not the default** (Phase 60 S2.1, S3, S4; `NMOS_PACKET_POLICY=packet-v20`). When the chat
+  has replied turns past what memory has recorded, the Note says how far memory is recorded and that the chat is right
+  where a newer message disagrees; a dead, missing or departed character's status line is kept in the packet, marked
+  `gone="true"`, even when no one names them (at most 8; not the persona, not a setting's status, not someone the story
+  has brought back since); a character back after at least 40 extracted turns away is marked `back_after` for its
+  first 5 turns back; and up to 3 threads the story closed in the last 15 turns, broken ones first, follow the open
+  ones.
+- **A character the owner pins** (Phase 60 S8, migration `0038`, ADR 0087). The repair route takes `entity_pin` (a
+  name, as "not a character" names one; an excluded name is not pinned); a chat's entities and a person's sheet say who
+  is pinned, the repairs list names the pin, and it is kept by rebuilds, archived and deleted with the chat. Under
+  `packet-v20`, pinned characters — first `@name` mentions in the user's message when `NMOS_PIN_AT_MENTIONS` (off by
+  default) is on, then the owner's pins newest first, never the persona or an excluded character — join the scene's
+  cast, get a `<Cast>` group (at most 3 beyond the cast's 4, from their own chat's rows only, with a pinned gone
+  character keeping its `gone="true"` line first), and have their own chat's now and standing facts marked `required`.
+  Each live request with pins records the resolved names and sources (`at` / `owner`) as `recall_options.pins`, and its
+  replay reads that record.
+- **`extract-v19`, selectable, not the default** (Phase 60 S7, S8, migration `0037`, ADR 0086;
+  `NMOS_EXTRACT_COMPILER=extract-v19`). Built on `extract-v18`, records `when_happened` (1–80 characters, resolved
+  against the story clock when shown) on `event` and `promised` placed at another time than the turn, records the
+  target turn's status-window `story_clock` on the extraction (never part of validity), and adds `told` (character →
+  character with a required quote) as a per-compiler extension outside `REGISTRY`, hashed into the prompt fingerprint so
+  earlier keys do not move. Switching among `extract-v16`, `extract-v18` and `extract-v19` queues nothing; older turns
+  keep their facts. A restored dropped fact keeps its `when_happened`. Known limits: a `told` row kept from someone is
+  not tracked as a secret (no reveal check ends it), no owner repair retracts a `told` row, and a teller or hearer named
+  only in `told` rows is not an entity of the chat.
+- **When it happened, and who told whom, in `packet-v20`** (Phase 60 S7, S8, ADR 0086). A line whose fact or thread
+  has a `when_happened` carries `happened="…"` beside its `turn`, and the Note says which is which (claim lines carry
+  none). At most 2 `<Fact kind="told">` lines, only when the teller or the hearer is in the scene or named in the
+  message; one that says a secret still kept from someone in the scene is left out, and strict and narrator modes
+  apply as to any fact.
+- **A short message asks with the reply before it** (Phase 60 S5, ADR 0084; `packet-v20` only). A message shorter
+  than 40 characters is embedded with the last 400 characters of the reply before it; lexical and keyword recall still
+  read the message alone. The sync-time prefetch builds the same text. The text is recorded as
+  `recall_options.sem_query`, and a replay embeds what was recorded.
+- **A chat that carries another chat's memory** (Phase 60 S6, migration `0036`, ADR 0085). The owner links a chat to an
+  earlier one, `continue` (the story goes on) or `regression` (the story began again and only the named characters
+  remember). At link time the earlier chat is read once and the reading is stored with the link, so later edits of it
+  change nothing here; link again for a newer reading. `GET`, `POST …/carry/preview`, `POST` and `DELETE
+  /v1/conversations/{id}/carry`; a link answers 409 when the source changed since its preview and 422 above 2,000 rows.
+  Only `packet-v20` reads a link: `continue` memory comes before the chat's own story and gives way to it
+  (`source="carried"`, the earlier story as a summary); `regression` memory is at most 6 lines only its rememberers
+  know. The panel's Settings → This chat has the card (preview, link, remove, read again), and the memory document and
+  the person sheet show carried lines. Deleting either chat deletes its links; an archive holds a link only when both
+  chats are in it. Known limits: an earlier chat's very last reply may not be in its reading (it is extracted once the
+  story continues from it), and closed threads of a regression link are never offered.
+- **Panel and Inspector** (Phase 60). Settings has a "Leave out old dialogue" card for the trimming switch and the
+  Status tab says how far memory is recorded ("recorded through turn N"); the recall tuning card has `pin_at_mentions`,
+  a character's page and person sheet have a pin switch, and Settings → This chat lists the chat's pins; model settings
+  have an optional reranker card (the key write-only, hidden when the sidecar has no reranker settings). Facts, history,
+  threads, the memory document, the person sheet and the timeline mark `[happened: …; told tN]`; the person sheet, the
+  memory map and the Inspector's character page list who told whom, oldest first.
+- **An optional reranker, off by default** (Phase 60 S5, ADR 0084). `NMOS_RERANK_URL`, `NMOS_RERANK_MODEL`,
+  `NMOS_RERANK_API_KEY`, `NMOS_RERANK_TIMEOUT_MS` (default `600`, 50–5000 ms) and `NMOS_RERANK_FORMAT` (`standard`
+  only), editable at runtime and passed through both compose files. Off unless both URL and model are set; when on, the
+  user's message and up to 30 recalled candidates' text go to that endpoint (noted in `/v1/config`). `/v1/health`
+  reports `rerank.configured` without exposing the URL or key, the key is bound to its endpoint's host and refused in
+  archives (D60), and an unusable saved format or timeout is ignored at startup so the sidecar still starts. When
+  configured, under any packet policy, one call per request reorders the top 30 recalled candidates; a timeout, an
+  error or a malformed answer keeps the usual order. The call is bounded by its own timeout, not the plugin's deadline:
+  keep `NMOS_EMBED_TIMEOUT_MS` plus `NMOS_RERANK_TIMEOUT_MS` well under that deadline (3 s by default). The trace
+  records the scores and a replay reapplies them, never calling the reranker. Only the `standard` format is built;
+  `systemone` is not.
+- **What the model request carries** (Phase 61, ADR 0088; `llm_extra_body`, `llm_no_temperature`; `NMOS_LLM_EXTRA_BODY`,
+  `NMOS_LLM_NO_TEMPERATURE`; both empty or off by default). Settings has a box for extra request values: a JSON object
+  added to every request made with the extraction model (extraction, reveal checks, summaries, canon facts, the
+  author's-note calls and the settings test). It may not set the request's own fields or hold anything that looks like a
+  credential, a value equal to one of the install's own keys included. For an OpenRouter address a "Reasoning effort"
+  dropdown writes `reasoning.effort` into that JSON. A switch sends no `temperature` for a model that will not take one;
+  otherwise 0 is sent as before. A body or the switch is part of the generation that used it, and changing either is
+  treated as a model change: the same preview appears and the default is to carry on, so nothing is extracted again.
+  With both left alone nothing changes, generation keys included. Going back to an older image: clear the body and the
+  switch first.
+- **What the model is doing, shown** (Phase 61 S5, `GET /v1/worker/status`). The Status tab has a "Model work" card:
+  how many jobs wait and of which kind, how many run, how many finished, are being tried again or were given up on
+  lately, and the latest error with its time. With nothing waiting and no recent failure it is one line. It reads
+  counts only; an older sidecar shows no card.
+- **A log of model calls** (Phase 61 S6, migration `0039`, ADR 0089). Each call NMOS makes to a model outside a chat
+  request is logged on the server: its time, kind, model, outcome, HTTP status, how long it took, the usage the
+  provider reported and, when it failed, the first 300 characters of the provider's error. No prompt or reply is
+  logged; the only free text is the provider's own error message. The "Model work" card adds the last hour ("96 ok · 35 failed (504 29 · 429 6) · median 3.2 s") and
+  turns to its warning state when calls fail at least as often as they succeed; the browser Inspector has a
+  "Model calls" page with the last 200, and `GET /v1/worker/calls` returns them. Rows are kept as long as traces
+  (`NMOS_TRACE_RETENTION_DAYS`), are not part of a backup, and go with their chat when it is deleted. Writing the log
+  never fails or delays a call.
+- **From the phase's review, before its first use** (Phase 60). A character is marked gone only when the status plainly
+  says the character itself is dead, missing or gone for good now: near death, a rumour, someone else's fate, 전사 as
+  "warrior", a missing object and a leave not plainly for good no longer count (S3 amended). A regression link's lines
+  follow the owner's memory exclusions, and an excluded character is no rememberer. In a chat that carries another, the
+  source's persona reads as this chat's persona name (the stored marker no longer shows in a packet, a screen or the link
+  preview). A linked chat's replaced link is removed at the instant its successor is made, and a link that loses a lock
+  answers 409, try again. The panel can start a regression link for a source whose whole reading is over the row cap, has
+  no close button on a carried thread, and shows `[happened: …]` on a person's timeline. The trim leaves out nothing when
+  a message to drop carries more than a text turn (images, a name, tool calls), when older chat messages would stay behind
+  a hole, when a short kept message was merged into a dropped one, and in a narrator chat (its packet holds no story). The
+  coverage read of a request fails open (null `coverage`, no boundary), reads no memory of its own, and is counted in
+  `latency_ms.coverage`; a stale request answers null coverage. The reranker fails open on a score no float can hold and
+  its timeout bounds name resolution too.
+- **`/v1/retrieve` answers with `coverage`** (`recorded_through_turn`: the latest turn an extraction serves;
+  `covered_through_turn`: the last turn up to which every turn has an extraction and a scene summary) and, when the
+  request asked for trimming, `trim`. Older plugins ignore both.
+
+Known issue, since Phase 58 (not Phase 60's): restoring a dropped `feels_toward` fact loses its feeling detail
+(strength, sign, a feeling beneath it), because the dropped-facts listing never reads it.
+
 ## 0.6.0
 
 R8, amended (`docs/ROADMAP-1.0.md`): the owner's requests after 0.5.0 come before 1.0 — the author's note says where the

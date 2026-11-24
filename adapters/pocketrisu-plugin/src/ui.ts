@@ -7,9 +7,11 @@ import { budgetAdvice } from './budget';
 import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
-import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, embedWaitTooLong, endpointForKey, fillProject,
-  isVertexEndpoint, MAX_DEADLINE_MS, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl, serviceAccountProject,
-  VERTEX_URL, type FormValues, type Section } from './form';
+import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_RESERVED_TOKENS, dirtySections, embedWaitTooLong,
+  endpointForKey, fillProject, isVertexEndpoint, MAX_DEADLINE_MS, MAX_KEEP_RECENT_TURNS, MAX_RERANK_TIMEOUT_MS,
+  MIN_KEEP_RECENT_TURNS, MIN_RERANK_TIMEOUT_MS, modelChange, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl,
+  serviceAccountProject, trimArgs, VERTEX_URL, type FormValues, type Section } from './form';
+import { bodyOf, EFFORTS, effortOf, isOpenRouter, showBody, withEffort } from './extrabody';
 import { failureKind } from './failure';
 import { parserBindings, parserDraft, presetRules, type ParserPreset } from './parser-form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
@@ -21,6 +23,13 @@ import { drawGraph, parseGraph } from './graph';
 import type { BulkMark, BulkRequest, EntityRow, ExcludePreview, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
+import { coverageLine, trimStatusLine } from './trimtext';
+import { workerLines, type WorkerStatus } from './workertext';
+import {
+  CARRY_MAX_NAMES, carryCountsLine, carryCutoffLabel, carryErrorText, carryRefusal, carrySourceLabel,
+  isCarryConflict, isCarryNotFound, parseCutoffTurn,
+  type CarryMode, type CarryPreview, type CarryRequestBody, type CarryState,
+} from './carrytext';
 import { uploadArchive, waitFor, type ArchiveSummary, type Method } from './restore';
 import { usageText, type UsageTotal } from './usage';
 
@@ -62,15 +71,24 @@ export interface PanelDeps {
 }
 
 interface ServerConfig {
-  llm: { url: string; model: string; api_key_set: boolean; json_mode: boolean };
+  /** `extra_body` and `no_temperature` from PHASE-61 on (ADR 0088). */
+  llm: { url: string; model: string; api_key_set: boolean; json_mode: boolean; extra_body?: Record<string, unknown>;
+    no_temperature?: boolean };
   embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string };
-  recall: { threshold: number; vector_min_sim: number; embed_timeout_ms?: number; top_k: number; facts_limit: number };
+  rerank?: { url: string; model: string; timeout_ms: number; format: string; key_set: boolean; configured: boolean;
+    note?: string };
+  recall: { threshold: number; vector_min_sim: number; embed_timeout_ms?: number; top_k: number; facts_limit: number;
+    pin_at_mentions?: boolean };
   extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean };
   parsers: { rules: unknown; source: string; active_rules: number; errors: string[];
     spec?: unknown; presets?: ParserPreset[] };
   queued_jobs?: number;
   install?: string | null;
 }
+
+/** An entities row with what pins add (ADR 0087): `pinned` is the pin's repair id, only on a pinned row; `excluded`
+ *  marks a character the owner left out of memory, which is never pinned. */
+type PinRow = EntityRow & { excluded?: boolean; pinned?: string };
 
 /** `minSim`: the vector similarity bar measured for the preset's model (`docs/perf/embedders.md`); `hint`: said when
  *  the preset is picked. */
@@ -110,7 +128,7 @@ const PARSER_EXAMPLE = {
 };
 
 const SECTION_TITLE: Record<Section, StringKey> = {
-  conn: 'conn.title', llm: 'llm.title', emb: 'emb.title', tune: 'tune.title',
+  conn: 'conn.title', llm: 'llm.title', emb: 'emb.title', rerank: 'rerank.title', tune: 'tune.title', trim: 'trimset.title',
 };
 
 // Opaque on purpose: the host settings page behind the full-screen frame must not show through.
@@ -443,8 +461,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   // --- status tab ------------------------------------------------------------------------------
   let usageRound = 0; // a refresh or another chat's card makes an older answer stale
+  let workerRound = 0; // the same for the "Model work" card
   async function refreshStatus(): Promise<void> {
     statusView.replaceChildren(el('div', { class: 'card muted', text: L('status.checking') }));
+    const round = ++workerRound;
+    const worker = workerCard(); // asked beside the health check; the other cards never wait for it
     const s = await deps.status();
     const base = s.sidecarUrl.replace(/\/+$/, '');
     const conn = el('div', { class: 'card' }, el('h2', { text: L('status.sidecar') }));
@@ -500,6 +521,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         : s.last.outcome === 'skipped' ? L('outcome.skipped') : L('outcome.failed');
       lastCard.append(el('div', { class: 'line' }, el('span', { class: `dot ${kind}` }), el('span', { text: what })),
         el('div', { class: 'muted', text: `${L('status.ago', { n: Math.round((Date.now() - s.last.at) / 1000) })} · ${s.last.ms}ms` }));
+      // Old-dialogue trimming (PHASE-60 S1 "Shown"): what was left out, or why nothing was. Never mono (Korean text).
+      const trimmed = trimStatusLine(lang, s.last.trim);
+      if (trimmed !== null) lastCard.append(el('div', { class: 'muted', text: trimmed }));
+      // How far memory has got (PHASE-60 S1): only when the sidecar said so; never mono (Korean text).
+      const recorded = coverageLine(lang, s.last.coverage);
+      if (recorded !== null) lastCard.append(el('div', { class: 'muted', text: recorded }));
       if (s.last.packet) lastCard.append(el('details', { class: 'help' },
         el('summary', { text: L('status.packet') }), el('pre', { class: 'packet', text: s.last.packet })));
       if (s.last.error) lastCard.append(el('div', { class: 'mono muted', text: s.last.error }));
@@ -569,6 +596,25 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const refresh = el('button', { text: L('refresh') });
     refresh.addEventListener('click', () => void refreshStatus());
     statusView.replaceChildren(...cards, el('div', { class: 'btns' }, refresh));
+    void worker.then((card) => {
+      if (card && s.connected && round === workerRound && conn.isConnected) conn.after(card);
+    });
+  }
+
+  /** "Model work" (PHASE-61 S5): the queue, recent outcomes and the last model error; null, so no card, when the
+   *  sidecar has no such route (an older one) or does not answer. */
+  async function workerCard(): Promise<HTMLElement | null> {
+    let raw: unknown;
+    try {
+      raw = await deps.api<unknown>('GET', '/v1/worker/status', undefined, 5000);
+    } catch {
+      return null;
+    }
+    const { level, lines } = workerLines(lang, raw);
+    if (!lines.length) return null;
+    const errorLine = (raw as WorkerStatus).last_error && level === 'trouble' ? lines.length - 1 : -1;
+    return el('div', { class: 'card' }, el('h2', { text: L('worker.title') }),
+      ...lines.map((text, i) => el('div', { class: i === errorLine ? 'warn' : 'muted', text })));
   }
 
   /** "This chat": whether NMOS is on for the chat open now, and the switch. */
@@ -669,6 +715,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   // Back and Refresh stay in reach while reading far down a page.
   // On an entity's page: the owner joins it with another entity of its type, or undoes a join (ADR 0025).
   const linkCard = el('div', { class: 'card', style: 'display:none' });
+  // On a character's page: the owner pins it so its facts go into every reply's memory (ADR 0087). Built here, beside
+  // the sidecar's page, which stays as it is sent.
+  const pinCard = el('div', { class: 'card', style: 'display:none' });
   // On a conversation's page: how memory treats what only some characters know (ADR 0035).
   const modeCard = el('div', { class: 'card', style: 'display:none' });
   const statusCard = el('div', { id: 'nmos-status-windows', class: 'card', style: 'display:none' });
@@ -692,7 +741,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const homeQuickBar = el('div', { class: 'home-quick', style: 'display:none' });
   const memSubBar = el('div', { class: 'mem-subbar', style: 'display:none' });
   inspectorView.append(inspbar, homeQuickBar, memSubBar, actions, actionMsg, notesCard,
-    bulkBar, modeCard, statusCard, linkCard, inspectorBody, inspectorAddress);
+    bulkBar, modeCard, statusCard, pinCard, linkCard, inspectorBody, inspectorAddress);
   function updateBulk(): void {
     bulkBar.style.display = picked.size || bulkGroups.size ? '' : 'none';
     bulkClose.style.display = picked.size ? '' : 'none';
@@ -1143,7 +1192,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     actions.style.display = rawInspector ? '' : 'none';
     const shownEntity = inspectorEntity(path);
-    if (!shownEntity) linkCard.style.display = 'none';
+    if (!shownEntity) { linkCard.style.display = 'none'; pinCard.style.display = 'none'; }
     if (!rawInspector || shownEntity) { modeCard.style.display = 'none'; statusCard.style.display = 'none'; }
     if (viewsOn) syncShellForPath(path);
     if (again) {
@@ -1151,6 +1200,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } else {
       shownPath = null;
       inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('insp.loading') }));
+      pinCard.style.display = 'none';  // another page's switch never acts on the page that is loading
     }
     // Only a sidecar the browser reaches itself can be opened in a tab; a server-routed one (Docker
     // name, LAN address behind HTTPS) is reachable from the PocketRisu server only.
@@ -1188,12 +1238,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       } else if (keep) restore(keep);
       else root.scrollTop = 0;
       if (viewsOn) syncShellForPath(path);
-      if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
+      if (shownEntity) void showEntityCards(shownEntity.conversation, shownEntity.entity, load);
       else if (conversation && !isView && !attentionMode) { void showMode(conversation, load); void showStatusWindows(conversation, load); }
     } catch (error) {
       if (load !== loads) return;
       shownPath = null;
       retryButton.style.display = 'none';
+      pinCard.style.display = 'none';
       inspectorBody.replaceChildren(el('div', { class: 'card err', text: errorText(lang, error) }));
     } finally {
       if (load === loads) inspectorBody.classList.remove('busy');
@@ -1377,14 +1428,59 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     box.append(el('div', { class: 'btns' }, ok, cancel));
     spot.replaceChildren(box);
   }
-  async function showLinks(conversation: string, entity: string, load: number): Promise<void> {
-    let entities: EntityRow[];
+  /** An entity's page's cards, from one list of the chat's entities: the pin switch and the joins. */
+  async function showEntityCards(conversation: string, entity: string, load: number): Promise<void> {
+    let entities: PinRow[] | null;
     try {
-      entities = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
+      const rows = await deps.api<PinRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
+      entities = Array.isArray(rows) ? rows : null;
     } catch {
-      entities = []; // the page itself already reports a failing sidecar
+      entities = null; // the page itself already reports a failing sidecar
     }
     if (load !== loads) return;
+    showPin(conversation, entity, entities);
+    showLinks(conversation, entity, entities ?? []);
+  }
+  /** Said once in the pin card after the refresh that follows a pin or an unpin of that entity. */
+  let pinSaid: { entity: string; key: StringKey } | null = null;
+  /** The pin switch (ADR 0087), for a character that is not the persona and not excluded (an exclusion wins). A list
+   *  from a sidecar older than pins has no `pinned` anywhere: the switch is off and simply pins. */
+  function showPin(conversation: string, entity: string, entities: PinRow[] | null): void {
+    const row = entities?.find((e) => e.id === entity);
+    const said = pinSaid?.entity === entity ? pinSaid.key : null;
+    pinSaid = null;
+    if (!row || row.type !== 'character' || row.persona || row.excluded) {
+      pinCard.style.display = 'none';
+      pinCard.replaceChildren();
+      return;
+    }
+    const pinned = typeof row.pinned === 'string' && row.pinned ? row.pinned : null;
+    const box = el('input', { type: 'checkbox' });
+    box.checked = pinned !== null;
+    const msg = el('div', { class: 'msg', role: 'status' });
+    if (said) say(msg, L(said), 'ok');
+    box.addEventListener('change', async () => {
+      const on = box.checked;
+      box.disabled = true;
+      say(msg, '');
+      try {
+        if (on) await deps.api('POST', `/v1/conversations/${conversation}/repairs`, { kind: 'entity_pin', item: entity }, 15_000);
+        else if (pinned) await deps.api('POST', `/v1/conversations/${conversation}/repairs/${pinned}/remove`, {}, 15_000);
+        pinSaid = { entity, key: on ? 'pin.done' : 'pin.undone' };
+        say(msg, L(pinSaid.key), 'ok');
+        await showInspector();
+      } catch (error) {
+        box.checked = !on;  // nothing changed: the switch says so
+        say(msg, errorText(lang, error), 'err');
+      } finally {
+        box.disabled = false;
+      }
+    });
+    pinCard.replaceChildren(el('h2', { text: L('pin.title', { n: row.name }) }), el('p', { class: 'sub', text: L('pin.sub') }),
+      el('label', { class: 'check' }, box, el('span', { text: L('pin.toggle') })), msg);
+    pinCard.style.display = '';
+  }
+  function showLinks(conversation: string, entity: string, entities: EntityRow[]): void {
     const choices = linkChoices(entities, entity);
     if (!choices) {
       linkCard.style.display = 'none';
@@ -1811,7 +1907,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('p', { class: 'sub', text: L('conn.hint') }), el('p', { class: 'sub', text: L('conn.deadline_hint') })));
 
   function modelSection(kind: 'llm' | 'embeddings', title: StringKey, sub: StringKey, presets: Preset[],
-    onPreset?: (p: Preset) => void) {
+    onPreset?: (p: Preset) => void, extra?: { nodes: Node[]; test(): Record<string, unknown> | null }) {
     const preset = el('select', {}, ...presets.map((p, i) => el('option', { value: String(i),
       text: p.label.includes('.') ? L(p.label as StringKey) : p.label })));
     const endpoint = el('input', { placeholder: 'https://…/v1', spellcheck: 'false' });
@@ -1872,11 +1968,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       } catch (error) { say(msg, errorText(lang, error), 'err'); }
     });
     test.addEventListener('click', async () => {
+      const more = extra ? extra.test() : {};  // what the requests carry, as in the form (PHASE-61 S4)
+      if (!more) return say(msg, L('extra.invalid'), 'err');
       test.disabled = true;
       say(msg, L('model.testing'));
       try {
         const r = await deps.api<{ ok: boolean; ms: number; dimensions?: number; error?: string }>('POST', '/v1/config/test',
-          { kind, url: endpoint.value.trim(), model: model.value.trim(), api_key: key.value.trim() || undefined });
+          { kind, url: endpoint.value.trim(), model: model.value.trim(), api_key: key.value.trim() || undefined, ...more });
         say(msg, r.ok ? L('model.test_ok', { ms: r.ms }) + (r.dimensions ? L('model.dims', { n: r.dimensions }) : '')
           : L('model.test_failed', { e: r.error ?? '' }), r.ok ? 'ok' : 'err');
       } catch (error) { say(msg, errorText(lang, error), 'err'); } finally { test.disabled = false; }
@@ -1884,7 +1982,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     settingsView.append(el('div', { class: 'card' },
       el('h2', { text: L(title) }), el('p', { class: 'sub', text: L(sub) }),
       field(L('model.provider'), preset), field(L('model.endpoint'), endpoint),
-      field(L('model.model'), model), list, field(L('model.key'), key),
+      field(L('model.model'), model), list, field(L('model.key'), key), ...(extra?.nodes ?? []),
       el('div', { class: 'btns' }, pickKey, load, test), keyFile, msg));
     return {
       values: () => ({ url: endpoint.value, model: model.value, key: key.value }),
@@ -1898,10 +1996,93 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       },
     };
   }
-  const llm = modelSection('llm', 'llm.title', 'llm.sub', LLM_PRESETS);
+  // What the extraction model's requests carry (PHASE-61 S4, ADR 0088): one stored body, and the effort dropdown as a
+  // view of it; hidden when the sidecar does not report `llm.extra_body`.
+  let extraKnown = false;
+  const extraText = el('textarea', { rows: 4, spellcheck: 'false', placeholder: '{}', style: 'min-height:96px',
+    'aria-label': L('extra.body') });
+  const extraErr = el('div', { class: 'msg err', text: L('extra.invalid'), style: 'display:none' });
+  const effortCustom = el('option', { value: 'custom', text: L('extra.custom') });  // in the list only while custom
+  const effort = el('select', { 'aria-label': L('extra.effort') }, el('option', { value: '', text: '—' }),
+    ...EFFORTS.map((e) => el('option', { value: e, text: e })));
+  const effortRow = el('div', {}, field(L('extra.effort'), effort), el('p', { class: 'sub', text: L('extra.effort_sub') }));
+  const noTemp = el('input', { type: 'checkbox' });
+  const extraBox = el('div', { style: 'display:none' }, field(L('extra.body'), extraText), extraErr,
+    el('p', { class: 'sub', text: L('extra.body_sub') }), effortRow,
+    el('div', { class: 'check' }, noTemp, el('span', { text: L('extra.no_temp') })),
+    el('p', { class: 'sub', text: L('extra.no_temp_sub') }));
+  // On `input` too: a browser fires it before `change`, and the settings view's own `input` listener runs `update`,
+  // whose `syncExtra` would set the dropdown back from the text before `change` ever saw the choice.
+  const writeEffort = (): void => {
+    if (effort.value !== 'custom') extraText.value = withEffort(extraText.value, effort.value || null);
+  };
+  effort.addEventListener('input', writeEffort);
+  effort.addEventListener('change', writeEffort);
+  /** The dropdown follows the text and the address; called from `update`, since loads and presets set them without an event. */
+  function syncExtra(): void {
+    extraBox.style.display = extraKnown ? '' : 'none';
+    effortRow.style.display = isOpenRouter(llm.values().url) ? '' : 'none';
+    const s = effortOf(extraText.value);
+    if (s.state === 'custom') effort.append(effortCustom); else effortCustom.remove();
+    effort.value = s.state === 'value' ? s.effort : s.state === 'custom' ? 'custom' : '';
+    effort.disabled = s.state === 'invalid';
+    extraErr.style.display = s.state === 'invalid' ? '' : 'none';
+  }
+  const extraValues = () => (extraKnown ? { extra: extraText.value, noTemp: noTemp.checked } : {});
+  const llm = modelSection('llm', 'llm.title', 'llm.sub', LLM_PRESETS, undefined, { nodes: [extraBox], test: () => {
+    if (!extraKnown) return {};
+    const body = bodyOf(extraText.value);
+    return body && { extra_body: body, no_temperature: noTemp.checked };
+  } });
   // Similarity scores differ by embedding model, so a preset measured with its own bar brings it (AGE-40).
   const emb = modelSection('embeddings', 'emb.title', 'emb.sub', EMBED_PRESETS,
     (p) => { if (p.minSim !== undefined) minSim.value = String(p.minSim); });
+
+  // Optional reranker (PHASE-60 S5, ADR 0084): hidden when the sidecar does not report `rerank`; no test action,
+  // and `rerank_format` (only `standard`) is neither shown nor sent.
+  let rerankKnown = false;
+  const rerankUrl = el('input', { placeholder: 'https://…/v1', spellcheck: 'false' });
+  const rerankModel = el('input', { placeholder: L('rerank.model_placeholder'), spellcheck: 'false' });
+  const rerankKey = el('input', { type: 'password', placeholder: L('model.key_placeholder'), autocomplete: 'off' });
+  const rerankTimeout = el('input', { type: 'number', min: MIN_RERANK_TIMEOUT_MS, max: MAX_RERANK_TIMEOUT_MS, step: 50 });
+  const rerankDot = el('span', { class: 'dot' });
+  const rerankStateText = el('span', { text: L('rerank.off') });
+  const rerankState = el('div', { class: 'line muted' }, rerankDot, rerankStateText);
+  const rerankCard = el('div', { class: 'card', style: 'display:none' },
+    el('h2', { text: L('rerank.title') }),
+    rerankState,
+    el('p', { class: 'sub', text: L('rerank.sub') }),
+    field(L('rerank.url'), rerankUrl),
+    field(L('model.model'), rerankModel),
+    field(L('model.key'), rerankKey),
+    field(L('rerank.timeout'), rerankTimeout));
+  settingsView.append(rerankCard);
+  const rerank = {
+    values: () => ({ url: rerankUrl.value, model: rerankModel.value, key: rerankKey.value, timeout: rerankTimeout.value }),
+    fill(cfg: ServerConfig['rerank']): void {
+      rerankKnown = Boolean(cfg);
+      if (cfg) {
+        rerankUrl.value = cfg.url;
+        rerankModel.value = cfg.model;
+        rerankKey.value = '';
+        rerankKey.placeholder = L(cfg.key_set ? 'model.key_saved' : 'model.key_placeholder');
+        rerankTimeout.value = String(cfg.timeout_ms);
+        rerankState.className = cfg.configured ? 'line ok' : 'line muted';
+        rerankDot.className = cfg.configured ? 'dot ok' : 'dot';
+        rerankStateText.textContent = L(cfg.configured ? 'rerank.on' : 'rerank.off');
+      } else {
+        rerankUrl.value = '';
+        rerankModel.value = '';
+        rerankKey.value = '';
+        rerankKey.placeholder = L('model.key_placeholder');
+        rerankTimeout.value = '';
+        rerankState.className = 'line muted';
+        rerankDot.className = 'dot';
+        rerankStateText.textContent = L('rerank.off');
+      }
+      rerankCard.style.display = rerankKnown && (!viewsOn || currentGroup === 'models') ? '' : 'none';
+    },
+  };
 
   const threshold = el('input', { type: 'number', step: 0.05, min: 0.05, max: 1 });
   const minSim = el('input', { type: 'number', step: 0.01, min: 0, max: 1 });
@@ -1911,6 +2092,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const backfill = el('input', { type: 'number', min: 0, max: 5000 });
   const summaries = el('input', { type: 'checkbox' });  // scene summaries and the story so far (ADR 0042, 0043)
   const canonFacts = el('input', { type: 'checkbox' });  // facts read from the canon (ADR 0047)
+  const pinAt = el('input', { type: 'checkbox', disabled: true });  // @name in a message pins a character for that reply (ADR 0087)
+  let pinAtKnown = false;  // the sidecar reported the setting: an older one refuses the key
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('tune.title') }), el('p', { class: 'sub', text: L('tune.sub') }),
     el('div', { class: 'row' }, field(L('tune.threshold'), threshold), field(L('tune.min_sim'), minSim),
@@ -1920,7 +2103,21 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('div', { class: 'check' }, summaries, el('span', { text: L('tune.summaries') })),
     el('p', { class: 'sub', text: L('tune.summaries_hint') }),
     el('div', { class: 'check' }, canonFacts, el('span', { text: L('tune.canon_facts') })),
-    el('p', { class: 'sub', text: L('tune.canon_facts_hint') })));
+    el('p', { class: 'sub', text: L('tune.canon_facts_hint') }),
+    el('div', { class: 'check' }, pinAt, el('span', { text: L('tune.pin_at') })),
+    el('p', { class: 'sub', text: L('tune.pin_at_hint') })));
+
+  // Leaving out old dialogue (PHASE-60 S1, ADR 0083): two plugin args, saved on their own, never in the sidecar update.
+  const trimOn = el('input', { type: 'checkbox' });
+  const trimKeep = el('input', { type: 'number', min: MIN_KEEP_RECENT_TURNS, max: MAX_KEEP_RECENT_TURNS, step: 1 });
+  trimKeep.value = String(DEFAULT_KEEP_RECENT_TURNS);
+  // Without summaries the sidecar never moves the cut (`no_summaries`): said while both boxes say so, in words.
+  const trimWarn = el('div', { class: 'warn', text: L('trimset.needs_summaries'), style: 'display:none' });
+  const syncTrimWarn = (): void => { trimWarn.style.display = trimOn.checked && !summaries.checked ? '' : 'none'; };
+  settingsView.append(el('div', { class: 'card' },
+    el('h2', { text: L('trimset.title') }), el('p', { class: 'sub', text: L('trimset.sub') }),
+    el('div', { class: 'check' }, trimOn, el('span', { text: L('trimset.on') })),
+    field(L('trimset.keep'), trimKeep), trimWarn));
 
   // Status drafts have their own Apply; the general Save never reads or resets these controls.
   const rules = el('textarea', { id: 'nmos-parser-draft', spellcheck: 'false', 'aria-label': L('rules.draft'),
@@ -2164,9 +2361,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     return {
       conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value,
         token: token.value },
-      llm: llm.values(), emb: emb.values(),
+      llm: { ...llm.values(), ...extraValues() }, emb: emb.values(), rerank: rerank.values(),
       tune: { threshold: threshold.value, minSim: minSim.value, embedWait: embedWait.value, topK: topK.value,
-        facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked },
+        facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked,
+        pinAt: pinAt.checked },
+      trim: { on: trimOn.checked, keep: trimKeep.value },
     };
   }
   let baseline: FormValues = values();
@@ -2175,6 +2374,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   function update(message?: { text: string; kind: 'ok' | 'err' | 'warn' | 'muted' }): void {
     const d = dirty();
+    syncTrimWarn();  // here, since loading and saving set the boxes without an event
+    syncExtra();
     save.disabled = d.length === 0;
     revert.disabled = d.length === 0;
     if (message) say(barText, message.text, message.kind);
@@ -2194,9 +2395,20 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     hudBox.checked = Number(await deps.getArg('hud')) === 1;
   }
 
+  /** The trimming args as `host.ts` reads them: on only at 1, the recent turns kept within 4..200 (20 when unset). */
+  async function loadTrim(): Promise<void> {
+    const stored = trimArgs({ on: Number(await deps.getArg('trim_old_turns')) === 1,
+      keep: String((await deps.getArg('keep_recent_turns')) ?? '') });
+    trimOn.checked = stored.trim_old_turns === 1;
+    trimKeep.value = String(stored.keep_recent_turns);
+  }
+
   function fillServer(cfg: ServerConfig): void {
     install = cfg.install ?? null;
-    llm.fill(cfg.llm); emb.fill(cfg.embeddings);
+    llm.fill(cfg.llm); emb.fill(cfg.embeddings); rerank.fill(cfg.rerank);
+    extraKnown = typeof cfg.llm.extra_body === 'object' && cfg.llm.extra_body !== null;
+    extraText.value = extraKnown ? showBody(cfg.llm.extra_body as Record<string, unknown>) : '';
+    noTemp.checked = cfg.llm.no_temperature === true;
     threshold.value = String(cfg.recall.threshold);
     minSim.value = String(cfg.recall.vector_min_sim);
     embedWait.value = cfg.recall.embed_timeout_ms === undefined ? '' : String(cfg.recall.embed_timeout_ms);
@@ -2206,11 +2418,15 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     backfill.value = String(cfg.extraction.backfill);
     summaries.checked = cfg.extraction.summaries !== false;
     canonFacts.checked = cfg.extraction.canon_facts !== false;
+    pinAtKnown = typeof cfg.recall.pin_at_mentions === 'boolean';
+    pinAt.checked = cfg.recall.pin_at_mentions === true;
+    pinAt.disabled = !pinAtKnown;  // a sidecar older than the setting: nothing to show, nothing sent
     fillParsers(cfg);
   }
 
   async function loadAll(): Promise<void> {
     await loadConn();
+    await loadTrim();
     try { fillServer(await deps.api<ServerConfig>('GET', '/v1/config', undefined, 5000)); } catch { /* the status tab shows why */ }
     baseline = values();
     update();
@@ -2256,13 +2472,26 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   async function saveAll(): Promise<boolean> {
     const d = dirty();
     if (!d.length) { update({ text: L('no_changes'), kind: 'muted' }); return true; }
+    // before anything is written: the sidecar would refuse it, and the field says why (PHASE-61 S4)
+    if (extraKnown && !bodyOf(extraText.value)) { update({ text: L('extra.invalid'), kind: 'err' }); return false; }
     save.disabled = true;
     say(barText, L('saving'));
     const v = values();
     let connSaved = 0;
     let connTotal = 0;
     let connComplete = !d.includes('conn');
+    let trimComplete = !d.includes('trim');
     try {
+      if (d.includes('trim')) {
+        // Plugin args only: no sidecar update, and the connection and status-rule state stay as they are.
+        const args = trimArgs(v.trim);
+        await deps.setArg('trim_old_turns', args.trim_old_turns);
+        await deps.setArg('keep_recent_turns', args.keep_recent_turns);
+        trimComplete = true;
+        trimKeep.value = String(args.keep_recent_turns);  // show what was stored: kept within 4..200
+        baseline = { ...baseline, trim: values().trim };
+        if (d.length === 1) { update({ text: L('saved'), kind: 'ok' }); return true; }
+      }
       if (d.includes('conn')) {
         // The prior connection's capabilities must not enable status writes to a changed sidecar.
         parserSupported = false; updateParser();
@@ -2279,7 +2508,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         deadline.value = String(args.deadline_ms);
         baseline = { ...baseline, conn: values().conn };
       }
-      const body = configBody(d, v);
+      const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown }, baseline);
       // Said with any save that touches either value; the save itself goes ahead (audit F20).
       const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
         ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
@@ -2290,8 +2519,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         update({ text: L('saved') + tight, kind: tight ? 'warn' : 'ok' });
         return true;
       }
-      const modelChanged = d.includes('llm') && (v.llm.url.trim() !== baseline.llm.url.trim()
-        || v.llm.model.trim() !== baseline.llm.model.trim());
+      const modelChanged = d.includes('llm') && modelChange(baseline, v);  // a body or switch change too (PHASE-61 S2)
       if (modelChanged) {  // a sidecar older than PHASE-57 has no preview: it saves as before
         const p = await deps.api<ModelPreview>('POST', '/v1/config/preview', body, 10000).catch(() => null);
         if (p?.model_change) {
@@ -2309,7 +2537,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       return true;
     } catch (error) {
       const text = errorText(lang, error);
-      update({ text: !connComplete ? L('conn_save_failed', { n: connSaved, total: connTotal, e: text })
+      update({ text: !trimComplete ? text : !connComplete ? L('conn_save_failed', { n: connSaved, total: connTotal, e: text })
         : d.includes('conn') ? L('conn_saved_server_failed', { e: text }) : text, kind: 'err' });
       return false;
     }
@@ -2886,7 +3114,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   function groupSettings(): void {
     const byTitle: Record<string, Group> = {
       [L('hud.title')]: 'display', [L('conn.title')]: 'connection', [L('llm.title')]: 'models', [L('emb.title')]: 'models',
-      [L('tune.title')]: 'memory', [L('rules.title')]: 'rules', [L('exp.title')]: 'backup', [L('rst.title')]: 'backup',
+      [L('rerank.title')]: 'models',
+      [L('tune.title')]: 'memory', [L('trimset.title')]: 'memory', [L('rules.title')]: 'rules', [L('exp.title')]: 'backup', [L('rst.title')]: 'backup',
     };
     const existingCards = Array.from(settingsView.children) as HTMLElement[];
     for (const card of existingCards) {
@@ -2921,7 +3150,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     for (const btn of Array.from(groupList.querySelectorAll<HTMLButtonElement>('button[data-group]'))) {
       btn.classList.toggle('on', btn.dataset.group === group);
     }
-    for (const page of pages()) page.style.display = page.dataset.group === group ? '' : 'none';
+    for (const page of pages()) {
+      page.style.display = page.dataset.group === group && (page !== rerankCard || rerankKnown) ? '' : 'none';
+    }
     if (group === 'connection') void refreshStatus();
     if (group === 'chat') showChatPage();
   }
@@ -2961,9 +3192,440 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('p', { class: 'sub', text: L('set.maint_sub') }),
       el('div', { class: 'maint-list' }, ...maintRows),
       actionMsg);
-    chatPage.replaceChildren(switchSlot, modeCard, statusCard, maintCard);
+    const pinsCard = el('div', { class: 'card' }, el('h2', { text: L('pins.title') }), el('p', { class: 'sub', text: L('pin.sub') }));
+    const carryCard = el('div', { class: 'card', style: 'display:none' });
+    chatPage.replaceChildren(switchSlot, modeCard, statusCard, pinsCard, carryCard, maintCard);
+    void showPins(cid, pinsCard);
+    void showCarry(cid, carryCard);
     void showMode(cid, loads);
     void showStatusWindows(cid, loads);
+  }
+  /** Carry another chat's memory (PHASE-60 S6, ADR 0085): preview before linking, 409 refresh, read again, two-tap unlink. */
+  async function showCarry(conversation: string, card: HTMLElement, said?: StringKey): Promise<void> {
+    const carryHead = () => [
+      el('h2', { text: L('carry.title') }),
+      el('p', { class: 'sub', text: L('carry.sub') }),
+      el('p', { class: 'sub', text: L('carry.policy_note') }),
+    ];
+    let state: CarryState;
+    try {
+      const res = await deps.api<CarryState>('GET', `/v1/conversations/${conversation}/carry`, undefined, 15_000);
+      if (!res || typeof res !== 'object' || !('in_force' in res)) {
+        card.style.display = 'none';
+        card.replaceChildren();
+        return;
+      }
+      state = res;
+    } catch (error) {
+      if (!card.isConnected || actionConversation !== conversation) return;
+      if (isCarryNotFound(error)) {
+        card.style.display = 'none';
+        card.replaceChildren();
+        return;
+      }
+      const errMsg = el('div', { class: 'msg', role: 'status' });
+      say(errMsg, carryErrorText(lang, error, errorText), 'err');
+      card.replaceChildren(...carryHead(), errMsg);
+      card.style.display = '';
+      return;
+    }
+    if (!card.isConnected || actionConversation !== conversation) return;
+
+    const msg = el('div', { class: 'msg', role: 'status' });
+    if (said) say(msg, L(said), 'ok');
+    const previewSpot = el('div');
+
+    /** An `/entities` row as the regression fallback reads it; `excluded` is the exclusion's scope ('cast' | 'memory'). */
+    type CarryEntity = { type?: string; name?: string; mentions?: number; persona?: boolean; excluded?: string | null };
+    /** The sidecar's `carry._characters` over the source's entities: characters only, not the persona, not excluded from
+     *  memory (a cast exclusion stays), most mentioned first, ties in the list's order. */
+    const carryCharacters = (rows: CarryEntity[]): string[] => rows
+      .filter((e) => e && e.type === 'character' && !e.persona && e.excluded !== 'memory' && typeof e.name === 'string')
+      .map((e, i) => ({ name: String(e.name), mentions: Number(e.mentions) || 0, i }))
+      .sort((a, b) => b.mentions - a.mentions || a.i - b.i)
+      .map((e) => e.name);
+
+    async function openPreview(
+      trigger: HTMLButtonElement,
+      req: { source_conversation_id: string; mode: CarryMode; entity_names: string[]; cutoff_turn: number | null },
+      changed = false,
+    ): Promise<void> {
+      const round = nextRound(previewSpot);
+      say(msg, '');
+      trigger.disabled = true;
+      // Regression needs 1-8 names; when none are picked yet, preview in continue mode first to list the source's characters.
+      const discover = req.mode === 'regression' && req.entity_names.length === 0;
+      const body: CarryRequestBody = {
+        source_conversation_id: req.source_conversation_id,
+        mode: discover ? 'continue' : req.mode,
+        entity_names: discover ? [] : [...req.entity_names],
+        cutoff_turn: req.cutoff_turn,
+      };
+      let first: CarryPreview | null = null;
+      let chars: string[] = [];
+      try {
+        first = await deps.api<CarryPreview>('POST', `/v1/conversations/${conversation}/carry/preview`, body, 15_000);
+        chars = first.characters ?? [];
+      } catch (error) {
+        if (previewRound.get(previewSpot) !== round) return;
+        const refused = () => {
+          say(msg, carryErrorText(lang, error, errorText), 'err');
+          trigger.disabled = false;
+        };
+        // The discover preview reads the whole source and the sidecar caps that reading; a few names may still fit
+        // under the cap, so a size refusal lists the source's characters from its entities instead.
+        if (!discover || !carryRefusal(error instanceof Error ? error.message : String(error))) {
+          refused();
+          return;
+        }
+        let rows: unknown;
+        try {
+          rows = await deps.api<unknown>('GET', `/v1/conversations/${req.source_conversation_id}/entities`, undefined, 15_000);
+        } catch {
+          rows = null;
+        }
+        if (previewRound.get(previewSpot) !== round) return;
+        if (!Array.isArray(rows)) {
+          refused();
+          return;
+        }
+        chars = carryCharacters(rows as CarryEntity[]);
+      }
+      if (previewRound.get(previewSpot) !== round) return;
+
+      let active: CarryPreview | null = discover ? null : first;
+      let pickedNames: string[] = discover ? [] : [...req.entity_names];
+      const detailsSpot = el('div');
+      const ok = el('button', { class: 'primary', text: L('carry.link_btn') });
+      const cancel = el('button', { text: L('cancel') });
+      ok.disabled = active === null;
+
+      function renderDetails(pv: CarryPreview | null, loading = false): void {
+        if (loading) {
+          detailsSpot.replaceChildren(el('div', { class: 'muted', text: L('carry.loading') }));
+          return;
+        }
+        if (!pv) {
+          const hint = chars.length ? L('carry.pv_chars_pick') : L('carry.pv_chars_none');
+          detailsSpot.replaceChildren(el('div', { class: 'muted', text: hint }));
+          return;
+        }
+        const modeText = L(pv.mode === 'regression' ? 'carry.mode_regression' : 'carry.mode_continue');
+        const headLine = L('carry.pv_source', {
+          source: carrySourceLabel(pv.source),
+          mode: modeText,
+          cutoff: carryCutoffLabel(lang, pv.cutoff.turn),
+        });
+        const items: HTMLElement[] = [
+          el('div', { text: headLine }),
+          el('div', { text: carryCountsLine(lang, pv.counts) }),
+        ];
+        if (pv.first_lines.length) {
+          items.push(
+            el('div', { class: 'muted', style: 'margin-top:6px', text: L('carry.pv_lines') }),
+            ...pv.first_lines.map((line) => el('div', { text: `· ${line}` })),
+          );
+        } else {
+          items.push(el('div', { class: 'muted', text: L('carry.pv_lines_empty') }));
+        }
+        if (pv.replaces) items.push(el('div', { class: 'warn', style: 'margin-top:6px', text: L('carry.pv_replaces') }));
+        detailsSpot.replaceChildren(...items);
+      }
+
+      const box = el('div', { class: 'preview' }, el('b', { text: L('carry.pv_title') }));
+      if (changed) box.append(el('div', { class: 'warn', text: L('carry.changed') }));
+
+      if (req.mode === 'regression') {
+        const allChars = [...chars, ...pickedNames.filter((n) => !chars.includes(n))];
+        box.append(el('div', { style: 'margin-top:6px;font-weight:500', text: L('carry.pv_chars') }));
+        if (allChars.length) {
+          const boxes: HTMLInputElement[] = [];
+          const syncCap = () => {
+            const count = boxes.filter((b) => b.checked).length;
+            for (const b of boxes) b.disabled = !b.checked && count >= CARRY_MAX_NAMES;
+          };
+          const charList = el('div', { class: 'pins' }, ...allChars.map((name) => {
+            const cb = el('input', { type: 'checkbox', value: name });
+            cb.checked = pickedNames.includes(name);
+            boxes.push(cb);
+            cb.addEventListener('change', async () => {
+              syncCap();
+              const chosen = boxes.filter((b) => b.checked).map((b) => b.value);
+              pickedNames = chosen;
+              say(msg, '');
+              if (chosen.length === 0) {
+                nextRound(previewSpot);
+                active = null;
+                ok.disabled = true;
+                renderDetails(null);
+                return;
+              }
+              const subRound = nextRound(previewSpot);
+              active = null;
+              ok.disabled = true;
+              renderDetails(null, true);
+              try {
+                const pv = await deps.api<CarryPreview>('POST', `/v1/conversations/${conversation}/carry/preview`, {
+                  source_conversation_id: req.source_conversation_id,
+                  mode: 'regression',
+                  entity_names: chosen,
+                  cutoff_turn: req.cutoff_turn,
+                }, 15_000);
+                if (previewRound.get(previewSpot) !== subRound) return;
+                active = pv;
+                renderDetails(pv);
+                ok.disabled = false;
+              } catch (error) {
+                if (previewRound.get(previewSpot) !== subRound) return;
+                renderDetails(null);
+                say(msg, carryErrorText(lang, error, errorText), 'err');
+              }
+            });
+            return el('label', { class: 'check' }, cb, el('span', { text: name }));
+          }));
+          syncCap();
+          box.append(charList);
+        }
+      }
+
+      renderDetails(active);
+      cancel.addEventListener('click', () => {
+        nextRound(previewSpot);
+        previewSpot.replaceChildren();
+        trigger.disabled = false;
+        say(msg, '');
+      });
+      ok.addEventListener('click', async () => {
+        if (!active) return;
+        const chosenNames = req.mode === 'regression' ? [...pickedNames] : [];
+        if (req.mode === 'regression' && chosenNames.length === 0) return;
+        ok.disabled = true;
+        say(msg, '');
+        const linkBody: CarryRequestBody = {
+          source_conversation_id: req.source_conversation_id,
+          mode: req.mode,
+          entity_names: chosenNames,
+          cutoff_turn: req.cutoff_turn,
+          expect: active.fingerprint,
+        };
+        try {
+          await deps.api('POST', `/v1/conversations/${conversation}/carry`, linkBody, 15_000);
+          previewSpot.replaceChildren();
+          await showCarry(conversation, card, 'carry.linked');
+        } catch (error) {
+          if (isCarryConflict(error)) {
+            void openPreview(trigger, {
+              source_conversation_id: req.source_conversation_id,
+              mode: req.mode,
+              entity_names: chosenNames,
+              cutoff_turn: req.cutoff_turn,
+            }, true);
+            return;
+          }
+          say(msg, carryErrorText(lang, error, errorText), 'err');
+          ok.disabled = false;
+        }
+      });
+
+      box.append(
+        detailsSpot,
+        el('p', { class: 'sub', style: 'margin-top:8px', text: L('carry.pv_notice') }),
+        el('div', { class: 'btns' }, ok, cancel),
+      );
+      previewSpot.replaceChildren(box);
+    }
+
+    if (state.in_force) {
+      const link = state.in_force;
+      const modeText = L(link.mode === 'regression' ? 'carry.mode_regression' : 'carry.mode_continue');
+      const lt = localTime(link.created_at, lang);
+      const takenEl = el('div', { class: 'muted', text: L('carry.taken_at', { time: lt ? lt.text : link.created_at }) });
+      if (lt) takenEl.title = lt.title;
+      const sourceText = carrySourceLabel(link.source);
+      const summaryLines: HTMLElement[] = [
+        el('div', { class: 'line' },
+          el('span', { class: 'badge b-info', text: L('carry.linked_badge') }),
+          el('strong', { text: sourceText })),
+        el('div', { text: `${modeText} · ${carryCutoffLabel(lang, link.cutoff_turn)}` }),
+        el('div', {
+          text: link.mode === 'regression'
+            ? L('carry.only_remember', { names: link.entity_names.join(', ') })
+            : L('carry.linked_continue', { source: sourceText }),
+        }),
+        takenEl,
+      ];
+
+      const readAgainBtn = el('button', { text: L('carry.read_again') });
+      const unlinkBtn = el('button', { text: L('carry.unlink') });
+      let unlinkArmed = false;
+      let unlinkTimer = 0;
+      const disarmUnlink = () => {
+        window.clearTimeout(unlinkTimer);
+        unlinkArmed = false;
+        unlinkBtn.textContent = L('carry.unlink');
+        unlinkBtn.className = '';
+      };
+
+      readAgainBtn.addEventListener('click', () => {
+        disarmUnlink();
+        void openPreview(readAgainBtn, {
+          source_conversation_id: link.source_conversation_id,
+          mode: link.mode,
+          entity_names: [...link.entity_names],
+          cutoff_turn: link.cutoff_turn,
+        });
+      });
+
+      unlinkBtn.addEventListener('click', async () => {
+        if (!unlinkArmed) {
+          unlinkArmed = true;
+          unlinkBtn.textContent = L('carry.unlink_confirm');
+          unlinkBtn.className = 'danger';
+          unlinkTimer = window.setTimeout(disarmUnlink, 6000);
+          return;
+        }
+        disarmUnlink();
+        nextRound(previewSpot);
+        previewSpot.replaceChildren();
+        readAgainBtn.disabled = true;
+        unlinkBtn.disabled = true;
+        say(msg, '');
+        try {
+          await deps.api('DELETE', `/v1/conversations/${conversation}/carry`, undefined, 15_000);
+          await showCarry(conversation, card, 'carry.unlinked');
+        } catch (error) {
+          readAgainBtn.disabled = false;
+          unlinkBtn.disabled = false;
+          say(msg, carryErrorText(lang, error, errorText), 'err');
+        }
+      });
+
+      card.replaceChildren(
+        ...carryHead(),
+        ...summaryLines,
+        el('div', { class: 'btns' }, readAgainBtn, unlinkBtn),
+        previewSpot,
+        msg,
+      );
+      card.style.display = '';
+      return;
+    }
+
+    if (!knownChats.length) {
+      try {
+        const rows = await deps.api<{
+          id: string; host_character_name?: string | null; host_chat_name?: string | null;
+          title?: string | null; messages?: number; message_count?: number;
+        }[]>('GET', '/v1/conversations?host=pocketrisu', undefined, 5000);
+        if (Array.isArray(rows) && rows.length) {
+          knownChats = rows.map((r) => {
+            const ch = (r.host_character_name ?? '').trim();
+            const ti = (r.host_chat_name ?? r.title ?? '').trim();
+            const name = ch && ti && ti !== ch ? `${ch} · ${ti}` : (ch || ti || r.id.slice(0, 8));
+            const turns = typeof r.messages === 'number' ? r.messages
+              : (typeof r.message_count === 'number' ? r.message_count : undefined);
+            return { id: r.id, name, character: ch, title: ti, turns };
+          });
+        }
+      } catch { /* keep empty list if chat listing fails */ }
+      if (!card.isConnected || actionConversation !== conversation) return;
+    }
+
+    const choices = knownChats.filter((c) => c.id !== conversation);
+    if (!choices.length) {
+      card.replaceChildren(
+        ...carryHead(),
+        el('div', { class: 'muted', text: L('carry.no_other') }),
+        msg,
+      );
+      card.style.display = '';
+      return;
+    }
+
+    const sourceSelect = el('select', { 'aria-label': L('carry.source') },
+      ...choices.map((c) => el('option', { value: c.id, text: c.name })));
+    const radioName = `nmos-carry-mode-${conversation}`;
+    const continueRadio = el('input', { type: 'radio', name: radioName, value: 'continue' });
+    continueRadio.checked = true;
+    const regressionRadio = el('input', { type: 'radio', name: radioName, value: 'regression' });
+    const cutoffInput = el('input', {
+      type: 'number', min: '0', step: '1',
+      placeholder: L('carry.cutoff_placeholder'),
+      'aria-label': L('carry.cutoff'),
+    });
+    const previewBtn = el('button', { class: 'primary', text: L('carry.preview_btn') });
+
+    const resetPreview = () => {
+      nextRound(previewSpot);
+      previewSpot.replaceChildren();
+      previewBtn.disabled = false;
+      say(msg, '');
+    };
+    sourceSelect.addEventListener('change', resetPreview);
+    continueRadio.addEventListener('change', resetPreview);
+    regressionRadio.addEventListener('change', resetPreview);
+    cutoffInput.addEventListener('input', resetPreview);
+
+    previewBtn.addEventListener('click', () => {
+      const parsed = parseCutoffTurn(cutoffInput.value);
+      if (cutoffInput.validity?.badInput || !parsed.ok) {
+        say(msg, L('carry.cutoff_invalid'), 'err');
+        return;
+      }
+      const mode: CarryMode = regressionRadio.checked ? 'regression' : 'continue';
+      void openPreview(previewBtn, {
+        source_conversation_id: sourceSelect.value,
+        mode,
+        entity_names: [],
+        cutoff_turn: parsed.value,
+      });
+    });
+
+    card.replaceChildren(
+      ...carryHead(),
+      field(L('carry.source'), sourceSelect),
+      el('label', { text: L('carry.mode') }),
+      el('label', { class: 'check' }, continueRadio, el('strong', { text: L('carry.mode_continue') })),
+      el('p', { class: 'sub', text: L('carry.mode_continue_desc') }),
+      el('label', { class: 'check' }, regressionRadio, el('strong', { text: L('carry.mode_regression') })),
+      el('p', { class: 'sub', text: L('carry.mode_regression_desc') }),
+      field(L('carry.cutoff'), cutoffInput),
+      el('div', { class: 'btns' }, previewBtn),
+      previewSpot,
+      msg,
+    );
+    card.style.display = '';
+  }
+  /** This chat's pinned characters (ADR 0087), each with its Unpin; a list that fails is said in the card only. */
+  async function showPins(conversation: string, card: HTMLElement, said?: StringKey): Promise<void> {
+    const head = [el('h2', { text: L('pins.title') }), el('p', { class: 'sub', text: L('pin.sub') })];
+    const msg = el('div', { class: 'msg', role: 'status' });
+    if (said) say(msg, L(said), 'ok');
+    let rows: PinRow[];
+    try {
+      const list = await deps.api<PinRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
+      if (!Array.isArray(list)) throw new Error('not a list');
+      rows = list;
+    } catch {
+      card.replaceChildren(...head, el('div', { class: 'muted', text: L('pins.failed') }));
+      return;
+    }
+    const lines = rows.filter((e) => typeof e.pinned === 'string' && e.pinned).map((e) => {
+      const unpin = el('button', { class: 'mini', text: L('pins.unpin') });
+      unpin.addEventListener('click', async () => {
+        unpin.disabled = true;
+        say(msg, '');
+        try {
+          await deps.api('POST', `/v1/conversations/${conversation}/repairs/${e.pinned}/remove`, {}, 15_000);
+          await showPins(conversation, card, 'pin.undone');
+        } catch (error) {
+          unpin.disabled = false;
+          say(msg, errorText(lang, error), 'err');
+        }
+      });
+      return el('div', { class: 'btns' }, el('span', { text: e.name }), unpin);
+    });
+    card.replaceChildren(...head, ...(lines.length ? lines : [el('div', { class: 'muted', text: L('pins.none') })]), msg);
   }
   /** Run a chat's failed jobs again from the working screen (PHASE-52 D5), as today's Retry failed does. */
   async function retryFrom(conversation: string | null): Promise<void> {

@@ -39,7 +39,7 @@ ORDER BY am.turn
 ROWS = """
 SELECT id, extraction_id, subject, subject_type, predicate, object, object_type, value, epistemic, confidence, evidence,
        knowledge, known_by, hidden_from, polarity, modality, source, asserted_by, salience, participants::text AS participants,
-       outcome, because
+       outcome, because, when_happened
 FROM assertion WHERE extraction_id = ANY(%s) AND status = 'valid' ORDER BY id
 """
 
@@ -63,6 +63,8 @@ def find(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, 
     for row in conn.execute(ROWS, ([p["old"] for p in pairs] + [p["new"] for p in pairs],)).fetchall():
         row = dict(row)
         row["participants"] = json.loads(row["participants"]) if row["participants"] else None
+        if (when := row.pop("when_happened")) is not None:  # extract-v19 only (PHASE-60 S7): other rows read as before
+            row["when_happened"] = when
         if row["known_by"] or row["hidden_from"]:
             stored_knowledge(row)
         by.setdefault(row["extraction_id"], []).append(row)
