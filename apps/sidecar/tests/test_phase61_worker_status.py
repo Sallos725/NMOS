@@ -115,8 +115,8 @@ def test_a_failed_call_log_read_gives_null_and_keeps_the_rest(migrated, monkeypa
         body = c.get("/v1/worker/status").json()
         assert body["calls"] is None and body["queued"]["extract"] == 1 and body["retrying"] == 1
         monkeypatch.undo()
-        # a failing statement (the table missing on a database not migrated) is undone by its savepoint: the same
-        # connection goes on answering
+        # a failing statement (the table missing on a database not migrated): the route keeps answering, request after
+        # request (the summary is the route's last read, so this does not tell its savepoint from the pool's rollback)
         with psycopg.connect(migrated, autocommit=True) as conn:
             conn.execute("DROP TABLE model_call")
         for _ in range(3):
