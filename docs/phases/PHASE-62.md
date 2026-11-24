@@ -106,8 +106,8 @@ packet and recall, canon reading (`canonfacts.PART_CHARS`, its own parts), summa
 - **Q2 — the gate.** `AGENTS.md §7` item 6 asks a full live gate of an extraction change; the owner stopped paid runs
   (2026-10-25). **(a) Zero-call checks (below) and the owner's use on the test install, then production, as for
   Phases 58 and 60.** (b) A small paid comparison first: 30 cut turns of a copy extracted at 6,000 and at 24,000,
-  the facts whose evidence lies past 6,000 counted (about 30 × 22,600 = 0.7 million input tokens for the second
-  reading; the first exists). Proposed (a); (b) is the only way to count what is gained before production pays.
+  the facts whose evidence lies past 6,000 counted (about 0.6 to 0.7 million input tokens for the second reading;
+  the first exists). Proposed (a); (b) is the only way to count what is gained before production pays.
 - **Q3 — the turns already cut.** **(a) From now on, and S3's action per chat.** (b) From now on only ("extract all
   history" stays the manual fill). (c) Every cut turn of the recent window at the switch. Proposed (a).
 - **Q4 — summaries.** **(a) Unchanged in this phase.** (b) `MESSAGE_CHARS` follows the setting: a scene summary reads
@@ -119,21 +119,28 @@ packet and recall, canon reading (`canonfacts.PART_CHARS`, its own parts), summa
 
 ## What it costs (estimate; production's recorded usage, `extract-v18`, 643 turns)
 
-A turn now takes 11,869 input and 1,780 output tokens on average (1.03 calls). Input fits `5,763 + 1.089 × TARGET
-characters read` (r² 0.23: the hints vary). At 24,000:
+A turn now takes 11,869 input and 1,780 output tokens on average (1.03 calls). What a character of TARGET costs is
+not settled by the record, so the estimate is a range:
+- **0.69 tokens per character** — the slope of a scene summary's input on the characters it read (57 summaries,
+  r² 0.80): text alone. Nothing else in the extraction prompt grows with the cap, so this is the likelier figure.
+- **1.26 tokens per character** — the slope of extraction's own input on TARGET characters over the 225 turns that
+  were not cut (r² 0.55; 1.03 over all single-call turns, r² 0.42). Longer turns also come with longer hint lists,
+  which this slope counts.
+
+At 24,000 (5,700 more TARGET characters read per turn, 5,607 → about 11,300):
 
 | | Now (6,000) | At 24,000 | Change |
 |---|---|---|---|
-| TARGET characters read per turn | 5,607 | about 11,300 | +5,700 |
-| Input tokens per turn | 11,869 | about 18,100 | +6,200 (+52 %) |
+| Input tokens per turn | 11,869 | about 15,800 to 19,100 | +3,900 to +7,200 (+33 % to +61 %) |
 | Output tokens per turn | 1,780 | 1,780 to 3,600 | +0 to +1,800: cut turns answer today no longer than uncut ones (1,790 and 1,762), so the lower end is as likely |
-| The 643 turns of those six days | 7.63 M input | about 11.6 M | +4.0 M input |
+| The 643 turns of those six days | 7.63 M input | about 10.2 M to 12.3 M | +2.5 M to +4.6 M input |
 
-Re-reading a cut turn (S3) is a whole call: about 22,600 input tokens for the mean cut turn (15,487 characters), so
-the 410 cut turns of that week would take about 9.3 million input tokens. At an example rate of $1.50 per million
-input and $7.50 per million output tokens (a third-party listing for one model in the usage log, not checked against
-the provider's own page; the owner's rate replaces it): about +$0.009 to +$0.023 per live turn, and about $19 to $25
-for those 410 turns. Cached input is not counted.
+Re-reading a cut turn (S3) is a whole call: about 18,900 to 24,100 input tokens for the mean cut turn (15,487
+characters, 9,211 of them unread today), so the 410 cut turns of that week would take about 7.7 to 9.9 million input
+tokens. At an example rate of $1.50 per million input and $7.50 per million output tokens (a third-party listing for
+one model in the usage log, not checked against the provider's own page; the owner's rate replaces it): about +$0.006
+to +$0.024 per live turn, and about $17 to $26 for those 410 turns. Cached input is not counted. Step 4 measures the
+prompt sizes on a copy before anything is paid.
 
 ## Steps
 
@@ -162,7 +169,8 @@ for those 410 turns. Cached input is not counted.
 5. "Read the cut turns again" queues exactly the turns cut below the active cap, shows their count and estimated
    tokens first, and queues nothing on a second press.
 6. A chat's packet is byte-identical before and after the change of the cap, until a turn is extracted at the new cap.
-7. The measured prompt sizes of step 4 are within 20 % of the estimate, or the estimate is corrected before step 5.
+7. The prompt sizes measured in step 4 lie inside the estimate's range, or the estimate is corrected and shown to the
+   owner before step 5.
 
 ## Stop conditions
 
