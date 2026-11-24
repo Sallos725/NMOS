@@ -17,6 +17,7 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -52,6 +53,12 @@ def endpoint_of(url: str) -> str:
     return endpoint_identity(urlunsplit((parts.scheme, parts.netloc.rpartition("@")[2], parts.path, "", "")))
 
 
+def clean(text: str) -> str:
+    """`text` as a PostgreSQL text or jsonb value can hold it: well-formed (`storable`) and without a NUL, which a
+    provider's error body may carry and which would fail the row's write."""
+    return storable(text).replace("\x00", "")
+
+
 def collapsed(text: str, limit: int = ERROR_CHARS) -> str:
     """`text` on one line (every run of whitespace one space), at most `limit` characters."""
     return " ".join(text.split())[:limit]
@@ -63,7 +70,7 @@ def _error(outcome: str, error: Any) -> str | None:
     one line and cut, for `http`."""
     if outcome == "ok":
         return None
-    text = None if error is None else storable(str(error))
+    text = None if error is None else clean(str(error))
     if outcome == "bad_reply":
         return text if text in BAD_REPLY else UNREADABLE
     if outcome in ("timeout", "transport"):
@@ -77,7 +84,7 @@ def _usage(usage: Any) -> dict[str, Any] | None:
         return None
     out = {k: usage[k] for k in USAGE_KEYS if isinstance(usage.get(k), int) and not isinstance(usage.get(k), bool)}
     if isinstance(usage.get("model"), str):
-        out["model"] = storable(usage["model"])[:MODEL_CHARS]
+        out["model"] = clean(usage["model"])[:MODEL_CHARS]
     return out or None
 
 
@@ -96,7 +103,7 @@ def record_of(kind: str, model: str, endpoint_url: str, started: float, *, outco
         "conversation_id": None if conversation_id is None else UUID(str(conversation_id)),
         "job_id": job_id,
         "generation": generation,
-        "model": storable(str(model))[:MODEL_CHARS],
+        "model": clean(str(model))[:MODEL_CHARS],
         "endpoint": endpoint_of(endpoint_url),
         "outcome": outcome,
         "http_status": http_status if outcome == "http" else None,
@@ -138,15 +145,26 @@ _INSERT = (f"INSERT INTO model_call ({', '.join(COLUMNS)})"
            f" VALUES ({', '.join(f'%({c})s' for c in COLUMNS)})")
 
 
+def session_options(dsn: str) -> str:
+    """The session options of a log connection: the ones the database URL already has (a `search_path`, say), then
+    the bounds. Passing `options` alone would replace the URL's."""
+    ms = TIMEOUT_S * 1000
+    try:
+        own = conninfo_to_dict(dsn).get("options") or ""
+    except Exception:  # noqa: BLE001 - not a conninfo: the connect fails next, and fails open
+        own = ""
+    return f"{own} -c statement_timeout={ms} -c lock_timeout={ms}".strip()
+
+
 def write(dsn: str, row: dict[str, Any]) -> bool:
     """Write one row in a connection of its own (autocommit), never a job's: it survives the job's rollback and takes
     none of its locks. Bounded (TIMEOUT_S to connect, to wait for a lock and to write) and fail open: any failure is
     one warning naming the exception's type, and False."""
     try:
-        ms = TIMEOUT_S * 1000
+        values = {k: v.replace("\x00", "") if isinstance(v, str) else v for k, v in row.items()}
         with psycopg.connect(dsn, autocommit=True, connect_timeout=TIMEOUT_S,
-                             options=f"-c statement_timeout={ms} -c lock_timeout={ms}") as conn:
-            conn.execute(_INSERT, {**row, "usage": None if row.get("usage") is None else Jsonb(row["usage"])})
+                             options=session_options(dsn)) as conn:
+            conn.execute(_INSERT, {**values, "usage": None if row.get("usage") is None else Jsonb(row["usage"])})
         return True
     except Exception as exc:  # noqa: BLE001 - the log never breaks a call, a job or a request
         log.warning("model call not logged: %s", type(exc).__name__)

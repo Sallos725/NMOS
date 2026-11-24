@@ -145,10 +145,16 @@ container's own log is lost at every deployment. The owner asked for a log kept 
   and the job when there is one, the generation key, the model and the endpoint (scheme, host and path; never
   userinfo or a query), `outcome` (`ok`, `http`, `timeout`, `transport`, `bad_reply`), the HTTP status, the time it
   took, the usage the provider reported, and for a failure the first 300 characters of the provider's error.
-- **Never in it:** a prompt, a reply, any chat text, a key. A reply that could not be read is logged by the kind of
-  fault only (its text is the model's, so it may hold chat text).
+- **Never in it:** a prompt, a reply, a key. NMOS writes no chat text of its own: a reply that could not be read is
+  logged by the kind of fault only (its text is the model's, so it may hold chat text). The one free text is the
+  provider's own error message for a failed HTTP call; a provider that quotes the request back in its error puts
+  that quote there, cut at 300 characters, as it already does in a job's `last_error`. A key that is part of an
+  endpoint's path is kept as the generation's endpoint already keeps it.
 - **Never in the way.** The row is written outside the job's transaction, so it survives a failed job; writing it is
   bounded and its own failure is swallowed with one warning: a call, a job and a request go on without the log.
+  The cost is one short connection per logged call (measured: about 8 ms; at most 2 s to connect and 2 s to write,
+  the second only when another session holds the chat's row, as a chat's delete does), then the row is given up.
+  `ok` means the call succeeded: a reply that is JSON but lacks what the job needs fails the job, not the call.
   `/v1/retrieve` writes none: the request path's embedding and rerank calls are not logged (a trace has their times).
 - **Kept as long as traces are** (`NMOS_TRACE_RETENTION_DAYS`, 30 by default); the worker's maintenance prunes it.
 - **Read.** `GET /v1/worker/calls` (the newest first, at most 500) and a summary of the last hour in

@@ -268,6 +268,31 @@ def test_a_row_is_written_and_survives_the_rollback_of_the_transaction_around_it
     assert row["kind"] == "extract" and row["endpoint"] == "http://llm.test/v1" and row["at"].endswith("+00:00")
 
 
+def test_a_nul_in_a_provider_error_or_model_name_does_not_lose_the_row(migrated):
+    """PostgreSQL text and jsonb hold no NUL: a provider's error body with one would fail the write and drop the row."""
+    row = calls.record_of("extract", "model\x00-a", "http://llm.test/v1", time.monotonic(), outcome="http",
+                          http_status=400, error="HTTP 400: bad\x00 request",
+                          usage={"calls": 1, "model": "model\x00-a@x"})
+    assert (row["model"], row["error"], row["usage"]["model"]) == ("model-a", "HTTP 400: bad request", "model-a@x")
+    assert calls.write(migrated, {**a_row(), "error": "HTTP 400: bad\x00 request", "outcome": "http",
+                                  "generation": "extract\x00-k"})  # the write guards itself too
+    with psycopg.connect(migrated) as conn:
+        (stored,) = calls.recent(conn)
+    assert stored["error"] == "HTTP 400: bad request" and stored["generation"] == "extract-k"
+
+
+def test_the_bounds_are_added_to_the_options_a_database_url_already_has(migrated):
+    bounds = f"-c statement_timeout={calls.TIMEOUT_S * 1000} -c lock_timeout={calls.TIMEOUT_S * 1000}"
+    assert calls.session_options("postgresql://nmos@db.test/nmos") == bounds
+    assert calls.session_options("postgresql://nmos@db.test/nmos?options=-c%20search_path%3Dside") \
+        == "-c search_path=side " + bounds
+    assert calls.session_options("host=db.test dbname=nmos options='-c search_path=side'") \
+        == "-c search_path=side " + bounds
+    assert calls.session_options("not a database url") == bounds  # the connect then fails, and fails open
+    sep = "&" if "?" in migrated else "?"
+    assert calls.write(migrated + sep + "options=-c%20application_name%3Dnmos-log-test", a_row())
+
+
 def test_a_write_that_fails_is_one_warning_and_false(migrated, caplog):
     with caplog.at_level(logging.WARNING, logger="nmos.calls"):
         assert calls.write("postgresql://nmos:nmos@127.0.0.1:1/nope", a_row()) is False
