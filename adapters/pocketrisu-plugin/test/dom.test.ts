@@ -311,6 +311,16 @@ describe('panel', () => {
       ['muted', 'Last 30 min: 96 finished · 35 being retried · 1 given up (24 h)'],
       ['warn', expect.stringMatching(/^Last error \d\d:\d\d \(canon\): HTTP 504: upstream$/)]]);
 
+    // the last hour of model calls (S6), between the queue and the recent counts
+    await show(async () => ({ ...worker, calls: { minutes: 60, total: 131, ok: 96, failed: 35, median_ms: 3200,
+      by_fault: { timeout: 0, transport: 0, bad_reply: 0, http_other: 0, '429': 6, '504': 29 } } }));
+    const withCalls = Array.from(document.querySelectorAll<HTMLElement>('#nmos-panel .card'))
+      .find((c) => c.querySelector('h2')?.textContent === 'Model work')!;
+    expect(Array.from(withCalls.querySelectorAll('div')).map((x) => x.textContent).slice(0, 3)).toEqual([
+      '1,708 waiting (extraction 642 · summaries 56 · canon 1,010) · 2 running',
+      "Last hour's calls: 96 ok · 35 failed (504 29 · 429 6) · median 3.2 s",
+      'Last 30 min: 96 finished · 35 being retried · 1 given up (24 h)']);
+
     const without = shown.filter((x) => x !== 'Model work');
     await show(async () => { throw new Error('/v1/worker/status -> HTTP 404: Not Found'); });  // an older sidecar
     expect(titles()).toEqual(without);

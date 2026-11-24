@@ -712,6 +712,16 @@ const STRINGS = {
   'worker.kind.summarize': ['요약', 'summaries'],
   'worker.kind.canon': ['canon', 'canon'],
   'worker.kind.embed': ['임베딩', 'embeddings'],
+  // its line on the last hour of model calls (PHASE-61 S6)
+  'worker.calls.hour': ['최근 1시간 호출: {parts}', "Last hour's calls: {parts}"],
+  'worker.calls.minutes': ['최근 {m}분 호출: {parts}', "Last {m} min's calls: {parts}"],
+  'worker.calls.ok': ['성공 {n}', '{n} ok'],
+  'worker.calls.failed': ['실패 {n}', '{n} failed'],
+  'worker.calls.median': ['중간값 {s}초', 'median {s} s'],
+  'worker.fault.timeout': ['시간 초과', 'timeout'],
+  'worker.fault.transport': ['연결 실패', 'connection'],
+  'worker.fault.bad_reply': ['응답 오류', 'bad reply'],
+  'worker.fault.http_other': ['기타 HTTP', 'other HTTP'],
   // carrying another chat's memory (PHASE-60 S6)
   'carry.title': ['이전 채팅 이어받기', "Carry an earlier chat's memory"],
   'carry.sub': ['다른 채팅의 기억을 지금 한 번 읽어 이 채팅에 연결합니다. 원본 채팅은 건드리지 않습니다.',
