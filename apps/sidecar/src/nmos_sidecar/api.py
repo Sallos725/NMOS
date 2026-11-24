@@ -37,7 +37,7 @@ from . import usage as model_usage
 from .config import Settings, extra_body_error, secret_path
 from .db import make_pool
 from .entities import norm
-from .extraction import enqueue_after_apply, job_counts, recent_errors
+from .extraction import enqueue_after_apply, job_counts, recent_errors, worker_status
 from .facts import STANDING, excluded_ids, links_of as facts_links_of, memory_view, told_chain, version_key
 from .ids import uuid7
 from .models import (
@@ -494,6 +494,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "rerank": {"configured": rt["recall"].reranker is not None},  # PHASE-60 S5: never its URL or key
                 "plugin": {"expected": plugin.expected(), "seen": plugins.recent()},
                 "install": settings.install or None}
+
+    @app.get("/v1/worker/status", dependencies=[Depends(auth)])
+    def worker_status_route(request: Request):
+        """What the worker is doing (PHASE-61 S5): counts of the job table for the Status tab. Read-only, and never
+        on the request path: `/v1/retrieve` does not call it."""
+        with request.app.state.pool.connection() as conn:
+            return worker_status(conn)
 
     @app.get(f"/v1/plugin/{plugin.FILENAME}", dependencies=[Depends(auth)])
     def plugin_download():

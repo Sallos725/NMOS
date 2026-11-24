@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import psycopg
 
+from conftest import make_client
 from nmos_sidecar.extraction import worker_status
 
 EMPTY = {"queued": {"extract": 0, "reveal": 0, "summarize": 0, "canon": 0, "embed": 0}, "queued_total": 0,
@@ -22,8 +23,8 @@ def _conversation(conn: psycopg.Connection) -> str:
 
 def _job(conn: psycopg.Connection, conv: str, kind: str, status: str, *, attempts: int = 0,
          error: str | None = None, ago: str = "0 seconds") -> None:
-    conn.execute("INSERT INTO job (kind, dedupe_key, conversation_id, payload, status, attempts, last_error, updated_at)"
-                 " VALUES (%s, %s, %s, '{}', %s, %s, %s, now() - %s::interval)",
+    conn.execute("INSERT INTO job (kind, dedupe_key, conversation_id, payload, status, attempts, last_error,"
+                 " updated_at) VALUES (%s, %s, %s, '{}', %s, %s, %s, now() - %s::interval)",
                  (kind, str(uuid4()), conv, status, attempts, error, ago))
 
 
@@ -69,3 +70,16 @@ def test_the_last_error_is_the_newest_cut_and_on_one_line(db):
     assert "\n" not in last["text"] and "\x07" not in last["text"] and "  " not in last["text"]
     at = datetime.fromisoformat(last["at"])
     assert at.utcoffset().total_seconds() == 0 and abs((datetime.now(timezone.utc) - at).total_seconds() - 300) < 60
+
+
+def test_the_route_answers_with_the_counts_and_needs_the_token(migrated):
+    with make_client(migrated) as c:
+        res = c.get("/v1/worker/status")
+        assert res.status_code == 200 and res.json() == EMPTY
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            _job(conn, _conversation(conn), "extract", "queued", attempts=1, error="HTTP 429")
+        body = c.get("/v1/worker/status").json()
+        assert body["queued"]["extract"] == 1 and body["retrying"] == 1
+        assert set(body["last_error"]) == {"kind", "status", "at", "text"}
+        del c.headers["Authorization"]
+        assert c.get("/v1/worker/status").status_code == 401
