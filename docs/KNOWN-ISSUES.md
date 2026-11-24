@@ -20,7 +20,7 @@ without a PocketRisu change.
 | K9 | A destroyed or used-up item keeps its last holder in turns not extracted by `extract-v6` | Memory | fixed for new turns in beta.13 (ADR 0017); older turns: "extract all history"; the rest accepted (owner, 2026-10-12, AGE-82) |
 | K11 | A secret is kept by instruction, not isolation: the model can still voice it | Memory | 0.2.0: Private section, strict and narrator modes (Phase 10); hard POV not planned |
 | K12 | A word in more than 200 messages brings no lexical excerpts | Recall | reduced in 0.3.0 (Phase 18, ADR 0052): each keyword is looked up alone and only a broad one is dropped; the rest accepted (owner, 2026-10-12, AGE-82) |
-| K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13); the embedding cap is a setting since 0.3.0, `NMOS_EMBED_MAX_CHUNKS` (default 8 chunks, 5,600 characters, as before; ADR 0062) |
+| K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13); the embedding cap is a setting since 0.3.0, `NMOS_EMBED_MAX_CHUNKS` (default 8 chunks, 5,600 characters, as before; ADR 0062); measured 2026-11-24: about half of the text of long replies was not extracted on the owner's production; extraction's and the summaries' cap is a setting too since Phase 62, `NMOS_EXTRACT_TARGET_CHARS` (default 6,000, as before; ADR 0090) |
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
 | K15 | Thresholds and extraction quality are checked on limited data | Quality | accepted (owner, 2026-10-12, AGE-82): the 1.0 comparison against 0.1.x is its check |
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
@@ -341,9 +341,20 @@ the target turn and 1,000 of each context message (2,000 before `extract-v14`, P
 (#13).
 *Since 0.3.0 (ADR 0062, D71):* the embedding cap is a setting, `NMOS_EMBED_MAX_CHUNKS` (default 8, as before), part of
 the projection key: raising it makes a new projection and re-embeds every chat once (local, in the background; K18);
-the default does not. The owner's long chats stay within the default once normalized (the M0 v2 main chat's messages:
-15,621 raw characters at most, 5,481 normalized; a cap of 24 compiled the same packets on its copy), so this limit is
-not where AGE-24's recall gaps are. Extraction's limits are unchanged.
+the default does not. The M0 v2 main chat stayed within the default once normalized (its messages: 15,621 raw
+characters at most, 5,481 normalized; a cap of 24 compiled the same packets on its copy), so this limit was not where
+AGE-24's recall gaps were. Extraction's limits are unchanged.
+*Measured again 2026-11-24 (production, read-only):* the owner's later chats do not stay within it. 432 of 685 accepted
+character replies exceed 6,000 normalized characters (mean 15,105, longest 33,417); of the 643 turns `extract-v18`
+extracted from 2026-11-18 to 11-23, 410 were cut and 51.2 % of their characters were not shown to the model; scene
+summaries left 49.9 % of their windows' characters unread, and 52.8 % of the chat messages' characters lie past the embedding
+cap. Word and keyword recall still search a message whole. The Inspector's coverage row counts the cut turns of a chat
+("target truncated").
+*Since Phase 62 (ADR 0090, D92):* the cap of extraction, the reveal check and scene summaries is a setting,
+`NMOS_EXTRACT_TARGET_CHARS` (default 6,000, as before; up to 36,000). Raising it queues nothing: turns read from then
+on are read up to the new cap, at more input tokens per long turn, and the panel's "Read the cut turns again" reads
+whole the turns an earlier cap cut, one model call each. A message longer than the cap is still read only up to it,
+and the embedding cap is its own setting.
 
 **K14 — Gating edge cases.** A main generation is recognized by the user's latest input appearing in
 the prompt (ADR 0001, amendment 2). A `model`-mode auxiliary call (trigger/Lua) whose prompt contains

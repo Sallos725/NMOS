@@ -43,7 +43,8 @@ log = logging.getLogger("nmos.summaries")
 VERSION = "summarize-v3"  # v2: OPEN SECRETS in the prompt, checked when read (PHASE-12 Q3); v3: late secrets, story
 WINDOW = 8  # turns per scene (PHASE-12 Q1)
 LAG = 4  # replied turns after a window before it is summarized: the last turns still change
-MESSAGE_CHARS = 6000  # normalized chars of each message the model sees, as extraction's target turn
+MESSAGE_CHARS = 6000  # normalized chars of each message the model sees, as extraction's target turn: the default; a
+#                        generation's own is its spec's `message_chars` (`NMOS_EXTRACT_TARGET_CHARS`, PHASE-62 S1b)
 MIN_CONTENT_CHARS = 12
 SCENE_CHARS = 1200  # a stored scene summary's cap
 STORY_CHARS = 2400
@@ -112,7 +113,7 @@ def summarizer(settings: Settings) -> Generation | None:
     return generations.make(
         "summarize", settings.llm_url, settings.llm_model, version=VERSION,
         prompt=generations.fingerprint(SCENE_PROMPT + STORY_PROMPT), normalizer=normtext.NORMALIZER_VERSION,
-        json_mode=settings.llm_json_mode, window=WINDOW, lag=LAG, message_chars=MESSAGE_CHARS,
+        json_mode=settings.llm_json_mode, window=WINDOW, lag=LAG, message_chars=settings.extract_target_chars,
         **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
     )
 
@@ -482,6 +483,46 @@ def schedule_redo(conn: psycopg.Connection, conv: UUID, head: UUID, key: str, tu
     return len(rows)
 
 
+def cut_windows(conn: psycopg.Connection, conv: UUID, head: UUID, gen: Generation) -> dict[str, Any]:
+    """This chat's due windows whose serving scene summary (an earlier summarizer's, PHASE-57 A2) read less than the
+    window holds, at a cap under the active summarizer `gen`'s (PHASE-62 S3): `windows` the ones "read the cut turns
+    again" would write again (no job of `gen` yet, or one made obsolete), `pending` those whose job is queued or
+    running, `characters` what the new cap adds and `shown` all it would show (each is a whole call)."""
+    cap = int(gen.spec.get("message_chars") or MESSAGE_CHARS)
+    ws = windows(conn, head) if cap > MESSAGE_CHARS else []
+    served = _scenes(conn, conv, gen.key, ws)
+    cut = [(w, s) for w in ws if (s := served.get(w.key)) is not None and s["generation"] != gen.key
+           and isinstance(s.get("coverage"), dict) and int(s["coverage"].get("used") or 0) < int(s["coverage"].get("chars") or 0)
+           and int(s["coverage"].get("cap") or MESSAGE_CHARS) < cap]
+    jobs = {r["dedupe_key"]: r["status"] for r in conn.execute(
+        "SELECT dedupe_key, status FROM job WHERE dedupe_key = ANY(%s)",
+        ([_scene_job(conv, gen.key, w, 0)[1] for w, _ in cut],)).fetchall()} if cut else {}
+    todo, pending, more, shown = [], 0, 0, 0
+    for w, s in cut:
+        status = jobs.get(_scene_job(conv, gen.key, w, 0)[1])
+        if status in ("queued", "running"):
+            pending += 1
+        elif status in (None, "obsolete"):
+            sizes = conn.execute("SELECT coalesce(sum(least(rt.clean_chars, %s)), 0)::int AS shown FROM revision_text rt"
+                                 " WHERE rt.source_revision_id = ANY(%s) AND rt.normalizer = %s",
+                                 (cap, list(w.members), normtext.NORMALIZER_VERSION)).fetchone()["shown"]
+            todo.append(w)
+            shown += sizes
+            more += max(0, sizes - int(s["coverage"].get("used") or 0))
+    return {"cap": cap, "todo": todo, "windows": len(todo), "pending": pending, "characters": more,
+            "shown": shown}
+
+
+def schedule_cut(conn: psycopg.Connection, conv: UUID, head: UUID, gen: Generation) -> int:
+    """Queue `cut_windows`' scene summaries for the active summarizer, at background priority; the story follows once
+    they are written. Idempotent."""
+    todo = cut_windows(conn, conv, head, gen)["todo"]
+    if todo:
+        with conn.cursor() as cur:
+            cur.executemany(_INSERT, [_scene_job(conv, gen.key, w, BACKFILL_PRIORITY) for w in todo])
+    return len(todo)
+
+
 def _speaker(meta: dict[str, Any]) -> str:
     return meta.get("name") or ("USER" if meta.get("role") == "user" else "CHARACTER")
 
@@ -568,9 +609,11 @@ def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
             + [f"- {', '.join(s['holders'])} keep from {', '.join(s['open'])}: {content(s)}" for s in secrets] + [""])
 
 
-def scene_prompt(rows: list[dict[str, Any]], w: Window, secrets: list[dict[str, Any]] | None = None) -> str:
+def scene_prompt(rows: list[dict[str, Any]], w: Window, secrets: list[dict[str, Any]] | None = None,
+                 cap: int = MESSAGE_CHARS) -> str:
+    """`cap`: the normalized characters of each message shown, the summarizer generation's `message_chars`."""
     lines = secrets_block(secrets or []) + [f"SCENE: turns {w.first_turn}–{w.last_turn}", ""]
-    lines += [f"[turn {r['turn']}] {_speaker(r['metadata'])}: {r['content'][:MESSAGE_CHARS]}" for r in rows]
+    lines += [f"[turn {r['turn']}] {_speaker(r['metadata'])}: {r['content'][:cap]}" for r in rows]
     return "\n".join(lines)
 
 
@@ -625,13 +668,15 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         for r in rows:
             r["content"] = normtext.get(conn, r["id"])["clean_content"]
         sizes = [len(r["content"]) for r in rows]
-        coverage = {"chars": sum(sizes), "used": sum(min(n, MESSAGE_CHARS) for n in sizes), "messages": len(rows)}
+        cap = int(gen.spec.get("message_chars") or MESSAGE_CHARS)  # this generation's (PHASE-62 S1b)
+        coverage = {"chars": sum(sizes), "used": sum(min(n, cap) for n in sizes), "messages": len(rows),
+                    **({"cap": cap} if cap != MESSAGE_CHARS else {})}  # a row without it was read at 6,000
         kept = window_secrets(secrets, w.last_turn)
         coverage["secrets"] = [secret_key(s) for s in kept]
         if sum(sizes) < MIN_CONTENT_CHARS:
             text, raw, usage = "", "", NO_CALL
         else:
-            parsed, raw, usage = metered(complete, SCENE_PROMPT, scene_prompt(rows, w, kept))
+            parsed, raw, usage = metered(complete, SCENE_PROMPT, scene_prompt(rows, w, kept, cap))
             text = reply_text(parsed, SCENE_CHARS)
         with conn.transaction():
             if old is not None:  # written again with the secrets it was not told about (`unlisted`)

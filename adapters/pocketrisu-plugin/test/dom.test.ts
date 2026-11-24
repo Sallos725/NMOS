@@ -1232,7 +1232,8 @@ describe('owner repairs in the panel (ADR 0044)', () => {
   function deps(entities: unknown[] = []) {
     const calls: [string, string, unknown][] = [];
     const state = { html: page(goal + promise), refuse: new Set<string>(), stale: 0, turns: 0, failReextract: 0,
-      hold: null as Promise<void> | null, prompt: 'List outfits.', failPrompt: false };
+      hold: null as Promise<void> | null, prompt: 'List outfits.', failPrompt: false,
+      cut: null as unknown };  // PHASE-62: what `cut-turns` answers; null: a sidecar without the route
     const d: PanelDeps = {
       api: async <T>(method: 'GET' | 'POST' | 'PUT', address: string, body?: unknown) => {
         const path = address.replace(/\?lang=en$/, '');
@@ -1263,6 +1264,13 @@ describe('owner repairs in the panel (ADR 0044)', () => {
           throw new Error(`${path} -> HTTP 409: [object Object]`);
         }
         if (path.endsWith('/retry-failed')) return { retried: { extract: 1, embed: 1, canon: 0 } } as T;
+        if (path.endsWith('/cut-turns')) {  // PHASE-62 S3
+          if (state.cut === null) throw new Error(`${path} -> HTTP 404`);
+          return state.cut as T;
+        }
+        if (path.endsWith('/read-cut')) {
+          return { queued: { extract: 3, ...((body as { summaries?: boolean }).summaries ? { summarize: 1 } : {}) } } as T;
+        }
         if (path === '/v1/notes/prompt') {  // PHASE-56
           if (method === 'PUT') {
             if (state.failPrompt) throw new Error(`${path} -> HTTP 503`);
@@ -1401,6 +1409,53 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect(path).toBe(`/v1/archive?conversation=${id}`);
     expect(name).toMatch(/^nmos-chat-\d{8}-\d{6}\.nmos\.zip$/);
     expect(panel().textContent).toContain('Saved 0.5 MB.');
+  });
+
+  it('offers "Read the cut turns again" only when the sidecar counts some, says what it would read, and posts on the second click (PHASE-62 S3)', async () => {
+    const { d, calls, state } = deps();
+    await openChat(d);
+    const cut = () => button('Read the cut turns again');
+    expect(cut().style.display).toBe('none');
+    // a page that says so, on a sidecar without the route: nothing is shown
+    state.html = '<div class="has-cut"><p class="muted">3 turns were read only in part.</p></div>';
+    button('Refresh').click();
+    await settle();
+    expect(cut().style.display).toBe('none');
+    state.cut = { cap: 24000, extract: { turns: 3, pending: 0, failed: 0, characters: 9000, input_tokens: [41000, 52000] } };
+    button('Refresh').click();
+    await settle();
+    expect(cut().style.display).toBe('');
+    expect(panel().querySelector<HTMLInputElement>('label.sub input[type=checkbox]')!.parentElement!.style.display).toBe('none');
+    cut().click();
+    await settle();
+    expect(posts(calls)).toEqual([]);  // the first click only says what it would read
+    const armed = [...panel().querySelectorAll('button')].find((b) => b.textContent!.startsWith('3 turns'))!;
+    expect(armed.textContent).toBe('3 turns · about 41,000–52,000 input tokens · click again to read');
+    armed.click();
+    await settle();
+    expect(posts(calls).map(([, path, body]) => [path, body])).toEqual([[`/v1/conversations/${id}/read-cut`, { summaries: false }]]);
+    expect(panel().textContent).toContain('Queued 3 turns to read again and 0 summaries to write again.');
+    // with summaries to write again: offered apart, and sent only when ticked
+    state.cut = { cap: 24000, extract: { turns: 3, input_tokens: [41000, 52000] }, summarize: { windows: 2, input_tokens: [60000, 110000] } };
+    button('Refresh').click();
+    await settle();
+    const box = panel().querySelector<HTMLInputElement>('label.sub input[type=checkbox]')!;
+    expect(box.parentElement!.style.display).toBe('');
+    expect(box.parentElement!.textContent).toContain('Also write 2 scene summaries again (about 60,000–110,000 more input tokens)');
+    box.checked = true;
+    cut().click();
+    await settle();
+    const both = [...panel().querySelectorAll('button')].find((b) => b.textContent!.startsWith('3 turns and 2 summaries'))!;
+    expect(both.textContent).toBe('3 turns and 2 summaries · about 101,000–162,000 input tokens · click again to read');
+    both.click();
+    await settle();
+    expect(posts(calls).at(-1)!.slice(1)).toEqual([`/v1/conversations/${id}/read-cut`, { summaries: true }]);
+    // nothing left to read: the button goes
+    state.html = '<p>all read</p>';
+    state.cut = { cap: 24000, extract: { turns: 0, input_tokens: [0, 0] } };
+    button('Refresh').click();
+    await settle();
+    expect(cut().style.display).toBe('none');
   });
 
   it('offers "Retry failed" only while the page shows failed work, and posts it (owner, 2026-10-14)', async () => {

@@ -27,9 +27,9 @@ from psycopg.types.json import Jsonb
 
 from . import generations, normtext
 from .config import Settings
-from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY, TARGET_CHARS,
+from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY,
                          assertion_values, build_prompt, coverage_of, earlier_assertions, load_context, normalize,
-                         revealed, secret_hints, shown_target)
+                         revealed, secret_hints, shown_target, with_cap)
 from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
@@ -64,7 +64,7 @@ def generation(settings: Settings) -> Generation | None:
         compiler=COMPILER_VERSION, normalizer=normtext.NORMALIZER_VERSION,  # its input and its answer's check
         json_mode=settings.llm_json_mode, context_turns=settings.extract_turns,
         **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
-        target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS)
+        target_chars=settings.extract_target_chars, context_chars=CONTEXT_CHARS)  # the cap: PHASE-62 S1
 
 
 # A stored secret, as secrets.is_secret reads one.
@@ -191,6 +191,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
     ctx = load_context(conn, revision_id, turn_hash, turns, base["extractor_key"])
     if ctx is None:
         return "obsolete"  # the head changed; the turn is extracted again
+    with_cap(ctx, gen)  # the check reads the TARGET at its own generation's cap (PHASE-62 S1)
     read_at = conn.execute("SELECT clock_timestamp() AS t").fetchone()["t"]  # when it looked (UNCHECKED's `seen`)
     secrets = secret_hints(ctx, earlier_assertions(conn, ctx, base["extractor_key"]))
     if not secrets:

@@ -695,6 +695,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const historyButton = el('button', { text: L('act.history') });
   // Only on a page that shows failed work (the sidecar marks it `has-failed`, owner 2026-10-14): it runs those again.
   const retryButton = el('button', { text: L('act.retry'), style: 'display:none' });
+  // PHASE-62 S3: only where the sidecar reports turns an earlier cap read in part (a page's `has-cut`, the chat page's
+  // own question): it reads those again, whole, and nothing else. The counts and the token range are the sidecar's.
+  interface CutInfo { turns: number; windows: number; low: number; high: number; slow: number; shigh: number }
+  const cutButton = el('button', { text: L('act.cut'), style: 'display:none' });
+  const cutSummaries = el('input', { type: 'checkbox' });
+  const cutSummariesText = el('span');
+  const cutSummariesLabel = el('label', { class: 'sub', style: 'display:none' }, cutSummaries, cutSummariesText);
+  let cutInfo: CutInfo | null = null;
   const rebuildButton = el('button', { text: L('act.rebuild') });
   const deleteButton = el('button', { text: L('act.delete') });
   const exportButton = el('button', { text: L('exp.chat') });
@@ -708,8 +716,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   let mapOn = false; // and the memory map (PHASE-55): the hub and the memory document lead to it when asked
   let graphOn = false; // and its drawing as data, drawn here (PHASE-55 step 6)
   const actionMsg = el('div', { class: 'msg' });
-  const actions = el('div', {}, el('div', { class: 'btns' }, retryButton, historyButton, rebuildButton, exportButton, notesButton,
-    deleteButton),
+  const actions = el('div', {}, el('div', { class: 'btns' }, retryButton, historyButton, cutButton, cutSummariesLabel, rebuildButton,
+    exportButton, notesButton, deleteButton),
     el('details', { class: 'sub help' }, el('summary', { text: L('act.help') }), el('p', { text: L('act.sub') })));
   // The message sits outside the actions so a result stays visible after a delete returns to the list.
   // Back and Refresh stay in reach while reading far down a page.
@@ -1224,6 +1232,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       placeMarks(page); // a person's circles (PHASE-52 D4)
       enhance(page);
       retryButton.style.display = page.querySelector('.has-failed') ? '' : 'none';
+      if (page.querySelector('.has-cut') && conversation) void loadCut(conversation);
+      else showCut(null);
       inspectorBody.replaceChildren(page);
       shownPath = path;
       const focusSec = pendingSection;
@@ -1244,6 +1254,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (load !== loads) return;
       shownPath = null;
       retryButton.style.display = 'none';
+      showCut(null);
       pinCard.style.display = 'none';
       inspectorBody.replaceChildren(el('div', { class: 'card err', text: errorText(lang, error) }));
     } finally {
@@ -1611,7 +1622,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   inspectorRefresh.addEventListener('click', () => void showInspector());
   // Destructive actions take two clicks: the first arms the button for 6 s.
   const confirmable: [HTMLButtonElement, StringKey, string][] = [
-    [rebuildButton, 'act.rebuild', 'primary'], [deleteButton, 'act.delete', 'danger']];
+    [rebuildButton, 'act.rebuild', 'primary'], [deleteButton, 'act.delete', 'danger'], [cutButton, 'act.cut', 'primary']];
   let armed: HTMLButtonElement | null = null;
   let armTimer = 0;
   function disarm(): void {
@@ -1640,6 +1651,58 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   interface ActionResult { queued: { extract?: number; embed?: number }; discarded?: number }
   interface NotePart { kind: string; made: string; cached: boolean; held: number; reason: string; stale?: number; entries?: number; left_out?: number }
   interface NotesResult { text: string; chars: number; sections: NotePart[]; last_turn: number | null }
+  const count = (n: number) => n.toLocaleString('en-US');
+  /** Show or hide "read the cut turns again" with what the sidecar counted (PHASE-62 S3). */
+  function showCut(info: CutInfo | null): void {
+    cutInfo = info && info.turns + info.windows > 0 ? info : null;
+    if (armed === cutButton) disarm();
+    cutButton.style.display = cutInfo ? '' : 'none';
+    cutSummariesLabel.style.display = cutInfo && cutInfo.windows > 0 ? '' : 'none';
+    if (!cutInfo || cutInfo.windows === 0) cutSummaries.checked = false;
+    if (cutInfo) cutSummariesText.textContent = ' ' + L('act.cut_summaries', { w: cutInfo.windows, low: count(cutInfo.slow), high: count(cutInfo.shigh) });
+  }
+  interface CutView { extract?: { turns?: number; input_tokens?: number[] }; summarize?: { windows?: number; input_tokens?: number[] } }
+  /** Ask the sidecar what the action would read for this chat; an older sidecar has no such route and shows nothing. */
+  async function loadCut(conversation: string): Promise<CutInfo | null> {
+    let info: CutInfo | null = null;
+    try {
+      const r = await deps.api<CutView>('GET', `/v1/conversations/${conversation}/cut-turns`);
+      const e = r.extract ?? {}, s = r.summarize ?? {};
+      info = { turns: Number(e.turns) || 0, windows: Number(s.windows) || 0,
+        low: Number(e.input_tokens?.[0]) || 0, high: Number(e.input_tokens?.[1]) || 0,
+        slow: Number(s.input_tokens?.[0]) || 0, shigh: Number(s.input_tokens?.[1]) || 0 };
+    } catch { info = null; }
+    if (actionConversation === conversation) showCut(info);
+    return cutInfo;
+  }
+  cutButton.addEventListener('click', async () => {
+    const conversation = actionConversation;
+    const info = cutInfo;
+    if (!conversation || !info) return;
+    const both = cutSummaries.checked && info.windows > 0;
+    if (armed !== cutButton) {  // two clicks: each turn is a model call, so the first says what it would read
+      disarm();
+      armed = cutButton;
+      cutButton.textContent = both
+        ? L('act.cut_confirm_sum', { n: info.turns, w: info.windows, low: count(info.low + info.slow), high: count(info.high + info.shigh) })
+        : L('act.cut_confirm', { n: info.turns, low: count(info.low), high: count(info.high) });
+      cutButton.className = 'primary';
+      armTimer = window.setTimeout(disarm, 6000);
+      return;
+    }
+    disarm();
+    cutButton.disabled = true;
+    say(actionMsg, L('act.working'));
+    try {
+      const r = await deps.api<{ queued: { extract?: number; summarize?: number } }>('POST',
+        `/v1/conversations/${conversation}/read-cut`, { summaries: both }, 30_000);
+      const t = r.queued.extract ?? 0, s = r.queued.summarize ?? 0;
+      say(actionMsg, t + s ? L('act.cut_done', { t, s }) : L('act.history_none'), 'ok');
+      if (t + s) deps.hud.background(conversation);
+      await loadCut(conversation);
+      await showInspector();
+    } catch (error) { say(actionMsg, actionError(error), 'err'); } finally { cutButton.disabled = false; }
+  });
   retryButton.addEventListener('click', async () => {
     const conversation = actionConversation;
     if (!conversation) return;
@@ -3107,7 +3170,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   function restoreLegacyActions(): void {
     if (historyButton.parentElement !== legacyActionBtns) {
-      legacyActionBtns.replaceChildren(retryButton, historyButton, rebuildButton, exportButton, notesButton, deleteButton);
+      legacyActionBtns.replaceChildren(retryButton, historyButton, cutButton, cutSummariesLabel, rebuildButton, exportButton,
+        notesButton, deleteButton);
     }
   }
 
@@ -3181,8 +3245,21 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (retryButton.style.display !== 'none') {
       maintRows.push(maintRow(L('act.retry'), 'set.act_retry_desc', 'set.badge_llm', 'b-llm', retryButton));
     }
+    // PHASE-62 S3: a row for "read the cut turns again", filled once the sidecar says this chat has cut turns
+    const cutSlot = el('div', { style: 'display:none' });
+    void loadCut(cid).then((info) => {
+      if (!info || !cutSlot.isConnected || actionConversation !== cid) return;
+      cutSlot.replaceChildren(el('div', { class: 'maint-row' },
+        el('div', { class: 'maint-info' },
+          el('div', { class: 'maint-title' }, el('span', { text: L('act.cut') }), el('span', { class: 'badge b-llm', text: L('set.badge_llm') })),
+          el('div', { class: 'maint-desc', text: L('set.act_cut_desc', { n: info.turns, low: count(info.low), high: count(info.high) }) }),
+          cutSummariesLabel),
+        cutButton));
+      cutSlot.style.display = '';
+    });
     maintRows.push(
       maintRow(L('act.history'), 'set.act_history_desc', 'set.badge_llm', 'b-llm', historyButton),
+      cutSlot,
       maintRow(L('act.rebuild'), 'set.act_rebuild_desc', 'set.badge_warn', 'b-warn', rebuildButton),
       maintRow(L('exp.chat'), 'set.act_export_desc', 'set.badge_local', 'b-free', exportButton),
       maintRow(L('act.delete'), 'set.act_delete_desc', 'set.badge_danger', 'b-danger', deleteButton, true),

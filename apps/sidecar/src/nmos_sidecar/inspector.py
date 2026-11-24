@@ -22,7 +22,7 @@ from . import scene, timeline, tokens
 from .packet import TURN_POLICIES
 from .readmodel import TURN_TRACES
 from .retrieval import CAST_GOALS, cast_facts
-from .summaries import LAG, WINDOW
+from .summaries import LAG, MESSAGE_CHARS, WINDOW
 
 STYLE = (
     ":root{color-scheme:dark;" + tokens.css_vars() + ";"
@@ -129,6 +129,14 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "start_only_title": ("메시지가 길어서 앞부분까지만 처리했습니다(설계상 상한). 다시 시도해도 바뀌지 않습니다.",
                          "The message is long, so only its start was processed (by design); a retry changes nothing."),
     "cov.failed_note": ("실패한 작업 {n}개. 마지막 오류:", "{n} failed jobs. Last errors:"),
+    "cov.cap": ("메시지당 {n}자까지 읽음", "reads {n} characters per message"),
+    "cov.cut_note": ("예전 상한에서 뒷부분이 잘린 채 읽힌 턴 {n}개. 패널의 [잘린 턴 다시 읽기]로 지금 상한({cap}자)까지 다시 읽을 수"
+                     " 있습니다. 턴마다 추출 모델을 한 번씩 부르며, 입력은 대략 {low}~{high} 토큰입니다(추정).",
+                     "{n} turns were read only in part at an earlier cap. The panel's [Read the cut turns again] reads them"
+                     " up to the cap now ({cap} characters): one extraction call per turn, about {low}–{high} input tokens"
+                     " (an estimate)."),
+    "cov.cut_summaries": ("장면 요약 {n}개도 같이 다시 쓸 수 있습니다(입력 대략 {low}~{high} 토큰).",
+                          "{n} scene summaries can be written again with them (about {low}–{high} input tokens)."),
     "cov.failed_hint": ("패널의 [실패한 작업 다시 시도]로 실패한 것만 다시 돌릴 수 있습니다. 같은 오류가 반복되면 설정 탭에서"
                         " 모델 주소와 키를 확인하세요.",
                         "The panel's [Retry failed] runs only the failed ones again. If the same error comes back, check"
@@ -879,7 +887,7 @@ def _coverage_section(cov: dict[str, Any], lang: str) -> str:
         rows.append([t("facts_row"), _generation(ex["generation"], lang), _percent(ex, "compiled", lang),
                      _v(f"{t('pending')} {ex.get('pending', 0)} · {t('failed')} {ex.get('failed', 0)} · "
                         f"{t('not_queued')} {ex.get('not_queued', 0)} · {t('older_only')} {ex.get('historical_only', 0)}"
-                        f" · {t('truncated')} {ex.get('target_truncated', 0)}")])
+                        f" · {t('truncated')} {ex.get('target_truncated', 0)}" + _cap_note(ex["generation"], lang))])
     cn = cov.get("canon") or {}
     if cn.get("generation"):
         done = f"{cn.get('read', 0)}/{cn.get('wanted', 0)}"
@@ -893,6 +901,28 @@ def _coverage_section(cov: dict[str, Any], lang: str) -> str:
     if not rows:
         return f"<p class=\"muted\">{t('no_generation')}</p>"
     return table([t("h.projection"), t("h.generation"), t("h.coverage"), t("h.detail")], rows) + _coverage_notes(cov, lang)
+
+
+def _cap_note(gen: dict[str, Any], lang: str) -> str:
+    """The cap an extract generation reads each message at, when it is not the default (PHASE-62 S4)."""
+    cap = (gen.get("spec") or {}).get("target_chars")
+    return f" · {_t(lang, 'cov.cap').format(n=f'{cap:,}')}" if isinstance(cap, int) and cap != MESSAGE_CHARS else ""
+
+
+def _cut_note(cov: dict[str, Any], lang: str) -> str:
+    """Turns an earlier cap cut, which the panel's "read the cut turns again" reads whole (PHASE-62 S3). `has-cut`
+    tells the panel to ask what that would read (`/cut-turns`) and show its button."""
+    cut = cov.get("cut") or {}
+    ex, sm = cut.get("extract") or {}, cut.get("summarize") or {}
+    turns, windows = int(ex.get("turns") or 0), int(sm.get("windows") or 0)
+    if not turns and not windows:
+        return ""
+    low, high = (ex.get("input_tokens") or [0, 0])[:2]
+    text = _t(lang, "cov.cut_note").format(n=turns, cap=f"{int(cut.get('cap') or 0):,}", low=f"{low:,}", high=f"{high:,}")
+    if windows:
+        slow, shigh = (sm.get("input_tokens") or [0, 0])[:2]
+        text += " " + _t(lang, "cov.cut_summaries").format(n=windows, low=f"{slow:,}", high=f"{shigh:,}")
+    return f"<div class=\"has-cut\"><p class=\"muted\">{_v(text)}</p></div>"
 
 
 def _coverage_notes(cov: dict[str, Any], lang: str) -> str:
@@ -912,6 +942,7 @@ def _coverage_notes(cov: dict[str, Any], lang: str) -> str:
                    + f"<p class=\"muted\">{_v(t('cov.failed_hint'))}</p></div>")
     if any(_left(s, d)["not_queued"] for s, d in shown):
         out.append(f"<p class=\"muted\">{_v(t('cov.not_queued_hint'))}</p>")
+    out.append(_cut_note(cov, lang))
     return "".join(out)
 
 

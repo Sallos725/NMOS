@@ -1398,6 +1398,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             # what to show beside a failed count: the errors of the jobs "retry failed" would run again
             spent["failed_errors"] = extraction.failed_errors(conn, conv_id, [g.key for g in retryable().values() if g])
         compiled = extraction.coverage(conn, ex_key, conv_id).get(conv_id)
+        if usage:  # PHASE-62 S3: what "read the cut turns again" would read; its `has-cut` shows the panel's button
+            spent["cut"] = cut_view(conn, conv_id)
         return {
             "extraction": {"generation": generations.describe(conn, ex_key), **(compiled or {}),
                            **({"reveal_checks": reveals.coverage(conn, rv_key, conv_id)} if compiled else {})},
@@ -1408,6 +1410,50 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             **model_usage.work(conn, conv_id, ex_key, rt.get("active_summarizer")),
             **spent,
         }
+
+    def cut_view(conn, conv_id: UUID) -> dict[str, Any]:
+        """What "read the cut turns again" would queue for this chat, counts and a token range only (PHASE-62 S3): the
+        turns the active extractor would read whole, and apart from them the scene summaries the active summarizer
+        would write again. Empty at the default cap. Read by the live generations: the action queues for them."""
+        ex, sm = rt["extractor"], rt["summarizer"]
+        head = (readmodel.conversation(conn, conv_id) or {}).get("head_commit_id")
+        out: dict[str, Any] = {"cap": rt["settings"].extract_target_chars}
+        if ex is not None and ex.key == rt.get("active_extractor"):
+            found = extraction.cut_turns(conn, conv_id, ex)
+            out["extract"] = {k: found[k] for k in ("turns", "pending", "failed", "characters", "input_tokens")}
+        if sm is not None and sm.key == rt.get("active_summarizer") and head is not None:
+            found = summaries.cut_windows(conn, conv_id, head, sm)
+            out["summarize"] = {"windows": found["windows"], "pending": found["pending"],
+                                "characters": found["characters"],
+                                "input_tokens": [round(found["shown"] * r) for r in extraction.TOKENS_PER_CHAR]}
+        return out
+
+    @app.get("/v1/conversations/{conv_id}/cut-turns", dependencies=[Depends(auth)])
+    def cut_turns_preview(conv_id: UUID, request: Request):
+        """What "read the cut turns again" would read (PHASE-62 S3): nothing is queued."""
+        with request.app.state.pool.connection() as conn:
+            if readmodel.conversation(conn, conv_id) is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            return cut_view(conn, conv_id)
+
+    @app.post("/v1/conversations/{conv_id}/read-cut", dependencies=[Depends(auth)])
+    def read_cut(conv_id: UUID, request: Request, body: dict[str, Any] | None = None):
+        """Read again, whole, the turns of this chat that an earlier cap cut (PHASE-62 S3, ADR 0090): one extraction
+        call each for the active generation, at background priority; nothing else is queued, unlike "extract all
+        history". With `{"summaries": true}` the scene summaries an earlier cap cut are written again too."""
+        ex, sm = rt["extractor"], rt["summarizer"]
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            if ex is None:
+                raise HTTPException(status_code=409, detail="fact extraction is off")
+            queued = {"extract": extraction.schedule_cut(conn, conv_id, ex)}
+            if (body or {}).get("summaries") is True and sm is not None and conv["head_commit_id"] is not None:
+                with conn.transaction():
+                    queued["summarize"] = summaries.schedule_cut(conn, conv_id, conv["head_commit_id"], sm)
+            log.info("read cut turns conversation=%s queued=%s", conv_id, queued)
+            return {"queued": queued, "coverage": coverage_view(conn, conv_id)}
 
     # Per-chat actions (D22, ADR 0008). Only for chats NMOS has seen: NMOS never ingests a chat itself.
     @app.post("/v1/conversations/{conv_id}/extract-history", dependencies=[Depends(auth)])
