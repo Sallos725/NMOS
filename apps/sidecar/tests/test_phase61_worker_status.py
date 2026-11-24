@@ -13,8 +13,8 @@ from nmos_sidecar.extraction import worker_status
 from test_phase61_calls_read import log_row
 
 EMPTY = {"queued": {"extract": 0, "reveal": 0, "summarize": 0, "canon": 0, "embed": 0}, "queued_total": 0,
-         "running": 0, "retrying": 0, "dead_recent": 0, "done_recent": 0, "recent_minutes": 30, "dead_hours": 24,
-         "last_error": None}
+         "set_aside": 0, "running": 0, "retrying": 0, "dead_recent": 0, "done_recent": 0, "recent_minutes": 30,
+         "dead_hours": 24, "last_error": None}
 NO_CALLS = {"minutes": 60, "total": 0, "ok": 0, "failed": 0,
             "by_fault": {"timeout": 0, "transport": 0, "bad_reply": 0, "http_other": 0},
             "median_ms": None, "last_ok_at": None, "last_failed_at": None}
@@ -60,6 +60,34 @@ def test_counts_by_kind_and_state(db):
     assert s["queued_total"] == 9
     assert (s["running"], s["retrying"], s["dead_recent"], s["done_recent"]) == (2, 2, 1, 2)
     assert s["last_error"]["text"] == "HTTP 504" and s["last_error"]["status"] == "running"
+
+
+def test_a_job_of_a_generation_that_is_no_longer_active_is_set_aside_not_waiting(db):
+    """No worker claims a job of a generation its kind left (a model change with "carry on" leaves them queued), so
+    it must not read as waiting, or as being retried, for ever."""
+    conv = _conversation(db)
+    for key, ago in (("canon-old", "2 hours"), ("canon-new", "1 hour"), ("extract-only", "1 hour")):
+        db.execute("INSERT INTO projection_generation (key, kind, model, endpoint, spec, activated_at)"
+                   " VALUES (%s, %s, 'm', 'e', '{}', now() - %s::interval)", (key, key.split("-")[0], ago))
+
+    def job(kind: str, generation: str | None, status: str = "queued", **more) -> None:
+        _job(db, conv, kind, status, **more)
+        if generation:
+            db.execute("UPDATE job SET payload = jsonb_build_object('generation', %s::text)"
+                       " WHERE id = (SELECT max(id) FROM job)", (generation,))
+
+    job("canon", "canon-old")
+    job("canon", "canon-old", attempts=2, error="HTTP 504")  # not a retry either: nothing will try it
+    job("canon", "canon-new")
+    job("canon", "canon-new", attempts=1, error="HTTP 429")
+    job("canon", None)                                       # a job that names no generation waits as before
+    job("extract", "extract-only")
+    job("embed", "embed-unknown")                            # a kind with no generation row: waits as before
+    job("canon", "canon-old", "dead", attempts=5, error="gone")
+
+    s = worker_status(db)
+    assert s["queued"] == {"extract": 1, "reveal": 0, "summarize": 0, "canon": 3, "embed": 1}
+    assert (s["queued_total"], s["set_aside"], s["retrying"], s["dead_recent"]) == (5, 2, 1, 1)
 
 
 def test_the_last_error_is_the_newest_cut_and_on_one_line(db):

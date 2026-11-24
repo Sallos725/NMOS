@@ -123,7 +123,10 @@ showed neither the queue nor a model error (S3 said a rejection shows "in the St
   the jobs waiting by kind (`extract`, `reveal`, `summarize`, `canon`, `embed`), the number running, the number
   being tried again (waiting or running after a failed attempt), the number given up on in the last 24 hours, the
   number finished in the last 30 minutes, and the most recent failure (its kind, time, state and the first 200
-  characters of its error). One bounded read of the job table; numbers only, no chat text of its own.
+  characters of its error). One bounded read of the job table; numbers only, no chat text of its own. A queued
+  job of a generation its kind has left (a model change saved with "carry on" leaves such jobs queued, and no
+  worker claims them) is counted apart as `set_aside`: not waiting and not being tried again, or the card would
+  show it waiting for ever.
 - **The Status tab** gains a "Model work" card: one line for the queue ("1,708 waiting: extraction 642, canon 1,010,
   summaries 56; 2 running"), one for the last 30 minutes (finished, being retried, given up), and the last error
   with its time. With nothing waiting and no recent failure it says so in one line. Shown only when the sidecar has

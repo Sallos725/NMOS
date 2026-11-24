@@ -1759,17 +1759,25 @@ _SPACE = re.compile(r"[\s\x00-\x1f\x7f]+")
 def worker_status(conn: psycopg.Connection) -> dict[str, Any]:
     """What the worker is doing (PHASE-61 S5), for the panel's Status tab: jobs waiting by kind, running, tried again
     after a failure, given up on lately, finished lately, and the newest failure's error on one line, cut to 200
-    characters. Counts only; reads `job` and nothing else (no chat text). An obsolete job counts nowhere."""
+    characters. Counts only; reads `job` and the generation keys, nothing else (no chat text). An obsolete job counts
+    nowhere. A queued job of a generation its kind has left is `set_aside`, not waiting and not tried again: no
+    worker claims it (`claim`), so counted as waiting it would wait on the card for ever."""
     rows = conn.execute(
-        "SELECT kind, count(*) FILTER (WHERE status = 'queued') AS queued,"
+        "WITH active AS (SELECT DISTINCT ON (kind) kind, key FROM projection_generation"
+        "                ORDER BY kind, activated_at DESC, key),"
+        " seen AS (SELECT j.kind, j.status, j.attempts, j.last_error, j.updated_at,"
+        "                 coalesce(j.status = 'queued' AND j.payload->>'generation' <> a.key, false) AS aside"
+        "          FROM job j LEFT JOIN active a ON a.kind = j.kind)"
+        " SELECT kind, count(*) FILTER (WHERE status = 'queued' AND NOT aside) AS queued,"
+        " count(*) FILTER (WHERE aside) AS set_aside,"
         " count(*) FILTER (WHERE status = 'running') AS running,"
-        " count(*) FILTER (WHERE status IN ('queued', 'running') AND attempts > 0 AND last_error IS NOT NULL)"
-        " AS retrying,"
+        " count(*) FILTER (WHERE status IN ('queued', 'running') AND NOT aside AND attempts > 0"
+        "                  AND last_error IS NOT NULL) AS retrying,"
         " count(*) FILTER (WHERE status = 'dead' AND updated_at > now() - make_interval(hours => %s)) AS dead_recent,"
         " count(*) FILTER (WHERE status = 'done' AND updated_at > now() - make_interval(mins => %s)) AS done_recent"
-        " FROM job GROUP BY kind ORDER BY kind", (DEAD_HOURS, RECENT_MINUTES)).fetchall()
+        " FROM seen GROUP BY kind ORDER BY kind", (DEAD_HOURS, RECENT_MINUTES)).fetchall()
     queued = {kind: 0 for kind in WORKER_KINDS} | {r["kind"]: r["queued"] for r in rows}
-    total = {k: sum(r[k] for r in rows) for k in ("running", "retrying", "dead_recent", "done_recent")}
+    total = {k: sum(r[k] for r in rows) for k in ("set_aside", "running", "retrying", "dead_recent", "done_recent")}
     newest = recent_errors(conn, limit=1, chars=1000)
     last_error = None
     if newest:
