@@ -2411,6 +2411,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def inspector_index(request: Request, token: str | None = None, lang: str | None = None):
         return inspector_index_html(request, token, lang)
 
+    # PHASE-61 S6 (ADR 0089): the log of model calls, newest first, with a summary of the last hour
+    @app.get("/v1/worker/calls", dependencies=[Depends(auth)])
+    def worker_calls(request: Request, limit: int = 200, conversation_id: UUID | None = None):
+        with request.app.state.pool.connection() as conn:
+            return {"calls": model_calls.recent(conn, limit, conversation_id), "summary": model_calls.summary(conn)}
+
     # The Docker-free bundles' tray and menu bar open this (PHASE-23 Q8): the Inspector's first page, which holds
     # the version, the plugin build, the generations in use, the background jobs and their recent errors.
     @app.get("/dashboard", dependencies=[Depends(auth)])
