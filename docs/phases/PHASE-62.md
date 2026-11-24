@@ -30,7 +30,9 @@ scene-summary window is the whole window, about 198,000 characters. The image is
 (`exp-phase62-4037cd8`); the switch was rehearsed with the deploy and rollback scripts on a fresh copy of production
 at 36,000 and 52: the image alone changed nothing, the settings made new extract, reveal, summarize and embed
 generations and queued 1,382 embedding jobs and nothing else, and the rollback (settings first, then the image) left
-the copy as it was.
+the copy as it was. **Step 5 done 2026-11-24:** the test install at 18:40 KST and production at 18:41 KST, each as
+rehearsed (`docs/STATUS.md`, "Phase 62 on production"). Criterion 7's token range is still an assumption applied to a
+measured character count; the recorded usage of the first long turns extracted at 36,000 settles it.
 
 ## Why
 
