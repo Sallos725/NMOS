@@ -33,6 +33,7 @@ from . import (__version__, archive, audit, canon, canonfacts, carry, dropped, e
                memorymap, normtext, notes, overuse, views,
                plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
                vectors)
+from . import calls as model_calls  # `calls` is a local name in the notes route
 from . import usage as model_usage
 from .config import Settings, extra_body_error, secret_path
 from .db import make_pool
@@ -1468,7 +1469,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             told = summaries.current(conn, conv_id, head, key) if key and calls else None
             setting = "diverged" in ask.sections or ("custom" in ask.sections and ask.custom_setting)
             manifest = canon.manifest(conn, conv_id) if setting else None
-        model = notes.model_for(rt["settings"]) if ask.model and calls else None
+        # PHASE-61 S6: each call logged as a `note` of this chat, outside the request's connection
+        model = (notes.model_for(rt["settings"], log_to=rt["settings"].database_url, conversation_id=conv_id)
+                 if ask.model and calls else None)
         out = notes.make(ask, view, told, last, model, date.today().isoformat(), canon=manifest)
         log.info("author notes conversation=%s sections=%s made=%s", conv_id, ",".join(ask.sections),
                  ",".join(s["made"] for s in out["sections"]))
@@ -1926,11 +1929,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             key, note = key_for(body, kind)
             return noted(runtime.test_llm(body.get("url") or cur.llm_url, body.get("model") or cur.llm_model, key,
                                           bool(body.get("json_mode", cur.llm_json_mode)), extra_body=extra_body,
-                                          no_temperature=no_temperature), note)
+                                          no_temperature=no_temperature,
+                                          observer=model_calls.observer(cur.database_url, "test")), note)
         if kind == "embeddings":
             key, note = key_for(body, kind)
             return noted(runtime.test_embeddings(body.get("url") or cur.embed_url, body.get("model") or cur.embed_model,
-                                                 key), note)
+                                                 key, observer=model_calls.observer(cur.database_url, "test")), note)
         raise HTTPException(status_code=422, detail="kind must be 'llm' or 'embeddings'")
 
     @app.post("/v1/config/models", dependencies=[Depends(auth)])

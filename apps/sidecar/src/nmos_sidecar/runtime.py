@@ -22,7 +22,7 @@ from psycopg.types.json import Jsonb
 
 from .config import RERANK_TIMEOUT_MS, Settings, extra_body_error
 from . import rerank, vertex
-from .llm import ChatModel, Embedder, LLMError, chat_headers
+from .llm import ChatModel, Embedder, LLMError, Observer, chat_headers
 from .parsers import RuleSet, compile_rules, load_rules
 
 EDITABLE: dict[str, type] = {
@@ -341,13 +341,13 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
 
 
 def test_llm(url: str, model: str, api_key: str, json_mode: bool, extra_body: dict[str, Any] | None = None,
-             no_temperature: bool = False) -> dict[str, Any]:
+             no_temperature: bool = False, observer: Observer | None = None) -> dict[str, Any]:
     """One call as the worker would make it, with the body and the switch under test (PHASE-61 S3): a provider's
-    rejection of them shows here, before anything is saved."""
+    rejection of them shows here, before anything is saved. `observer` is told how the call ended (S6)."""
     started = time.perf_counter()
     try:
         parsed, _ = ChatModel(url, model, api_key, timeout_s=60, json_mode=json_mode, extra_body=extra_body,
-                              no_temperature=no_temperature).complete_json(
+                              no_temperature=no_temperature, observer=observer).complete_json(
             "Reply with JSON only.", 'Return exactly {"ok": true, "language": "<the language of: 안녕하세요>"}')
         return {"ok": bool(parsed.get("ok")), "ms": round((time.perf_counter() - started) * 1000), "reply": parsed}
     except LLMError as exc:
@@ -358,10 +358,12 @@ def test_llm(url: str, model: str, api_key: str, json_mode: bool, extra_body: di
         return {"ok": False, "ms": round((time.perf_counter() - started) * 1000), "error": error}
 
 
-def test_embeddings(url: str, model: str, api_key: str) -> dict[str, Any]:
+def test_embeddings(url: str, model: str, api_key: str, observer: Observer | None = None) -> dict[str, Any]:
     started = time.perf_counter()
     try:
-        (vec,) = Embedder(url, model, api_key).embed(["기억 테스트 문장입니다."], timeout_s=60)
+        embedder = Embedder(url, model, api_key)
+        embedder.observer = observer  # PHASE-61 S6: told how the call ended (a fresh embedder: nothing shares it)
+        (vec,) = embedder.embed(["기억 테스트 문장입니다."], timeout_s=60)
         return {"ok": True, "ms": round((time.perf_counter() - started) * 1000), "dimensions": len(vec)}
     except LLMError as exc:
         return {"ok": False, "ms": round((time.perf_counter() - started) * 1000), "error": str(exc)}
