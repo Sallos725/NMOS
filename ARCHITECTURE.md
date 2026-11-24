@@ -899,6 +899,18 @@ finished lately, the newest error) and the last hour of the log; a queued job of
 counted apart, since no worker claims it. `GET /v1/worker/calls` and the Inspector's Model calls page list recent rows.
 All of it is read-only and none of it changes a key, a packet or a setting.
 
+**D92 — The cap on each message the extraction model is shown is a setting (`NMOS_EXTRACT_TARGET_CHARS`; ADR 0090;
+PHASE-62).** Extraction, the reveal check and scene summaries showed the model the first 6,000 normalized characters of
+each message (K13); on the owner's production about half of the text of long replies lay past it. The cap is now the
+setting's value (default 6,000, up to 36,000), the `target_chars` and `message_chars` their generations' specs already
+held: at the default every key, prompt and row is unchanged, and another value is another extract, reveal and
+summarize generation. A job reads at its generation's cap (`extraction.target_cap`), so the evidence check looks in
+what the model was shown; a row records its cap only when it is not 6,000. A change of the cap alone is classified
+`reads` and queues what a carry-on queues (D20, ADR 0078): what was read keeps serving, what comes due is read at the
+new cap. "Read the cut turns again" queues, per chat and on request, one extraction for each turn an earlier cap cut
+(and the scene summaries cut the same way, when asked), after showing their count and a range of input tokens; the
+earlier readings stay. An image without this must not meet a database left at another cap: the cap is set back first.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

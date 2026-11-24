@@ -21,7 +21,7 @@ from simchat import SimChat
 from test_generations import LLM, conv_id
 from test_phase57_carry_on import gen_or_none, queued
 from test_phase61_pins import BASE, PINNED
-from test_sidecar_integration import sync
+from test_sidecar_integration import recall, sync
 
 CAP = 24000
 FILLER = "The rain kept falling on the harbor wall. "
@@ -48,6 +48,11 @@ def long_chat(turns: int = 3) -> SimChat:
         chat.user(f"Turn {i} begins.")
         chat.reply(long_text())
     return chat
+
+
+def packet_of(c, chat: SimChat) -> str:
+    """The packet a request about the lantern gets, apart from the trace it recorded."""
+    return recall(c, chat, "Where is Mira's lantern now?", budget=2000)["packet"]["text"]
 
 
 def builders(**overrides) -> dict[str, generations.Generation]:
@@ -245,6 +250,8 @@ def test_the_switch_queues_nothing_and_read_the_cut_turns_again_reads_them_whole
         assert "has-cut" not in c.get(f"/v1/inspector/c/{cid}").json()["html"]
         old_key = active_generation(db, "extract").key
         rows = db.execute("SELECT count(*) AS n FROM extraction").fetchone()["n"]
+        packet = packet_of(c, chat)
+        assert "lantern" in packet  # not an empty comparison
 
     with make_client(migrated, **LLM, summaries=False, extract_target_chars=CAP) as c:
         assert queued(db) == {}  # the switch: nothing queued, nothing changed
@@ -252,6 +259,7 @@ def test_the_switch_queues_nothing_and_read_the_cut_turns_again_reads_them_whole
         assert gen.key != old_key and gen.spec["target_chars"] == CAP
         assert db.execute("SELECT count(*) AS n FROM extraction").fetchone()["n"] == rows
         assert drain(migrated) == 0
+        assert packet_of(c, chat) == packet  # the same memory until a turn is read at the new cap
         view = c.get(f"/v1/conversations/{cid}/cut-turns").json()
         assert view["cap"] == CAP and view["extract"]["turns"] == 3 and view["extract"]["pending"] == 0
         more = sum(r["coverage"]["target_chars"] - r["coverage"]["target_used"] for r in before)

@@ -3,7 +3,10 @@
 Status: **approved**, 2026-11-24 (owner, in the session that measured it: "나머지는 제안대로, 그대로 실행해줘", after asking
 about Q4 and Q5 and seeing both proposals changed). Read as: Q0 (a), Q1 (a), Q2 (a), Q3 (a) as first proposed; Q4 (b)
 and Q5 (a) as changed that day. Steps 2–4 are built with no paid call; step 5 (the test install, then production) waits
-for the owner's go, as Q0 (a) says. A correction found by measurement (K13), not a roadmap stage. The idea of reading
+for the owner's go, as Q0 (a) says. **Steps 2–4 done 2026-11-24** (`docs/perf/phase62-check.md`: on a copy of
+production the change to 24,000 and back queued nothing and changed no row, what memory serves stayed identical for
+all 61 chats, 424 turns would be read again, and the prompts grow by 8,759 characters per cut turn against the 8,900
+estimated). A correction found by measurement (K13), not a roadmap stage. The idea of reading
 a long reply further came up in the owner's survey of another memory plugin (2026-11-24); nothing of its code or prompt
 text is used, and what is built here is NMOS's own cap, already in the code, made a setting. Linear: AGE-96.
 
@@ -85,7 +88,10 @@ S3. **"Read the cut turns again"** (Q3). A per-chat action beside "extract all h
 generation, only the turns whose serving extraction was cut at a cap lower than the active one and lower than the
 turn's length. The panel first shows the count and the estimated input tokens (`POST /v1/config/preview`'s pattern: a
 rolled-back transaction). A re-read turn is extracted whole again (one call); the reveal check and the dropped-fact
-restore of Phase 22 apply as for any re-extraction. The preview counts separately the scene summaries of the windows
+restore of Phase 22 apply as for any re-extraction (*amended at the build: the reveal check does; the dropped-fact
+comparison does not, since a re-read is another generation's reading and ADR 0044 amendment 3 compares one
+generation's readings only, as after any generation change. The earlier extraction is not discarded and stays in the
+database*). The preview counts separately the scene summaries of the windows
 those turns are in, and the owner chooses whether they are written again with them.
 
 S4. **Said as it is.** K13 is corrected with this measurement (in this spec's pull request). The Inspector's coverage

@@ -22,7 +22,7 @@ from . import scene, timeline, tokens
 from .packet import TURN_POLICIES
 from .readmodel import TURN_TRACES
 from .retrieval import CAST_GOALS, cast_facts
-from .summaries import LAG, WINDOW
+from .summaries import LAG, MESSAGE_CHARS, WINDOW
 
 STYLE = (
     ":root{color-scheme:dark;" + tokens.css_vars() + ";"
@@ -906,7 +906,7 @@ def _coverage_section(cov: dict[str, Any], lang: str) -> str:
 def _cap_note(gen: dict[str, Any], lang: str) -> str:
     """The cap an extract generation reads each message at, when it is not the default (PHASE-62 S4)."""
     cap = (gen.get("spec") or {}).get("target_chars")
-    return f" · {_t(lang, 'cov.cap').format(n=f'{cap:,}')}" if isinstance(cap, int) and cap != 6000 else ""
+    return f" · {_t(lang, 'cov.cap').format(n=f'{cap:,}')}" if isinstance(cap, int) and cap != MESSAGE_CHARS else ""
 
 
 def _cut_note(cov: dict[str, Any], lang: str) -> str:

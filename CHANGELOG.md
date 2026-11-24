@@ -105,6 +105,17 @@ switch.
   "Model calls" page with the last 200, and `GET /v1/worker/calls` returns them. Rows are kept as long as traces
   (`NMOS_TRACE_RETENTION_DAYS`), are not part of a backup, and go with their chat when it is deleted. Writing the log
   never fails or delays a call.
+- **A long reply read to its end** (Phase 62, ADR 0090; `NMOS_EXTRACT_TARGET_CHARS`, default 6,000, up to 36,000).
+  Fact extraction, the reveal check and scene summaries read each message only up to 6,000 normalized characters
+  (K13), and on chats with long replies about half of the text lay past that. The cap is now a setting. At the default
+  nothing changes. Raising it makes new extraction, reveal and summary generations and queues nothing: turns already
+  read keep their facts, and turns read from then on are read up to the new cap, at more input tokens per long turn.
+  The panel's chat page and a chat's Inspector page offer **Read the cut turns again** where an earlier cap cut some:
+  it says how many turns and about how many input tokens, and on the second click reads only those again, one model
+  call each; the scene summaries cut the same way can be written again with them. The Inspector's coverage row names
+  the cap when it is not the default. Set the variable for the sidecar and the worker alike (the compose files pass
+  it to both), and set it back to 6,000 before going back to an older image. The plugin file changes (the new
+  button): import it again.
 - **From the phase's review, before its first use** (Phase 60). A character is marked gone only when the status plainly
   says the character itself is dead, missing or gone for good now: near death, a rumour, someone else's fate, 전사 as
   "warrior", a missing object and a leave not plainly for good no longer count (S3 amended). A regression link's lines
