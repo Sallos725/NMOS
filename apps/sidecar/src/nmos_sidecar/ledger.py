@@ -432,6 +432,8 @@ def delete_conversation(conn: psycopg.Connection, conv_id: UUID) -> dict[str, in
                              " WHERE branched_from_conversation_id = %(c)s"),
             ("jobs", "DELETE FROM job WHERE conversation_id = %(c)s"),
             ("traces", "DELETE FROM retrieval_trace WHERE conversation_id = %(c)s"),
+            # PHASE-61 S6: its model calls (the foreign key cascades too, for an image without this step)
+            ("model_calls", "DELETE FROM model_call WHERE conversation_id = %(c)s"),
             ("assertions", f"DELETE FROM assertion WHERE extraction_id IN ({extractions})"),
             ("assertions", f"DELETE FROM assertion WHERE source_revision_id IN ({revs})"),
             ("extractions", f"DELETE FROM extraction WHERE source_revision_id IN ({revs})"),

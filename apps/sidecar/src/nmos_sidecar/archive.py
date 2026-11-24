@@ -7,8 +7,8 @@ file's row count, size and SHA-256. It is readable without NMOS and does not dep
 
 What goes in (PHASE-16 Q1): always the source ledger, canon, the owner's input, the recorded requests and the
 generations they name, and for the whole install the settings without secrets; by default the model's work
-(extractions and assertions, summaries, canon reads); embeddings only when asked. Never jobs, derived text
-(`revision_text`, `state_observation`), API keys or the auth token.
+(extractions and assertions, summaries, canon reads); embeddings only when asked. Never jobs, the log of model calls
+(`model_call`, PHASE-61 S6), derived text (`revision_text`, `state_observation`), API keys or the auth token.
 
     python -m nmos_sidecar.archive export [--conversation ID ...] [--no-projections] [--embeddings] [-o FILE]
     python -m nmos_sidecar.archive restore [--check] FILE|-
@@ -81,8 +81,9 @@ TABLES: tuple[Table, ...] = (
           "source_revision_id, projection, chunk"),
     Table("retrieval_trace", "ledger", "conversation_id = ANY(%(c)s)", "created_at, id"),
 )
-# Never archived: rebuilt or recomputed from what is (ADR 0050 §2).
-NEVER = ("job", "revision_text", "state_observation", "schema_migrations")
+# Never archived: rebuilt or recomputed from what is (ADR 0050 §2), or operational like the jobs (the log of model
+# calls, ADR 0089). A restore creates them empty in its scratch schema and copies none of them.
+NEVER = ("job", "revision_text", "state_observation", "schema_migrations", "model_call")
 # Settings an archive may hold: the editable ones but the keys (K21), the parser rules and presets, and the status
 # keys pinned per card (PHASE-43 A5).
 SETTINGS = tuple(sorted(set(runtime.EDITABLE) - runtime.SECRET)) + (runtime.PARSERS_KEY, runtime.PRESETS_KEY,
