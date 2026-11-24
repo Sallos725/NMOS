@@ -211,6 +211,26 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "errors.none": ("실패했거나 다시 시도 중인 백그라운드 작업이 없습니다.", "No background job has failed or is retrying."),
     "h.job": ("작업", "Job"), "h.status": ("상태", "Status"), "h.attempts": ("시도", "Attempts"),
     "h.when": ("시각", "When"), "h.error": ("오류", "Error"),
+    # the log of model calls (PHASE-61 S6, ADR 0089)
+    "calls.title": ("모델 호출", "Model calls"),
+    "calls.link": ("모델 호출 기록 (최근 200건)", "Model calls (the last 200)"),
+    "calls.intro": ("워커와 사이드카가 요청 경로 밖에서 모델을 부른 기록입니다. 프롬프트와 답, 키는 남기지 않습니다.",
+                    "Calls the worker and the sidecar made to a model outside the request path. No prompt, reply or "
+                    "key is kept."),
+    "calls.summary": ("최근 {m}분: {total}건, 성공 {ok}, 실패 {failed}", "Last {m} minutes: {total} calls, {ok} succeeded,"
+                      " {failed} failed"),
+    "calls.median": ("중앙값 {ms} ms", "median {ms} ms"),
+    "calls.last_ok": ("마지막 성공 {when}", "last success {when}"),
+    "calls.last_failed": ("마지막 실패 {when}", "last failure {when}"),
+    "calls.none": ("기록된 모델 호출이 없습니다.", "No model call is logged."),
+    "calls.http_other": ("다른 HTTP 오류", "other HTTP errors"),
+    "h.ms": ("시간 (ms)", "Time (ms)"), "h.tokens_io": ("토큰 입력/출력", "Tokens in/out"), "h.model": ("모델", "Model"),
+    "call.extract": ("추출", "extraction"), "call.reveal": ("공개 확인", "reveal check"),
+    "call.summarize": ("요약", "summary"), "call.canon": ("설정 사실", "canon facts"),
+    "call.embed": ("임베딩", "embedding"), "call.note": ("작가 노트", "author's note"),
+    "call.test": ("설정 테스트", "settings test"),
+    "outcome.ok": ("성공", "ok"), "outcome.http": ("HTTP 오류", "HTTP error"), "outcome.timeout": ("시간 초과", "timeout"),
+    "outcome.transport": ("연결 실패", "transport failure"), "outcome.bad_reply": ("읽을 수 없는 답", "unreadable reply"),
     "ids": ("식별자", "Identifiers"),
     # contents: short names of the detail sections
     "toc.state": ("상태", "State"), "toc.coverage": ("처리 현황", "Coverage"), "toc.conflicts": ("충돌", "Conflicts"),
@@ -746,6 +766,8 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
     ver = f"<span class=\"muted\">{_t(lang, 'version')} {_v(version)}</span>" if version else ""
     # the panel's new screens (PHASE-52 D9), in the browser too; the panel opens them from its hub
     views_link = "" if embed else f"<p><a href=\"/views/chats{q_lang(lang)}\">{_t(lang, 'new_views')}</a></p>"
+    # PHASE-61 S6: the log of model calls, a page of its own (the browser's; the panel has its Status card)
+    views_link += "" if embed else f"<p><a href=\"/inspector/calls{q}\">{_t(lang, 'calls.link')}</a></p>"
     body = (f"<div class=\"top\"><h1>{_t(lang, 'title')}</h1>{ver}{refresh}{switch}</div>"
             f"<p class=\"muted\">{_t(lang, 'intro')} {queue}</p>"
             f"{views_link}"
@@ -756,6 +778,61 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
             + _plugin_status(plugin or {}, q, lang, embed) + listing
             + (_errors(errors, lang) if errors is not None else ""))
     return body if embed else page(_t(lang, "title"), body, lang, token)
+
+
+def _call_time(value: Any) -> str:
+    try:
+        return timestamp(datetime.fromisoformat(value)) if isinstance(value, str) else _v(value)
+    except ValueError:
+        return _v(value)
+
+
+def _calls_summary(summary: dict[str, Any], lang: str) -> str:
+    """The summary line of the log of model calls (`calls.summary`): counts, failures by fault, the median time and the
+    last success and failure."""
+    t = lambda k: _t(lang, k)  # noqa: E731
+    parts = [_v(t("calls.summary").format(m=summary.get("minutes"), total=summary.get("total", 0),
+                                          ok=summary.get("ok", 0), failed=summary.get("failed", 0)))]
+    def fault(k: str) -> str:
+        return t(f"outcome.{k}") if f"outcome.{k}" in T else t("calls.http_other") if k == "http_other" else f"HTTP {k}"
+
+    faults = [f"{_v(fault(k))} {_v(n)}" for k, n in (summary.get("by_fault") or {}).items() if n]
+    if faults:
+        parts[0] += " (" + ", ".join(faults) + ")"
+    if summary.get("median_ms") is not None:
+        parts.append(_v(t("calls.median").format(ms=summary["median_ms"])))
+    for key in ("last_ok", "last_failed"):
+        if summary.get(f"{key}_at"):
+            parts.append(_v(t(f"calls.{key}").format(when="\0")).replace("\0", _call_time(summary[f"{key}_at"])))
+    return "<p>" + " · ".join(parts) + "</p>"
+
+
+def _tokens_io(usage: Any) -> str:
+    if not isinstance(usage, dict) or not any(k in usage for k in ("input", "output")):
+        return "<span class=\"muted\">—</span>"
+    return f"{_v(usage.get('input', '—'))} / {_v(usage.get('output', '—'))}"
+
+
+def model_calls(rows: list[dict[str, Any]], summary: dict[str, Any], token: str | None, lang: str = "ko",
+                embed: bool = False) -> str:
+    """The log of model calls (PHASE-61 S6, ADR 0089): the summary of the last hour, then the newest calls with their
+    time, kind, outcome (and HTTP status), time taken, tokens in and out when reported, model and error. Every value
+    is escaped: an error is a provider's text."""
+    t = lambda k: _t(lang, k)  # noqa: E731
+    table_rows = [[_call_time(r.get("at")),
+                   _v(t(f"call.{r['kind']}") if f"call.{r['kind']}" in T else r.get("kind")),
+                   _v(t(f"outcome.{r['outcome']}") if f"outcome.{r['outcome']}" in T else r.get("outcome"))
+                   + (f" <span class=\"mono\">{_v(r['http_status'])}</span>" if r.get("http_status") else ""),
+                   _v(r.get("ms")), _tokens_io(r.get("usage")),
+                   f"<span title=\"{_v(r.get('endpoint'))}\">{_v(r.get('model'))}</span>",
+                   _v(r.get("error") or "")] for r in rows]
+    listing = (table([t(k) for k in ("h.when", "h.kind", "h.outcome", "h.ms", "h.tokens_io", "h.model", "h.error")],
+                     table_rows) if table_rows else f"<p class=\"muted\">{t('calls.none')}</p>")
+    switch = "" if embed else _lang_switch("/inspector/calls", token, lang)
+    back = "" if embed else f"<p><a href=\"/inspector{query(token, lang)}\">{t('title')}</a></p>"
+    body = (f"<div class=\"top\"><h1>{t('calls.title')}</h1>{switch}</div>{back}"
+            f"<p class=\"muted\">{t('calls.intro')}</p>" + _calls_summary(summary, lang) + listing)
+    return body if embed else page(t("calls.title"), body, lang, token)
 
 
 def _plugin_status(plugin: dict[str, Any], q: str, lang: str, embed: bool) -> str:

@@ -2417,6 +2417,19 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with request.app.state.pool.connection() as conn:
             return {"calls": model_calls.recent(conn, limit, conversation_id), "summary": model_calls.summary(conn)}
 
+    def model_calls_html(request: Request, token: str | None, lang: str | None, embed: bool = False) -> str:
+        with request.app.state.pool.connection() as conn:
+            rows, summary = model_calls.recent(conn, 200), model_calls.summary(conn)
+        return inspector.model_calls(rows, summary, token, inspector.lang_of(lang), embed=embed)
+
+    @app.get("/inspector/calls", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def inspector_calls(request: Request, token: str | None = None, lang: str | None = None):
+        return model_calls_html(request, token, lang)
+
+    @app.get("/v1/inspector/calls", dependencies=[Depends(auth)])
+    def inspector_calls_embed(request: Request, lang: str | None = None):
+        return {"html": model_calls_html(request, None, lang, embed=True)}
+
     # The Docker-free bundles' tray and menu bar open this (PHASE-23 Q8): the Inspector's first page, which holds
     # the version, the plugin build, the generations in use, the background jobs and their recent errors.
     @app.get("/dashboard", dependencies=[Depends(auth)])
