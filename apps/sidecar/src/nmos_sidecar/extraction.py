@@ -1775,7 +1775,8 @@ def worker_status(conn: psycopg.Connection) -> dict[str, Any]:
     if newest:
         row = newest[0]
         last_error = {"kind": row["kind"], "status": row["status"],
-                      "at": row["updated_at"].astimezone(timezone.utc).isoformat(),
+                      # whole seconds: a browser's date parser need not read microseconds
+                      "at": row["updated_at"].astimezone(timezone.utc).isoformat(timespec="seconds"),
                       "text": _SPACE.sub(" ", row["error"]).strip()[:200]}
     return {"queued": queued, "queued_total": sum(queued.values()), **total, "recent_minutes": RECENT_MINUTES,
             "dead_hours": DEAD_HOURS, "last_error": last_error}

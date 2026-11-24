@@ -68,6 +68,7 @@ def test_the_last_error_is_the_newest_cut_and_on_one_line(db):
     assert last["kind"] == "canon" and last["status"] == "queued"
     assert last["text"].startswith("HTTP 504: upstream timed out x") and len(last["text"]) == 200
     assert "\n" not in last["text"] and "\x07" not in last["text"] and "  " not in last["text"]
+    assert last["at"].endswith("+00:00") and "." not in last["at"]  # whole seconds, UTC
     at = datetime.fromisoformat(last["at"])
     assert at.utcoffset().total_seconds() == 0 and abs((datetime.now(timezone.utc) - at).total_seconds() - 300) < 60
 
