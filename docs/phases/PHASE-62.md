@@ -21,6 +21,17 @@ Invariants it touches (`AGENTS.md §3`): **every automatic claim has provenance*
 for in the text its extraction was shown, so the check must read the same cap); **derived rows carry their
 generation**; **unknown is a valid result** (a turn still cut stays flagged as cut).
 
+**Amendment 1 (owner, 2026-11-24, at the go for step 5: "둘다 올려줘. 36k로").** Both installs, the test install first,
+and the value is **36,000**, not the 24,000 proposed in Q1 (a): every reply measured so far is read whole (the longest
+is 33,417 normalized characters). The chunks embedded per message follow it (Q5 (a)): **52** (36,400 characters), not
+35. What changes against the figures below: nothing is left unread (1.3 % at 24,000); a turn reads about 5,800 more
+characters instead of 5,700; the largest confirmation prompt can reach three messages of 36,000; the largest
+scene-summary window is the whole window, about 198,000 characters. The image is built from `4037cd8`
+(`exp-phase62-4037cd8`); the switch was rehearsed with the deploy and rollback scripts on a fresh copy of production
+at 36,000 and 52: the image alone changed nothing, the settings made new extract, reveal, summarize and embed
+generations and queued 1,382 embedding jobs and nothing else, and the rollback (settings first, then the image) left
+the copy as it was.
+
 ## Why
 
 Extraction shows the model the first 6,000 normalized characters of each message of the TARGET turn
