@@ -17,6 +17,23 @@ in a real browser, where a select fires `input` before `change` and the settings
 dropdown back from the unchanged text first; the tests had sent `change` alone. The dropdown now writes on `input`
 too, and the tests pick an option as a browser does. Image `exp-phase61-9296889` (plugin build `870d9e00b6f7`; the
 sidecar's code unchanged, so no generation was made and nothing queued; the owner's saved body kept).
+**Amendments 1–2, 2026-11-24 10:35 KST** (the owner, after a save queued about 1,900 jobs against a provider answering
+429 and 504 and the panel showed neither: "add it", then "keep a log on the server"): the Status tab's "Model work"
+card (`GET /v1/worker/status`) and the log of model calls (`model_call`, migration `0039`, ADR 0089, D91; **high
+risk**: a migration, rows deleted with their chat, a write beside every model call that must never fail or hold it).
+Image `exp-phase61-9d2a80d` (plugin build `62c1881a8f8a`; later commits docs only). Checks, all zero-call: the sidecar
+suite 2,864 passed and 2 failed, both the docs-consistency check on a decision range this change had not yet updated
+(fixed, rerun clean); the plugin's 453 tests, typecheck and build; a scoped review whose two code findings (a NUL in a
+provider's error lost the row; the database URL's own `options` were replaced) were fixed with tests. On a fresh copy
+of production: `0039` applied with the same active extractor, no generation made, the job table and the row
+fingerprints unchanged; three rows written and read back through the status summary, the calls route and the
+Inspector page; the image before it ran on the migrated copy with rows present. On production the same, except that
+the sidecar's start retired two queued canon jobs of a generation no longer active (as every start does), which the
+script's job-table comparison stopped on with the worker held; checked and the worker started by hand. The provider's
+own error message is the log's one free text and may quote the request (as a job's `last_error` already holds it).
+**The quiet weeks restart at this deployment (a migration); earliest end still 2026-12-08.** Rollback:
+`rollback61c.sh` in `~/nmos-eval/phase61-backup-20261124-1033-calls/` (the image only; the earlier image ignores the
+table).
 
 ## Phase 60 on production — 2026-11-23
 
@@ -210,7 +227,7 @@ answered the same evening).** One setting, a JSON object added to every request 
 (`llm_extra_body`, empty by default: requests and generation keys byte-identical to today's); in the generation only
 when set, and a change of it handled as a model change (carry on by default, PHASE-57 A3); in the panel a JSON box and
 a reasoning-effort dropdown that writes `reasoning.effort` into it; a switch that sends no `temperature` (Q4). High
-risk (generation keys, rollback across the new spec fields, credentials kept out of the body). **State: built and on production since 2026-11-24 02:41 KST.** [Spec](phases/PHASE-61.md).
+risk (generation keys, rollback across the new spec fields, credentials kept out of the body). **State: built and on production since 2026-11-24 02:41 KST; amendments 1–2 (the "Model work" card and the log of model calls, migration `0039`) since 10:35 KST the same day.** [Spec](phases/PHASE-61.md).
 
 Phase 61's checks, on `dd36134` (all zero-call): the sidecar suite 2,806 passed and 1 failed in the four-shard run, the
 failure a reranker test of Phase 60 that compares the fused order of two requests (code this phase does not touch; its

@@ -4,7 +4,8 @@ Status: **approved**, 2026-11-23 (owner request of 2026-11-23, during the Phase 
 enter a custom JSON body and the reasoning effort; a dropdown for the effort that goes straight into the JSON"; the
 questions answered the same evening: Q4 "fixed at 0, or not sent at all", Q7 "build now and deploy", the rest as
 recommended). An owner request, not a roadmap stage. Built 2026-11-23/24 and on production since 2026-11-24 02:41 KST
-(`exp-phase61-dd36134`): the switch made no generation and queued nothing; C1 and C2 held on a fresh copy.
+(`exp-phase61-dd36134`): the switch made no generation and queued nothing; C1 and C2 held on a fresh copy. Amendments 1–2 (S5, S6)
+built and on production since 2026-11-24 10:35 KST (`exp-phase61-9d2a80d`, migration `0039`).
 
 Parameters marked **(owner)** are the owner's; those marked **(proposal)** are this draft's choice and the owner may
 amend them. Nothing here changes a default: with the new setting empty, every request and every generation key is
