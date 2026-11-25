@@ -382,7 +382,7 @@ def _plan_summaries(c: _Copier) -> None:
 def reanchor_repair(rep: dict[str, Any], prefix: Prefix) -> tuple[dict[str, Any], dict[str, Any]] | None:
     """An origin repair's (target, value) for the branch, or None when it is not inherited (item 4).
 
-    An anchored repair (PHASE-67 part 4, migration 0044) is inherited when every message and revision its anchor names
+    An anchored repair (PHASE-67 part 4, migration 0043) is inherited when every message and revision its anchor names
     is in the prefix (`repairs.reanchor`, by the prefix's map): its target's turn, and the first message of the turn it
     takes effect from (by default the origin's head when it was made: as of the branch point a repair that takes effect
     later was not in force). Its anchor is moved onto the branch's messages in `rep` (the row the caller copies), so the

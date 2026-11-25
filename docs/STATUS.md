@@ -20,8 +20,8 @@ branch holds:
 - **PHASE-67 (Tier 4)**: extraction right after a reply (`extraction.on_output`, default on, plugin background sync with
   snapshot guards and `onUnload` teardown), branch memory inheritance (migration `0042_branch_inherit.sql`,
   `branch_inherit` preview/confirm UI), message-anchored owner repairs and new kinds (`fact_add`, `told_retract`,
-  `fact_hidden`, `attention_dismiss`; migration `0044_repair_anchor.sql` — `0043` intentionally unused as card-binding
-  needed no DDL; ADR 0044 Amendment 5), per-turn persona attribution (audit B4.3, migration `0045_turn_persona.sql`,
+  `fact_hidden`, `attention_dismiss`; migration `0043_repair_anchor.sql`, ADR 0044 Amendment 5), per-turn persona
+  attribution (audit B4.3, migration `0044_turn_persona.sql`,
   `PERSONA_TTL_MS` 5 s), and Wave 5 iPhone Safari / WebKit memory & speed hardening (manifest 12 M-char cap, streaming
   retry digest, LRU card/canon caches, single prompt scan per request, HUD/adapter `dispose()` + panel close cleanup;
   plugin build `789b1c4e237c`, 478 KB) plus the `/v1/conversations/{id}/messages` `disabled = 'allBefore'` SQL fix.
@@ -31,7 +31,7 @@ branch holds:
   queued); public-repo scrub verified (0 synthetic/local-name leaks in code/tests). Not yet met: zero-call replay of
   `packet-v21` beside `packet-v20` (`AGENTS.md §7` item 6), real-host checks (`onUnload`, `output` payload, iPhone
   Safari live check), and live extraction gate (not planned under the no-spend rule). A deploy re-imports the plugin and
-  applies additive nullable migrations `0041`, `0042`, `0044`, `0045` (no backfill). [Spec](phases/PHASE-65.md),
+  applies additive nullable migrations `0041`, `0042`, `0043`, `0044` (no backfill). [Spec](phases/PHASE-65.md),
   ADRs [0092](adr/0092-packet-v21.md)–[0095](adr/0095-resolve-v6.md).
 
 ## Phase 64 on production — 2026-11-25

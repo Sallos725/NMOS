@@ -171,7 +171,7 @@ loss rate).
 - A `secret_keep` or `secret_found_out` repair, made or taken back, queues the chat's stale summaries.
 - `name_split` accepts a derived persona name (ADR 0095 item 4).
 
-## Amendment 5 (2026-11-25, PHASE-67 part 4, audit D7, migration 0044)
+## Amendment 5 (2026-11-25, PHASE-67 part 4, audit D7, migration 0043)
 
 - `owner_repair` gains nullable `anchor` (jsonb) and `anchored_at` (timestamptz), with no backfill. An anchor names
   the target turn's reply (`message`, `revision`, `turn_revisions`) and the apply turn's first and last message ids.

@@ -3,7 +3,7 @@
 A repair made by hand must not quietly disappear: deleting an earlier message (every later turn renumbered) or fixing
 a typo in another turn keeps it applying; an edit of its own turn detaches it as before, and it is listed with the
 reason; a repair made on a continuation the chat abandoned does not fire when a new continuation reaches the same turn
-number. A repair written before migration 0044 keeps applying through the legacy rule and a live read records its
+number. A repair written before migration 0043 keeps applying through the legacy rule and a live read records its
 anchor once. Synthetic names only.
 """
 
@@ -95,7 +95,7 @@ def rows(url: str, cid: str) -> list[dict]:
 
 
 def as_written_before(url: str, cid: str) -> None:
-    """The chat's repairs as a release before migration 0044 wrote them: the same target and value, no anchor."""
+    """The chat's repairs as a release before migration 0043 wrote them: the same target and value, no anchor."""
     with psycopg.connect(url) as conn:
         conn.execute("UPDATE owner_repair SET anchor = NULL, anchored_at = NULL WHERE conversation_id = %s", (cid,))
 
@@ -113,7 +113,7 @@ def test_a_new_repair_is_anchored_to_its_messages(migrated):
     assert found["anchor"]["apply"] == {"messages": [chat.messages[8]["chatId"], chat.messages[9]["chatId"]]}
     assert correct["anchor"]["target"]["message"] == chat.messages[9]["chatId"]
     assert all(r["anchored_at"] == r["created_at"] for r in by_id.values())
-    # the stored target and value are what a release before 0044 stored: an older reader reads them as before
+    # the stored target and value are what a release before 0043 stored: an older reader reads them as before
     assert close["value"] == {"outcome": "achieved", "turn": 6} and close["target"]["turn"] == 2
 
 
@@ -210,7 +210,7 @@ def test_a_reroll_of_the_turn_it_applies_from_keeps_the_repair(migrated):
 
 
 def test_a_legacy_repair_keeps_applying_and_one_read_records_its_anchor(migrated):
-    """Item 3: a database whose repairs were written before migration 0044 (the same rows, no anchor)."""
+    """Item 3: a database whose repairs were written before migration 0043 (the same rows, no anchor)."""
     chat = anchor_chat()
     with make_client(migrated, **LLM, extract_backfill=100) as c:
         cid = setup(c, migrated, chat)
@@ -464,7 +464,7 @@ def test_a_statement_added_on_the_open_turn_survives_its_reply_and_the_next_turn
         assert listed(c, cid)[rid]["detached"] == "edited" and fact(c, chat, "Mina", "has_status") is None
 
 
-# --- export / restore: the anchor round-trips; an archive from before migration 0044 restores ----------------------
+# --- export / restore: the anchor round-trips; an archive from before migration 0043 restores ----------------------
 
 def test_an_anchor_round_trips_through_an_archive_and_an_older_archive_restores(migrated, database_url_factory,
                                                                                 tmp_path):
@@ -488,7 +488,7 @@ def test_an_anchor_round_trips_through_an_archive_and_an_older_archive_restores(
         chat.delete(2)  # the restored anchors name the same messages: a renumbering keeps them
         resync(c, target, chat)
         all_applied(c, chat, cid)
-    # An archive written before migration 0044: its owner_repair rows have no anchor columns at all.
+    # An archive written before migration 0043: its owner_repair rows have no anchor columns at all.
     import io
     import zipfile
     from test_restore import reseal

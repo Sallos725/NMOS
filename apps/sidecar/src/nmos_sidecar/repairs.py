@@ -18,10 +18,10 @@ again opens a new thread, and a later reveal ends a secret the owner kept. A rea
 not apply it, and a read as of an earlier time (ADR 0027 replay) does not see it. Repairs of one turn apply in the order
 they were made.
 
-Since PHASE-67 part 4 (audit D7, migration 0044) a repair is also anchored to the messages it was made on (`anchor`):
+Since PHASE-67 part 4 (audit D7, migration 0043) a repair is also anchored to the messages it was made on (`anchor`):
 a read maps it onto the head's numbering first (`rebase`), so the turn and hash above are the head's own; deleting an
 earlier message or editing another turn keeps it, an edit of its own turn detaches it, and one made on a continuation
-the chat abandoned does not fire on a new one. A repair from before 0044 keeps the turn rule until a live read records
+the chat abandoned does not fire on a new one. A repair from before 0043 keeps the turn rule until a live read records
 its anchor. See "The anchor" below.
 
 Pure: no database here, except `repairs_of`, `members_of`, `anchor_now` and `record_anchors`.
@@ -50,9 +50,9 @@ KINDS = ("thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fa
 # threads and secrets since step 3, facts and names since step 4, locks since Phase 14, restores since Phase 22, a
 # status flag's dismissal since Phase 39 (Q4: no memory read applies it; the Inspector leaves the flag out), a pin since
 # Phase 60 (S8, ADR 0087: stored and listed; the packet's read of it is packet-v20's); since PHASE-67 part 4 (migration
-# 0044) a statement the extraction missed (`fact_add`), a told row taken back (`told_retract`; a claim is retracted as a
+# 0043) a statement the extraction missed (`fact_add`), a told row taken back (`told_retract`; a claim is retracted as a
 # fact is, `fact_retract`), a name added to or taken from a fact's hidden_from (`fact_hidden`) and a held role ending or
-# alias the owner dismissed from "Needs attention" (`attention_dismiss`). A reader before 0044 ignores these kinds.
+# alias the owner dismissed from "Needs attention" (`attention_dismiss`). A reader before 0043 ignores these kinds.
 ENABLED = frozenset(KINDS)
 PROMISE_OUTCOMES = ("kept", "broken")
 # A quote names the same item when it shares this many characters with the stored one: extract-v14's own minimum for
@@ -118,7 +118,7 @@ REPAIR_COLUMNS = ("id", "kind", "target", "value", "note", "created_at", "anchor
 #
 # A read maps each anchored repair onto the head's numbering (`rebase`): target turn and turn hash, and the apply turn,
 # as the head has them now, so every matcher below reads it as a repair made on this head. A repair without an anchor
-# (written before migration 0044) keeps the legacy rule; a live read records its anchor the first time it matches the
+# (written before migration 0043) keeps the legacy rule; a live read records its anchor the first time it matches the
 # head (`legacy_anchors`). A replay as of a time before `anchored_at` reads the legacy target (ADR 0027).
 
 # The kinds whose target names an item of a story turn, and so get a target anchor (a canon or carried target, at
