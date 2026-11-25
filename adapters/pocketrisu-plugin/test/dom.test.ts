@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // DOM code (audit follow-up, 2026-09-27 review): the inspector sanitizer's tree walk and the settings panel.
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StatusInfo } from '../src/core';
 import { createChatSwitch } from '../src/chatoff';
 import { markDetail, placeMarks, safeFragment } from '../src/inspector';
@@ -352,7 +352,11 @@ describe('panel', () => {
   });
 
   describe('trimming on the status card (PHASE-60 S1 "Shown")', () => {
-    const last = { at: Date.now(), ms: 900, packetChars: 10, packet: 'x', outcome: 'injected' as const, deadlineMs: 3000 };
+    // The clock stands still: the "ago" line of two renders compared must not cross a second (it did, now and then).
+    const NOW = Date.now();
+    beforeEach(() => { vi.spyOn(Date, 'now').mockReturnValue(NOW); });
+    afterEach(() => { vi.mocked(Date.now).mockRestore(); });
+    const last = { at: NOW, ms: 900, packetChars: 10, packet: 'x', outcome: 'injected' as const, deadlineMs: 3000 };
     const lastCard = (title: string) => [...document.querySelectorAll<HTMLElement>('#nmos-panel .card')]
       .find((c) => c.querySelector('h2')?.textContent === title)!;
     const lineOf = (card: HTMLElement, text: string) => [...card.querySelectorAll<HTMLElement>('div')]
