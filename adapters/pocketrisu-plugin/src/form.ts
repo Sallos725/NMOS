@@ -20,8 +20,8 @@ export const MAX_RESERVED_TOKENS = 20_000;
 /** The largest budget the panel saves (ADR 0049): recall grows up to it, and a larger one recalls as it does. */
 export const PANEL_MAX_RESERVED_TOKENS = 8000;
 /** Old-dialogue trimming (PHASE-60 S1, ADR 0083): recent turns always sent, and the step the cut moves by.
- *  20 when the plugin arg is unset (0); kept within 4..200. */
-export const DEFAULT_KEEP_RECENT_TURNS = 20;
+ *  16 when the plugin arg is unset (0), a multiple of the sidecar's 8-turn window; kept within 4..200. */
+export const DEFAULT_KEEP_RECENT_TURNS = 16;
 export const MIN_KEEP_RECENT_TURNS = 4;
 export const MAX_KEEP_RECENT_TURNS = 200;
 /** Optional reranker wait (PHASE-60 S5, ADR 0084): 600 ms default, accepted within 50..5000 ms by the sidecar. */
@@ -96,7 +96,11 @@ export interface FormValues {
   tune: { threshold: string; minSim: string; embedWait: string; topK: string; facts: string; backfill: string;
     summaries: boolean; canonFacts: boolean;
     /** Pin a character with @name in a message (PHASE-60 S8, ADR 0087); sent only when the sidecar has the setting. */
-    pinAt: boolean };
+    pinAt: boolean;
+    /** Chunks embedded per message (ADR 0062, `embed_max_chunks`), as typed; sent only when the sidecar reports it. */
+    embedChunks?: string;
+    /** Extract a reply right after it (PHASE-67, `extract_on_output`); sent only when the sidecar reports it. */
+    extractOnOutput?: boolean };
   /** Leaving out old dialogue (PHASE-60 S1): the switch and the recent turns always sent, as typed. */
   trim: { on: boolean; keep: string };
 }
@@ -125,7 +129,21 @@ function num(value: string): number | string {
 }
 
 /** Settings a sidecar reports only from the version that has them; one it did not report is never sent. */
-export interface KnownSettings { pinAt?: boolean; rerank?: boolean }
+export interface KnownSettings { pinAt?: boolean; rerank?: boolean; embedChunks?: boolean; extractOnOutput?: boolean }
+
+/** Chunks embedded per message (ADR 0062): the sidecar's default, the panel's range, and the characters one covers
+ *  (`vectors.CHUNK_CHARS`). A changed cap is a new projection: the chats are embedded again. */
+export const DEFAULT_EMBED_MAX_CHUNKS = 8;
+export const MIN_EMBED_MAX_CHUNKS = 1;
+export const MAX_EMBED_MAX_CHUNKS = 64;
+export const EMBED_CHUNK_CHARS = 700;
+
+/** The characters of a message `chunks` covers, or null when it is not a whole number in the panel's range. */
+export function embedChunkChars(chunks: string): number | null {
+  const n = Number(chunks.trim());
+  return chunks.trim() !== '' && Number.isInteger(n) && n >= MIN_EMBED_MAX_CHUNKS && n <= MAX_EMBED_MAX_CHUNKS
+    ? n * EMBED_CHUNK_CHARS : null;
+}
 
 /** One PUT /v1/config body for every changed server-side section (validated and saved atomically). With `base`, the
  *  extra body and the temperature switch are sent when they differ from it (PHASE-61 S4). */
@@ -157,6 +175,17 @@ export function configBody(dirty: Section[], v: FormValues, known: KnownSettings
     // empty when the sidecar is older than the setting: sending it would be refused as not editable
     if (v.tune.embedWait.trim() !== '') body.embed_timeout_ms = num(v.tune.embedWait);
     if (known.pinAt) body.pin_at_mentions = v.tune.pinAt;  // likewise: an older sidecar has no such setting
+    // likewise, and only when it changed: a changed cap embeds every chat again (ADR 0062)
+    const chunks = v.tune.embedChunks?.trim() ?? '';
+    if (known.embedChunks && chunks !== '' && chunks !== (base?.tune.embedChunks?.trim() ?? '')) {
+      body.embed_max_chunks = num(chunks);
+    }
+    // likewise, and only when it changed: it moves when extraction is paid for (a reroll after the wait pays for one
+    // that is thrown away)
+    const early = v.tune.extractOnOutput;
+    if (known.extractOnOutput && early !== undefined && early !== Boolean(base?.tune.extractOnOutput)) {
+      body.extract_on_output = early;
+    }
   }
   return body;
 }
@@ -187,7 +216,7 @@ export function connArgs(v: FormValues['conn']): Record<string, string | number>
 }
 
 /** Plugin args for leaving out old dialogue (PHASE-60 S1, ADR 0083; stored in PocketRisu, not the sidecar): the switch
- *  as 1 or 0, and the recent turns always sent, a whole number within 4..200 that is 20 when empty or not positive.
+ *  as 1 or 0, and the recent turns always sent, a whole number within 4..200 that is 16 when empty or not positive.
  *  `host.ts` reads every value this returns back as it is. */
 export function trimArgs(v: { on: boolean; keep: string }): { trim_old_turns: 0 | 1; keep_recent_turns: number } {
   const n = Math.floor(Number(v.keep.trim()));

@@ -18,7 +18,8 @@ from typing import Any
 
 from . import tokens
 from .facts import symmetric
-from .inspector import _act, _close, _v, feeling_detail, feeling_dot, happened_mark, happened_text
+from .inspector import (_act, _close, _epistemic_acts, _v, cond_extra, cond_label, feeling_detail, feeling_dot,
+                        happened_mark, happened_text)
 from .summaries import content
 from .threads import KINDS as THREAD_KINDS
 
@@ -146,6 +147,7 @@ T: dict[str, tuple[str, str]] = {
     "carry_forgot": ("이 채팅은 이전 타임라인을 이어받았지만, 이 인물은 그것을 기억하지 않습니다",
                      "This chat carries an earlier timeline, which this person does not remember"),
     "carry_aka": ("다른 이름", "also called"), "carry_has": ("가진 것", "has"), "carry_told": ("말해 줌", "told"),
+    "carry_believes": ("믿음", "believes"),
     "carry_not": ("(아님)", "(not)"),
     "carried": ("이어받음", "carried"),
     "ok": ("작동 중", "Working"),
@@ -180,6 +182,11 @@ T: dict[str, tuple[str, str]] = {
     "s-sofar": ("지금까지", "So far"),
     "s-secrets": ("비밀", "Secrets"),
     "s-changed": ("바뀐 설정", "Changed from the setting"),
+    # extract-v21's beliefs and forgettings (PHASE-66 part 5); a chat without them never shows these sections
+    "s-beliefs": ("믿음", "Beliefs"), "s-forgotten": ("잊은 것", "Forgotten"),
+    "b_held": ("믿는 중", "held"), "b_ended": ("끝남: {what}", "ended: {what}"),
+    "f_all": ("모든 기억", "everything"), "f_since": ("t{n}부터의 기억", "everything since t{n}"),
+    "f_withdrew": ("거둬들인 것 {n}", "{n} withdrawn"),
     "more": ("{n}개 더 보기", "{n} more"),
     "stale": ("한동안 언급 없는 열린 일 {n}개는 여기 넣지 않았어요. 자세히에서 확인하거나 닫을 수 있어요.",
               "{n} open threads not mentioned for a while are left out here; check or close them in details."),
@@ -233,6 +240,10 @@ T: dict[str, tuple[str, str]] = {
     "located_in": ("위치", "location"), "has_status": ("상태", "status"), "relationship": ("관계", "relationship"),
     "role_toward": ("역할", "role"), "feels_toward": ("감정", "feels"), "addresses": ("호칭", "calls"),
     "possesses": ("소지자", "held by"), "destroyed": ("소멸", "destroyed"),
+    # extract-v21's own predicates (PHASE-66 part 5); a chat without them never meets these words
+    "vital_status": ("생사", "vital status"), "lives_in": ("사는 곳", "lives in"),
+    "cover_identity": ("위장 신분", "cover identity"), "disguised_as": ("변장", "disguised as"),
+    "holds_rank": ("직위", "rank"), "contained_in": ("안에 있음", "inside"),
     # the memory map (PHASE-55)
     "map": ("기억 지도", "Memory map"),
     "map_sub": ("출처 · 관계 · 사건", "Sources · ties · events"),
@@ -424,7 +435,7 @@ def hub(data: dict[str, Any], lang: str, map_: bool = False) -> str:
             f'<span class="v-cap">{_v(cap)}</span></div><div class="v-blocks">{"".join(blocks)}</div></div>')
 
 
-NOW = ("located_in", "has_status")
+NOW = ("located_in", "has_status", "vital_status")  # vital_status: extract-v21's alive / dead / missing (PHASE-66)
 
 
 def now_said(facts: list[dict[str, Any]], name: str | list[str]) -> list[str]:
@@ -456,11 +467,48 @@ def _pair_bits(p: dict[str, Any], lang: str) -> list[str]:
     for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
         for f in p[k]:
             value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
+            cond = f" [{label}]" if (label := cond_label(f, lang)) else ""  # PHASE-64; PHASE-66 part 5: any slot
+            cond += "".join(f" ({x})" for x in cond_extra(f, lang))
             h = happened_mark(_own(f), lang)
             m = carried_mark(f, lang)
-            bits.append(_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)} ") + feeling_dot(f, lang)
+            bits.append(_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)}{cond} ") + feeling_dot(f, lang)
                         + _v(f"{value}") + feeling_detail(f, lang) + (f" {h}" if h else "") + (f" {m}" if m else ""))
     return bits
+
+
+def _slotted(f: dict[str, Any], lang: str) -> str:
+    """A relationship's value with its slot (PHASE-66 part 5: an extract-v21 relationship held only in public, in
+    private or in a situation), raw text; the value alone for every earlier row."""
+    value = f.get("value")
+    label = cond_label(f, lang)
+    return f"{value} [{label}]" if label and value else value
+
+
+def belief_lines(rows: list[dict[str, Any]] | None, lang: str) -> list[str]:
+    """What characters believe (PHASE-66 part 5), escaped: the content, then who, held or what ended it, the turn;
+    retract and correct behind a tap, as every repair here."""
+    out = []
+    for b in rows or []:
+        e = b.get("ended_by")
+        state = t(lang, "b_ended", what=" ".join(str(x) for x in (e.get("predicate"), e.get("object"), e.get("value"))
+                                                 if x)) if e else t(lang, "b_held")
+        out.append(line(_v(b.get("value")), _v(" · ".join(str(x) for x in (_named(b, "subject"), state,
+                                                                         f"t{b.get('turn')}") if x)),
+                        _epistemic_acts(b)))
+    return out
+
+
+def forgot_lines(rows: list[dict[str, Any]] | None, lang: str) -> list[str]:
+    """Who forgot what and since when (PHASE-66 part 5), escaped, with how much it withdrew."""
+    out = []
+    for g in rows or []:
+        what = (t(lang, "f_all") if g.get("scope") == "all"
+                else t(lang, "f_since", n=g["since"]) if g.get("scope") == "since" and g.get("since") is not None
+                else str(g.get("value") or ""))
+        meta = " · ".join(str(x) for x in (g.get("who") or g.get("subject"), f"t{g.get('turn')}",
+                                           t(lang, "f_withdrew", n=len(g.get("withdrew") or []))) if x)
+        out.append(line(_v(what), _v(meta), _epistemic_acts(g)))
+    return out
 
 
 def carried_mark(row: dict[str, Any], lang: str) -> str:
@@ -514,6 +562,8 @@ def name_link(cid: str, entities: dict[str, str], name: str | None) -> str:
 
 
 def _named(f: dict[str, Any], side: str) -> str:
+    if side == "object" and f.get("toward_guise"):  # PHASE-66: held toward the guise, named as the guise
+        return str(f.get("object") or "")
     e = f.get(f"{side}_entity") or {}
     return str(e.get("name") or f.get(side) or "")
 
@@ -545,9 +595,9 @@ def carry_href(row: dict[str, Any]) -> str | None:
 
 
 def _is_thread(row: dict[str, Any]) -> bool:
-    if row.get("line") in ("fact", "thread"):
+    if row.get("line") in ("fact", "thread", "belief"):  # a carried belief's own line (PHASE-66) is no thread
         return row["line"] == "thread"
-    if row.get("kind") in ("fact", "thread"):  # the carry line's own mark (`d['carry']['lines']`)
+    if row.get("kind") in ("fact", "thread", "belief"):  # the carry line's own mark (`d['carry']['lines']`)
         return row["kind"] == "thread"
     return "predicate" not in row and ("by" in row or "text" in row)
 
@@ -555,6 +605,10 @@ def _is_thread(row: dict[str, Any]) -> bool:
 def carry_text(row: dict[str, Any], lang: str) -> str:
     """A carried line as plain text (not escaped): "세라 위치 등대", "세라 → 카이토 관계 소꿉친구", or a thread's
     "세라 → 카이토: 등대에서 만나기"."""
+    if row.get("kind") == "belief" or row.get("line") == "belief":
+        who = _named(row, "subject")
+        val = str(row.get("value") or "")
+        return f"{who} {t(lang, 'carry_believes')}: {val}" if who else val
     if _is_thread(row):  # a thread row's by / to / text, or a carry line's subject / object / value
         by = row.get("by") if "by" in row else _named(row, "subject")
         to = row.get("to") if "by" in row else _named(row, "object")
@@ -649,11 +703,11 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     people = []
     for p in d.get("pairs") or []:
         names = sorted(p["names"].values())
-        rel = [f.get("value") for f in p["relationship"]]
+        rel = [_slotted(f, lang) for f in p["relationship"]]
         head = " ↔ ".join(nm(n) for n in names) + (f" · {_v(', '.join(str(r) for r in rel if r))}" if rel else "")
         bits = _pair_bits(p, lang)
         if len(p["relationship"]) > 1 or any(not symmetric(f.get("value")) for f in p["relationship"]):
-            bits = [_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, 'relationship')} {f.get('value')}")
+            bits = [_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, 'relationship')} {_slotted(f, lang)}")
                     + (f" {h}" if (h := happened_mark(_own(f), lang)) else "")
                     + (f" {m}" if (m := carried_mark(f, lang)) else "")
                     for f in p["relationship"]] + bits
@@ -682,6 +736,13 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     counts = {"s-now": len(now), "s-open": len(threads), "s-people": len(people),
               "s-sofar": len(scenes) + (1 if story else 0), "s-secrets": len(secrets), "s-changed": len(changed)}
     keys = ["s-now", "s-open", "s-people", "s-sofar", "s-secrets", "s-changed"]
+    epistemic = ""  # PHASE-66 part 5: only a chat whose view has beliefs or forgettings
+    for key, rows in (("s-beliefs", belief_lines(d.get("beliefs"), lang)),
+                      ("s-forgotten", forgot_lines(d.get("forgotten"), lang))):
+        if rows:
+            counts[key] = len(rows)
+            keys.insert(keys.index("s-changed"), key)
+            epistemic += section(key, lang, more(rows, lang), len(rows))
     link = d.get("carry")
     carried = ""
     if link:  # PHASE-60 S6: only while a link is in force
@@ -697,7 +758,7 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
             + section("s-open", lang, (more(opened, lang) or nothing) + stale, len(threads))
             + section("s-people", lang, more(people, lang) or nothing, len(people))
             + section("s-sofar", lang, sofar or nothing)
-            + section("s-secrets", lang, more(secrets, lang) or nothing, len(secrets))
+            + section("s-secrets", lang, more(secrets, lang) or nothing, len(secrets)) + epistemic
             + section("s-changed", lang, more(changed, lang) or nothing, len(changed)))
     detail = f"/inspector/c/{cid}"
     foot = (f'<div class="v-foot"><a href="{detail}#s-facts">{_v(t(lang, "facts", n=d.get("facts", 0)))}</a>'
@@ -777,7 +838,7 @@ def person(d: dict[str, Any], lang: str) -> str:
     rels = []
     for p in d.get("pairs") or []:
         other = [n for i, n in p["names"].items() if str(i) != str(e["id"])]
-        rel = [str(f.get("value")) for f in p["relationship"] if f.get("value")]
+        rel = [str(_slotted(f, lang)) for f in p["relationship"] if f.get("value")]
         rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), " · ".join(_pair_bits(p, lang))))
     threads = [line(f"{_v(th['text'])}" + (f" → {nm(th['to'])}" if th.get("to") and th.get("by") == e.get("name") else ""),
                     _thread_meta(th, lang),
@@ -789,6 +850,9 @@ def person(d: dict[str, Any], lang: str) -> str:
     body = (section("s-now", lang, now) + section("s-rels", lang, more(rels, lang) or nothing, len(rels))
             + section("s-threads", lang, more(threads, lang) or nothing, len(threads))
             + section("s-knows", lang, more(knows, lang) or nothing, len(knows))
+            + "".join(section(k, lang, more(rows, lang), len(rows)) for k, rows in (  # PHASE-66 part 5
+                ("s-beliefs", belief_lines(d.get("beliefs"), lang)), ("s-forgotten", forgot_lines(d.get("forgotten"), lang)))
+                if rows)
             + _told_section(cid, d.get("told"), ents, lang) + _person_carry(d.get("carry"), e, lang, nothing)
             + section("s-time", lang, time))
     cap = t(lang, "aka", names=", ".join(aka)) if aka else ""
@@ -941,10 +1005,11 @@ def _tie_text(e: dict[str, Any], lang: str) -> str:
     bits = []
     for f in e["facts"] + e["speech"]:
         value = f'"{f.get("value")}"' if f["predicate"] == "addresses" else f.get("value")
+        cond = f" [{label}]" if (label := cond_label(f, lang)) else ""  # PHASE-64; PHASE-66 part 5: any slot
         if f["predicate"] == "relationship" and symmetric(f.get("value")):
-            bits.append(f"{word('relationship', lang)} {value}")
+            bits.append(f"{word('relationship', lang)}{cond} {value}")
         else:
-            bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {word(f['predicate'], lang)} {value}")
+            bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {word(f['predicate'], lang)}{cond} {value}")
     return ", ".join(bits)
 
 

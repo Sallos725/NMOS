@@ -28,7 +28,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from .entities import USER_NAMES, Resolution, norm
-from .predicates import horizon_of
+from .predicates import address_slot, horizon_of
 from .variants import widened
 
 KINDS = {"promised": "promise", "goal": "goal", "question": "question", "threat": "threat", "owes": "debt"}
@@ -83,6 +83,37 @@ def _recipient(a: dict[str, Any], r: Resolution | None) -> str | None:
     return _who(r, a.get("object_type"), a["object"]) if a.get("object") else None
 
 
+DEFAULT_SLOT = ("default",)
+
+
+def _slot(a: Mapping[str, Any]) -> tuple[str, ...]:
+    """extract-v21 (PHASE-66): the condition slot of a promise (or of what ends one), read from its `condition` as
+    `repairs.slot` reads it (scope and `when`, as Phase 64 reads an address's); the default slot for a row without one,
+    so every earlier generation's promises share it. `scope = all` is the default slot too (`_unifies`)."""
+    cond = a.get("condition")
+    if a.get("predicate") == "promised" and isinstance(cond, Mapping):
+        return address_slot({"address_condition": cond})
+    return DEFAULT_SLOT
+
+
+def _unifies(a: Mapping[str, Any]) -> bool:
+    cond = a.get("condition")
+    return a.get("predicate") == "promised" and isinstance(cond, Mapping) and cond.get("scope") == "all"
+
+
+def _within(a: dict[str, Any], pool: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The promises of `pool` a closing row may name by its condition slot: one with a condition (a promise broken
+    in private) only those of its slot, `scope = all` any; one without (a `fulfilled` has no condition) those without
+    one first, so a conditioned promise is not closed by the end of the unconditioned one, and only when there is
+    none, the conditioned ones, as before."""
+    if _unifies(a):
+        return pool
+    slot = _slot(a)
+    if slot != DEFAULT_SLOT:
+        return [t for t in pool if t["_slot"] == slot]
+    return [t for t in pool if t["_slot"] == DEFAULT_SLOT] or pool
+
+
 def _reports_ends(a: dict[str, Any]) -> bool:
     """Whether the generation that extracted `a` reports how its non-promise threads end (extract-v13 and later).
     A row without a compiler version (built in tests) counts as current."""
@@ -111,18 +142,38 @@ def opens(a: dict[str, Any], r: Resolution | None = None) -> bool:
     return speaker is None or speaker == _maker(a, r)
 
 
-def resolves(a: dict[str, Any], r: Resolution | None = None) -> bool:
-    """Whether an assertion may close a thread (Q3): `fulfilled`, a negative `promised`, or (extract-v13) a `resolved`
-    with an outcome, actual, from the narration, or said by the owner or the thread's counterpart."""
+def _ending(a: dict[str, Any]) -> bool:
+    """`fulfilled`, a negative `promised`, or (extract-v13) a `resolved` with an outcome, actual: what may close a
+    thread, whoever says it."""
     if a["predicate"] == "resolved":
         if not a.get("outcome"):
             return False
     elif not (a["predicate"] == "fulfilled" or (a["predicate"] == "promised" and a.get("polarity") == "negative")):
         return False
-    if a.get("modality", "actual") != "actual":
+    return a.get("modality", "actual") == "actual"
+
+
+def resolves(a: dict[str, Any], r: Resolution | None = None) -> bool:
+    """Whether an assertion may close a thread (Q3): `fulfilled`, a negative `promised`, or (extract-v13) a `resolved`
+    with an outcome, actual, from the narration, or said by the owner or the counterpart it names. (A claim that names
+    no counterpart may still close the thread whose counterpart says it: `_closes_as_counterpart`.)"""
+    if not _ending(a):
         return False
     speaker = _speaker(a, r)
     return speaker is None or speaker in (_maker(a, r), _recipient(a, r))
+
+
+def _closes_as_counterpart(a: dict[str, Any], t: dict[str, Any], r: Resolution | None) -> bool:
+    """A claim `resolves` refused may still close the thread it names when its speaker is that thread's counterpart:
+    `fulfilled` and `resolved` take no object, so a creditor forgiving a debt, the one a promise was made to saying it
+    was kept, or the one threatened saying the threat is over named nobody to compare with. A question is closed by
+    whoever answers it. Anyone else's report (gossip) still closes nothing."""
+    speaker = _speaker(a, r)
+    if speaker is None or not _ending(a):
+        return False
+    if t["_recipient"] is not None and speaker == t["_recipient"]:
+        return True
+    return t["kind"] == "question" and a["predicate"] == "resolved" and a.get("outcome") == "answered"
 
 
 def _grams_of(t: dict[str, Any]) -> set[str]:
@@ -141,6 +192,8 @@ def _match(a: dict[str, Any], open_by_maker: dict[str, list[dict[str, Any]]], r:
     pool = [t for t in open_by_maker.get(_maker(a, r), ())
             if t["status"] == "open" and (t["kind"] == "promise") == promise
             and (recipient is None or t["_recipient"] == recipient)]
+    if promise:
+        pool = _within(a, pool)
     if not pool:
         return None
     text = norm(a.get("value"))
@@ -159,12 +212,18 @@ def _restated(a: dict[str, Any], open_by_maker: dict[str, list[dict[str, Any]]],
     one's text; for goals, questions, threats and debts also one as similar as a resolution must be (MATCH_MIN),
     since a turn often states the same aim twice in other words. None when there is none or more than one."""
     text = norm(a.get("value"))
-    if len(text) < RESTATE_MIN_CHARS:
-        return None
     kind = KINDS[a["predicate"]]
     recipient = _recipient(a, r) if kind in ("promise", "debt") else None  # others are one owner's
     pool = [t for t in open_by_maker.get(_maker(a, r), ()) if t["status"] == "open" and t["kind"] == kind
-            and (recipient is None or t["_recipient"] == recipient) and len(t["_norm"]) >= RESTATE_MIN_CHARS]
+            and (recipient is None or t["_recipient"] == recipient)]
+    if kind == "promise" and not _unifies(a):  # a promise said in another slot is another promise (PHASE-66)
+        pool = [t for t in pool if t["_slot"] == _slot(a)]
+    if len(text) < RESTATE_MIN_CHARS:
+        # a short aim ("복수", "탈출") said again word for word is the same one: two equal open threads would make
+        # every resolution of it a tie that closes neither
+        found = [t for t in pool if t["_norm"] == text]
+        return found[0] if len(found) == 1 else None
+    pool = [t for t in pool if len(t["_norm"]) >= RESTATE_MIN_CHARS]
     found = [t for t in pool if text in t["_norm"] or t["_norm"] in text]
     if not found and kind != "promise":
         grams = _grams(text)
@@ -173,8 +232,9 @@ def _restated(a: dict[str, Any], open_by_maker: dict[str, list[dict[str, Any]]],
 
 
 def _ref(a: dict[str, Any]) -> dict[str, Any]:
+    # the closing row's knowledge marks too: a promise broken in secret is not known to everyone it was made before
     return {k: a.get(k) for k in ("id", "position", "turn", "predicate", "subject", "object", "value", "polarity",
-                                  "source", "asserted_by", "evidence", "outcome")}
+                                  "source", "asserted_by", "evidence", "outcome", "knowledge", "known_by", "hidden_from")}
 
 
 Event = tuple[int, int, Callable[[list[dict[str, Any]]], None]]  # (turn, order, what happens to the threads then)
@@ -218,14 +278,20 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
                      "status": "open", "closed_by": None, "restated": [], "horizon": horizon_of(a),
                      # PHASE-60 S7: when the opening assertion says it happens (a promise's appointed day), else None
                      "when_happened": a.get("when_happened"),
-                     "_maker": _maker(a, r), "_recipient": _recipient(a, r), "_norm": norm(a.get("value"))}
+                     # PHASE-66: when an extract-v21 promise holds (`condition`: scope, `when`), and its four-way
+                     # knowledge scope (`scene.private` reads public_except by it), each only when set
+                     **({"condition": a["condition"]} if a.get("condition") else {}),
+                     **({"knowledge_scope": a["knowledge_scope"]} if a.get("knowledge_scope") else {}),
+                     "_slot": _slot(a), "_maker": _maker(a, r), "_recipient": _recipient(a, r), "_norm": norm(a.get("value"))}
                 threads.append(t)
                 open_by_maker.setdefault(t["_maker"], []).append(t)
             used.add(a["id"])
-        elif resolves(a, r):
+        elif (strict := resolves(a, r)) or _ending(a):
             target = _match(a, open_by_maker, r, promise=a["predicate"] != "resolved")
             if target is None and a["predicate"] == "fulfilled":
                 target = _match(a, open_by_maker, r, promise=False)  # a goal "fulfilled": models use either word
+            if not strict and (target is None or not _closes_as_counterpart(a, target, r)):
+                continue  # someone else's report: a claim, as before
             if target is None:
                 unmatched.append(_ref(a))
             elif target["kind"] == "promise":
@@ -237,7 +303,7 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
             used.add(a["id"])
     fire(pending, threads, None)
     for t in threads:
-        for k in ("_maker", "_recipient", "_norm", "_grams"):
+        for k in ("_slot", "_maker", "_recipient", "_norm", "_grams"):
             t.pop(k, None)
     threads.sort(key=lambda t: t["position"], reverse=True)
     unmatched.sort(key=lambda u: u["position"], reverse=True)

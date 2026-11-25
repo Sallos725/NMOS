@@ -44,7 +44,7 @@ def event(pos: int, who: str, value: str, **kw) -> dict:
 
 
 def test_the_policy_sets_hold_packet_v20_only():
-    assert HAPPENED_POLICIES == TOLD_POLICIES == frozenset({"packet-v20"})
+    assert HAPPENED_POLICIES == TOLD_POLICIES == frozenset({"packet-v20", "packet-v21"})
     assert HAPPENED_MARK not in HAPPENED_NOTE  # the Note's sentence never counts as a marked line
     assert TOLD_MARK not in TOLD_NOTE and TOLD_MAX == 2
 

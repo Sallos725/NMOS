@@ -29,7 +29,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from . import (__version__, archive, audit, canon, canonfacts, carry, dropped, endings, extraction, generations, inspector, ledger,
+from . import (__version__, archive, audit, branch, canon, canonfacts, carry, dropped, endings, extraction, generations, inspector, ledger,
                memorymap, normtext, notes, overuse, views,
                plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
                vectors)
@@ -61,12 +61,12 @@ from .models import (
 from .canonical import manifest_hash, manifest_hashes, normalize_text, storable
 from .reconcile import Entry, plan, plan_append
 from .llm import Embedder
-from .packet import DEFAULT_POLICY, POLICIES, SEM_QUERY_POLICIES, clean_text
+from .packet import DEFAULT_POLICY, POLICIES, SEM_QUERY_POLICIES
 from .retrieval import RecallOptions, SEM_QUERY_MAX_CHARS, prefetched, query_prefix, retrieve, sem_query
 from .state import current_state, rebuild_state, reparse_conversation, sync_rules, write_state
 from . import statusshape
 from .parsers import _clean as clean_value, needs_card, parse as parse_rules, watched
-from .state import history as state_history
+from .state import CARD_SQL, card_before_sync, card_of, history as state_history, resolve_card
 
 log = logging.getLogger("nmos.sidecar")
 
@@ -95,9 +95,12 @@ def _compact_observation(body: ReconcileRequest, result, base_hash: str | None, 
              m.generation_id, m.special_comments or None] for m in body.messages[base_len if appended else 0:]]
     columns = ["host_logical_id", "revision_hash", "role", "disabled", "is_comment", "swipe_id", "swipe_count",
                "generation_id", "special_comments"]
+    # PHASE-67: an output sync says so; a request sync's observation stays as it was (compaction keeps the key)
+    trigger = {"trigger": body.trigger} if body.trigger != "request" else {}
     if appended:
-        return {"chat_id": body.chat_id, "columns": columns, "base_manifest_hash": base_hash, "appended": rows}
-    return {"chat_id": body.chat_id, "columns": columns, "entries": rows}
+        return {"chat_id": body.chat_id, "columns": columns, "base_manifest_hash": base_hash, "appended": rows,
+                **trigger}
+    return {"chat_id": body.chat_id, "columns": columns, "entries": rows, **trigger}
 
 
 _TOKEN_QUERY = re.compile(r"([?&]token=)[^&#]*")
@@ -135,6 +138,7 @@ def host_allowed(header: str, allowed: tuple[str, ...]) -> bool:
 def create_app(settings: Settings | None = None, pool: ConnectionPool | None = None,
                embedder: Embedder | None = None) -> FastAPI:
     settings = settings or Settings()
+    normtext.use(settings.normalizer)  # before any generation key is made (PHASE-66 part 3)
 
     # Runtime-editable part (plugin settings UI): effective settings, parser rules, recall options.
     rt: dict[str, Any] = {}
@@ -252,16 +256,19 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     rebuild({})
 
-    def view_of(conn, head: UUID, told: bool = False, carried: bool = False) -> dict[str, Any]:
+    def view_of(conn, head: UUID, told: bool = False, carried: bool = False, open_turn: bool = False) -> dict[str, Any]:
         """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047). `told`: with who told
         whom (`view["told"]`, PHASE-60 S8), for the pages that draw chains. `carried`: with the chat's carry link in
-        force (ADR 0085), only for the read-only lists and screens that show carried memory; previews, repairs, the
-        author's note and every other reader keep the chat's own memory (PHASE-60 S6)."""
+        force (ADR 0085): the read-only lists and screens that show carried memory, and (Tier 1, owner-agreed) the
+        join, split and exclusion previews, repairs and the author's note, so a carried row can be repaired, pinned,
+        left out, joined and noted as the chat's requests read it. Every other reader keeps the chat's own memory
+        (PHASE-60 S6)."""
         link = carried_of(conn, head) if carried else None
         if link is None:
-            return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told)
+            return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told,
+                               include_open_turn=open_turn)
         return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told,
-                           carried=link)
+                           carried=link, include_open_turn=open_turn)
 
     def with_told(out: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
         """A page's data with `told` (PHASE-60 S8) only when there is some: a chat without told rows keeps its data as
@@ -298,7 +305,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             rebuild(runtime.stored(conn))
             normalized = normtext.backfill(conn)
             if normalized:
-                log.info("normalized text written for %d revisions (%s)", normalized, normtext.NORMALIZER_VERSION)
+                log.info("normalized text written for %d revisions (%s)", normalized, normtext.active())
             if pruned := retention.prune_text(conn):
                 log.info("normalized text of older normalizers pruned: %d rows (ADR 0015)", pruned)
             if turned := ledger.refresh_turns(conn, settings.extract_turns):
@@ -379,7 +386,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  response.status_code, (time.perf_counter() - started) * 1000)
         return response
 
-    def enqueue(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids) -> None:
+    def enqueue(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids, trigger: str = "request",
+                inherited: bool = False) -> None:
         cur = rt["settings"]
         if rt["extractor"] or rt["projection"]:
             enqueue_after_apply(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids,
@@ -387,6 +395,36 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                 extractor_key=rt["extractor"].key if rt["extractor"] else None,
                                 embed_key=rt["projection"].key if rt["projection"] else None,
                                 embed_backfill=cur.embed_backfill)
+        if cur.extract_on_output and (rt["extractor"] or rt["projection"]):
+            early(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids, trigger)
+        if inherited and (rt["extractor"] or rt["projection"]):
+            covered(conn, conv_id)
+
+    def covered(conn, conv_id) -> None:
+        """PHASE-67 part 2: a branch that inherited its origin's memory (`inherited`: its marker, read with its lock)
+        queues no job for what a copy holds; any other chat runs nothing here. Fail-open: an error is logged and the
+        jobs stay (they finish without a call)."""
+        try:
+            with conn.transaction():
+                branch.drop_covered(conn, conv_id)
+        except Exception as e:  # noqa: BLE001
+            log.warning("inherited jobs not settled conversation=%s (%s)", conv_id, type(e).__name__)
+
+    def early(conn, conv_id, old_head, old_lifecycle, manifest, lifecycle, ids, trigger) -> None:
+        """PHASE-67: an output sync queues the open turn now; an applied sync that changed the previous open turn
+        withdraws early jobs that no longer stand for theirs (checked without I/O first: an append skips the scan).
+        Fail-open, as the sync must be: an error is logged and the sync goes on (a savepoint)."""
+        try:
+            with conn.transaction():
+                if trigger == "output":
+                    extraction.enqueue_open_turn(conn, conv_id, old_head is None, manifest, lifecycle, ids,
+                                                 settings.extract_turns,
+                                                 extractor_key=rt["extractor"].key if rt["extractor"] else None,
+                                                 embed_key=rt["projection"].key if rt["projection"] else None)
+                if not extraction.open_turn_kept(old_head, old_lifecycle, manifest):
+                    extraction.withdraw_early(conn, conv_id)
+        except Exception as e:  # noqa: BLE001 — the turn is still queued once the user continues (ADR 0008)
+            log.warning("early extraction not scheduled conversation=%s (%s)", conv_id, type(e).__name__)
 
     def summarize_after(conn, conv_id, head, since: int | None) -> None:
         """Queue the windows this sync made due (an append from position `since`), or every window missing a summary
@@ -439,16 +477,17 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         # From the tail's first turn on is enough: lifecycle and turn hashes change only there.
         offset = tail.turn_start - tail.start
         enqueue(conn, conv.id, tail.entries[offset:], lifecycle, entries[offset:], {**lifecycle, **result.lifecycle},
-                revision_ids)
+                revision_ids, body.trigger, conv.inherited)
         summarize_after(conn, conv.id, head, since=length)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=full_hash, changes_summary=result.summary, commit_reason=None)
 
     def do_reconcile(conn, body: ReconcileRequest) -> ReconcileResponse:
         plugins.saw(body.plugin_build)
+        card = card_before_sync(conn, body.host, body.chat_id, body.character_ref, body.character_name)
         conv = ledger.lock_conversation(conn, body.host, body.chat_id, body.character_ref, body.character_name,
                                         body.chat_name, body.persona_name)
-        if conv.card_renamed and needs_card(rt["rules"]):  # rules bound to a card read this chat by its new name
+        if needs_card(rt["rules"]) and card_of(conn, conv.id) != card:  # G7.2: its card changed, not just its name
             reparse_conversation(conn, rt["rules"], conv.id)
         if settings.append_fast_path and conv.head_commit_id is not None:
             fast = append_reconcile(conn, conv, body)
@@ -472,8 +511,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             f"{conv.id}:{result.manifest_hash}:manifest",
         )
         head = ledger.apply_plan(conn, conv, state, result, observation, manifest, settings.extract_turns)
+        inherited = conv.inherited
+        if state.head is None and result.branch:  # PHASE-67 part 2: before the jobs, so none is queued for the prefix
+            inherited = (branch.on_first_sync(conn, conv.id) or {}).get("status") == "done"
         enqueue(conn, conv.id, state.head, state.lifecycle, manifest, {**state.lifecycle, **result.lifecycle},
-                state.revision_ids)
+                state.revision_ids, body.trigger, inherited)
         summarize_after(conn, conv.id, head, since=len(state.head or []) if result.commit_reason is None else None)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,
@@ -553,7 +595,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     (prev.host_logical_id, prev.revision_hash, body.host, body.chat_id),
                 ).fetchone()
             raw = row["content"] if row is not None else None
-        return clean_text(normalize_text(raw)) if raw else ""
+        return normtext.clean(normalize_text(raw)) if raw else ""  # as the retrieve's query is (PHASE-66 part 5)
 
     def prefetch_query(body: BodiesRequest, conn: psycopg.Connection) -> None:
         """The newest user message's embedding is asked for as soon as its text arrives (ADR 0061 item 7): the
@@ -572,7 +614,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                         and b.revision_hash == last.revision_hash), None)
         if content is None:
             return
-        text = clean_text(normalize_text(content))
+        text = normtext.clean(normalize_text(content))  # the active normalizer, as the retrieve cleans its query
         if not text.strip():
             return
         embed_text = text
@@ -590,13 +632,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def bodies(body: BodiesRequest, request: Request):
         with request.app.state.pool.connection() as conn:
             prefetch_query(body, conn)  # before the sync's lock and writes: the embedder gets that time too
-            conv = ledger.lock_conversation(conn, body.host, body.chat_id, None)
+            req_persona = body.then_reconcile.persona_name if body.then_reconcile is not None else None
+            conv = ledger.lock_conversation(conn, body.host, body.chat_id, None, persona_name=req_persona)
             def derive(rid: UUID, content: str, meta: dict[str, Any]) -> None:
                 normtext.write(conn, rid, content)
                 write_state(conn, rt["rules"], conv.id, rid, content, meta)
 
             stored, rejected = ledger.store_bodies(conn, conv.id, [b.model_dump() for b in body.bodies],
-                                                   on_insert=derive)
+                                                   on_insert=derive, persona_name=conv.persona_name)
             result = None
             if body.then_reconcile is not None and not rejected:
                 if body.then_reconcile.chat_id != body.chat_id:
@@ -708,6 +751,49 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with request.app.state.pool.connection() as conn:
             return readmodel.traces(conn, conv_id, min(limit, 200))
 
+    @app.get("/v1/conversations/{conv_id}/messages", dependencies=[Depends(auth)])
+    def conversation_messages(conv_id: UUID, request: Request, limit: int = Query(50, ge=1, le=100)):
+        """Recent head messages of a conversation (newest first, short preview) for the panel's `fact_add` picker."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            if conv["head_commit_id"] is None:
+                return []
+            rows = conn.execute(
+                """
+                SELECT so.host_logical_id, am.turn, am.position,
+                       sr.metadata->>'role' AS role, sr.metadata->>'name' AS name,
+                       left(sr.content, 120) AS preview
+                FROM active_membership am
+                JOIN source_revision sr ON sr.id = am.source_revision_id
+                JOIN source_object so ON so.id = sr.source_object_id
+                WHERE am.commit_id = %s AND am.turn IS NOT NULL AND am.turn >= 0
+                  AND am.position > (
+                      SELECT coalesce(max(am2.position), -1)
+                      FROM active_membership am2
+                      JOIN source_revision sr2 ON sr2.id = am2.source_revision_id
+                      WHERE am2.commit_id = %s AND sr2.metadata->>'disabled' = 'allBefore'
+                  )
+                  AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+                  AND coalesce(sr.metadata->>'isComment', '') <> 'true'
+                ORDER BY am.position DESC
+                LIMIT %s
+                """,
+                (conv["head_commit_id"], conv["head_commit_id"], limit),
+            ).fetchall()
+        return [
+            {
+                "host_logical_id": row["host_logical_id"],
+                "turn": row["turn"],
+                "position": row["position"],
+                "role": row["role"],
+                "name": row["name"],
+                "preview": " ".join((row["preview"] or "").split())[:100],
+            }
+            for row in rows
+        ]
+
     @app.get("/v1/conversations/{conv_id}/facts", dependencies=[Depends(auth)])
     def conversation_facts(conv_id: UUID, request: Request, history: bool = False):
         with request.app.state.pool.connection() as conn:
@@ -808,8 +894,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     def preview_of(conn, conv_id: UUID, head: UUID, action: str, **a: Any) -> dict[str, Any]:
         """What a join, a split or the undo of either would change (PHASE-20 Q1–Q4): the chat's memory now and as it
-        would be, both read as every request reads them, and the difference; nothing is written."""
-        now = view_of(conn, head)
+        would be, both read as every request reads them, and the difference; nothing is written. With a carry link in
+        force both sides read it (ADR 0085), so its rows are never a change of their own."""
+        carrying = carried_of(conn, head)
+        now = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), carried=carrying)
         # now(), as the link the join would insert is stamped (DEFAULT now()): the database's clock, the same moment
         at = conn.execute("SELECT now() AS t").fetchone()["t"]
         exclude: set[str] = set()
@@ -831,13 +919,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                         "note": None, "created_at": at}]}
             exclude = {"preview"}
         elif action == "exclude":  # PHASE-47 S4: what leaving the name out would change, under both scopes
-            return exclusion_preview(conn, conv_id, head, now, at, a["entity_type"], a["name"], a.get("scope") or "cast")
+            return exclusion_preview(conn, conv_id, head, now, at, a["entity_type"], a["name"], a.get("scope") or "cast",
+                                     carrying=carrying)
         elif action == "unexclude":
             rep = in_force(conn, "owner_repair", conv_id, a["row"])
             if rep is None:
                 raise HTTPException(status_code=404, detail="repair not found")
             return exclusion_preview(conn, conv_id, head, now, at, rep["target"]["entity_type"], rep["target"]["name"],
-                                     rep["target"].get("scope") or "cast", undo=rep)
+                                     rep["target"].get("scope") or "cast", undo=rep, carrying=carrying)
         elif action == "unlink":
             link = in_force(conn, "entity_link", conv_id, a["row"])
             if link is None:
@@ -854,7 +943,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             names = [(t["entity_type"], t["name"]), (t["entity_type"], t["other"])]
             what_if = {"drop_repairs": {str(rep["id"])}}
             exclude = {str(rep["id"])}
-        then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if)
+        then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if,
+                           carried=carrying)
         out = preview.diff(now, then, names, exclude)
         if action == "unlink":  # the turns an undo leaves as the join had them extracted (Q7)
             ra = then["resolution"]
@@ -865,7 +955,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             out["reextract"] = {"turns": len(turns), "list": turns}  # none while the names stay one entity anyway
         state = {"head": head, "links": sorted(str(x["id"]) for x in facts_links_of(conn, conv_id)),
                  "repairs": sorted(str(x["id"]) for x in now["repairs"]), "extractor": rt["active_extractor"],
-                 "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names")}
+                 "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names"),
+                 **({"carry": carrying.link} if carrying is not None else {})}
         return {"action": action, **out, "fingerprint": preview.fingerprint(out, state)}
 
     def host_character(conn, conv_id: UUID, view: dict[str, Any], entity_type: str, name: str) -> None:
@@ -878,7 +969,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=422, detail="the chat's own character is always a character")
 
     def exclusion_preview(conn, conv_id: UUID, head: UUID, now: dict[str, Any], at: Any, entity_type: str, name: str,
-                          scope: str, undo: dict[str, Any] | None = None) -> dict[str, Any]:
+                          scope: str, undo: dict[str, Any] | None = None,
+                          carrying: carry.Carried | None = None) -> dict[str, Any]:
         """What leaving an entity out would change (PHASE-47 S4), or taking that back (`undo`): for each scope, the
         relationship pairs and the facts that leave, and the difference for the one asked; nothing is written. The
         panel offers "memory" with its counts beside the default "cast" (Q1 a)."""
@@ -895,7 +987,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             what_if = ({"drop_repairs": {str(undo["id"])}} if undo is not None else {"add_repairs": [{
                 "id": "preview", "kind": "entity_exclude", "note": None, "created_at": at, "value": {},
                 "target": {"entity_type": entity_type, "name": name.strip(), "scope": s}}]})
-            then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if)
+            then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if,
+                               carried=carrying)
             gone = (now if undo is not None else then).get("excluded") or {}
             hidden = sum(x.get("hidden", 0) for i, x in gone.items() if undo is None or str(x["repair"]) == str(undo["id"]))
             scopes[s] = {"pairs": abs(pairs_now - len(inspector.pairs(standing(then), excluded_ids(then)))),
@@ -905,7 +998,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         out = {**chosen, "changes": True, "scope": scope, "scopes": scopes}
         state = {"head": head, "links": sorted(str(x["id"]) for x in facts_links_of(conn, conv_id)),
                  "repairs": sorted(str(x["id"]) for x in now["repairs"]), "extractor": rt["active_extractor"],
-                 "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names"), "scope": scope}
+                 "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names"), "scope": scope,
+                 **({"carry": carrying.link} if carrying is not None else {})}
         return {"action": "unexclude" if undo else "exclude", **out,
                 "fingerprint": preview.fingerprint({**out, "lines": [*out["lines"], scopes]}, state)}
 
@@ -937,7 +1031,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         fingerprint of the preview the owner saw: 409 when memory changed since (PHASE-20 Q4)."""
         with request.app.state.pool.connection() as conn:
             head = head_of(conn, conv_id)
-            now = view_of(conn, head)
+            now = view_of(conn, head, carried=True)  # a carried name may be joined (Tier 1)
             if body.held_alias is not None:  # PHASE-29 Q5: linked from "Needs attention"
                 held_alias_of(conn, conv_id, head, now, body.held_alias, body.entity_type, body.name, body.same_as)
             check_join(now["resolution"], body.entity_type, body.name, body.same_as, body.held_alias is not None)
@@ -949,7 +1043,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     " RETURNING id, entity_type, name, same_as, created_at",
                     (uuid7(), conv_id, body.entity_type, body.name.strip(), body.same_as.strip())).fetchone()
             log.info("entity link conversation=%s link=%s", conv_id, link["id"])
-            entity = view_of(conn, head)["resolution"].entity(body.entity_type, body.name)
+            entity = view_of(conn, head, carried=True)["resolution"].entity(body.entity_type, body.name)
             return {"link": link, "entity": entity}
 
     @app.post("/v1/conversations/{conv_id}/entity-links/{link_id}/remove/preview", dependencies=[Depends(auth)])
@@ -998,7 +1092,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 turns = [t for t in turns if t["turn"] in set(body.turns)]
             with conn.transaction():
                 discarded = extraction.discard_turns(conn, turns)
-                queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id)
+                # the discarded turns (nothing serves them) and nothing else: no turn an earlier generation still serves
+                queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, uncovered=True)
             log.info("reextract joined turns conversation=%s link=%s turns=%d discarded=%d queued=%d", conv_id,
                      link_id, len(turns), discarded, queued)
             return {"turns": [t["turn"] for t in turns], "discarded": discarded, "queued": queued,
@@ -1100,23 +1195,29 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return {"removed": removed}
 
     def repair_rows(conn, conv_id: UUID, live: list[dict[str, Any]],
-                    flags: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+                    flags: list[dict[str, Any]] | None = None,
+                    dismissed: dict[str, str] | None = None) -> list[dict[str, Any]]:
         """Every repair of a chat, newest first, with the item each in force applies to now (ADR 0044); a status
-        flag's dismissal, the flag while the chat still raises it (`flags`, PHASE-39 Q4)."""
-        applied = {str(x["id"]): x["applied"] for x in live}
+        flag's dismissal, the flag while the chat still raises it (`flags`, PHASE-39 Q4); a dismissal of what needs a
+        look, the held row it hides (`dismissed`, PHASE-67 part 4)."""
+        applied = {str(x["id"]): x["applied"] for x in live} | (dismissed or {})
         hidden = {str(x["id"]): x["hidden"] for x in live if "hidden" in x}  # an exclusion's (PHASE-47)
         raised = {f["id"] for f in flags or ()}
-        rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at, batch_id FROM owner_repair"
-                            " WHERE conversation_id = %s ORDER BY created_at DESC, id DESC", (conv_id,)).fetchall()
+        # PHASE-67 part 4: why an anchored repair applies to nothing (its message gone, its turn edited)
+        detached = {str(x["id"]): x["detached"] for x in live if x.get("detached")}
+        rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at, batch_id, anchor, anchored_at"
+                            " FROM owner_repair WHERE conversation_id = %s ORDER BY created_at DESC, id DESC",
+                            (conv_id,)).fetchall()
         return [{**row, "applied": ((row["target"] or {}).get("id") if (row["target"] or {}).get("id") in raised else None)
                  if row["kind"] == "state_dismiss" else applied.get(str(row["id"])),
+                 **({"detached": detached[str(row["id"])]} if str(row["id"]) in detached else {}),
                  **({"hidden": hidden.get(str(row["id"]), 0)} if row["kind"] == "entity_exclude" else {})} for row in rows]
 
     def state_flags(conn, conv: dict[str, Any]) -> list[dict[str, Any]]:
         """A chat's status flags (PHASE-39 Q4), every one, dismissed or not; none without a watched key."""
         if not watched(rt["rules"]) or conv["head_commit_id"] is None:
             return []
-        return statewatch.flags_of(conn, conv["head_commit_id"], rt["rules"], conv.get("host_character_name"))
+        return statewatch.flags_of(conn, conv["head_commit_id"], rt["rules"], card_of(conn, conv["id"]))
 
     def head_turn(conn, head: UUID) -> int | None:
         return conn.execute("SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s", (head,)).fetchone()["t"]
@@ -1166,8 +1267,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            view = view_of(conn, conv["head_commit_id"])
-            return {"repairs": repair_rows(conn, conv_id, view["repairs"])}
+            view = view_of(conn, conv["head_commit_id"], carried=True)  # a repair of a carried row applies (Tier 1)
+            dismissed = attention_held(conn, conv, conv["head_commit_id"], view)[2] if any(
+                x["kind"] == "attention_dismiss" for x in view["repairs"]) else {}
+            return {"repairs": repair_rows(conn, conv_id, view["repairs"], None, dismissed)}
 
     @app.post("/v1/conversations/{conv_id}/repairs/preview", dependencies=[Depends(auth)])
     def preview_repair(conv_id: UUID, body: RepairRequest, request: Request):
@@ -1196,11 +1299,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             head = conv["head_commit_id"]
             if body.lock and body.kind != "fact_correct":
                 raise HTTPException(status_code=422, detail="only a correction is locked with it")
-            view = repair_view(conn, conv, head, {body.kind})
+            view = repair_view(conn, conv, head, {body.kind}, [body.item] if body.kind == "fact_add" else [])
             if body.kind == "entity_exclude":
                 host_character(conn, conv_id, view, body.entity_type, body.item)
             if (body.kind == "fact_correct" and not body.lock
-                    and not any(str(f["id"]) == body.item for f in view["facts"])):
+                    and not any(str(f["id"]) == body.item for f in [*view["facts"], *(view.get("beliefs") or ()), *(view.get("forgotten") or ())])):
                 # a canon statement the story replaced: corrected alone it would be replaced at once (PHASE-57 B2)
                 raise HTTPException(status_code=422, detail="a statement the story replaced is corrected with its lock")
             target, value = plan_repair(conn, head, view, body)
@@ -1211,9 +1314,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 if body.kind == "entity_exclude":
                     expect_same(conn, conv_id, body.expect, "exclude", entity_type=body.entity_type, name=body.item,
                                 scope=body.scope)
-                row = insert_repair(conn, conv_id, body.kind, target, value, body.note)
+                row = insert_repair(conn, conv_id, body.kind, target, value, body.note, head=head)
                 if body.lock:  # the corrected canon is kept against the story (PHASE-57 B2)
-                    later = view_of(conn, head)
+                    later = view_of(conn, head, carried=True)
                     # the owner's version, current or held off by the story's later statement
                     mine = next((a for a in later["assertions"] if a.get("owner") and a.get("repair") == str(row["id"])),
                                 None)
@@ -1225,8 +1328,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     except repairs.RepairError as e:
                         raise HTTPException(status_code=422, detail=str(e)) from e
                     insert_repair(conn, conv_id, "fact_lock", lt, lv, None)
-            applied = target["id"] if body.kind == "state_dismiss" else next(
-                (x["applied"] for x in view_of(conn, head)["repairs"] if x["id"] == row["id"]), None)
+            after = view_of(conn, head, carried=True)
+            applied = target["id"] if body.kind == "state_dismiss" else (
+                attention_held(conn, conv, head, after)[2].get(str(row["id"])) if body.kind == "attention_dismiss"
+                else next((x["applied"] for x in after["repairs"] if x["id"] == row["id"]), None))
+            restale(conn, conv_id, {body.kind})
         log.info("owner repair conversation=%s repair=%s kind=%s applied=%s", conv_id, row["id"], body.kind,
                  applied is not None)
         return {"repair": row, "applied": applied}
@@ -1234,32 +1340,64 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     # A repair that needs its preview first is made one at a time (PHASE-20 Q4, PHASE-47 S4), never in a batch.
     PREVIEWED = frozenset({"name_split", "entity_exclude"})
 
-    def repair_view(conn, conv: dict[str, Any], head: UUID, kinds: set[str]) -> dict[str, Any]:
+    def repair_view(conn, conv: dict[str, Any], head: UUID, kinds: set[str],
+                    messages: list[str] | None = None) -> dict[str, Any]:
         """The chat's memory as a repair of these kinds is planned against: with the dropped facts and held endings a
-        restore names, and the status flags a dismissal names."""
-        view = view_of(conn, head)
+        restore names, and the status flags a dismissal names. With a carry link in force its rows are there to repair
+        (Tier 1); what a re-extraction dropped is still found against the chat's own memory. PHASE-67 part 4: with who
+        told whom for a told row taken back, the turn and hash of each message a statement the owner adds names
+        (`messages`), and what needs a look for a dismissal."""
+        view = view_of(conn, head, told="told_retract" in kinds, carried=True)
+        if "fact_add" in kinds:
+            members = repairs.members_of(conn, head, list(dict.fromkeys(messages or ())), [])
+            view["messages"] = {m: (members.turn_of(m), members.hashes.get(members.turn_of(m)))
+                                for m in messages or () if members.turn_of(m) is not None}
+        if "attention_dismiss" in kinds:
+            held, aliases, _ = attention_held(conn, conv, head, view)
+            view["attention"] = {"role_held": held, "alias_held": aliases}
         if "fact_restore" in kinds:  # a fact a re-extraction dropped, or a held role ending (PHASE-28 Q7)
-            view["dropped"] = (dropped.find(conn, head, rt["active_extractor"], view)
-                               + endings.held(conn, head, rt["active_extractor"], view))
+            own = view if "carried" not in view else view_of(conn, head)
+            view["dropped"] = (dropped.find(conn, head, rt["active_extractor"], own)
+                               + endings.held(conn, head, rt["active_extractor"], own))
         if "state_dismiss" in kinds:  # a status flag not yet dismissed (PHASE-39 Q4)
             off = statewatch.dismissed(repair_rows(conn, conv["id"], []))
             view["state_flags"] = [f for f in state_flags(conn, conv) if f["id"] not in off]
         return view
 
+    # PHASE-67 part 4: a name kept from someone, or taken back, and a statement added may make or end a secret
+    SECRET_REPAIRS = frozenset({"secret_keep", "secret_found_out", "fact_hidden", "fact_add"})
+
+    def restale(conn, conv_id: UUID, kinds: set[str]) -> None:
+        """After a repair that keeps a secret or ends one is made or taken back: the summaries written without it, and
+        the story, queued again with it listed (`summaries.schedule_stale`), as after an extraction that states one,
+        so a held <Story> is written again instead of staying held. Nothing while summaries are off."""
+        if rt["summarizer"] is not None and kinds & SECRET_REPAIRS:
+            try:  # the repair is written already: a failed queueing must not report it as failed
+                with conn.transaction():
+                    summaries.schedule_stale(conn, conv_id, rt["summarizer"].key)
+            except psycopg.Error:
+                log.warning("summaries not queued again after a secret repair conversation=%s", conv_id,
+                            exc_info=True)
+
     def plan_repair(conn, head: UUID, view: dict[str, Any], body: RepairRequest) -> tuple[dict, dict]:
         try:
             return repairs.plan(body.kind, body.item, view, head_turn(conn, head), body.outcome, body.character,
                                 body.turn, body.new_object, body.new_value, body.other, body.entity_type,
-                                version_key, body.scope)
+                                version_key, body.scope, body.new_because,
+                                body.fact.model_dump() if body.fact else None, body.hidden, body.attention)
         except repairs.RepairError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
 
     def insert_repair(conn, conv_id: UUID, kind: str, target: dict, value: dict, note: str | None,
-                      batch: UUID | None = None) -> dict[str, Any]:
+                      batch: UUID | None = None, head: UUID | None = None) -> dict[str, Any]:
+        """One repair, anchored to the messages of the head it is made on (PHASE-67 part 4, `repairs.anchor_now`)."""
+        anchor = repairs.anchor_now(conn, head, kind, target, value) if head is not None else None
         return conn.execute(
-            "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note, batch_id)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id, kind, target, value, note, created_at, batch_id",
-            (uuid7(), conv_id, kind, Jsonb(target), Jsonb(value), (note or "").strip() or None, batch)).fetchone()
+            "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note, batch_id, anchor, anchored_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CASE WHEN %s THEN now() END)"
+            " RETURNING id, kind, target, value, note, created_at, batch_id, anchor",
+            (uuid7(), conv_id, kind, Jsonb(target), Jsonb(value), (note or "").strip() or None, batch,
+             Jsonb(anchor) if anchor else None, anchor is not None)).fetchone()
 
     @app.post("/v1/conversations/{conv_id}/repairs/batch", dependencies=[Depends(auth)])
     def add_repairs(conv_id: UUID, body: BatchRepairRequest, request: Request):
@@ -1273,13 +1411,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
-            view = repair_view(conn, conv, head, {i.kind for i in body.items})
+            view = repair_view(conn, conv, head, {i.kind for i in body.items},
+                               [i.item for i in body.items if i.kind == "fact_add"])
             plan: list[dict[str, Any]] = []
             planned: list[tuple[RepairRequest, dict, dict]] = []
             seen: set[tuple] = set()
             for n, item in enumerate(body.items):
                 entry: dict[str, Any] = {"index": n, "kind": item.kind, "item": item.item}
-                key = (item.kind, item.item, item.outcome, item.character, item.new_object, item.new_value, item.turn)
+                key = (item.kind, item.item, item.outcome, item.character, item.new_object, item.new_value, item.turn,
+                       item.new_because, item.hidden, item.attention, item.fact.model_dump_json() if item.fact else None)
                 if item.kind in PREVIEWED or item.lock:
                     entry["error"] = "this repair is made one at a time, from its preview"
                 elif key in seen:
@@ -1289,7 +1429,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     try:
                         target, value = repairs.plan(item.kind, item.item, view, head_turn(conn, head), item.outcome,
                                                      item.character, item.turn, item.new_object, item.new_value,
-                                                     item.other, item.entity_type, version_key, item.scope)
+                                                     item.other, item.entity_type, version_key, item.scope,
+                                                     item.new_because, item.fact.model_dump() if item.fact else None,
+                                                     item.hidden, item.attention)
                         planned.append((item, target, value))
                     except repairs.RepairError as e:
                         entry["error"] = str(e)
@@ -1323,10 +1465,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             batch = uuid7()
             with conn.transaction():
                 for item, target, value in planned:
-                    insert_repair(conn, conv_id, item.kind, target, value, item.note, batch)
+                    insert_repair(conn, conv_id, item.kind, target, value, item.note, batch, head)
                 if undone:
                     conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s"
                                  " AND id = ANY(%s) AND removed_at IS NULL", (conv_id, undone))
+            restale(conn, conv_id, {item.kind for item, _, _ in planned} | {found[rid]["kind"] for rid in undone})
         log.info("owner repairs conversation=%s batch=%s counts=%s", conv_id, batch, counts)
         return {**out, "batch": str(batch)}
 
@@ -1334,8 +1477,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def remove_repairs(conv_id: UUID, batch_id: UUID, request: Request):
         """The owner takes a batch back (PHASE-57 B1): every repair of it still in force, together."""
         with request.app.state.pool.connection() as conn:
-            n = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s AND batch_id = %s"
-                             " AND removed_at IS NULL", (conv_id, batch_id)).rowcount
+            gone = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s AND batch_id = %s"
+                                " AND removed_at IS NULL RETURNING kind", (conv_id, batch_id)).fetchall()
+            n = len(gone)
+            if n:
+                restale(conn, conv_id, {x["kind"] for x in gone})
         if not n:
             raise HTTPException(status_code=404, detail="no repair of that batch in force")
         log.info("owner repairs removed conversation=%s batch=%s repairs=%d", conv_id, batch_id, n)
@@ -1362,6 +1508,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 expect_same(conn, conv_id, body.expect if body else None, action, row=repair_id)
                 n = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE id = %s AND conversation_id = %s"
                                  " AND removed_at IS NULL", (repair_id, conv_id)).rowcount
+            if n and rep is not None:
+                restale(conn, conv_id, {rep["kind"]})
         if not n:
             raise HTTPException(status_code=404, detail="repair not found")
         log.info("owner repair removed conversation=%s repair=%s", conv_id, repair_id)
@@ -1501,6 +1649,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             log.info("retry failed conversation=%s retried=%s", conv_id, retried)
             return {"retried": retried, "coverage": coverage_view(conn, conv_id)}
 
+    def leak_check(ask: notes.Ask, model: Any) -> notes.LeakCheck | None:
+        """The cross-language secret check of an author's note (Tier 2 B8): only when a model writes a part in English
+        (`language="en"`) with secrets kept out, the one case where a secret can be told in another script than the
+        chat's. By meaning with the configured embedder (local, no model call), else by one call of the note's model."""
+        if model is None or ask.secrets or ask.language != "en":
+            return None
+        embedder = rt["recall"].embedder
+        return notes.embedding_leak_checker(embedder) if embedder is not None else notes.model_leak_checker(model)
+
     @app.post("/v1/conversations/{conv_id}/notes", dependencies=[Depends(auth)])
     def author_notes(conv_id: UUID, body: dict[str, Any], request: Request):
         """Sections for the chat's author's note (PHASE-50), made on request for the owner to paste: nothing is
@@ -1515,7 +1672,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
-            view = view_of(conn, head)
+            # carried facts and threads in the note too (Tier 1); and the open turn's finished early extraction (PHASE-67,
+            # owner decision 2026-11-25: the note and carry read the finale, a request never does)
+            view = view_of(conn, head, carried=True, open_turn=True)
             last = head_turn(conn, head)
             key = rt.get("active_summarizer")
             # the parts that read summaries and call a model
@@ -1523,10 +1682,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             told = summaries.current(conn, conv_id, head, key) if key and calls else None
             setting = "diverged" in ask.sections or ("custom" in ask.sections and ask.custom_setting)
             manifest = canon.manifest(conn, conv_id) if setting else None
+            held = set(canon.held(conn, conv_id)) if "diverged" in ask.sections else None
         # PHASE-61 S6: each call logged as a `note` of this chat, outside the request's connection
         model = (notes.model_for(rt["settings"], log_to=rt["settings"].database_url, conversation_id=conv_id)
                  if ask.model and calls else None)
-        out = notes.make(ask, view, told, last, model, date.today().isoformat(), canon=manifest)
+        out = notes.make(ask, view, told, last, model, date.today().isoformat(), canon=manifest,
+                         semantic_leaks=leak_check(ask, model), held_keys=held or None)
         log.info("author notes conversation=%s sections=%s made=%s", conv_id, ",".join(ask.sections),
                  ",".join(s["made"] for s in out["sections"]))
         return out
@@ -1568,6 +1729,21 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             log.info("rebuild conversation=%s discarded=%d queued=%d canon=%d", conv_id, discarded, queued, read)
             return {"discarded": discarded, "queued": {"extract": queued, "canon": read},
                     "coverage": coverage_view(conn, conv_id)}
+
+    @app.post("/v1/conversations/{conv_id}/branch-inherit", dependencies=[Depends(auth)])
+    def branch_inherit(conv_id: UUID, request: Request, body: dict[str, Any] | None = None):
+        """PHASE-67 part 2, item 5: a branch synced before inheritance existed (or whose first copy failed) takes its
+        origin's memory for the common prefix on request: what the branch has of its own wins, zero model and embedding
+        calls. `{"dry_run": true}` (the default) answers what it would copy and writes nothing."""
+        dry_run = (body or {}).get("dry_run", True)
+        if not isinstance(dry_run, bool):
+            raise HTTPException(status_code=422, detail="dry_run must be a boolean")
+        with request.app.state.pool.connection() as conn:
+            if conn.execute("SELECT 1 FROM conversation WHERE id = %s FOR UPDATE", (conv_id,)).fetchone() is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            result = branch.backfill(conn, conv_id, dry_run=dry_run)
+        log.info("branch inherit conversation=%s dry_run=%s result=%s", conv_id, dry_run, result)
+        return result
 
     @app.post("/v1/conversations/{conv_id}/delete", dependencies=[Depends(auth)])
     def delete_conversation(conv_id: UUID, request: Request):
@@ -1700,6 +1876,20 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with config_lock:
             return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
 
+    def card_target(conn, body: dict[str, Any], card: str) -> str:
+        """The card a write from the panel or Settings lands on (G7.2). With the optional `conversation_id`, the card
+        that chat is read under (its card ref's binding); otherwise the name sent, as `state.resolve_card` reads it (a
+        renamed card's chats are still read under the name it was bound under)."""
+        if body.get("conversation_id") is None:
+            return resolve_card(conn, card)
+        try:
+            found = card_of(conn, UUID(str(body["conversation_id"])))
+        except ValueError:
+            found = None
+        if not found:
+            raise HTTPException(status_code=422, detail="conversation_id: unknown chat, or one without a card yet")
+        return found
+
     @app.put("/v1/parsers/card", dependencies=[Depends(auth)])
     def put_parser_card(body: dict[str, Any], request: Request):
         card = body.get("card")
@@ -1712,6 +1902,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             with request.app.state.pool.connection() as conn:
                 runtime.lock_config(conn)
                 overrides = runtime.stored(conn)
+                card = card_target(conn, body, card)
                 try:
                     spec = runtime.bind_card(runtime.parser_spec(settings, overrides, strict=True), card, body["rules"])
                 except ValueError as exc:
@@ -1728,13 +1919,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     CANDIDATE_REPLIES = 30  # the head's last replies a chat's status windows are looked for in
     _BOUND_ID = re.compile(r"^(?:card-[0-9a-f]{16}:\d+:)+")
 
-    def apply_card_rules(request: Request, card: str, change) -> dict[str, Any]:
+    def apply_card_rules(request: Request, card: str, change, body: dict[str, Any]) -> dict[str, Any]:
         """Rewrite one card's bound rules with `change(rules) -> rules` (template form, ids without their binding prefix),
         as the card Apply does: saved, state rebuilt, published after the commit."""
         with config_lock:
             with request.app.state.pool.connection() as conn:
                 runtime.lock_config(conn)
                 overrides = runtime.stored(conn)
+                card = card_target(conn, body, card)
                 try:
                     spec = runtime.parser_spec(settings, overrides, strict=True)
                     if not isinstance(spec, dict) or not isinstance(spec.get("rules"), list):
@@ -1760,15 +1952,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         """The status windows found by their shape in the chat's last replies, at least twice with the same keys
         (PHASE-43 S1/S2). Read only: nothing is tracked until the owner confirms one (Q1)."""
         with request.app.state.pool.connection() as conn:
-            conv = conn.execute("SELECT head_commit_id, host_character_name FROM conversation WHERE id = %s",
-                                (conversation_id,)).fetchone()
+            conv = conn.execute(f"SELECT head_commit_id, host_character_name, {CARD_SQL} AS card FROM conversation c"
+                                " WHERE id = %s", (conversation_id,)).fetchone()
             if conv is None:
                 raise HTTPException(status_code=404, detail="unknown conversation")
             rows = conn.execute(
                 "SELECT sr.content FROM active_membership am JOIN source_revision sr ON sr.id = am.source_revision_id"
                 " WHERE am.commit_id = %s AND sr.lifecycle = 'accepted' AND sr.metadata->>'role' = 'char'"
                 " ORDER BY am.position DESC LIMIT %s", (conv["head_commit_id"], CANDIDATE_REPLIES)).fetchall()
-        card = conv["host_character_name"]
+        card = conv["card"]  # G7.2: the card its rules and pins are under (its ref's binding), sent back on a write
         groups: dict[frozenset[str], dict[str, Any]] = {}
         for r in reversed(rows):  # oldest first: the last example and values win
             for block in statusshape.blocks(r["content"] or ""):
@@ -1788,7 +1980,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                         "tracked": statusshape.covers(frozenset(read), keys), "rule_id": shape})
         out.sort(key=lambda c: -c["count"])
         pins = dict(runtime.pins_by_card(rt["overrides"])).get(card or "", ())
-        return {"card": card, "candidates": out, "pins": list(pins)}
+        return {"card": card, "card_name": conv["host_character_name"], "candidates": out, "pins": list(pins)}
 
     @app.post("/v1/parsers/card/track", dependencies=[Depends(auth)])
     def track_status(body: dict[str, Any], request: Request):
@@ -1802,7 +1994,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if any(r.get("kind") == "shape" and set(r.get("keys") or []) == set(keys or []) for r in rules):
                 return rules
             return rules + [{"id": "status", "kind": "shape", "role": "char", "keys": keys}]
-        return apply_card_rules(request, card, add)
+        return apply_card_rules(request, card, add, body)
 
     @app.post("/v1/parsers/card/untrack", dependencies=[Depends(auth)])
     def untrack_status(body: dict[str, Any], request: Request):
@@ -1812,7 +2004,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             raise HTTPException(status_code=422, detail="card and rule_id are required")
         short = _BOUND_ID.sub("", rule_id)
         return apply_card_rules(request, card, lambda rules: [
-            r for r in rules if not (r.get("kind") == "shape" and r.get("id") == short)])
+            r for r in rules if not (r.get("kind") == "shape" and r.get("id") == short)], body)
 
     @app.put("/v1/parsers/card/pins", dependencies=[Depends(auth)])
     def put_status_pins(body: dict[str, Any], request: Request):
@@ -1825,6 +2017,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             with request.app.state.pool.connection() as conn:
                 runtime.lock_config(conn)
                 overrides = runtime.stored(conn)
+                card = card_target(conn, body, card)
                 pins = dict(overrides.get(runtime.STATUS_PINS_KEY) or {})
                 if keys:
                     pins[card] = list(dict.fromkeys(k.strip() for k in keys))
@@ -1939,7 +2132,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                           choice=choice)
                         ex = rt["extractor"]
                         if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
-                            queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)
+                            # what nothing serves, a turn an earlier generation serves left to it (PHASE-66 part 5)
+                            queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill,
+                                                                     uncovered=True)
+                        if before["settings"].extract_on_output and not rt["settings"].extract_on_output:
+                            extraction.withdraw_early(conn)  # PHASE-67: off means no early call starts from now on
                         prepared = dict(rt)
                 if set(clean) <= {runtime.PRESETS_KEY}:
                     rt["overrides"] = overrides
@@ -2044,6 +2241,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                         canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
                                         canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
                                         canon_facts=view.get("canon_facts", 0), dropped=lost,
+                                        beliefs=view.get("beliefs"), forgotten=view.get("forgotten"),  # PHASE-66
                                         endings=role_ends, span=inspector.span_of(span),
                                         cast=None if embed else cast_of(view, traces), lazy=lazy,
                                         overuse=overuse.placement(readmodel.ledgers(conn, conv_id)),
@@ -2062,11 +2260,21 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         owner's repairs with the flags'."""
         ex_key = rt["active_extractor"]
         lost = dropped.find(conn, head, ex_key, view)
-        role_ends = {"automatic": endings.automatic(conn, view, head_turn(conn, head)),
-                     "held": endings.held(conn, head, ex_key, view),
-                     "aliases_held": endings.held_aliases(conn, head, ex_key, view, facts_links_of(conn, conv["id"]))}
+        held, aliases, dismissed = attention_held(conn, conv, head, view)
+        role_ends = {"automatic": endings.automatic(conn, view, head_turn(conn, head)), "held": held,
+                     "aliases_held": aliases}
         flags = state_flags(conn, conv)
-        return lost, role_ends, flags, repair_rows(conn, conv["id"], view["repairs"], flags)
+        return lost, role_ends, flags, repair_rows(conn, conv["id"], view["repairs"], flags, dismissed)
+
+    def attention_held(conn, conv: dict[str, Any], head: UUID, view: dict[str, Any]) -> tuple[list, list, dict]:
+        """The held role endings and aliases "Needs attention" lists (PHASE-28 Q7, PHASE-29 Q5), without those the
+        owner dismissed (`attention_dismiss`, PHASE-67 part 4), and {dismissal id: the row it hides}."""
+        ex_key, r = rt["active_extractor"], view.get("resolution")
+        held, hits = repairs.undismissed(endings.held(conn, head, ex_key, view), view["repairs"], "role_held", r)
+        aliases, more = repairs.undismissed(endings.held_aliases(conn, head, ex_key, view,
+                                                                 facts_links_of(conn, conv["id"])),
+                                            view["repairs"], "alias_held", r)
+        return held, aliases, hits | more
 
     def hub_data(conn, conv: dict[str, Any] | None, off: bool, all_off: bool) -> dict[str, Any]:
         """What the panel's hub says (PHASE-52 D1), from what the Inspector's chat page reads."""
@@ -2169,6 +2377,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
              "story": told.get("story"), "scenes": list(reversed(scenes)),
              "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
              "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+        for key in ("beliefs", "forgotten"):  # PHASE-66 part 5: extract-v21 only; absent, the screen is as before
+            if view.get(key):
+                d[key] = view[key]
         if (carried := carry_data(conn, cid, view)) is not None:  # PHASE-60 S6: only a chat with a link in force
             d["carry"] = carried
         return d
@@ -2176,7 +2387,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def map_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """The memory map (PHASE-55), from the read every request makes, and the newest request's scene."""
         cid, head = conv["id"], conv["head_commit_id"]
-        view = inspector.with_participants(view_of(conn, head, told=True))
+        # Tier 2 (C/15, owner-agreed): the map draws what a carry link in force carries, as the memory screen does
+        view = inspector.with_participants(view_of(conn, head, told=True, carried=True))
         trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
                              " ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
         cast = [str(n) for n in ((trace or {}).get("latency_ms") or {}).get("scene_cast") or []]
@@ -2240,6 +2452,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 changed = f["predicate"] in ("relationship", "role_toward") and i > 0 \
                     and _said_differs(history[i - 1], h)
                 text = " → ".join(str(x) for x in (h.get("object"), h.get("value")) if x)
+                if text and f["predicate"] != "addresses" and (label := inspector.cond_label(h)):
+                    text = f"{text} [{label}]"
                 if text and (turn, f["predicate"], text) not in seen:
                     seen.add((turn, f["predicate"], text))
                     mark = (turn, event_major or changed, text, f["predicate"])
@@ -2260,6 +2474,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "knows": [s for s in view["secrets"] if s.get("open") and names & {norm(n) for n in s.get("holders") or []}],
                 "kept": [s for s in view["secrets"] if names & {norm(n) for n in s.get("open") or []}],
                 "marks": marks, "first": 0, "last": last, "entities": character_ids(view)}
+        for key in ("beliefs", "forgotten"):  # PHASE-66 part 5: this person's, extract-v21 only
+            if own := [b for b in view.get(key) or () if str((b.get("subject_entity") or {}).get("id")) == eid]:
+                data[key] = own
         if (carried := carry_data(conn, cid, view, eid)) is not None:  # PHASE-60 S6: only a chat with a link in force
             data["carry"] = carried
         return with_told(data, told_chain(view["told"], eid))  # PHASE-60 S8: the chains this person tells or hears

@@ -17,8 +17,10 @@ from uuid import UUID
 
 import psycopg
 
-from .predicates import REGISTRY, stored_knowledge
-from .repairs import _ekey, _established, restated
+from .entities import norm
+from .facts import _parse_feeling, ontology_marks
+from .predicates import stored_knowledge
+from .repairs import _ekey, _established, cardinality, epistemic, read_predicate, restated, slot, slotted
 from .secrets import secret_text
 
 NOT_FACTS = frozenset({"learned", "also_called"})  # a reveal and a name link are not facts (ADR 0033, 0012)
@@ -39,14 +41,16 @@ ORDER BY am.turn
 ROWS = """
 SELECT id, extraction_id, subject, subject_type, predicate, object, object_type, value, epistemic, confidence, evidence,
        knowledge, known_by, hidden_from, polarity, modality, source, asserted_by, salience, participants::text AS participants,
-       outcome, because, when_happened
+       outcome, because, when_happened, feeling::text AS feeling, address_condition::text AS address_condition,
+       condition::text AS condition, guise, item_kind, knowledge_scope
 FROM assertion WHERE extraction_id = ANY(%s) AND status = 'valid' ORDER BY id
 """
 
 
 def _fact(a: dict[str, Any]) -> bool:
-    """A fact memory keeps: narrated (legacy rows without a source count as narration) and actual (ADR 0013)."""
-    return (a["predicate"] in REGISTRY and a["predicate"] not in NOT_FACTS and (a.get("source") or "narration") == "narration"
+    """A fact memory keeps: narrated (legacy rows without a source count as narration) and actual (ADR 0013); an
+    extract-v21 belief or forgetting too (PHASE-66), which a restore brings back as its own kind."""
+    return ((read_predicate(a) or epistemic(a)) and a["predicate"] not in NOT_FACTS and (a.get("source") or "narration") == "narration"
             and (a.get("modality") or "actual") == "actual")
 
 
@@ -65,19 +69,32 @@ def find(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, 
         row["participants"] = json.loads(row["participants"]) if row["participants"] else None
         if (when := row.pop("when_happened")) is not None:  # extract-v19 only (PHASE-60 S7): other rows read as before
             row["when_happened"] = when
+        if (detail := row.pop("feeling")) is not None:  # extract-v18 only (PHASE-58): a restore keeps how it felt
+            row["feeling"] = _parse_feeling(detail)
+        if (cond := row.pop("address_condition", None)) is not None:  # extract-v20 only (PHASE-64): other rows read as before
+            row["address_condition"] = json.loads(cond)
+        ontology_marks(row)  # extract-v21 only (PHASE-66): other rows read as before
         if row["known_by"] or row["hidden_from"]:
             stored_knowledge(row)
         by.setdefault(row["extraction_id"], []).append(row)
     r = view.get("resolution")
-    held = {(a["predicate"], _ekey(r, a.get("subject_type"), a["subject"]), _ekey(r, a.get("object_type"), a.get("object")))
-            for a in view.get("assertions") or () if _established(a)}
+
+    def hold(a: dict[str, Any]) -> tuple:
+        """What memory must hold for a fact not to be dropped: the same predicate, subject, object (as entities) and
+        polarity, and for a predicate that accumulates the same value: one other event of a character does not hold
+        the event a re-extraction left out. An address, or a conditioned fact, holds only its own condition slot (PHASE-64, PHASE-66)."""
+        value = norm(a.get("value")) if cardinality(a) == "multi" else None
+        base = (a["predicate"], _ekey(r, a.get("subject_type"), a["subject"]), _ekey(r, a.get("object_type"), a.get("object")),
+                a.get("polarity") or "positive", value)
+        return base + (slot(a),) if slotted(a["predicate"]) else base
+
+    held = {hold(a) for a in view.get("assertions") or () if _established(a)}
     out = []
     for p in pairs:
         old = [a for a in by.get(p["old"], []) if _fact(a)]
         again = restated(old, by.get(p["new"], []), r)
         for i, a in enumerate(old):
-            if i in again or (a["predicate"], _ekey(r, a.get("subject_type"), a["subject"]),
-                              _ekey(r, a.get("object_type"), a.get("object"))) in held:
+            if i in again or hold(a) in held:
                 continue
             out.append({**a, "turn": p["turn"], "turn_hash": p["turn_hash"], "text": secret_text(a),
                         "replaced": str(p["old"]), "by": str(p["new"])})

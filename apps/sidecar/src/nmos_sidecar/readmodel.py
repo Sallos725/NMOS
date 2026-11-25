@@ -8,7 +8,7 @@ from uuid import UUID
 import psycopg
 
 from .extraction import TARGET_CHARS
-from .normtext import NORMALIZER_VERSION
+from . import normtext
 
 
 def list_conversations(conn: psycopg.Connection, limit: int = 200, host_chat_ref: str | None = None,
@@ -39,8 +39,10 @@ def conversation(conn: psycopg.Connection, conv_id: UUID) -> dict[str, Any] | No
 def membership(conn: psycopg.Connection, head: UUID, extractor_key: str | None = None,
                projection_key: str | None = None, limit: int = 2000) -> list[dict[str, Any]]:
     """Head members with how much of each was semantically processed (#13): raw and normalized length,
-    normalized chars covered by the active embedding projection and seen by the active extractor (the
-    extraction of the member's turn, ADR 0008, or its own for per-message generations)."""
+    normalized chars covered by the active embedding projection and seen by the extraction serving the member's turn
+    (ADR 0008), chosen as `facts.ACTIVE_ASSERTIONS` chooses it: the active extractor's, else the most recently
+    activated generation's that still matches the turn (ADR 0014: after a model or cap change carried on, an earlier
+    generation serves the turn, which is not unextracted). None without an active extractor."""
     return conn.execute(
         """
         SELECT am.position, am.turn, so.host_logical_id, sr.id AS revision_id, sr.lifecycle, sr.metadata->>'role' AS role,
@@ -51,8 +53,11 @@ def membership(conn: psycopg.Connection, head: UUID, extractor_key: str | None =
                (SELECT least(rt.clean_chars, coalesce((x.coverage->>'target_cap')::int, %(target)s))  -- its own cap
                 FROM active_membership a
                 JOIN extraction x ON x.source_revision_id = a.source_revision_id AND x.window_hash = a.turn_hash
-                 AND x.extractor_key = %(ex)s AND x.discarded_at IS NULL
-                WHERE a.commit_id = am.commit_id AND a.turn = am.turn AND a.turn_hash IS NOT NULL) AS extracted_chars
+                 AND x.discarded_at IS NULL
+                JOIN projection_generation g ON g.key = x.extractor_key
+                WHERE a.commit_id = am.commit_id AND a.turn = am.turn AND a.turn_hash IS NOT NULL AND %(ex)s <> ''
+                ORDER BY x.extractor_key = %(ex)s DESC, g.activated_at DESC, g.key
+                LIMIT 1) AS extracted_chars
         FROM active_membership am
         JOIN source_revision sr ON sr.id = am.source_revision_id
         JOIN source_object so ON so.id = sr.source_object_id
@@ -60,7 +65,7 @@ def membership(conn: psycopg.Connection, head: UUID, extractor_key: str | None =
         WHERE am.commit_id = %(head)s ORDER BY am.position DESC LIMIT %(limit)s
         """,
         {"head": head, "limit": limit, "ex": extractor_key or "", "pj": projection_key or "",
-         "norm": NORMALIZER_VERSION, "target": TARGET_CHARS},
+         "norm": normtext.active(), "target": TARGET_CHARS},
     ).fetchall()
 
 
@@ -112,7 +117,7 @@ def turn_messages(conn: psycopg.Connection, head: UUID, turn: int) -> list[dict[
         JOIN source_revision sr ON sr.id = am.source_revision_id
         LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
         WHERE am.commit_id = %(head)s AND am.turn = %(turn)s ORDER BY am.position
-        """, {"head": head, "turn": turn, "norm": NORMALIZER_VERSION}).fetchall()
+        """, {"head": head, "turn": turn, "norm": normtext.active()}).fetchall()
 
 
 def turn_bounds(conn: psycopg.Connection, head: UUID) -> tuple[int | None, int | None]:
@@ -121,18 +126,25 @@ def turn_bounds(conn: psycopg.Connection, head: UUID) -> tuple[int | None, int |
     return row["lo"], row["hi"]
 
 
-def turn_generations(conn: psycopg.Connection, revision_ids: list[UUID]) -> list[dict[str, Any]]:
-    """Every extractor generation's extraction of these messages: when, and how many assertions it made."""
+def turn_generations(conn: psycopg.Connection, revision_ids: list[UUID],
+                     head: UUID | None = None) -> list[dict[str, Any]]:
+    """Every extractor generation's extraction of these messages: when, and how many assertions it made, and whether
+    one matches the message's turn on `head` (default: its conversation's head). Read against that one commit: a join
+    on every commit that ever held the message counted each assertion once per commit (Tier 1 D5)."""
     return conn.execute(
         """
         SELECT x.extractor_key, max(x.created_at) AS created_at, count(a.id) AS assertions,
                bool_or(x.window_hash = am.turn_hash) AS current_window
         FROM extraction x
+        JOIN source_revision sr ON sr.id = x.source_revision_id
+        JOIN source_object so ON so.id = sr.source_object_id
+        JOIN conversation c ON c.id = so.conversation_id
         JOIN active_membership am ON am.source_revision_id = x.source_revision_id
+         AND am.commit_id = coalesce(%(head)s::uuid, c.head_commit_id)
         LEFT JOIN assertion a ON a.extraction_id = x.id
-        WHERE x.source_revision_id = ANY(%s) AND x.discarded_at IS NULL
+        WHERE x.source_revision_id = ANY(%(ids)s) AND x.discarded_at IS NULL
         GROUP BY x.extractor_key ORDER BY max(x.created_at) DESC
-        """, (revision_ids,)).fetchall()
+        """, {"ids": revision_ids, "head": head}).fetchall()
 
 
 def turn_uses(conn: psycopg.Connection, conv_id: UUID, revisions: set[str], assertions: set[str],

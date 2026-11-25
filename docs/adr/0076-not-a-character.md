@@ -43,3 +43,9 @@ monster's history, so `cast` keeps every fact and is the default.
 - The cost of a read is unchanged within measurement: resolving 100 exclusions and filtering a 1,021-row view takes
   0.19 ms either way (PHASE-47 evidence).
 - Telling the extractor not to extract such a name is a new generation and out of scope.
+
+## Amendment (2026-11-25, PHASE-65 S2, audit D6): the scene cast too
+
+The first consequence no longer holds: `scene.cast` takes `excluded`, and every `retrieval.py` call site passes the
+chat's exclusions under every policy, so an excluded entity never makes a line private for being "in the scene". A
+recorded request whose scene held an excluded entity replays differently.

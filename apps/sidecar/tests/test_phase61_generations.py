@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pytest
 
+from base_rules import base_rules  # noqa: F401 -- autouse: the base's keys, without the revision marker (PHASE-66 part 5)
 from conftest import active_generation, make_client
 from nmos_sidecar import canonfacts, extraction, generations, reveals, summaries
 from nmos_sidecar.config import Settings

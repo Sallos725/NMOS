@@ -13,6 +13,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from base_rules import base_rules  # noqa: F401 -- autouse: the base's keys, without the revision marker (PHASE-66 part 5)
 from conftest import active_generation, make_client
 from nmos_sidecar import canonfacts, extraction, generations, readmodel, reveals, summaries
 from nmos_sidecar.config import Settings
@@ -356,8 +357,9 @@ def test_a_reveal_check_reads_the_target_at_its_own_generations_cap(migrated, db
     seen: list[int] = []
     real = reveals.build_prompt
     monkeypatch.setattr(reveals, "build_prompt", lambda ctx, *a, **k: seen.append(ctx["target_chars"]) or real(ctx, *a, **k))
-    monkeypatch.setattr(reveals, "secret_hints", lambda ctx, rows: [{"id": "S1", "turn": 0, "text": "t", "holders": ["A"],
-                                                                      "kept_from": ["B"], "subject": "A"}])
+    monkeypatch.setattr(reveals, "secret_hints",  # **kw: the check also passes a carry link's rows (review F7)
+                        lambda ctx, rows, **kw: [{"id": "S1", "turn": 0, "text": "t", "holders": ["A"],
+                                                  "kept_from": ["B"], "subject": "A"}])
     chat = long_chat(3)
     with make_client(migrated, **LLM, summaries=False, extract_target_chars=CAP) as c:
         sync(c, chat)

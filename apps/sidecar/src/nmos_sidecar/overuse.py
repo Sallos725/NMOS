@@ -18,7 +18,7 @@ from uuid import UUID
 
 import psycopg
 
-from . import spans
+from . import normtext, spans
 from .reconcile import apply_ops
 
 REST_AFTER = 2  # the default: placed in this many requests in a row, echoed by none of their replies (owner, 2026-10-07)
@@ -53,8 +53,9 @@ def reply_text(conn: psycopg.Connection, head: UUID, upto_position: int | None,
             "SELECT sr.metadata->>'role' AS role, rt.clean_content FROM active_membership am"
             " JOIN source_revision sr ON sr.id = am.source_revision_id"
             " LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id"
-            " WHERE am.commit_id = %s AND am.position = %s AND am.turn IS NOT NULL ORDER BY rt.normalizer DESC LIMIT 1",
-            (head, upto_position + 1)).fetchone()
+            " WHERE am.commit_id = %s AND am.position = %s AND am.turn IS NOT NULL"
+            " ORDER BY rt.normalizer = %s DESC, rt.normalizer DESC LIMIT 1",
+            (head, upto_position + 1, normtext.active())).fetchone()  # the active normalizer's text first
         return (row["clean_content"] or "") if row and row["role"] == "char" else None
     # The membership as it stood then, rebuilt from the commits' and appends' ops recorded before it, in the order
     # `ledger.rebuild_membership` replays them: a reorder records no change, only a `set` (the third review).
@@ -85,8 +86,9 @@ def reply_text(conn: psycopg.Connection, head: UUID, upto_position: int | None,
         " WHERE m.position = %s AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')"
         " AND coalesce(m.metadata->>'isComment', '') <> 'true'"
         " AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')"
-        " ORDER BY rt.normalizer DESC LIMIT 1",
-        ([logical for logical, _ in members], [hashed for _, hashed in members], conv, upto_position + 1),
+        " ORDER BY rt.normalizer = %s DESC, rt.normalizer DESC LIMIT 1",
+        ([logical for logical, _ in members], [hashed for _, hashed in members], conv, upto_position + 1,
+         normtext.active()),
     ).fetchone()
     return (row["clean_content"] or "") if row and row["role"] == "char" else None
 
@@ -100,15 +102,75 @@ def of_ledger(lines: list[dict[str, Any]], reply: str | None, request: tuple[str
 
 
 def recent(conn: psycopg.Connection, conversation: UUID, head: UUID, before: datetime | None = None,
-           n: int = REST_AFTER + 1) -> list[Recent]:
+           n: int = REST_AFTER + 1, *, dedupe_positions: bool = False,
+           exclude_position: int | None = None) -> list[Recent]:
     """The chat's last `n` recorded requests before `before` (all, when None), newest first, each with the reply
-    after it as it stood at `before` (a replay reads no reply written since)."""
-    rows = conn.execute(
-        "SELECT upto_position, query, previous_ai, lines FROM retrieval_trace WHERE conversation_id = %s"
-        " AND lines IS NOT NULL AND (%s::timestamptz IS NULL OR created_at < %s) ORDER BY created_at DESC LIMIT %s",
-        (conversation, before, before, n)).fetchall()
+    after it as it stood at `before` (a replay reads no reply written since).
+
+    `dedupe_positions` (packet-v21; off by default, so packet-v20 reads as it did): rerolls are one request, not
+    several. Consecutive traces at the same `upto_position` collapse into the newest of them, and the `n` are counted
+    after collapsing, so a reroll neither fills the window nor pushes an earlier turn out of it. `exclude_position`
+    (with `dedupe_positions`): the position of the request being answered; traces at it are earlier attempts of this
+    very request and are left out, so attempt 3 of a turn rests exactly what attempt 1 rested."""
+    if not dedupe_positions:
+        rows = conn.execute(
+            "SELECT upto_position, query, previous_ai, lines FROM retrieval_trace WHERE conversation_id = %s"
+            " AND lines IS NOT NULL AND (%s::timestamptz IS NULL OR created_at < %s) ORDER BY created_at DESC LIMIT %s",
+            (conversation, before, before, n)).fetchall()
+    else:
+        rows = _distinct_positions(conn, conversation, before, n, exclude_position)
     return [of_ledger(r["lines"] or [], reply_text(conn, head, r["upto_position"], before),
                       (r["query"] or "", r["previous_ai"] or "")) for r in rows]
+
+
+_PAGE = 32  # traces read per step while collapsing rerolls: the ids first, the ledgers only of those kept
+_NO_RUN = object()
+
+
+def _distinct_positions(conn: psycopg.Connection, conversation: UUID, before: datetime | None, n: int,
+                        exclude_position: int | None) -> list[dict[str, Any]]:
+    """The newest trace of each run of consecutive traces at one `upto_position`, newest first, up to `n`; none at
+    `exclude_position`. Pages through the trace ids (cheap columns), then reads the kept rows' ledgers."""
+    kept: list[Any] = []
+    run: object = _NO_RUN  # the position of the run of traces being read
+    after: tuple[datetime, Any] | None = None  # the last trace read (keyset: a trace written meanwhile shifts nothing)
+    while len(kept) < n:
+        page = conn.execute(
+            "SELECT id, upto_position, created_at FROM retrieval_trace WHERE conversation_id = %s AND lines IS NOT NULL"
+            " AND (%s::timestamptz IS NULL OR created_at < %s)"
+            " AND (%s::timestamptz IS NULL OR (created_at, id) < (%s, %s))"
+            " ORDER BY created_at DESC, id DESC LIMIT %s",
+            (conversation, before, before, after and after[0], after and after[0], after and after[1], _PAGE)).fetchall()
+        for r in page:
+            pos = r["upto_position"]
+            if pos == run:
+                continue  # an older attempt of the run already kept (or left out)
+            run = pos
+            if exclude_position is not None and pos == exclude_position:
+                continue
+            kept.append(r["id"])
+            if len(kept) == n:
+                break
+        if len(page) < _PAGE:
+            break
+        after = (page[-1]["created_at"], page[-1]["id"])
+    if not kept:
+        return []
+    rows = conn.execute("SELECT id, upto_position, query, previous_ai, lines FROM retrieval_trace WHERE id = ANY(%s)",
+                        (kept,)).fetchall()
+    by = {r["id"]: r for r in rows}
+    return [by[i] for i in kept if i in by]
+
+
+def exempt_from_rest(kind: str, predicate: str | None = None, settled: bool = False) -> bool:
+    """Whether a line never rests (packet-v21, for the read side to apply): a thread that has just settled, or a fact
+    of standing between two characters (how one addresses, feels toward, is related to or stands toward the other),
+    which holds for every reply whether or not the reply echoed it. `kind` is the line's kind, kept for the caller's
+    rules; it does not decide alone."""
+    return settled or predicate in REST_EXEMPT_PREDICATES
+
+
+REST_EXEMPT_PREDICATES = frozenset({"addresses", "feels_toward", "relationship", "role_toward"})
 
 
 def tired(history: list[Recent], rest_after: int = REST_AFTER) -> frozenset[tuple[str, str]]:

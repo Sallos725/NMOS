@@ -208,13 +208,21 @@ describe('trimPrompt (Phase 60 S1 / A15)', () => {
     expect(res.prompt).toBe(prompt);
   });
 
-  it('refuses with format when a preset note is inserted between two pre-boundary chat messages', () => {
+  // Tier 1: this used to refuse; a depth-injected system block between two dropped chat messages is now kept and only
+  // the chat messages around it are dropped.
+  it('keeps a preset note inserted between two pre-boundary chat messages and drops the chat around it', () => {
     const { host, prompt } = baseFixture();
     prompt.splice(2, 0, { role: 'system', content: 'Author note inserted mid-history.' });
 
     const res = runTrim(prompt, host, 'u1');
-    expect(res).toEqual({ prompt, dropped: 0, savedTokens: 0, reason: 'format' });
-    expect(res.prompt).toBe(prompt);
+    expect(res.reason).toBeNull();
+    expect(res.dropped).toBe(2);
+    expect(res.prompt.map((m) => m.content)).toEqual([
+      'System preset for the harbor story.',
+      'Author note inserted mid-history.',
+      ...host.slice(2).map((m) => m.data),
+    ]);
+    expect(res.prompt[1]).toBe(prompt[2]);
   });
 
   it('refuses with format when a pre-boundary message is reshaped and older matched messages sit behind it', () => {
@@ -255,7 +263,7 @@ describe('trimPrompt (Phase 60 S1 / A15)', () => {
     const sideFields: Array<[number, string, unknown]> = [
       [1, 'multimodals', [{ type: 'image', base64: 'data:image/png;base64,AAAA' }]],
       [2, 'tool_calls', [{ id: 'call-1', function: { name: 'lookup', arguments: '{}' } }]],
-      [1, 'name', '세라'],
+      // Tier 1: `name` (with `removable` and `cachePoint`) is now host bookkeeping a dropped message may carry.
       [2, 'extra', undefined],
     ];
     for (const [idx, key, value] of sideFields) {

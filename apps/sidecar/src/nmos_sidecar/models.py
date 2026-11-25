@@ -60,6 +60,10 @@ class ReconcileRequest(BaseModel):
     plugin_build: str | None = Field(default=None, max_length=40)
     hash_version: Literal[1] = 1
     messages: list[ManifestMessage] = Field(max_length=MAX_MANIFEST_MESSAGES)
+    # Why the plugin synced (PHASE-67): "request" before a main generation (and every older plugin, which sends none);
+    # "output" for its background sync about 20 s after a reply. With `extract_on_output` on, an output sync schedules
+    # the open turn's extraction early (`extraction.enqueue_open_turn`); off, it is only recorded.
+    trigger: Literal["request", "output"] = "request"
 
 
 class RevisionRef(BaseModel):
@@ -123,8 +127,10 @@ class CanonSyncResponse(BaseModel):
 
 
 class TrimRequest(BaseModel):
-    """Opt-in step-quantized old-turn trim parameters (PHASE-60 S1, ADR 0083 item 5)."""
-    keep_recent_turns: int = Field(default=20, ge=4, le=200)
+    """Opt-in step-quantized old-turn trim parameters (PHASE-60 S1, ADR 0083 item 5). The default keeps 16 recent turns
+    (Tier 2, owner-agreed: a multiple of the scene-summary window, `summaries.WINDOW`, aligned with the plugin); a
+    request may name another."""
+    keep_recent_turns: int = Field(default=16, ge=4, le=200)
     step: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
@@ -216,6 +222,19 @@ class RepliesOnlyRequest(BaseModel):
     on: bool
 
 
+class FactStatement(BaseModel):
+    """A statement the owner adds (`fact_add`, PHASE-67 part 4): a REGISTRY predicate as the extractor states one,
+    narrated and actual, with the knowledge marks the owner gives."""
+    predicate: Text = Field(min_length=1, max_length=40)
+    subject: Text = Field(min_length=1, max_length=120)
+    subject_type: Literal["character", "place", "item", "group", "concept"] = "character"
+    object: Text | None = Field(default=None, max_length=200)
+    object_type: Literal["character", "place", "item", "group", "concept"] | None = None
+    value: Text | None = Field(default=None, max_length=500)
+    known_by: list[Text] = Field(default_factory=list, max_length=20)
+    hidden_from: list[Text] = Field(default_factory=list, max_length=20)
+
+
 class RepairRequest(BaseModel):
     """The owner repairs one item of a conversation's memory (ADR 0044): the id the Inspector shows for a thread, a
     secret or a fact (for a name split, a name of the entity), what to do, and what the kind needs: a close's outcome,
@@ -225,7 +244,8 @@ class RepairRequest(BaseModel):
     leaves a name (`item`) out of the cast, or with `scope` "memory" out of memory too (PHASE-47); `entity_pin` pins a
     character (`item`, a name or an entity id) for every request of the chat (PHASE-60 S8, ADR 0087)."""
     kind: Literal["thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-                  "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude", "entity_pin"]
+                  "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude", "entity_pin",
+                  "fact_add", "told_retract", "fact_hidden", "attention_dismiss"]
     item: Text = Field(min_length=1, max_length=120)
     outcome: Text | None = Field(default=None, max_length=32)
     character: Text | None = Field(default=None, max_length=120)
@@ -239,6 +259,13 @@ class RepairRequest(BaseModel):
     scope: Literal["cast", "memory"] = "cast"  # an exclusion's (PHASE-47 Q1): the cast only, or memory too
     # a correction of a canon statement a story conflict lists (PHASE-57 B2): the corrected canon is kept, locked
     lock: bool = False
+    # PHASE-67 part 4: a correction's stated cause (none is kept from the corrected row unless given here); `fact_add`'s
+    # statement (`item` is the host message id it is anchored to); `fact_hidden`'s side (kept from `character`, or not);
+    # what `attention_dismiss` dismisses (`item` is the held row's id)
+    new_because: Text | None = Field(default=None, max_length=300)
+    fact: FactStatement | None = None
+    hidden: bool | None = None
+    attention: Literal["role_held", "alias_held"] | None = None
 
 
 class BatchRepairRequest(BaseModel):

@@ -19,7 +19,7 @@ const header = [
   '//@arg deadline_ms int Hard request-path deadline in ms (0 = 3000)',
   '//@arg inject_position string before_last_user (default) or end',
   '//@arg trim_old_turns int 1 = leave old dialogue out in steps once memory and summaries cover it (needs summaries on)',
-  '//@arg keep_recent_turns int Recent turns always sent when trimming; the cut moves in steps of this many (0 = 20, 4-200)',
+  '//@arg keep_recent_turns int Recent turns always sent when trimming; the cut moves in steps of this many (0 = 16, 4-200)',
   '//@arg route string auto (default) / direct / server — how to reach the sidecar',
   '//@arg language string Panel language: ko (default) or en',
   '//@arg hud int 1 = progress display on the chat screen (turn it on from the NMOS panel)',

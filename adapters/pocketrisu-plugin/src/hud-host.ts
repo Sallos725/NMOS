@@ -75,10 +75,12 @@ export function createHud(deps: HudDeps) {
   let expiryTimer: unknown = null;
   let pollErrors = 0;
   let lastPoll = -Infinity;
+  let disposed = false;
   let queue: Promise<void> = Promise.resolve();
 
   /** All work runs in order on one chain; nothing here ever rejects to the caller. */
   function run(task: () => Promise<void>): void {
+    if (disposed) return;
     queue = queue.then(task).catch(fail);
   }
 
@@ -90,7 +92,7 @@ export function createHud(deps: HudDeps) {
   }
 
   async function active(): Promise<boolean> {
-    if (!problem && (await deps.enabled())) return true;
+    if (!disposed && !problem && (await deps.enabled())) return true;
     stopPolling();
     await erase();
     return false;
@@ -154,6 +156,7 @@ export function createHud(deps: HudDeps) {
   async function render(): Promise<void> {
     if (expiryTimer !== null) deps.clearTimer(expiryTimer);
     expiryTimer = null;
+    if (disposed) return erase();
     const now = deps.now();
     const v = view(state, now, await deps.lang());
     if (!v) return erase();
@@ -169,7 +172,7 @@ export function createHud(deps: HudDeps) {
       if (v.fraction !== null) await d.fill.setStyle('width', `${Math.round(v.fraction * 100)}%`);
     }
     const next = nextChange(state, now);
-    if (next !== null) expiryTimer = deps.setTimer(() => { expiryTimer = null; run(render); }, next - now);
+    if (next !== null && !disposed) expiryTimer = deps.setTimer(() => { expiryTimer = null; run(render); }, next - now);
   }
 
   /** Remember which chat the work belongs to; another chat drops the progress shown for the last one. */
@@ -183,7 +186,7 @@ export function createHud(deps: HudDeps) {
   }
 
   function startPolling(): void {
-    if (pollTimer !== null || !conversation) return;
+    if (disposed || pollTimer !== null || !conversation) return;
     pollErrors = 0;
     pollTimer = deps.setTimer(() => run(poll), Math.max(0, lastPoll + MIN_POLL_GAP_MS - deps.now()));
   }
@@ -215,7 +218,7 @@ export function createHud(deps: HudDeps) {
       again = !/HTTP 404/.test(message) && ++pollErrors < MAX_POLL_ERRORS;
     }
     await render();
-    if (again) pollTimer = deps.setTimer(() => run(poll), POLL_MS);
+    if (again && !disposed) pollTimer = deps.setTimer(() => run(poll), POLL_MS);
   }
 
   return {
@@ -256,6 +259,18 @@ export function createHud(deps: HudDeps) {
         state = EMPTY;
         await erase();
       });
+    },
+    /** Plugin unload/re-import: stop timers and remove the pill/listener from the host page. Never throws. */
+    dispose(): void {
+      disposed = true;
+      conversation = null;
+      where = null;
+      stopPolling();
+      if (expiryTimer !== null) {
+        try { deps.clearTimer(expiryTimer); } catch { /* ignore */ }
+        expiryTimer = null;
+      }
+      void erase().catch(() => {});
     },
     /** Why the display stopped for this session, if it did. */
     problem: (): string | null => problem,

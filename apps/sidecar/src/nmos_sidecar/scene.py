@@ -8,25 +8,48 @@ Characters compare by entity (ADR 0012), and every name the persona goes by is t
 
 A limited fact is private in this scene when someone in the cast is not among the characters shown to know
 it (`known_by`); with nobody in the cast, nothing is. Public, unknown and unmarked facts are never private.
+
+extract-v21 (PHASE-66): a fact everyone knows but those `hidden_from` names (`knowledge_scope = public_except`) is
+private only when one of them is in the cast; a character the story says is dead or gone (`vital_status`) is in the cast
+only when the story shows them there again, never because someone named them.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+import re
+from collections.abc import Collection, Iterable, Mapping
 from typing import Any
 
-from .entities import USER_NAMES, Resolution, norm
+from .entities import USER_NAMES, Resolution, names_persona, norm
+from .gone import is_gone_vital
 from .variants import widened
 
 CAST_TURNS = 2
 PERSONA = "{{user}}"
+LATIN = re.compile(r"[a-z0-9]+")
+
+
+def _words(text: str) -> str:
+    """A normalized text as its Latin words, space-padded: a whole-word match is a substring of it."""
+    return f" {' '.join(LATIN.findall(text))} "
+
+
+def _said(name: str, said: str, words: str) -> bool:
+    """A normalized name in the normalized message (`words` = `_words(said)`): a Latin name as whole words ("ren" is
+    not in "current"), as `divergence._named_in`; any other as written, since a Korean particle joins its name."""
+    if len(name) < 2:
+        return False
+    if not name.isascii():
+        return name in said
+    w = _words(name)
+    return w != "  " and w in words
 
 
 def is_persona(r: Resolution, name: str) -> bool:
-    """Every name the persona goes by (ADR 0023), and a full name ending with one: extraction writes the
-    persona's family and given name ("아오키 타쿠미") where the host reports the given name only."""
-    n = norm(name)
-    return n in r.persona_names or (" " in n and n.rsplit(" ", 1)[1] in r.persona_names - USER_NAMES)
+    """Every name the persona goes by in `r` (ADR 0023, resolve-v6): what the resolution says (`names_persona`), so a
+    name it reads as ambiguous or as another character's is never the persona here, and a mark-only name is the
+    persona's when the persona goes by it or it is a full name ending with one."""
+    return r.names_persona(name)
 
 
 def key(r: Resolution, name: str) -> str:
@@ -47,10 +70,12 @@ def names(scene: dict[str, str], r: Resolution | None,
 
 def cast(rows: list[dict[str, Any]], r: Resolution | None, query: str = "", previous_ai: str = "",
          now: int | None = None, turns: int = CAST_TURNS,
-         aliases: Mapping[str, frozenset[str]] | None = None, marks: Iterable[str] = ()) -> dict[str, str]:
+         aliases: Mapping[str, frozenset[str]] | None = None, marks: Iterable[str] = (),
+         excluded: Collection[str] = ()) -> dict[str, str]:
     """{entity key: display name} of the characters in the scene. `now` is the current turn (the user's
     message); without it, the last turn any row comes from counts as the last one before it. `marks`: more names in
-    knowledge marks (an open thread's, ADR 0058)."""
+    knowledge marks (an open thread's, ADR 0058). `excluded`: ids of the entities the owner marked not a character
+    (PHASE-47, `memory_view`'s `excluded`), never in the cast, so no fact is private for them."""
     if r is None:
         return {}
     out: dict[str, str] = {}
@@ -80,30 +105,92 @@ def cast(rows: list[dict[str, Any]], r: Resolution | None, query: str = "", prev
             if p.get("type") == "character":
                 add(p["name"])
     said = norm(f"{query} {previous_ai}")
+    words = _words(said)
+    known: dict[str, dict[str, Any]] = {}  # every name a character goes by in this request -> that character
     for e in r.entities():
         if e["type"] != "character" or e.get("persona"):
             continue
-        if any(len(n) >= 2 and n in said for n in widened(e["names"], aliases) - USER_NAMES):
+        names_of = widened(e["names"], aliases) - USER_NAMES
+        for n in names_of:
+            known.setdefault(n, e)
+        if any(_said(n, said, words) for n in names_of):
             out.setdefault(e["id"], e["name"])
     for name in marked:
-        if not is_persona(r, name) and any(len(n) >= 2 and n in said for n in widened([name], aliases)):
-            add(name)
+        if not is_persona(r, name) and any(_said(n, said, words) for n in widened([name], aliases)):
+            e = r.entity("character", name) or known.get(norm(name))
+            if e is not None:  # a mark's given name ("이안") is the character it is a variant of ("백이안")
+                out.setdefault(e["id"], e["name"])
+            else:
+                add(name)
+    if gone := _gone(rows, r, until):
+        out = {k: v for k, v in out.items() if k not in gone}
     add(PERSONA)
+    if excluded:
+        out = {k: v for k, v in out.items() if str(k) not in excluded}
     return out
+
+
+# packet-v21's presence rule (`retrieval.PRESENCE_PREDICATES`, `presence_rows`): what shows a character there
+PRESENCE = frozenset({"located_in", "event", "has_status", "possesses", "destroyed", "vital_status"})
+
+
+def _narrated(row: Mapping[str, Any]) -> bool:
+    return (row.get("source") == "narration" and (row.get("modality") or "actual") == "actual"
+            and row.get("subject_type") == "character" and (row.get("polarity") or "positive") == "positive"
+            and not row.get("canon") and row.get("turn") is not None and bool(row.get("subject")))
+
+
+def _gone(rows: list[dict[str, Any]], r: Resolution, until: int) -> set[str]:
+    """Keys of the characters the story says are dead or gone (extract-v21's `vital_status`, PHASE-66) by the turn
+    before the current one, read as the gone logic reads one (`retrieval.says_gone`, `gone.is_gone_vital`): narrated,
+    actual and positive, of the story (a row carried from the chat this one continues counts; canon does not), the
+    newest per character; not when a later one of theirs says otherwise, nor when a row that shows them present
+    (`retrieval.presence_rows`: never a claim, a dream, a feeling toward them nor a dated flashback) comes after it.
+    Only extract-v21 stores `vital_status`, so no earlier chat has one."""
+    vital: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if row["predicate"] == "vital_status" and _narrated(row) and row["turn"] <= until:
+            vital[key(r, row["subject"])] = row
+    out = set()
+    for k, row in vital.items():
+        if not is_gone_vital(row.get("value")):
+            continue
+        if not any(x["predicate"] in PRESENCE and _narrated(x) and not x.get("carried") and not x.get("when_happened")
+                   and row["turn"] < x["turn"] <= until and key(r, x["subject"]) == k
+                   and not (x["predicate"] == "vital_status" and is_gone_vital(x.get("value"))) for x in rows):
+            out.add(k)
+    return out - {key(r, PERSONA)}
+
+
+def _except(f: dict[str, Any], r: Resolution | None) -> set[str] | None:
+    """extract-v21 (PHASE-66): the keys of those a fact everyone else knows is kept from (`knowledge_scope =
+    public_except`), or None to read it as limited: a fact of another scope, or one whose `hidden_from` names a group,
+    whose members the fact does not give (the doubt keeps it private)."""
+    if f.get("knowledge_scope") != "public_except" or f.get("knowledge") != "limited":
+        return None
+    names = list(f.get("hidden_from") or ())
+    if r is not None and any(r.entity("group", n) is not None for n in names):
+        return None
+    return {key(r, n) for n in names} if r is not None else {norm(n) for n in names}
 
 
 def private(f: dict[str, Any], scene: dict[str, str], r: Resolution | None) -> bool:
     """Whether a fact (or promise) only some of the scene's characters know."""
     if not scene or r is None or f.get("knowledge") != "limited":
         return False
+    if (hidden := _except(f, r)) is not None:
+        return bool(set(scene) & hidden)
     known = {key(r, n) for n in f.get("known_by") or ()}
     return bool(set(scene) - known)
 
 
 def narrator_knows(f: dict[str, Any], narrator: str, r: Resolution | None) -> bool:
-    """First person (ADR 0035): the narrator knows public and unmarked facts and limited ones that list them."""
+    """First person (ADR 0035): the narrator knows public and unmarked facts and limited ones that list them; a
+    public-except one unless it is kept from them."""
     if f.get("knowledge") != "limited":
         return True
+    if (hidden := _except(f, r)) is not None:
+        return (key(r, narrator) if r is not None else norm(narrator)) not in hidden
     if r is None:
         return norm(narrator) in {norm(n) for n in f.get("known_by") or ()}
     return key(r, narrator) in {key(r, n) for n in f.get("known_by") or ()}
@@ -116,7 +203,10 @@ def display(r: Resolution, name: str) -> str:
 
 
 def missing(f: dict[str, Any], scene: dict[str, str], r: Resolution) -> tuple[list[str], list[str]]:
-    """(holders, characters in the scene not shown to know it), display names, for a withheld line."""
+    """(holders, characters in the scene not shown to know it), display names, for a withheld line. A public-except
+    one's are the scene's characters it is not kept from, and those it is."""
+    if (hidden := _except(f, r)) is not None:
+        return ([name for k, name in scene.items() if k not in hidden], [name for k, name in scene.items() if k in hidden])
     known = {key(r, n) for n in f.get("known_by") or ()}
     holders = list(dict.fromkeys(scene.get(key(r, n)) or display(r, n) for n in f.get("known_by") or ()))
     return holders, [name for k, name in scene.items() if k not in known]

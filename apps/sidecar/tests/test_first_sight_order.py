@@ -103,7 +103,7 @@ def test_a_running_first_sight_job_holds_a_live_turn_and_a_dead_one_does_not(mig
         assert priorities(db, chat) == [extraction.LIVE_PRIORITY]  # a dead job waits for no retry: it holds nothing
 
 
-def test_live_turns_of_a_chat_already_seen_run_first_and_newest_first(migrated, db):
+def test_live_turns_of_a_chat_already_seen_run_first_and_in_story_order(migrated, db):
     seen, new = SimChat(), SimChat()
     filler(seen, 2)
     seen.user("next")
@@ -118,9 +118,9 @@ def test_live_turns_of_a_chat_already_seen_run_first_and_newest_first(migrated, 
         sync(c, seen)
         assert priorities(db, seen) == [extraction.LIVE_PRIORITY] * 2
         order = run(migrated)
-    # The seen chat's live turns first, newest first ("next" and s0 are one turn), then the new chat's window, oldest
-    # first.
-    assert [turn_no(x) for x in order] == ["s1", "USER: next", "n0", "n1", "n2"]
+    # The seen chat's live turns first, oldest first ("next" and s0 are one turn; newest first until Tier 1 D5 let a
+    # turn be extracted before the turn its hints come from), then the new chat's window, oldest first.
+    assert [turn_no(x) for x in order] == ["USER: next", "s1", "n0", "n1", "n2"]
 
 
 def test_the_first_sight_lane_sits_between_live_work_and_a_generations_backfill():

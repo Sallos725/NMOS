@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { configBody, connArgs, dirtySections, embedWaitTooLong, modelChange, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, trimArgs, VERTEX_URL,
+import { configBody, connArgs, dirtySections, embedChunkChars, embedWaitTooLong, modelChange, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, trimArgs, VERTEX_URL,
   type FormValues } from '../src/form';
 import { risuHost } from '../src/host';
 import { STRING_KEYS, langOf, t } from '../src/i18n';
@@ -169,12 +169,12 @@ describe('extra request values in the save (PHASE-61 S4)', () => {
 });
 
 describe('leaving out old dialogue (PHASE-60 S1)', () => {
-  it('stores the switch as 1 or 0 and keeps the recent turns within 4..200, 20 by default', () => {
+  it('stores the switch as 1 or 0 and keeps the recent turns within 4..200, 16 by default', () => {
     const keep = (value: string) => trimArgs({ on: true, keep: value }).keep_recent_turns;
     expect([keep(''), keep('abc'), keep('0'), keep('-5'), keep('0.5'), keep('3'), keep('4'), keep('30.9'), keep(' 40 '),
-      keep('200'), keep('500')]).toEqual([20, 20, 20, 20, 20, 4, 4, 30, 40, 200, 200]);
+      keep('200'), keep('500')]).toEqual([16, 16, 16, 16, 16, 4, 4, 30, 40, 200, 200]);
     expect(trimArgs({ on: true, keep: '30' })).toEqual({ trim_old_turns: 1, keep_recent_turns: 30 });
-    expect(trimArgs({ on: false, keep: '' })).toEqual({ trim_old_turns: 0, keep_recent_turns: 20 });
+    expect(trimArgs({ on: false, keep: '' })).toEqual({ trim_old_turns: 0, keep_recent_turns: 16 });
   });
 
   it('is a section of its own that sends nothing to the sidecar', () => {
@@ -257,5 +257,39 @@ describe('Vertex AI service-account key (ADR 0021)', () => {
     expect(isVertexEndpoint(regional) && isVertexEndpoint(VERTEX_URL)).toBe(true);
     expect(isVertexEndpoint('https://aiplatform.googleapis.com.evil.example/v1')).toBe(false);
     expect(isVertexEndpoint('https://generativelanguage.googleapis.com/v1beta/openai')).toBe(false);
+  });
+});
+
+describe('embedding chunks per message (ADR 0062, Tier 4 E8)', () => {
+  const tune = (embedChunks: string) => ({ ...structuredClone(base), tune: { ...base.tune, pinAt: false, embedChunks } });
+
+  it('sends embed_max_chunks only when the sidecar reports it and it changed', () => {
+    expect(configBody(['tune'], tune('16'), { embedChunks: true }, tune('8'))).toMatchObject({ embed_max_chunks: 16 });
+    expect(configBody(['tune'], tune('8'), { embedChunks: true }, tune('8'))).not.toHaveProperty('embed_max_chunks');
+    expect(configBody(['tune'], tune('16'), {}, tune('8'))).not.toHaveProperty('embed_max_chunks');
+    expect(configBody(['tune'], tune(''), { embedChunks: true }, tune('8'))).not.toHaveProperty('embed_max_chunks');
+    expect(configBody(['tune'], tune('abc'), { embedChunks: true }, tune('8'))).toMatchObject({ embed_max_chunks: 'abc' });
+    expect(configBody(['llm'], tune('16'), { embedChunks: true }, tune('8'))).not.toHaveProperty('embed_max_chunks');
+    expect(dirtySections(tune('8'), tune('16'))).toEqual(['tune']);
+  });
+
+  it('says how many characters a cap covers, within 1..64 only', () => {
+    expect(embedChunkChars('8')).toBe(5600);
+    expect(embedChunkChars(' 64 ')).toBe(44_800);
+    for (const bad of ['0', '65', '2.5', '', 'x']) expect(embedChunkChars(bad)).toBeNull();
+  });
+});
+
+describe('extract right after a reply (PHASE-67, extract_on_output)', () => {
+  const tune = (extractOnOutput?: boolean) => ({ ...structuredClone(base), tune: { ...base.tune, pinAt: false, extractOnOutput } });
+
+  it('sends extract_on_output only when the sidecar reports it and it changed', () => {
+    expect(configBody(['tune'], tune(true), { extractOnOutput: true }, tune(false))).toMatchObject({ extract_on_output: true });
+    expect(configBody(['tune'], tune(false), { extractOnOutput: true }, tune(true))).toMatchObject({ extract_on_output: false });
+    expect(configBody(['tune'], tune(true), { extractOnOutput: true }, tune(true))).not.toHaveProperty('extract_on_output');
+    expect(configBody(['tune'], tune(true), {}, tune(false))).not.toHaveProperty('extract_on_output');
+    expect(configBody(['tune'], tune(undefined), { extractOnOutput: true }, tune(false))).not.toHaveProperty('extract_on_output');
+    expect(configBody(['llm'], tune(true), { extractOnOutput: true }, tune(false))).not.toHaveProperty('extract_on_output');
+    expect(dirtySections(tune(false), tune(true))).toEqual(['tune']);
   });
 });

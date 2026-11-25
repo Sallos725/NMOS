@@ -276,6 +276,12 @@ def test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_ed
         assert "Reveals that matched no open secret" in page
 
 
+# A first sight newest first, as before Phase 30: each turn more urgent than the one before it, since one lane runs in
+# story order (Tier 1 D5).
+NEWEST_FIRST = ("UPDATE job j SET priority = 200 + r.n FROM (SELECT id, row_number() OVER (ORDER BY id DESC) - 1 AS n"
+                " FROM job WHERE kind = 'extract' AND priority = %s) r WHERE j.id = r.id")
+
+
 FIRST_IMPORT = ("Luca secretly plans to watch the lecture, hidden from Noel.", "Noel drinks coffee.",
                 "Noel found out: Luca goal: watch the lecture.", "Noel smiles.")
 
@@ -290,7 +296,7 @@ def first_import(c, migrated, model, db, *, before_phase30: bool = True) -> tupl
         chat.reply("Noted.")
     sync(c, chat)
     if before_phase30:
-        db.execute("UPDATE job SET priority = 200 WHERE kind = 'extract' AND priority = %s", (extraction.FIRST_PRIORITY,))
+        db.execute(NEWEST_FIRST, (extraction.FIRST_PRIORITY,))
     drain(migrated, model)
     if not before_phase30:
         conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]

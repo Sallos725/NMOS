@@ -158,3 +158,31 @@ loss rate).
     the turn's other rows, while the turn reads the same (its hash on the head), so the folds and a later statement of
     the story treat it as any fact of that turn (Q4). When the turn's rows state it again (item 16's levels), it applies
     to that row and adds nothing; after an edit of the turn it matches nothing. Undo as every repair.
+
+## Amendment 4 (2026-11-25, PHASE-65 S2, audit D6, D7, F2)
+
+- `match_fact` tells story, canon and carried facts apart: `fact_target` records `canon` or `carried`, a `canon:` or
+  `carried:` turn hash counts, and a target stored before with only turn -1 stays canon's.
+- `_restates` (amendment 2) needs equal polarity at every level and, at level 2, a similar value (≥ 0.5) for a
+  predicate that takes many values.
+- An exclusion (`entity_exclude`) never hides the persona, including a name the story later joins to it.
+- Thread folding takes the rows the fact repairs left: a retracted opening opens nothing, a restored one opens.
+- The extraction's hint lists apply the repairs in force before the target turn (PHASE-65 S1).
+- A `secret_keep` or `secret_found_out` repair, made or taken back, queues the chat's stale summaries.
+- `name_split` accepts a derived persona name (ADR 0095 item 4).
+
+## Amendment 5 (2026-11-25, PHASE-67 part 4, audit D7, migration 0043)
+
+- `owner_repair` gains nullable `anchor` (jsonb) and `anchored_at` (timestamptz), with no backfill. An anchor names
+  the target turn's reply (`message`, `revision`, `turn_revisions`) and the apply turn's first and last message ids.
+  `repairs.rebase` maps anchored repairs onto the head's current turn numbering so deleting/inserting earlier messages
+  no longer detaches them, while edits to the repair's own turn still detach it.
+- Legacy repairs (`anchor IS NULL`) keep their legacy target and are anchored lazily once on a live read
+  (`FOR UPDATE SKIP LOCKED`, inside a savepoint, fail-open). Historical replays (`known_at < anchored_at`) still read
+  the legacy target (ADR 0027).
+- `owner_repair.kind` adds `fact_add` (anchored to the chosen message), `told_retract`, `fact_hidden` (add/remove a
+  character in `hidden_from`), and `attention_dismiss` (`role_held` / `alias_held`).
+- `fact_correct` no longer inherits the replaced assertion's `feeling` or `because` (and accepts `new_because`).
+- `branch.reanchor_repair` delegates to `repairs.reanchor`, inheriting anchored repairs whose apply turn starts inside
+  the branch prefix.
+

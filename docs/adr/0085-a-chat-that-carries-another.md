@@ -56,3 +56,22 @@ break provenance (a row's revision belongs to the other chat) and rebuildability
 - Deleting the source removes what the target carried (the owner's delete, D23); the delete's answer counts links.
 - A carried open thread is not listed to the target's extractor, so its closing depends on the text match alone.
 - Raw excerpts of the source are not recalled in the target.
+
+## Amendment (2026-11-25, PHASE-65 S5, audit F1–F4)
+
+- **Regression.** May name the persona (`{{user}}` or any of its spellings), alone or with characters; it maps to the
+  target's persona. A row's rememberers follow its knowledge marks for every row: all named for a public row, those in
+  `known_by` for a limited one, otherwise those it involves, minus `hidden_from`; so world facts, item places and told
+  third-party secrets are kept. Closed regression threads are returned by `carry.regression_threads` and offered by
+  `packet-v21` only (ADR 0092 item 11).
+- **Reading.** `MAX_ROWS` is 5,000 (was 2,000). Owner entity links and the named regressors' aliases are carried; a
+  persona alias maps by spelling; a source's own `continue` link is read (a chain of chats, with the first chat's
+  provenance, never the target's own memory back); the story is held at `LEAK_NEAR`.
+- **In the target.** Carried rows fold as secrets (ADR 0033 amendment 4). Previews, joins, repairs, the repair list,
+  the author's note and the memory map read the link in force; the link is part of a preview's fingerprint. A fact
+  repair tells a carried fact from canon's (ADR 0044 amendment 4). Under `packet-v21` a death carried by a `continue`
+  link stays pinned as gone.
+- **Archive.** The manifest lists the links it leaves out and the chats they point to, by id; a single-chat export is
+  still not self-contained (the link's foreign keys are `NOT NULL`).
+- Limits: a repair of a carried row is tied to its link and orphans on relink; regression aliases are stored but only
+  `continue` rows feed resolution.

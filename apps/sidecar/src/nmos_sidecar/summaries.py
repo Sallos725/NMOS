@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -36,6 +37,7 @@ from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
 from .packet import Line, hidden_entry
+from .predicates import EXTENSIONS, REGISTRY
 from .threads import _grams, _overlap, similarity
 
 log = logging.getLogger("nmos.summaries")
@@ -105,6 +107,18 @@ def members_key(ids: list[UUID] | tuple[UUID, ...]) -> str:
     return hashlib.sha256("\n".join(str(i) for i in ids).encode()).hexdigest()[:32]
 
 
+# What a summary is written from and kept by (PHASE-66 part 5, owner decision 2026-11-25), as `extraction.REVISION` is
+# for a turn's rows: `revision` in the spec, a bump alone a carry-on (no window is summarized again; a summary of the
+# earlier value keeps serving, and whether it must be written again stays the secrets it listed: `unlisted`).
+# 0 (no field): the production base, Phase 64 (`cdf2c9a`).
+# 1 (Tier 1 and its review fixes), against the base:
+#   - OPEN SECRETS gives a secret with only an object as that object (`content`), and a summary records it so (an
+#     earlier record of the whole line still counts: `_legacy_key`); it lists the continue link's carried secrets;
+#   - the story prompt leaves out a scene that repeats a secret at the bar for a kept-from character present;
+#   - an empty `summary` fails its job instead of being stored as covering its turns.
+REVISION = 1
+
+
 def summarizer(settings: Settings) -> Generation | None:
     """The summarize generation the settings describe (credentials excluded), or None when off. Summaries use the
     extraction model and endpoint (PHASE-12 Q6)."""
@@ -112,9 +126,10 @@ def summarizer(settings: Settings) -> Generation | None:
         return None
     return generations.make(
         "summarize", settings.llm_url, settings.llm_model, version=VERSION,
-        prompt=generations.fingerprint(SCENE_PROMPT + STORY_PROMPT), normalizer=normtext.NORMALIZER_VERSION,
+        prompt=generations.fingerprint(SCENE_PROMPT + STORY_PROMPT), normalizer=normtext.active(),
         json_mode=settings.llm_json_mode, window=WINDOW, lag=LAG, message_chars=settings.extract_target_chars,
         **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
+        **generations.revision(REVISION),
     )
 
 
@@ -334,9 +349,11 @@ def packet_lines(conn: psycopg.Connection, head: UUID, key: str, secrets: list[d
                  present: frozenset[str] = frozenset(),
                  hidden_entries: list[dict[str, Any]] | None = None) -> list[Line]:
     """What a request offers <Story> (ADR 0043): the story so far, and the scene summary the message is about among
-    windows older than the prompt's own messages (`in_context`, host ids). A summary that repeats a secret still kept
-    from someone is never offered (PHASE-12 Q3). The same choice as `current`, made for the request path: one query
-    finds the current summaries, and only what it would offer is checked against the secrets."""
+    windows that begin before the prompt's own messages (`in_context`, host ids): one the prompt holds only in part
+    counts too, since a trim's cut can fall inside a window and its earlier turns are told nowhere else. A summary
+    that repeats a secret still kept from someone is never offered (PHASE-12 Q3). The same choice as `current`, made
+    for the request path: one query finds the current summaries, and only what it would offer is checked against the
+    secrets."""
     rows = conn.execute(_CURRENT, {"w": WINDOW, "lag": LAG, "head": head, "key": key, "at": known_at, "upto": upto,
                                    "ctx": list(in_context), "fallback": True}).fetchall()
     scenes = [x for x in rows if x["level"] == "scene"]
@@ -361,7 +378,8 @@ def packet_lines(conn: psycopg.Connection, head: UUID, key: str, secrets: list[d
     if query.strip() and scenes:
         asked, grams = _grams(query), _scene_grams(conn, scenes)
         scored = sorted(((_overlap(asked, grams[x["id"]]), x["last_turn"], x) for x in scenes
-                         if grams.get(x["id"]) and (before_turn is None or x["window_last"] < before_turn)),
+                         if grams.get(x["id"]) and (before_turn is None
+                                                    or x["window_last"] - WINDOW + 1 < before_turn)),
                         key=lambda t: (t[0], t[1]), reverse=True)
         for score, _, x in scored:
             if score < SCENE_MIN:
@@ -468,14 +486,16 @@ def schedule_all(conn: psycopg.Connection, key: str, conv: UUID | None = None, r
 
 def schedule_redo(conn: psycopg.Connection, conv: UUID, head: UUID, key: str, turns: int | None,
                   priority: int = BACKFILL_PRIORITY) -> int:
-    """Queue the due windows `key` has not summarized itself, whatever earlier summarizer serves them: those that end
-    in the head's latest `turns` turns, or every one (`turns` None: the per-chat "extract all history", PHASE-57 A3).
-    The story follows once they are written."""
+    """Queue the due windows `key` (or a carry-on peer) has not summarized itself, whatever earlier summarizer serves
+    them: those that end in the head's latest `turns` turns, or every one (`turns` None: the per-chat "extract all
+    history", PHASE-57 A3). The story follows once they are written."""
     ws = windows(conn, head)
     if turns is not None:
         last = replied_turns(conn, head)
         ws = [w for w in ws if w.last_turn >= last - turns]
-    own = _scenes(conn, conv, key, ws, fallback=False)
+    own: dict[str, Any] = {}  # `key`'s own; a carry-on peer's counts as its own (`generations.peers`, PHASE-66 part 5)
+    for k in generations.peers(conn, key):
+        own.update(_scenes(conn, conv, k, ws, fallback=False))
     rows = [_scene_job(conv, key, w, priority) for w in ws if w.key not in own]
     if rows:
         with conn.cursor() as cur:
@@ -505,7 +525,7 @@ def cut_windows(conn: psycopg.Connection, conv: UUID, head: UUID, gen: Generatio
         elif status in (None, "obsolete"):
             sizes = conn.execute("SELECT coalesce(sum(least(rt.clean_chars, %s)), 0)::int AS shown FROM revision_text rt"
                                  " WHERE rt.source_revision_id = ANY(%s) AND rt.normalizer = %s",
-                                 (cap, list(w.members), normtext.NORMALIZER_VERSION)).fetchone()["shown"]
+                                 (cap, list(w.members), normtext.active())).fetchone()["shown"]
             todo.append(w)
             shown += sizes
             more += max(0, sizes - int(s["coverage"].get("used") or 0))
@@ -541,13 +561,42 @@ def reply_text(parsed: dict[str, Any], cap: int) -> str:
     text = parsed.get("summary")
     if not isinstance(text, str):  # an answer without one fails the job, so it is retried (as G3 for extraction)
         raise LLMError("model reply has no `summary` text")
+    if not text.strip():  # an empty one too: stored, it would count as covering turns nothing tells (review F5)
+        raise LLMError("model reply has an empty `summary`")
     return _cut(text, cap)
 
 
+# Predicates whose secret line has no value, only an object ("김하나 possesses 은열쇠"): its content is the object, so
+# a summary in the chat's language that names it is compared with it, not with the English predicate.
+# Every predicate that takes an object and no value, in any compiler's registry (REGISTRY and EXTENSIONS), as the
+# line spells it.
+VALUELESS = tuple(sorted({p.name.replace("_", " ") for p in [*REGISTRY.values(),
+                                                              *(q for ext in EXTENSIONS.values() for q in ext.values())]
+                          if not p.needs_value and p.object_types}, key=lambda n: (-len(n), n)))
+_VALUELESS = re.compile(r"^(?P<subject>.+?) (?:" + "|".join(VALUELESS) + r") (?P<object>.+)$", re.DOTALL)
+
+
+def valueless(secret: dict[str, Any]) -> tuple[str, str] | None:
+    """(subject, object) of a secret whose line has no value, only an object ("김하나 possesses 은열쇠"); else None."""
+    head, sep, _ = secret["text"].partition(": ")
+    if sep:
+        return None
+    subject, predicate = secret.get("subject"), str(secret.get("predicate") or "").replace("_", " ")
+    if subject and predicate in VALUELESS:
+        prefix = f"{subject} {predicate} "
+        if head.startswith(prefix) and head[len(prefix):].strip():
+            return subject, head[len(prefix):]
+    m = _VALUELESS.match(head) if not predicate or predicate in VALUELESS else None
+    return (m["subject"], m["object"]) if m and m["object"].strip() else None
+
+
 def content(secret: dict[str, Any]) -> str:
-    """What a secret says, without its head ("하나 knows: …" → "…")."""
+    """What a secret says, without its head ("하나 knows: …" → "…"; "김하나 possesses 은열쇠" → "은열쇠")."""
     head, sep, body = secret["text"].partition(": ")
-    return body if sep else head
+    if sep:
+        return body
+    parts = valueless(secret)
+    return parts[1] if parts else head
 
 
 def window_secrets(secrets: list[dict[str, Any]], last_turn: int, limit: int = OPEN_SECRETS) -> list[dict[str, Any]]:
@@ -562,12 +611,19 @@ def secret_key(secret: dict[str, Any]) -> str:
     return " ".join(content(secret).casefold().split())
 
 
+def _legacy_key(secret: dict[str, Any]) -> str:
+    """The key a summary listed a valueless secret by before `content` dropped its head (its whole line)."""
+    head, sep, body = secret["text"].partition(": ")
+    return " ".join((body if sep else head).casefold().split())
+
+
 def unlisted(row: dict[str, Any], secrets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The secrets a summary must keep that its prompt did not list: stated after it was written. Until it is written
     again with them listed, no packet may use it."""
     listed = (row.get("coverage") or {}).get("secrets")
     listed = set(listed) if isinstance(listed, list) else set()
-    return [s for s in window_secrets(secrets, row["last_turn"]) if secret_key(s) not in listed]
+    return [s for s in window_secrets(secrets, row["last_turn"])
+            if secret_key(s) not in listed and _legacy_key(s) not in listed]
 
 
 def held(row: dict[str, Any], secrets: list[dict[str, Any]], present: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
@@ -585,7 +641,22 @@ def leak_score(secret: dict[str, Any], text: str) -> float:
     """How much of a secret's content the text repeats, the names of its holders and of those it is kept from left out
     of both: names and a scene's setting are shared with everything written about it."""
     names = [*secret.get("holders", []), *secret.get("open", [])]
+    parts = valueless(secret)
+    if parts is not None:
+        # Its content is only an object ("교실", "검"): a text repeats the secret when it names the subject too, not
+        # when it names a common place or item; then the object said at all is the secret said (a short object has
+        # too few trigrams to score). A subject that is a name macro is not looked for.
+        subject, obj = (_bare(x) for x in parts)
+        hay = _bare(text)
+        if subject and "{{" not in subject and subject not in hay:
+            return 0.0
+        if obj and obj in hay:
+            return 1.0
     return similarity(unnamed(content(secret), names), unnamed(text, names))
+
+
+def _bare(text: str) -> str:
+    return "".join(norm(text).split())
 
 
 def leaks(text: str, secrets: list[dict[str, Any]], present: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
@@ -634,10 +705,21 @@ def _insert(conn: psycopg.Connection, conv: UUID, gen: Generation, level: str, w
          Jsonb(usage) if usage is not None else None)).fetchone() is not None
 
 
+def carried_of(conn: psycopg.Connection, head: UUID) -> Any:
+    """What the chat at `head` carries from its link in force (`carry.target_rows`, ADR 0085), or None."""
+    from . import carry  # carry imports this module
+
+    row = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
+    link = carry.in_force(conn, row["conversation_id"]) if row is not None else None
+    return carry.target_rows(link) if link is not None else None
+
+
 def head_secrets(conn: psycopg.Connection, head: UUID) -> list[dict[str, Any]]:
-    """The head's secrets as the facts of the active extractor generation fold them (ADR 0033)."""
+    """The head's secrets as the facts of the active extractor generation fold them (ADR 0033), with those its carry
+    link carries (a row kept from someone in the earlier chat is a secret of this one, ADR 0085): the set the packet's
+    and the note's views hold a summary by, so a summary that did not list a carried secret is written again."""
     key = generations.active(conn, "extract")
-    return memory_view(conn, head, key)["secrets"] if key else []
+    return memory_view(conn, head, key, carried=carried_of(conn, head))["secrets"] if key else []
 
 
 def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[Any, ...]],
@@ -698,7 +780,11 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
     kept = window_secrets(secrets, scenes[-1]["last_turn"])
     # A scene that repeats a secret gives the story nothing of its text (it would pass the secret on); its turns stay
     # in the story's range, told by the scenes around them.
-    told = [{**s, "text": "(left out: it repeats a secret)"} if leaks(s["text"], secrets) else s for s in scenes]
+    # The bar is LEAK_NEAR, as a scene is checked where one it is kept from is present: the story is read in every
+    # scene, so a secret its scene told in other words would reach it.
+    everyone = frozenset(norm(n) for s in secrets if s.get("open") for n in s["open"])
+    told = [{**s, "text": "(left out: it repeats a secret)"} if leaks(s["text"], secrets, everyone) else s
+            for s in scenes]
     parsed, raw, usage = metered(complete, STORY_PROMPT, story_prompt(told, kept))
     text = reply_text(parsed, STORY_CHARS)
     with conn.transaction():

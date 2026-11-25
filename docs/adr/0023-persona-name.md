@@ -70,3 +70,13 @@ persona's name (HOST-FACTS).
   apart from text, as with any shared name (ADR 0012, item 3).
 - The extraction prompt still allows either spelling. Asking the model to always write `{{user}}`
   would be a new extractor generation; the owner deferred it.
+
+## Amendment (2026-11-25, PHASE-65, ADR 0095): a composite persona name, and names derived from it
+
+Item 3: the host's persona name is split on `/`, `|`, `·` and parentheses into primary names, each the persona as the
+single name was; `node()` no longer folds a name by its last word, so an NPC whose name ends in the persona's last
+word is not the persona. A primary name's derived names (given name, Western first name, Hangul and Latin spellings,
+surname plus persona without a title) join the persona in the resolution as links the owner can split, unless the
+owner split or linked them elsewhere, another name gives them as its alias, or another character's full name holds
+them. Item 4 reads `persona_names` with those. The extraction's `role_toward` check, `scene.is_persona` and carry read
+one name with `entities.names_persona`.

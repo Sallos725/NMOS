@@ -328,7 +328,9 @@ def test_rebuild_during_second_canon_part_revokes_old_claim_and_restores_every_p
 
         assert run_once(conn, {"canon": (gen.key, lambda cn, job: canonfacts.process(cn, job, interrupted, gen))})
         rows = conn.execute("SELECT window_hash, discarded_at FROM extraction").fetchall()
-        assert len(rows) == 1 and rows[0]["window_hash"] == "canon:0:plain" and rows[0]["discarded_at"]
+        # A card field's read is under the manifest's names, never `plain` (Tier 1 B7: it names CHARACTER and USER)
+        assert len(rows) == 1 and rows[0]["discarded_at"]
+        assert rows[0]["window_hash"] == "canon:0:" + canonfacts.names_tag([])
         job = conn.execute("SELECT * FROM job WHERE kind = 'canon'").fetchone()
         assert job["status"] == ("running" if reclaim else "queued")
         if reclaim:

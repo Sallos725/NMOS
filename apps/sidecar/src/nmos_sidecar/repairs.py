@@ -18,12 +18,18 @@ again opens a new thread, and a later reveal ends a secret the owner kept. A rea
 not apply it, and a read as of an earlier time (ADR 0027 replay) does not see it. Repairs of one turn apply in the order
 they were made.
 
-Pure: no database here, except `repairs_of`.
+Since PHASE-67 part 4 (audit D7, migration 0043) a repair is also anchored to the messages it was made on (`anchor`):
+a read maps it onto the head's numbering first (`rebase`), so the turn and hash above are the head's own; deleting an
+earlier message or editing another turn keeps it, an edit of its own turn detaches it, and one made on a continuation
+the chat abandoned does not fire on a new one. A repair from before 0043 keeps the turn rule until a live read records
+its anchor. See "The anchor" below.
+
+Pure: no database here, except `repairs_of`, `members_of`, `anchor_now` and `record_anchors`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
 from typing import Any
@@ -32,16 +38,21 @@ from uuid import UUID
 import psycopg
 
 from .entities import Resolution, norm
-from .predicates import OUTCOMES, REGISTRY
+from .predicates import (CONDITIONED_PREDICATES, EXTENSIONS, OUTCOMES, REGISTRY, V21_ONTOLOGY, V21_PREDICATES, Predicate,
+                         address_slot, is_address_all)
 from .secrets import secret_text
 from .statewatch import target as flag_target
 from .threads import MATCH_MIN, similarity
 
 KINDS = ("thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-         "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude", "entity_pin")
+         "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude", "entity_pin",
+         "fact_add", "told_retract", "fact_hidden", "attention_dismiss")
 # threads and secrets since step 3, facts and names since step 4, locks since Phase 14, restores since Phase 22, a
 # status flag's dismissal since Phase 39 (Q4: no memory read applies it; the Inspector leaves the flag out), a pin since
-# Phase 60 (S8, ADR 0087: stored and listed; the packet's read of it is packet-v20's)
+# Phase 60 (S8, ADR 0087: stored and listed; the packet's read of it is packet-v20's); since PHASE-67 part 4 (migration
+# 0043) a statement the extraction missed (`fact_add`), a told row taken back (`told_retract`; a claim is retracted as a
+# fact is, `fact_retract`), a name added to or taken from a fact's hidden_from (`fact_hidden`) and a held role ending or
+# alias the owner dismissed from "Needs attention" (`attention_dismiss`). A reader before 0043 ignores these kinds.
 ENABLED = frozenset(KINDS)
 PROMISE_OUTCOMES = ("kept", "broken")
 # A quote names the same item when it shares this many characters with the stored one: extract-v14's own minimum for
@@ -73,10 +84,10 @@ def repairs_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime 
     """The owner's repairs in force for a conversation, oldest first; with `known_at`, those in force at that time
     (ADR 0027), as `facts.links_of`. (A memory read fetches them with its conversation, in one query: `IN_FORCE`.)"""
     if known_at is None:
-        return conn.execute("SELECT id, kind, target, value, note, created_at FROM owner_repair"
+        return conn.execute("SELECT id, kind, target, value, note, created_at, anchor, anchored_at FROM owner_repair"
                             " WHERE conversation_id = %s AND removed_at IS NULL ORDER BY created_at, id",
                             (conversation,)).fetchall()
-    return conn.execute("SELECT id, kind, target, value, note, created_at FROM owner_repair"
+    return conn.execute("SELECT id, kind, target, value, note, created_at, anchor, anchored_at FROM owner_repair"
                         " WHERE conversation_id = %s AND created_at <= %s AND (removed_at IS NULL OR removed_at > %s)"
                         " ORDER BY created_at, id", (conversation, known_at, known_at)).fetchall()
 
@@ -84,7 +95,354 @@ def repairs_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime 
 # A repair `r` in force now, or at `%(at)s` (ADR 0027), for SQL that joins owner_repair.
 IN_FORCE = {False: "r.removed_at IS NULL",
             True: "r.created_at <= %(at)s AND (r.removed_at IS NULL OR r.removed_at > %(at)s)"}
-REPAIR_COLUMNS = ("id", "kind", "target", "value", "note", "created_at")
+REPAIR_COLUMNS = ("id", "kind", "target", "value", "note", "created_at", "anchor", "anchored_at")
+
+
+# --- The anchor (PHASE-67 part 4, audit D7, owner decision 11b) ---------------------------------------------------
+#
+# A repair is anchored to the message it was made on, not to a turn number. Host message ids (`host_logical_id`, the
+# message `chatId`) are unique within a chat, a reroll and a continuation are new messages and a swipe is a new
+# revision of the same one (HOST-FACTS Q3), so a message with its revision in the head is on a worldline that holds
+# it: no commit ancestry or chain of earlier ids is needed (a rewind is a delete commit, a child of the old head, so
+# ancestry cannot tell the continuations apart; a chain of earlier ids would detach repairs next to a deleted message).
+#
+# - `target`: the target turn's anchor message (its last reply, whose extraction stated the item), its revision (the
+#   `source_revision` id: one per message and revision hash) and its own turn's revisions in order (`turn_revisions`;
+#   not the K-turn window). The repair applies while that message is in the head with that revision and its turn reads
+#   as it did; renumbering and edits of other turns do not matter, an edit of its own turn detaches it exactly as the
+#   turn hash did (and its quote with it). Revision ids rather than hashes: a revision hash covers the message id, so a
+#   branch's copy of a message has another one, while a branch's prefix copy maps each revision id (`reanchor`).
+# - `apply`: the first and last message of the turn it applies from (`value.turn`), matched by id only: the turn is
+#   where the first of them is now. A reroll of the turn's reply (a new id) keeps its user message, a typo fix keeps
+#   both ids; a new continuation after a rewind has neither, so the repair does not fire there.
+#
+# A read maps each anchored repair onto the head's numbering (`rebase`): target turn and turn hash, and the apply turn,
+# as the head has them now, so every matcher below reads it as a repair made on this head. A repair without an anchor
+# (written before migration 0043) keeps the legacy rule; a live read records its anchor the first time it matches the
+# head (`legacy_anchors`). A replay as of a time before `anchored_at` reads the legacy target (ADR 0027).
+
+# The kinds whose target names an item of a story turn, and so get a target anchor (a canon or carried target, at
+# turn -1, never does); the kinds that take effect from a turn carry an apply anchor when `value.turn` is set.
+TARGET_ANCHORED = frozenset({"thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract",
+                             "fact_correct", "fact_restore", "fact_add", "told_retract", "fact_hidden",
+                             "attention_dismiss"})
+
+
+class Members:
+    """The head members a set of repairs names: each message by id ((position, turn, revision id)), and each turn's
+    members in order with its hash (the anchor's), from `members_of`."""
+
+    def __init__(self, rows: list[Mapping[str, Any]]) -> None:
+        self.messages: dict[str, tuple[int, int | None, str]] = {}
+        self.turns: dict[int, list[Mapping[str, Any]]] = {}
+        self.hashes: dict[int, str | None] = {}
+        seen: set[int] = set()
+        for x in sorted(rows, key=lambda x: x["position"]):
+            if x["position"] in seen:
+                continue
+            seen.add(x["position"])
+            self.messages[x["host_logical_id"]] = (x["position"], x["turn"], str(x["rid"]))
+            if x["turn"] is not None:
+                self.turns.setdefault(x["turn"], []).append(x)
+                if x.get("turn_hash"):
+                    self.hashes[x["turn"]] = x["turn_hash"]
+
+    def turn_of(self, message: str | None) -> int | None:
+        hit = self.messages.get(message or "")
+        return hit[1] if hit else None
+
+    def own(self, turn: int) -> list[str] | None:
+        """A turn's own revisions, in order."""
+        rows = self.turns.get(turn)
+        return [str(x["rid"]) for x in rows] if rows else None
+
+    def target_anchor(self, turn: int | None) -> dict[str, Any] | None:
+        """The anchor of an item stated in this turn: its anchor message (the one with the turn's hash, else its last)."""
+        rows = self.turns.get(turn) if isinstance(turn, int) and turn >= 0 else None
+        if not rows:
+            return None
+        at = next((x for x in reversed(rows) if x.get("turn_hash")), rows[-1])
+        return {"message": at["host_logical_id"], "revision": str(at["rid"]), "turn_revisions": self.own(turn)}
+
+    def message_anchor(self, message: str) -> dict[str, Any] | None:
+        """The anchor of an item the owner states on this message (`fact_add`): that message and its revision only, so
+        a reply added to its turn, or an edit of another message of it, keeps it (an edit of the message detaches it)."""
+        hit = self.messages.get(message)
+        if hit is None or hit[1] is None:
+            return None
+        return {"message": message, "revision": hit[2]}
+
+    def apply_anchor(self, turn: int | None) -> dict[str, Any] | None:
+        rows = self.turns.get(turn) if isinstance(turn, int) else None
+        if not rows:
+            return None
+        return {"messages": list(dict.fromkeys([rows[0]["host_logical_id"], rows[-1]["host_logical_id"]]))}
+
+
+_MEMBER = ("SELECT am.position, am.turn, am.turn_hash, so.host_logical_id, sr.id AS rid FROM active_membership am"
+           " JOIN source_revision sr ON sr.id = am.source_revision_id JOIN source_object so ON so.id = sr.source_object_id")
+
+
+def members_of(conn: psycopg.Connection, head: UUID, messages: list[str], turns: list[int]) -> Members:
+    """The head members of these messages, and every member of these turns and of the turns those messages are in now
+    (by index: source_object by (conversation, id), membership by revision, membership by (commit, turn))."""
+    rows: list[Mapping[str, Any]] = []
+    if messages:
+        rows = conn.execute(
+            "SELECT am.position, am.turn, am.turn_hash, so.host_logical_id, sr.id AS rid FROM worldline_commit w"
+            " JOIN source_object so ON so.conversation_id = w.conversation_id AND so.host_logical_id = ANY(%s)"
+            " JOIN source_revision sr ON sr.source_object_id = so.id"
+            " JOIN active_membership am ON am.source_revision_id = sr.id AND am.commit_id = w.id WHERE w.id = %s",
+            (list(messages), head)).fetchall()
+    want = sorted(set(turns) | {x["turn"] for x in rows if x["turn"] is not None})
+    if want:
+        rows = list(rows) + conn.execute(_MEMBER + " WHERE am.commit_id = %s AND am.turn = ANY(%s)", (head, want)).fetchall()
+    return Members(rows)
+
+
+def _message_ids(repairs: list[dict[str, Any]]) -> list[str]:
+    out: list[str] = []
+    for rep in repairs:
+        a = rep.get("anchor") or {}
+        if (t := a.get("target")) and t.get("message"):
+            out.append(t["message"])
+        out.extend((a.get("apply") or {}).get("messages") or ())
+    return sorted(set(out))
+
+
+def anchored(rep: Mapping[str, Any], known_at: datetime | None = None) -> bool:
+    """Whether a read takes this repair by its anchor: it has one, recorded by the read's time (a replay as of an
+    earlier time reads the legacy target it had then, ADR 0027)."""
+    if not rep.get("anchor"):
+        return False
+    at = rep.get("anchored_at")
+    return known_at is None or at is None or at <= known_at
+
+
+DETACHED = {"gone": "its message is not in the chat now (deleted, or a continuation the chat left)",
+            "edited": "its turn was edited since",
+            "turn_gone": "the turn it applies from is not in the chat now (deleted, or a continuation the chat left)"}
+
+
+def rebase(repairs: list[dict[str, Any]], members: Members, known_at: datetime | None = None) -> list[dict[str, Any]]:
+    """Each anchored repair as a repair made on this head (pure): its target's turn and turn hash, and the turn it
+    applies from, where its messages are now. One whose message is gone or whose turn was edited is `detached` (the
+    reason, `DETACHED`): a read leaves it out and reports it, as a legacy repair that matches nothing. Others as given."""
+    out = []
+    for rep in repairs:
+        if not anchored(rep, known_at):
+            out.append(rep)
+            continue
+        a = rep["anchor"]
+        target, value, why = dict(rep.get("target") or {}), dict(rep.get("value") or {}), None
+        if t := a.get("target"):
+            hit = members.messages.get(t.get("message") or "")
+            if hit is None or hit[1] is None:
+                why = "gone"
+            elif hit[2] != t.get("revision") or (t.get("turn_revisions") and members.own(hit[1]) != t["turn_revisions"]):
+                why = "edited"
+            else:
+                target["turn"], target["turn_hash"] = hit[1], members.hashes.get(hit[1])
+        if why is None and (ap := a.get("apply")):
+            turn = next((members.turn_of(m) for m in ap.get("messages") or () if members.turn_of(m) is not None), None)
+            if turn is None:
+                why = "turn_gone"
+            else:
+                value["turn"] = turn
+        out.append({**rep, "target": target, "value": value, **({"detached": why} if why else {})})
+    return out
+
+
+def _legacy_turns(rep: Mapping[str, Any]) -> tuple[int | None, int | None]:
+    """A legacy repair's story target turn (None for a canon, carried or nameless target) and its apply turn."""
+    t, v = rep.get("target") or {}, rep.get("value") or {}
+    turn = t.get("turn") if rep["kind"] in TARGET_ANCHORED and _before_story(t) is None else None
+    turn = turn if isinstance(turn, int) and turn >= 0 else None
+    at = v.get("turn") if isinstance(v.get("turn"), int) else None
+    return turn, at
+
+
+def anchor_for(kind: str, target: Mapping[str, Any], value: Mapping[str, Any], members: Members,
+               message: str | None = None) -> dict[str, Any] | None:
+    """The anchor of a repair as it stands on this head (None when it has nothing to anchor): its target's turn (or
+    the message the owner named, `message`) and the turn it applies from. A target whose turn no longer reads as it did
+    (its stored hash differs from the head's) gets none: it matches nothing, and an anchor must not revive it."""
+    out: dict[str, Any] = {}
+    turn, at = _legacy_turns({"kind": kind, "target": target, "value": value})
+    if message is not None:
+        if (ta := members.message_anchor(message)) is None:
+            return None
+        out["target"] = ta
+    elif turn is not None:
+        if target.get("turn_hash") is not None and members.hashes.get(turn) != target["turn_hash"]:
+            return None
+        if (ta := members.target_anchor(turn)) is None:
+            return None
+        out["target"] = ta
+    if at is not None:
+        if (ap := members.apply_anchor(at)) is None:
+            return None
+        out["apply"] = ap
+    return out or None
+
+
+def anchor_turns(kind: str, target: Mapping[str, Any], value: Mapping[str, Any]) -> list[int]:
+    """The head turns `anchor_for` reads for a repair."""
+    return [x for x in _legacy_turns({"kind": kind, "target": target, "value": value}) if x is not None]
+
+
+def anchor_now(conn: psycopg.Connection, head: UUID, kind: str, target: Mapping[str, Any],
+               value: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The anchor a new repair stores, from the head it is made on (`anchor_for`); a `fact_add` is anchored to the
+    message the owner named (`target["message"]`)."""
+    message = target.get("message") if kind == "fact_add" else None
+    turns = anchor_turns(kind, target, value)
+    if message is None and not turns:
+        return None
+    return anchor_for(kind, target, value, members_of(conn, head, [message] if message else [], turns), message)
+
+
+def legacy_anchors(repairs: list[dict[str, Any]], members: Members) -> dict[str, dict[str, Any]]:
+    """{repair id: its anchor} for each repair without one that matches this head now (`anchor_for`): recorded once by
+    a live read (`record_anchors`), so it survives the next renumbering."""
+    out = {}
+    for rep in repairs:
+        if rep.get("anchor") or rep.get("detached"):
+            continue
+        if (a := anchor_for(rep["kind"], rep.get("target") or {}, rep.get("value") or {}, members)) is not None:
+            out[str(rep["id"])] = a
+    return out
+
+
+def record_anchors(conn: psycopg.Connection, anchors: Mapping[str, Mapping[str, Any]]) -> int:
+    """Record legacy repairs' anchors (one write a repair, only where none is recorded yet; a row another read is
+    recording is skipped, never waited for). In a savepoint and failing open: a read that cannot write (a read-only
+    transaction) reads as before and a later read records them. Returns how many were recorded."""
+    if not anchors:
+        return 0
+    from psycopg.types.json import Jsonb
+    try:
+        with conn.transaction():
+            return conn.execute(
+                "UPDATE owner_repair r SET anchor = v.anchor, anchored_at = now()"
+                " FROM jsonb_to_recordset(%s) AS v(id uuid, anchor jsonb)"
+                " WHERE r.id = v.id AND r.anchor IS NULL AND r.id IN ("
+                "  SELECT id FROM owner_repair WHERE id = ANY(%s::uuid[]) AND anchor IS NULL FOR UPDATE SKIP LOCKED)",
+                (Jsonb([{"id": k, "anchor": dict(v)} for k, v in anchors.items()]), list(anchors))).rowcount
+    except psycopg.Error:
+        return 0
+
+
+def anchors_needed(repairs: list[dict[str, Any]], legacy: bool) -> tuple[list[str], list[int]]:
+    """The message ids and turns a read must look up: every anchored repair's messages, and with `legacy` (a live read
+    that may record anchors) every legacy repair's turns."""
+    turns: set[int] = set()
+    if legacy:
+        for rep in repairs:
+            if not rep.get("anchor"):
+                turns.update(anchor_turns(rep["kind"], rep.get("target") or {}, rep.get("value") or {}))
+    return _message_ids(repairs), sorted(turns)
+
+
+def reanchor(anchor: Mapping[str, Any] | None, mapping: Mapping[str, str]) -> dict[str, Any] | None:
+    """An anchor moved onto another chat's messages (a branch the host made, PHASE-67 part 2), pure: `mapping` maps each
+    origin message id and revision id (as text) to the branch's message and revision of the same content at the same
+    position (`branch.Prefix.remap`, matched against the origin's head now). None when there is no anchor (a legacy
+    repair: its legacy target is copied as it is) or the anchor names a message or revision the mapping lacks: outside
+    the branch's prefix, or a revision the origin's head no longer shows (the repair is detached there: an edit of its
+    turn), so it is not inherited. The apply anchor's first message must map: the turn it applies from begins in the
+    prefix, as it does in the origin."""
+    if not anchor:
+        return None
+    out: dict[str, Any] = {}
+    if t := anchor.get("target"):
+        names = [t.get("message"), t.get("revision"), *(t.get("turn_revisions") or ())]
+        if any(x not in mapping for x in names):
+            return None
+        out["target"] = {**t, "message": mapping[t["message"]], "revision": mapping[t["revision"]],
+                         "turn_revisions": [mapping[x] for x in t.get("turn_revisions") or ()]}
+    if ap := anchor.get("apply"):
+        first = (ap.get("messages") or [None])[0]
+        if first not in mapping:
+            return None
+        out["apply"] = {**ap, "messages": [mapping[m] for m in ap["messages"] if m in mapping]}
+    return out or None
+
+
+# The predicates a read folds (PHASE-66): REGISTRY's, and extract-v21's own for a row of extract-v21. One dict, built
+# once: `predicates.registry_for` merges on every call. `believes` and `forgot` are kinds of their own (`EPISTEMIC`), never
+# facts about the world; `told` stays out (PHASE-60 S8: its own list).
+READ_REGISTRY: dict[str, Predicate] = {**REGISTRY, **{p.name: p for p in V21_ONTOLOGY}}
+EPISTEMIC = frozenset({"believes", "forgot"})
+_V21_COMPILERS = frozenset(c for c, ext in EXTENSIONS.items() if V21_PREDICATES <= ext.keys())
+
+
+def is_v21(row: Mapping[str, Any]) -> bool:
+    """Whether a row was written by extract-v21 (PHASE-66): its compiler, or its `knowledge_scope`, which extract-v21
+    sets on every row and no earlier generation has. The mark survives the rows that are not served: a carried row
+    (`carry.FACT_KEYS`), a restored one (`restore_target`) and an owner's correction (a copy of the row)."""
+    return row.get("knowledge_scope") is not None or row.get("compiler") in _V21_COMPILERS
+
+
+def read_predicate(row: Mapping[str, Any]) -> bool:
+    """Whether a read folds this row as a fact: a REGISTRY predicate, or one of extract-v21's own (but `believes` and
+    `forgot`, `EPISTEMIC`) on an extract-v21 row; a stored row of an earlier generation can never be one."""
+    p = row.get("predicate")
+    return p in REGISTRY or (p in V21_PREDICATES and p not in EPISTEMIC and is_v21(row))
+
+
+def epistemic(row: Mapping[str, Any]) -> bool:
+    """An extract-v21 `believes` or `forgot` row (PHASE-66): a kind of its own in the view, never a fact."""
+    return row.get("predicate") in EPISTEMIC and is_v21(row)
+
+
+def cardinality(row: Mapping[str, Any]) -> str | None:
+    """How a row's facts accumulate: its predicate's cardinality (READ_REGISTRY), but an extract-v21 `role_toward`
+    accumulates (PHASE-66: several roles toward one counterpart, each ended by its own denial). None for a predicate
+    no read folds."""
+    if row.get("predicate") == "role_toward" and is_v21(row):
+        return "multi"
+    pred = READ_REGISTRY.get(str(row.get("predicate") or ""))
+    return pred.cardinality if pred is not None else None
+
+
+def fungible(row: Mapping[str, Any]) -> bool:
+    """An extract-v21 `possesses` of an item one of many alike (`item_kind = fungible`): each holder's own, never
+    exclusive (PHASE-66); `unique` or none keeps one holder per item (ADR 0011)."""
+    return row.get("predicate") == "possesses" and row.get("item_kind") == "fungible"
+
+
+def slotted(predicate: str | None) -> bool:
+    """Whether a predicate's facts hold in condition slots: `addresses` by its `address_condition` (PHASE-64, ADR
+    0091), extract-v21's conditioned predicates by their `condition` (PHASE-66)."""
+    return predicate == "addresses" or predicate in CONDITIONED_PREDICATES
+
+
+def slot(row: Mapping[str, Any]) -> tuple[str, ...]:
+    """A row's condition slot: an address's (`predicates.address_slot`), a conditioned predicate's read from its
+    `condition` the same way (its scope and `when`; `audience` and `as_guise` ride along), `("default",)` otherwise:
+    for a row without a condition, of every earlier generation, every slot is the default one."""
+    if row.get("predicate") == "addresses":
+        return address_slot(row)
+    cond = row.get("condition")
+    if row.get("predicate") in CONDITIONED_PREDICATES and isinstance(cond, Mapping):
+        return address_slot({"address_condition": cond})
+    return ("default",)
+
+
+def unifies(row: Mapping[str, Any]) -> bool:
+    """Whether a row explicitly unifies an earlier split of its slots (`scope="all"`): an address's `address_condition`
+    or a conditioned predicate's `condition`."""
+    if row.get("predicate") == "addresses":
+        return is_address_all(row)
+    cond = row.get("condition")
+    return row.get("predicate") in CONDITIONED_PREDICATES and isinstance(cond, Mapping) and cond.get("scope") == "all"
+
+
+def conditional(row: Mapping[str, Any]) -> bool:
+    """Whether a row states a condition at all (an `address_condition`, or a conditioned predicate's `condition`)."""
+    return bool(row.get("address_condition")) or (row.get("predicate") in CONDITIONED_PREDICATES
+                                                   and bool(row.get("condition")))
 
 
 def _key(r: Resolution | None, name: str | None) -> str:
@@ -280,26 +638,51 @@ def _ekey(r: Resolution | None, entity_type: str | None, name: str | None) -> st
 
 
 def fact_target(f: dict[str, Any]) -> dict[str, Any]:
-    """What a repair stores to find this fact again: its turn, the turn's hash, its head, its line and its quote."""
-    return {"turn": f.get("turn"), "turn_hash": f.get("turn_hash"), "predicate": f["predicate"],
-            "source": f.get("source"), "subject": f["subject"], "subject_type": f.get("subject_type"),
-            "object": f.get("object"), "object_type": f.get("object_type"), "text": secret_text(f),
-            "evidence": f.get("evidence")}
+    """What a repair stores to find this fact again: its turn, the turn's hash, its head, its line and its quote; and
+    for a fact from before turn 0, whether it is canon's or carried from another chat (both have turn -1); and for a
+    conditional address, its condition (PHASE-64)."""
+    out = {"turn": f.get("turn"), "turn_hash": f.get("turn_hash"), "predicate": f["predicate"],
+           "source": f.get("source"), "subject": f["subject"], "subject_type": f.get("subject_type"),
+           "object": f.get("object"), "object_type": f.get("object_type"), "text": secret_text(f),
+           "evidence": f.get("evidence"),
+           **({"canon": f["canon"]} if f.get("canon") else {}), **({"carried": f["carried"]} if f.get("carried") else {})}
+    if f.get("address_condition"):
+        out["address_condition"] = f["address_condition"]
+    if f.get("condition"):  # PHASE-66: a conditional fact names its slot as an address does
+        out["condition"] = f["condition"]
+    return out
+
+
+def _before_story(target: dict[str, Any]) -> str | None:
+    """Which facts from before turn 0 a target names: "canon", "carried" (ADR 0085), or None for the story's. A target
+    stored before carried facts existed names only its turn (-1): canon's, as it always was (`apply_locks`)."""
+    turn_hash = str(target.get("turn_hash") or "")
+    if target.get("carried") or turn_hash.startswith(("carried:", "carry:")):
+        return "carried"
+    if target.get("canon") or turn_hash.startswith("canon:") or target.get("turn") == -1:
+        return "canon"
+    return None
 
 
 def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution | None,
                quote: bool = True) -> dict[str, Any] | None:
     """The assertion a fact repair names: same predicate, source, subject and object (as entities), and the closest
-    line of its turn, or else the one quote among `rows` that shares a run with its own."""
+    line of its turn, or else the one quote among `rows` that shares a run with its own. The story's, canon's and a
+    carried fact never cross."""
     subject = _ekey(r, target.get("subject_type"), target.get("subject"))
     obj = _ekey(r, target.get("object_type"), target.get("object"))
-    canon = target.get("turn") == -1  # a canon fact's turn (apply_locks); the story's and canon's never cross
+    before = _before_story(target)
+    target_slot = slot(target) if slotted(target.get("predicate")) else None
+
+    def where(a: dict[str, Any]) -> str | None:
+        return "canon" if a.get("canon") else "carried" if a.get("carried") else None
 
     def same(a: dict[str, Any]) -> bool:
-        return (not a.get("owner") and bool(a.get("canon")) == canon and a["predicate"] == target.get("predicate")
+        return (not a.get("owner") and where(a) == before and a["predicate"] == target.get("predicate")
                 and (a.get("source") or "narration") == (target.get("source") or "narration")
                 and _ekey(r, a.get("subject_type"), a["subject"]) == subject
-                and _ekey(r, a.get("object_type"), a.get("object")) == obj)
+                and _ekey(r, a.get("object_type"), a.get("object")) == obj
+                and (target_slot is None or slot(a) == target_slot))
     return (_closest(target, [a for a in rows if _same_turn(target, a) and same(a)], secret_text)
             or (_by_quote(target, rows, same, lambda a: a.get("evidence")) if quote else None))
 
@@ -310,20 +693,31 @@ def _established(b: dict[str, Any]) -> bool:
     return (b.get("source") or "narration") == "narration" and (b.get("modality") or "actual") == "actual"
 
 
+# PHASE-22 Q5 level 2 for a predicate that accumulates: two of one character's events (traits, things known) state the
+# same one only when their values are this close; any two of them used to.
+RESTATE_VALUE_MIN = 0.5
+
+
 def _restates(level: int, a: dict[str, Any], b: dict[str, Any], r: Resolution | None) -> bool:
     """Whether `b`, a narrated actual row, states the fact `a` again, at one of PHASE-22 Q5's levels, closest first:
     (1) the same predicate, subject and object (as entities) and, for a predicate that accumulates, the same value;
-    (2) the same predicate, subject and object; (3) the same predicate and subject with a quote sharing a run (the
-    object worded otherwise)."""
+    (2) the same predicate, subject and object and, for a predicate that accumulates, a similar value
+    (RESTATE_VALUE_MIN); (3) the same predicate and subject with a quote sharing a run (the object worded otherwise).
+    Always with the same polarity: a denial does not state the fact it denies."""
     if a["predicate"] != b["predicate"] or not _established(b) or (
+            (a.get("polarity") or "positive") != (b.get("polarity") or "positive")) or (
             _ekey(r, a.get("subject_type"), a["subject"]) != _ekey(r, b.get("subject_type"), b["subject"])):
         return False
     if level == 3:
         return quoted(a.get("evidence"), b.get("evidence"))
     if _ekey(r, a.get("object_type"), a.get("object")) != _ekey(r, b.get("object_type"), b.get("object")):
         return False
-    pred = REGISTRY.get(a["predicate"])
-    return level == 2 or (pred is not None and pred.cardinality == "single") or norm(a.get("value")) == norm(b.get("value"))
+    if slotted(a["predicate"]) and slot(a) != slot(b):
+        return False
+    if cardinality(a) == "single":
+        return True
+    same = norm(a.get("value")) == norm(b.get("value"))
+    return same or (level == 2 and similarity(a.get("value"), b.get("value")) >= RESTATE_VALUE_MIN)
 
 
 def restated(old: list[dict[str, Any]], new: list[dict[str, Any]], r: Resolution | None) -> dict[int, dict[str, Any]]:
@@ -352,6 +746,57 @@ def _owner_id(rep: dict[str, Any]) -> int:
 ANNOTATIONS = ("subject_entity", "object_entity", "names", "participant_entities")
 
 
+# The repairs `apply_facts` applies to the head's assertions (PHASE-67 part 4 adds `fact_add` and `fact_hidden`).
+FACT_KINDS = ("fact_retract", "fact_correct", "fact_restore", "fact_add", "fact_hidden")
+
+
+def _apply_hidden(rows: list[dict[str, Any]], reps: list[dict[str, Any]], r: Resolution | None,
+                  applied: dict[str, str | None]) -> list[dict[str, Any]]:
+    """A name added to or taken from a fact's hidden_from (`fact_hidden`, PHASE-67 part 4), in the order made, on a copy
+    of the story's row (same id and position: the turn's other repairs still find it; the row's `repair` names it). A
+    name kept from a character makes the fact limited knowledge (a secret: its folds and gates); a name taken back is
+    no longer kept from that character. The marks are the owner's; what the story reveals later still ends the secret."""
+    out = list(rows)
+    for rep in reps:
+        t, v = rep.get("target") or {}, rep.get("value") or {}
+        found = match_fact(t, [x for x in out if not x.get("owner") and x.get("turn") == t.get("turn")], r, quote=False)
+        if found is None and t.get("evidence"):
+            found = match_fact(t, [x for x in out if not x.get("owner")], r)
+        name = str(v.get("character") or "").strip()
+        if found is None or not name:
+            continue
+        want = _key(r, name)
+        hidden = [n for n in found.get("hidden_from") or () if _key(r, n) != want]
+        known = [n for n in found.get("known_by") or () if _key(r, n) != want]
+        new = {**found, "repair": str(rep["id"])}
+        if v.get("hidden"):
+            new.update({"hidden_from": hidden + [name], "known_by": known or None, "knowledge": "limited"})
+        else:
+            new["hidden_from"] = hidden or None
+        out[next(i for i, x in enumerate(out) if x is found)] = new
+        applied[str(rep["id"])] = str(found["id"])
+    return out
+
+
+def apply_told(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Resolution | None,
+               applied: dict[str, str | None]) -> list[dict[str, Any]]:
+    """The served `told` rows without those the owner took back (`told_retract`, PHASE-67 part 4), found as a fact
+    repair finds its target (its turn, then its quote)."""
+    gone: set[int] = set()
+    for rep in repairs:
+        if rep["kind"] != "told_retract":
+            continue
+        applied.setdefault(str(rep["id"]), None)
+        t = rep.get("target") or {}
+        left = [x for x in rows if id(x) not in gone]
+        hit = match_fact(t, [x for x in left if x.get("turn") == t.get("turn")], r, quote=False) or (
+            match_fact(t, left, r) if t.get("evidence") else None)
+        if hit is not None:
+            gone.add(id(hit))
+            applied[str(rep["id"])] = str(hit["id"])
+    return [x for x in rows if id(x) not in gone] if gone else rows
+
+
 def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Resolution | None,
                 applied: dict[str, str | None], annotate: Callable[[dict[str, Any], Any], None] | None = None,
                 turn_positions: dict[int, int] | None = None,
@@ -367,11 +812,14 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
     that turn reads as it did; when the turn's rows state it again, it applies to that row and adds nothing. Returns the
     new list and {repair id: the retracted assertion}; `applied` gets {repair id: the assertion it applied to, or
     None}."""
-    mine = [rep for rep in repairs if rep["kind"] in ("fact_retract", "fact_correct", "fact_restore")]
+    mine = [rep for rep in repairs if rep["kind"] in FACT_KINDS]
     for rep in mine:
         applied.setdefault(str(rep["id"]), None)
     if not mine:
         return rows, {}
+    if any(rep["kind"] == "fact_hidden" for rep in mine):  # first, so a later correction copies the marks the owner set
+        rows = _apply_hidden(rows, [rep for rep in mine if rep["kind"] == "fact_hidden"], r, applied)
+        mine = [rep for rep in mine if rep["kind"] != "fact_hidden"]
     turns = {rep["target"].get("turn") for rep in mine}
     by_turn: dict[Any, list[dict[str, Any]]] = {}  # the story's rows a repair can name, by turn (one pass, not one a repair)
     for a in rows:
@@ -382,7 +830,7 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
     later: list[dict[str, Any]] = []  # owner's versions from a later turn, in the order made
     retracted: dict[str, dict[str, Any]] = {}
     for rep in mine:
-        if rep["kind"] == "fact_restore":
+        if rep["kind"] in ("fact_restore", "fact_add"):
             new = _restore(rep, by_turn.get(rep["target"].get("turn"), ()), r, applied, turn_info or {})
             if new is not None:
                 later.append(new)
@@ -403,15 +851,21 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
             continue
         own = rep["target"].get("turn", a.get("turn"))  # the fact's turn when the repair was made
         at = value.get("turn", own)
-        pred = REGISTRY.get(a["predicate"])
         # at the fact's own turn: in place, at the turn the (maybe new generation's) fact is stated now
-        in_place = at == own or (pred is not None and pred.cardinality == "multi")
-        new = {k: v for k, v in a.items() if k not in ANNOTATIONS}
+        in_place = at == own or cardinality(a) == "multi"
+        # PHASE-67 part 4 (D7 item 3): the owner's version states what the correction gives, never the replaced row's
+        # feeling detail or stated cause (they may contradict the new object or value): `because` only when given.
+        new = {k: v for k, v in a.items() if k not in ANNOTATIONS and k != "feeling"}
         new.update({"id": _owner_id(rep), "host_logical_id": None, "object": value.get("object", a.get("object")),
-                    "value": value.get("value", a.get("value")), "source": "narration", "asserted_by": None,
+                    "value": value.get("value", a.get("value")), "because": value.get("because"),
+                    "source": "narration", "asserted_by": None,
                     "evidence": rep.get("note") or "", "owner": True, "repair": str(rep["id"])})
         if in_place:
-            new.update({"turn": a.get("turn"), "turn_hash": a.get("turn_hash"), "position": a["position"]})
+            # at the fact's own turn the version keeps its message (the in-context rule, D3: a misreading corrected is
+            # what that message says, sent again only when it is not in context); from a later turn it is the owner's
+            # word about a later time, which an earlier message in context does not carry
+            new.update({"turn": a.get("turn"), "turn_hash": a.get("turn_hash"), "position": a["position"],
+                        "host_logical_id": a.get("host_logical_id")})
             gone.add(id(a))  # replaced; a correction from a later turn keeps the story's version as history
             swap[id(a)] = new
         else:
@@ -444,6 +898,8 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
     return out, retracted
 
 
+ONTOLOGY_MARKS = ("condition", "guise", "item_kind", "knowledge_scope")  # extract-v21's (PHASE-66), = facts.ONTOLOGY_MARKS
+
 # A restored fact's columns, as the fact read serves a row (`facts.ACTIVE_ASSERTIONS`) and a restore's target stores them.
 RESTORED = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic", "confidence",
             "evidence", "knowledge", "known_by", "hidden_from", "polarity", "modality", "source", "asserted_by",
@@ -457,7 +913,9 @@ def restore_target(f: dict[str, Any]) -> dict[str, Any]:
             "object": f.get("object"), "text": f["text"], "evidence": f.get("evidence"),
             "fact": ({k: f.get(k) for k in RESTORED}
                      | ({"feeling": f["feeling"]} if f.get("feeling") else {})
-                     | ({"when_happened": f["when_happened"]} if f.get("when_happened") else {}))}
+                     | ({"when_happened": f["when_happened"]} if f.get("when_happened") else {})
+                     | ({"address_condition": f["address_condition"]} if f.get("address_condition") else {})
+                     | {k: f[k] for k in ONTOLOGY_MARKS if f.get(k)})}
 
 
 def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied: dict[str, str | None],
@@ -480,8 +938,15 @@ def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied:
         new["feeling"] = fact["feeling"]
     if fact.get("when_happened"):  # PHASE-60 S7: a restored event or promise keeps when it happened
         new["when_happened"] = fact["when_happened"]
+    if fact.get("address_condition"):  # PHASE-64: a restored conditional address keeps its condition
+        new["address_condition"] = fact["address_condition"]
+    for k in ONTOLOGY_MARKS:  # PHASE-66: a restored extract-v21 fact keeps its marks (and so reads as v21's)
+        if fact.get(k):
+            new[k] = fact[k]
     new.update({"id": _owner_id(rep), "turn": t["turn"], "turn_hash": t["turn_hash"], "position": at[0],
-                "host_logical_id": None, "generation": None, "compiler": None, "listed_hash": None,
+                # a statement the owner adds keeps the message it names (the in-context rule, D3)
+                "host_logical_id": t.get("message") if rep["kind"] == "fact_add" else None,
+                "generation": None, "compiler": None, "listed_hash": None,
                 "source": "narration", "owner": True, "repair": str(rep["id"])})
     applied[str(rep["id"])] = str(new["id"])
     return new
@@ -517,7 +982,9 @@ class RepairError(ValueError):
 def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outcome: str | None = None,
          character: str | None = None, turn: int | None = None, new_object: str | None = None,
          new_value: str | None = None, other: str | None = None, entity_type: str = "character",
-         version_key: Callable[..., tuple] | None = None, scope: str = "cast") -> tuple[dict[str, Any], dict[str, Any]]:
+         version_key: Callable[..., tuple] | None = None, scope: str = "cast", new_because: str | None = None,
+         fact: Mapping[str, Any] | None = None, hidden: bool | None = None,
+         attention: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     """The target and value a new repair stores, for the item the Inspector shows now (a thread's or a secret's id),
     checked against the current memory."""
     if kind not in ENABLED:
@@ -539,8 +1006,16 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
         if f is None:
             raise RepairError("no fact a re-extraction dropped, or role ending held, with that id in this chat now")
         return restore_target(f), {}
+    if kind == "fact_add":  # the caller names the message's turn and hash (`view["messages"]`)
+        return _plan_add(item, fact or {}, view)
+    if kind == "told_retract":  # the caller reads the view with who told whom (`view["told"]`)
+        return _plan_told(item, view)
+    if kind == "fact_hidden":
+        return _plan_hidden(item, character, hidden, view)
+    if kind == "attention_dismiss":  # the caller lists what needs a look and is not dismissed (`view["attention"]`)
+        return _plan_dismiss(item, attention, view)
     if kind.startswith("fact_"):
-        return _plan_fact(kind, item, view, last_turn, new_object, new_value, turn, version_key)
+        return _plan_fact(kind, item, view, last_turn, new_object, new_value, turn, version_key, new_because)
     at = last_turn if turn is None else turn
     if kind.startswith("thread_"):
         t = next((t for t in view["threads"] if str(t["id"]) == item), None)
@@ -576,6 +1051,123 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
     if match_secret(target, view["secrets"], r) is not s:
         raise RepairError("the secret cannot be told apart from another one of its turn")
     return target, {"character": name, "turn": at}
+
+
+def _plan_add(message: str, fact: Mapping[str, Any], view: dict[str, Any]) -> tuple[dict, dict]:
+    """A statement the extraction missed (`fact_add`, PHASE-67 part 4), on a message of the head the owner names: a
+    REGISTRY predicate (not a name join: that is a link) validated as the extractor's output is (`predicates.validate`),
+    narrated, actual and positive, with the knowledge marks the owner gives (a name kept from someone makes it limited
+    knowledge). Read as a restored fact is: the owner's version at the end of the message's turn while the turn reads as
+    it did, and nothing once the turn's rows state it."""
+    from .predicates import validate
+    at = (view.get("messages") or {}).get(message)
+    if at is None or at[0] is None or at[0] < 0:
+        raise RepairError("no message with that id in this chat now")
+    turn, turn_hash = at
+    names = lambda k: [n.strip() for n in fact.get(k) or () if str(n).strip()] or None  # noqa: E731
+    row: dict[str, Any] = {k: None for k in RESTORED}
+    row.update({"subject": str(fact.get("subject") or "").strip(), "subject_type": fact.get("subject_type") or "character",
+                "predicate": str(fact.get("predicate") or ""), "object": str(fact.get("object") or "").strip() or None,
+                "object_type": fact.get("object_type"), "value": str(fact.get("value") or "").strip() or None,
+                "known_by": names("known_by"), "hidden_from": names("hidden_from"), "polarity": "positive",
+                "modality": "actual", "source": "narration", "evidence": ""})
+    row["knowledge"] = "limited" if row["hidden_from"] else "public"
+    if row["predicate"] not in REGISTRY or row["predicate"] == "also_called":
+        raise RepairError("the predicate is not one memory states (two names of one character are joined, not added)")
+    status, reason = validate(row)
+    if status != "valid":
+        raise RepairError(f"the statement is not complete: {reason}")
+    r = view.get("resolution")
+    if any(b.get("turn") == turn and not b.get("owner") and _restates(1, row, b, r) for b in view.get("assertions") or ()):
+        raise RepairError("the chat's memory states that already at that turn")
+    return {"turn": turn, "turn_hash": turn_hash, "message": message, "predicate": row["predicate"],
+            "subject": row["subject"], "object": row["object"], "text": secret_text(row), "evidence": None,
+            "fact": row}, {}
+
+
+def _plan_told(item: str, view: dict[str, Any]) -> tuple[dict, dict]:
+    """A told row taken back (`told_retract`, PHASE-67 part 4): one of the view's who-told-whom rows, by id."""
+    t = next((x for x in view.get("told") or () if str(x["id"]) == item), None)
+    if t is None:
+        raise RepairError("no told row with that id in this chat now")
+    if t.get("carried") or t.get("canon"):
+        raise RepairError("only a told row of this chat's story is taken back")
+    target = fact_target(t)
+    if match_fact(target, view["told"], view.get("resolution")) is not t:
+        raise RepairError("the told row cannot be told apart from another one of its turn")
+    return target, {}
+
+
+def _plan_hidden(item: str, character: str | None, hidden: bool | None, view: dict[str, Any]) -> tuple[dict, dict]:
+    """A name added to (`hidden`) or taken from a fact's hidden_from (`fact_hidden`, PHASE-67 part 4): a fact of the
+    story (not canon's, a carried one or the owner's correction), at its own turn."""
+    f = next((x for x in view["facts"] if str(x["id"]) == item), None)
+    if f is None:
+        raise RepairError("no fact with that id in this chat now")
+    if f.get("owner") or f.get("canon") or f.get("carried"):
+        raise RepairError("only a fact of this chat's story is marked: correct the owner's version, or take it back")
+    if hidden is None:
+        raise RepairError("say whether the fact is kept from the character")
+    name = (character or "").strip()
+    if not name:
+        raise RepairError("name the character")
+    r = view.get("resolution")
+    kept = any(_key(r, n) == _key(r, name) for n in f.get("hidden_from") or ())
+    if hidden and (kept or _key(r, name) == _key(r, f.get("subject"))):
+        raise RepairError("the fact is kept from that character already, or is about them")
+    if not hidden and not kept:
+        raise RepairError("the fact is not kept from that character now")
+    target = fact_target(f)
+    hit = match_fact(target, view.get("assertions") or view["facts"], r)
+    if hit is None or str(hit["id"]) != item:
+        raise RepairError("the fact cannot be told apart from another one of its turn")
+    return target, {"character": name, "hidden": bool(hidden)}
+
+
+ATTENTION = ("role_held", "alias_held")  # what "Needs attention" asks the owner to confirm, and a dismissal names
+
+
+def attention_target(what: str, a: Mapping[str, Any]) -> dict[str, Any]:
+    """What a dismissal stores to find a held role ending or alias again: its turn, the turn's hash and its head."""
+    return {"what": what, "turn": a.get("turn"), "turn_hash": a.get("turn_hash"), "predicate": a.get("predicate"),
+            "subject": a.get("subject"), "subject_type": a.get("subject_type"), "object": a.get("object"),
+            "object_type": a.get("object_type"), "value": a.get("value"), "text": secret_text(dict(a))}
+
+
+def _plan_dismiss(item: str, what: str | None, view: dict[str, Any]) -> tuple[dict, dict]:
+    """A held role ending or alias the owner dismissed (`attention_dismiss`, PHASE-67 part 4): no longer listed under
+    "Needs attention"; the memory is as it is (a held ending can still be restored, a held alias's names still linked)."""
+    if what not in ATTENTION:
+        raise RepairError("say what is dismissed: role_held or alias_held")
+    a = next((x for x in (view.get("attention") or {}).get(what) or () if str(x["id"]) == item), None)
+    if a is None:
+        raise RepairError("nothing held with that id needs a look in this chat now")
+    return attention_target(what, a), {}
+
+
+def undismissed(items: list[dict[str, Any]], repairs: list[dict[str, Any]], what: str,
+                r: Resolution | None) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """`items` (held role endings or aliases, `what`) without those a dismissal in force names (its turn as the read
+    rebased it, its head by entity), and {dismissal id: the row it applies to}."""
+    mine = [rep for rep in repairs if rep["kind"] == "attention_dismiss" and not rep.get("detached")
+            and not rep.get("removed_at") and (rep.get("target") or {}).get("what") == what]
+    if not mine:
+        return items, {}
+
+    def same(t: Mapping[str, Any], a: Mapping[str, Any]) -> bool:
+        return (a.get("turn") == t.get("turn") and (t.get("turn_hash") is None or a.get("turn_hash") == t["turn_hash"])
+                and a.get("predicate") == t.get("predicate")
+                and _ekey(r, a.get("subject_type"), a.get("subject")) == _ekey(r, t.get("subject_type"), t.get("subject"))
+                and _ekey(r, a.get("object_type"), a.get("object")) == _ekey(r, t.get("object_type"), t.get("object"))
+                and norm(a.get("value")) == norm(t.get("value")))
+    kept, hits = [], {}
+    for a in items:
+        rep = next((x for x in mine if same(x["target"] or {}, a)), None)
+        if rep is None:
+            kept.append(a)
+        else:
+            hits.setdefault(str(rep["id"]), str(a["id"]))
+    return kept, hits
 
 
 def _check_turn(at: int | None, since: int | None, last_turn: int | None, what: str) -> None:
@@ -636,7 +1228,7 @@ def exclusions(repairs: list[dict[str, Any]], r: Resolution | None) -> dict[str,
             continue
         t = rep["target"]
         e = r.entity(t.get("entity_type") or "character", t.get("name"))
-        if e is None:
+        if e is None or e.get("persona"):  # a name left out that the story later joins to the persona hides nothing
             continue
         was = out.get(str(e["id"]))
         if was is None or (t.get("scope") == "memory" and was["scope"] != "memory"):
@@ -690,8 +1282,14 @@ def pins(repairs: list[dict[str, Any]], r: Resolution | None) -> list[dict[str, 
 
 
 def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None, new_object: str | None,
-               new_value: str | None, turn: int | None, version_key: Callable[..., tuple] | None = None) -> tuple[dict, dict]:
+               new_value: str | None, turn: int | None, version_key: Callable[..., tuple] | None = None,
+               new_because: str | None = None) -> tuple[dict, dict]:
     f = next((f for f in view["facts"] if str(f["id"]) == item), None)
+    if f is None:  # PHASE-66: a belief or a forgetting the view lists apart is repaired as a fact is
+        f = next((b for b in (*(view.get("beliefs") or ()), *(view.get("forgotten") or ())) if str(b["id"]) == item),
+                 None)
+    if f is None and kind == "fact_retract":  # PHASE-67 part 4: a character's claim, taken back as a fact is
+        f = next((c for c in view.get("claims") or () if str(c["id"]) == item), None)
     if f is None and kind in ("fact_retract", "fact_lock", "fact_correct"):
         # a canon fact the story superseded: the owner keeps the story's (retract) or canon's (lock) (PHASE-14 Q4), or
         # canon's as corrected (PHASE-57 B2: the correction is locked with it)
@@ -709,7 +1307,7 @@ def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None
         raise RepairError("the fact cannot be told apart from another one of its turn")
     if kind == "fact_retract":
         return target, {}
-    pred = REGISTRY.get(f["predicate"])
+    pred = READ_REGISTRY.get(f["predicate"])
     if new_object and new_object.strip() and pred is not None and pred.object_types is None:
         raise RepairError(f"a {f['predicate']} fact has no object: correct its value")
     if new_value and new_value.strip() and pred is not None and not pred.needs_value and not f.get("value"):
@@ -719,8 +1317,10 @@ def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None
         value["object"] = new_object.strip()
     if new_value is not None and new_value.strip() and new_value.strip() != (f.get("value") or ""):
         value["value"] = new_value.strip()
+    if new_because is not None and new_because.strip() and new_because.strip() != (f.get("because") or ""):
+        value["because"] = new_because.strip()  # PHASE-67 part 4: the stated cause, given by the owner, else none
     if not value:
-        raise RepairError("give a new object or value that differs from the fact's")
+        raise RepairError("give a new object, value or cause that differs from the fact's")
     at = f.get("turn") if turn is None else turn
     _check_turn(at, f.get("turn"), last_turn, "fact")
     if ("object" in value and at != f.get("turn") and version_key is not None
@@ -734,6 +1334,8 @@ def _plan_lock(f: dict[str, Any], view: dict[str, Any], r: Resolution | None) ->
     """A lock (PHASE-14 Q7): a canon fact or the owner's correction, as a fact (narrated, actual), not locked yet."""
     if not (f.get("canon") or f.get("owner")):
         raise RepairError("only a canon fact or the owner's correction can be locked")
+    if epistemic(f):  # PHASE-66: a belief is no statement about the world a later one could replace
+        raise RepairError("a belief or a forgetting is not locked: correct or retract it")
     if f.get("locked"):
         raise RepairError("the fact is locked already")
     if (f.get("source") or "narration") != "narration" or f.get("modality", "actual") != "actual":

@@ -11,7 +11,7 @@
 //@arg deadline_ms int Hard request-path deadline in ms (0 = 3000)
 //@arg inject_position string before_last_user (default) or end
 //@arg trim_old_turns int 1 = leave old dialogue out in steps once memory and summaries cover it (needs summaries on)
-//@arg keep_recent_turns int Recent turns always sent when trimming; the cut moves in steps of this many (0 = 20, 4-200)
+//@arg keep_recent_turns int Recent turns always sent when trimming; the cut moves in steps of this many (0 = 16, 4-200)
 //@arg route string auto (default) / direct / server — how to reach the sidecar
 //@arg language string Panel language: ko (default) or en
 //@arg hud int 1 = progress display on the chat screen (turn it on from the NMOS panel)
@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:81b2a82ff28e".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:790a51c64efa".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -110,6 +110,97 @@ ${part}`;
     }
   }
 
+  // src/placement.ts
+  var MEMORY_MARKER = "[NMOS.memory]";
+  function isTextPart(part) {
+    return typeof part === "object" && part !== null && !Array.isArray(part) && part.type === "text" && typeof part.text === "string";
+  }
+  var NONE = /* @__PURE__ */ new Set();
+  function findMarker(prompt, skip = NONE) {
+    if (!Array.isArray(prompt)) return null;
+    for (let i = 0; i < prompt.length; i += 1) {
+      if (skip.has(i)) continue;
+      const m = prompt[i];
+      if (!m || typeof m !== "object") continue;
+      const content = m.content;
+      if (typeof content === "string") {
+        const offset = content.indexOf(MEMORY_MARKER);
+        if (offset >= 0) return { message: i, part: null, offset };
+      } else if (Array.isArray(content)) {
+        for (let j = 0; j < content.length; j += 1) {
+          const part = content[j];
+          if (!isTextPart(part)) continue;
+          const offset = part.text.indexOf(MEMORY_MARKER);
+          if (offset >= 0) return { message: i, part: j, offset };
+        }
+      }
+    }
+    return null;
+  }
+  function replaceInString(text2, packet, placed) {
+    if (!text2.includes(MEMORY_MARKER)) return { text: text2, changed: false, placed };
+    const parts = text2.split(MEMORY_MARKER);
+    if (placed) return { text: parts.join(""), changed: true, placed: true };
+    return { text: `${parts[0] ?? ""}${packet}${parts.slice(1).join("")}`, changed: true, placed: true };
+  }
+  function resolvePlaceholders(prompt, packet, skip = NONE) {
+    if (!Array.isArray(prompt)) return prompt;
+    const cleanPacket = typeof packet === "string" ? packet.split(MEMORY_MARKER).join("") : "";
+    let out = null;
+    let placed = false;
+    for (let i = 0; i < prompt.length; i += 1) {
+      if (skip.has(i)) continue;
+      const m = prompt[i];
+      if (!m || typeof m !== "object") continue;
+      const content = m.content;
+      if (typeof content === "string") {
+        const res = replaceInString(content, cleanPacket, placed);
+        placed = res.placed;
+        if (res.changed) {
+          if (out === null) out = prompt.slice();
+          out[i] = { ...m, content: res.text };
+        }
+      } else if (Array.isArray(content)) {
+        let newParts = null;
+        for (let j = 0; j < content.length; j += 1) {
+          const part = content[j];
+          if (!isTextPart(part)) continue;
+          const res = replaceInString(part.text, cleanPacket, placed);
+          placed = res.placed;
+          if (res.changed) {
+            if (newParts === null) newParts = content.slice();
+            newParts[j] = { ...part, text: res.text };
+          }
+        }
+        if (newParts !== null) {
+          if (out === null) out = prompt.slice();
+          out[i] = { ...m, content: newParts };
+        }
+      }
+    }
+    return out ?? prompt;
+  }
+  function stripMarkers(prompt) {
+    return resolvePlaceholders(prompt, "");
+  }
+  function holdsText(prompt, text2) {
+    if (!text2 || typeof text2 !== "string" || !Array.isArray(prompt)) return false;
+    for (let i = 0; i < prompt.length; i += 1) {
+      const m = prompt[i];
+      if (!m || typeof m !== "object") continue;
+      const content = m.content;
+      if (typeof content === "string") {
+        if (content.includes(text2)) return true;
+      } else if (Array.isArray(content)) {
+        for (let j = 0; j < content.length; j += 1) {
+          const part = content[j];
+          if (isTextPart(part) && part.text.includes(text2)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // src/canon.ts
   var ID = /^[A-Za-z0-9_.:-]{1,110}$/;
   var MAX_CANON_CHARS = 19e5;
@@ -125,8 +216,8 @@ ${part}`;
     if (typeof entry.id === "string" && ID.test(entry.id)) return `lore:${entry.id}`;
     return `lore:f${fnv([entry.comment ?? "", entry.key ?? "", entry.secondkey ?? "", entry.mode ?? ""].join("\0"))}`;
   }
-  function keysOf(entry) {
-    return `${entry.key ?? ""},${entry.secondkey ?? ""}`.split(/[,\n]/).map((k) => k.trim()).filter(Boolean);
+  function keysOf(field2) {
+    return (field2 ?? "").split(/[,\n]/).map((k) => k.trim()).filter(Boolean);
   }
   var text = (value) => typeof value === "string" ? value.trim() : "";
   function same(a, b) {
@@ -157,11 +248,13 @@ ${part}`;
       seen.set(key, n + 1);
       if (n) key = `${key}~${n}`;
       const scope = local.some((e) => same(e, entry)) ? "chat" : global.some((e) => same(e, entry)) ? "character" : card ? "module" : null;
+      const triggers = keysOf(entry.secondkey);
       add(key, entry.content, {
         scope: scope ?? void 0,
         mode: entry.mode,
         always_active: !!entry.alwaysActive,
-        keys: keysOf(entry),
+        keys: keysOf(entry.key),
+        trigger_keys: triggers.length ? triggers : void 0,
         comment: text(entry.comment) || void 0
       });
     }
@@ -171,7 +264,8 @@ ${part}`;
   var HELD_MIN_LINE = 12;
   var HELD_SHARE = 0.8;
   function heldKeys(canon, prompt) {
-    const all = normalizeText(prompt.map((m) => typeof m?.content === "string" ? m.content : "").join("\n"));
+    const textOf = (content) => typeof content === "string" ? content : Array.isArray(content) ? content.filter(isTextPart).map((part) => part.text).join("\n") : "";
+    const all = normalizeText(prompt.map((m) => textOf(m?.content)).join("\n"));
     const character = canon.find((c) => c.key === "card:name")?.text.trim();
     const persona = canon.find((c) => c.key === "persona")?.metadata.name;
     const user = typeof persona === "string" && persona.trim() ? persona.trim() : void 0;
@@ -246,7 +340,7 @@ ${part}`;
   var DEFAULT_RESERVED_TOKENS = 4e3;
   var MAX_RESERVED_TOKENS = 2e4;
   var PANEL_MAX_RESERVED_TOKENS = 8e3;
-  var DEFAULT_KEEP_RECENT_TURNS = 20;
+  var DEFAULT_KEEP_RECENT_TURNS = 16;
   var MIN_KEEP_RECENT_TURNS = 4;
   var MAX_KEEP_RECENT_TURNS = 200;
   var MIN_RERANK_TIMEOUT_MS = 50;
@@ -298,6 +392,14 @@ ${part}`;
     const n = Number(value.trim());
     return value.trim() !== "" && Number.isFinite(n) ? n : value;
   }
+  var DEFAULT_EMBED_MAX_CHUNKS = 8;
+  var MIN_EMBED_MAX_CHUNKS = 1;
+  var MAX_EMBED_MAX_CHUNKS = 64;
+  var EMBED_CHUNK_CHARS = 700;
+  function embedChunkChars(chunks) {
+    const n = Number(chunks.trim());
+    return chunks.trim() !== "" && Number.isInteger(n) && n >= MIN_EMBED_MAX_CHUNKS && n <= MAX_EMBED_MAX_CHUNKS ? n * EMBED_CHUNK_CHARS : null;
+  }
   function configBody(dirty, v, known = {}, base) {
     const body = {};
     for (const [section, prefix] of [["llm", "llm"], ["emb", "embed"]]) {
@@ -329,6 +431,14 @@ ${part}`;
       });
       if (v.tune.embedWait.trim() !== "") body.embed_timeout_ms = num(v.tune.embedWait);
       if (known.pinAt) body.pin_at_mentions = v.tune.pinAt;
+      const chunks = v.tune.embedChunks?.trim() ?? "";
+      if (known.embedChunks && chunks !== "" && chunks !== (base?.tune.embedChunks?.trim() ?? "")) {
+        body.embed_max_chunks = num(chunks);
+      }
+      const early = v.tune.extractOnOutput;
+      if (known.extractOnOutput && early !== void 0 && early !== Boolean(base?.tune.extractOnOutput)) {
+        body.extract_on_output = early;
+      }
     }
     return body;
   }
@@ -663,6 +773,9 @@ ${part}`;
     "notes.length": ["\uC5F0\uB300\uAE30\xB7\uCEE4\uC2A4\uD140 \uAE38\uC774", "Chronicle and custom length"],
     "notes.short": ["\uC9E7\uAC8C (3,000\uC790)", "Short (3,000 characters)"],
     "notes.long": ["\uAE38\uAC8C (6,000\uC790)", "Long (6,000 characters)"],
+    "notes.language": ["\uB178\uD2B8 \uC5B8\uC5B4", "Note language"],
+    "notes.lang_chat": ["\uCC44\uD305 \uC5B8\uC5B4\uC5D0 \uB9DE\uCDA4", "The chat's language"],
+    "notes.lang_en": ["English", "English"],
     "notes.secrets": ["\uBE44\uBC00 \uD3EC\uD568 (\uB204\uAC00 \uBAA8\uB974\uB294\uC9C0 \uD45C\uC2DC)", "Include secrets (marked with who does not know)"],
     "notes.secrets_warn": [
       "\uC791\uAC00\uC758 \uB178\uD2B8\uB294 \uBAA8\uB4E0 \uC7A5\uBA74\uC5D0 \uB4E4\uC5B4\uAC11\uB2C8\uB2E4. \uBE44\uBC00\uC744 \uB123\uC73C\uBA74 \uBAA8\uB974\uB294 \uCE90\uB9AD\uD130 \uC55E\uC5D0\uC11C \uBAA8\uB378\uC774 \uD758\uB9B4 \uC218 \uC788\uC5B4\uC694.",
@@ -755,6 +868,32 @@ ${part}`;
     // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
     "rp.state_dismiss": ["\uAD1C\uCC2E\uC74C", "Dismiss"],
     // a status flag the owner looked at (PHASE-39 Q4)
+    "rp.attention_dismiss": ["\uB118\uAE30\uAE30", "Dismiss"],
+    // a held role ending or alias the owner dismissed
+    "rp.told_retract": ["\uCCA0\uD68C", "Retract"],
+    "rp.fact_hidden": ["\uBE44\uBC00 \uB300\uC0C1", "Hidden"],
+    "rp.fact_add": ["\uC0AC\uC2E4 \uCD94\uAC00", "Add fact"],
+    "rp.branch_inherit": ["\uC6D0\uBCF8 \uBD84\uAE30 \uAE30\uC5B5 \uAC00\uC838\uC624\uAE30", "Inherit from origin branch"],
+    "bi.title": ["\uC6D0\uBCF8 \uBD84\uAE30\uC5D0\uC11C \uAC00\uC838\uC62C \uAE30\uC5B5", "Memory to inherit from origin branch"],
+    "bi.preview": [
+      "\uACF5\uD1B5 \uAD6C\uAC04 {p}\uAC1C \uBA54\uC2DC\uC9C0 \xB7 \uCD94\uCD9C {x}\uAC74 \xB7 \uC694\uC57D {s}\uAC74 \xB7 \uC784\uBCA0\uB529 {e}\uAC74 \xB7 \uC218\uB9AC {r}\uAC74 \xB7 \uC5F0\uACB0 {l}\uAC74 (\uBAA8\uB378 \uD638\uCD9C 0\uD68C)",
+      "{p} shared messages \xB7 {x} extractions \xB7 {s} summaries \xB7 {e} embeddings \xB7 {r} repairs \xB7 {l} links (0 model calls)"
+    ],
+    "bi.empty": ["\uC6D0\uBCF8 \uBD84\uAE30\uC5D0\uC11C \uC0C8\uB85C \uAC00\uC838\uC62C \uAE30\uC5B5\uC774 \uC5C6\uC5B4\uC694 ({s}).", "Nothing new to inherit from the origin branch ({s})."],
+    "bi.confirm": ["\uAC00\uC838\uC624\uAE30", "Inherit now"],
+    "bi.done": ["\uC6D0\uBCF8 \uBD84\uAE30 \uAE30\uC5B5\uC744 \uAC00\uC838\uC654\uC5B4\uC694 ({x}\uAC74 \uCD94\uCD9C, {s}\uAC74 \uC694\uC57D, {r}\uAC74 \uC218\uB9AC).", "Inherited from origin branch ({x} extractions, {s} summaries, {r} repairs)."],
+    "fh.char": ["\uB300\uC0C1 \uC778\uBB3C \uC774\uB984", "Character name"],
+    "fh.hide": ["\uC228\uAE40 \uCD94\uAC00", "Hide from"],
+    "fh.unhide": ["\uC228\uAE40 \uD574\uC81C", "Stop hiding"],
+    "fa.title": ["\uBE60\uC9C4 \uC0AC\uC2E4 \uC9C1\uC811 \uCD94\uAC00", "Add a missed fact"],
+    "fa.msg": ["\uAE30\uC900 \uBA54\uC2DC\uC9C0", "Source message"],
+    "fa.pred": ["\uC885\uB958", "Predicate"],
+    "fa.subj": ["\uC8FC\uCCB4 (\uB204\uAC00/\uBB34\uC5C7\uC774)", "Subject"],
+    "fa.obj": ["\uB300\uC0C1 (\uC0C1\uB300/\uC7A5\uC18C/\uBB3C\uAC74)", "Object (optional)"],
+    "fa.val": ["\uAC12 (\uB0B4\uC6A9/\uC0C1\uD0DC)", "Value (optional)"],
+    "fa.hidden": ["\uC228\uAE38 \uC778\uBB3C (\uC27C\uD45C\uB85C \uAD6C\uBD84, \uC120\uD0DD)", "Hidden from (comma-separated, optional)"],
+    "fa.no_msgs": ["\uCD94\uAC00\uD560 \uBA54\uC2DC\uC9C0\uAC00 \uC544\uC9C1 \uC5C6\uC5B4\uC694.", "No messages available yet."],
+    "fa.need_subj": ["\uC8FC\uCCB4\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.", "Enter a subject."],
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
     "rp.undo_batch": ["\uC804\uBD80 \uB418\uB3CC\uB9AC\uAE30", "Undo all"],
     "rp.fact_correct_lock": ["\uC6D0\uC804 \uC815\uC815({n})", "Correct the setting {n}"],
@@ -980,6 +1119,16 @@ ${part}`;
     "tune.threshold": ["\uAE00\uC790 \uC77C\uCE58 \uAE30\uC900", "Lexical threshold"],
     "tune.min_sim": ["\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900", "Vector min similarity"],
     "tune.embed_wait": ["\uC758\uBBF8 \uAC80\uC0C9 \uB300\uAE30(ms)", "Embedding wait (ms)"],
+    "tune.embed_chunks": ["\uC784\uBCA0\uB529 \uCD5C\uB300 \uCCAD\uD06C \uC218", "Embedding chunks per message"],
+    "tune.embed_chunks_hint": [
+      "\uAE34 \uBA54\uC2DC\uC9C0\uC5D0\uC11C \uC758\uBBF8 \uAC80\uC0C9\uC774 \uB2FF\uB294 \uAE38\uC774\uC785\uB2C8\uB2E4: \uCCAD\uD06C {n}\uAC1C = {chars}\uC790 (\uAE30\uBCF8 {d}\uAC1C = {dchars}\uC790). \uCD94\uCD9C \uC0C1\uD55C\uC744 \uC62C\uB838\uB2E4\uBA74 \uAC19\uC774 \uC62C\uB9AC\uC138\uC694. \uBC14\uAFB8\uBA74 \uBAA8\uB4E0 \uCC44\uD305\uC744 \uB2E4\uC2DC \uC784\uBCA0\uB529\uD569\uB2C8\uB2E4(\uC784\uBCA0\uB529 \uD638\uCD9C\uC774 \uADF8\uB9CC\uD07C \uB4ED\uB2C8\uB2E4).",
+      "How much of a long message semantic search reaches: {n} chunks = {chars} characters (default {d} = {dchars}). Raise it along with a raised extraction cap. A change embeds every chat again (that many embedding calls)."
+    ],
+    "tune.embed_chunks_range": ["{min}\uC5D0\uC11C {max} \uC0AC\uC774\uC758 \uC815\uC218\uB97C \uB123\uC5B4 \uC8FC\uC138\uC694.", "Enter a whole number from {min} to {max}."],
+    "tune.embed_chunks_fixed": [
+      "\uC774 \uC0AC\uC774\uB4DC\uCE74\uC5D0\uC11C\uB294 \uD328\uB110\uC5D0\uC11C \uBC14\uAFC0 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4 (NMOS_EMBED_MAX_CHUNKS\uB85C \uC815\uD569\uB2C8\uB2E4).",
+      "This sidecar does not let the panel change it (set NMOS_EMBED_MAX_CHUNKS)."
+    ],
     "tune.embed_wait_hint": [
       "\uC784\uBCA0\uB529 \uB2F5\uC744 \uAE30\uB2E4\uB9AC\uB294 \uC2DC\uAC04\uC785\uB2C8\uB2E4. \uB118\uC73C\uBA74 \uADF8 \uC694\uCCAD\uC740 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAE30\uC5B5\uB9CC \uCC3E\uC2B5\uB2C8\uB2E4. \uAE30\uBCF8 300ms. \uC0C1\uD0DC \uD0ED\uC5D0 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uCC3E\uC558\uB2E4\uB294 \uC54C\uB9BC\uC774 \uC790\uC8FC \uB728\uBA74(\uC6D0\uACA9 \uC784\uBCA0\uB529, \uB290\uB9B0 PC) 1000 \uC815\uB3C4\uB85C \uB298\uB9AC\uC138\uC694. \uB298\uB9B0 \uB9CC\uD07C \uB2F5\uC7A5 \uC2DC\uC791\uC774 \uB2A6\uC5B4\uC9C8 \uC218 \uC788\uACE0, \uC704\uC758 \uC81C\uD55C \uC2DC\uAC04\uBCF4\uB2E4 \uC9E7\uC544\uC57C \uD569\uB2C8\uB2E4.",
       "How long a request waits for the embedding. Past it, that request recalls by shared words only. Default 300 ms. If the Status tab often warns that semantic search was skipped (a remote embedder, a slow PC), raise it to about 1000. Replies may start that much later, and it must stay below the deadline above."
@@ -1283,6 +1432,12 @@ ${part}`;
     "trimset.needs_summaries": [
       "\uC8FC\uC758: \uC7A5\uBA74 \uC694\uC57D \uB9CC\uB4E4\uAE30\uAC00 \uAEBC\uC838 \uC788\uC5B4\uC11C, \uCF1C\uAE30 \uC804\uAE4C\uC9C0\uB294 \uC544\uBB34\uAC83\uB3C4 \uBE7C\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
       "Note: Scene summaries are off, so nothing is left out until they are on."
+    ],
+    // extracting a reply right after it (PHASE-67)
+    "tune.extract_on_output": ["\uB2F5\uBCC0 \uC9C1\uD6C4 \uCD94\uCD9C", "Extract right after a reply"],
+    "tune.extract_on_output_hint": [
+      "\uCF1C\uBA74 \uB2F5\uC7A5\uC774 \uB05D\uB098\uACE0 20\uCD08\uCBE4 \uB4A4\uC5D0 \uADF8 \uB2F5\uC7A5\uC744 \uBC14\uB85C \uCD94\uCD9C\uD569\uB2C8\uB2E4(\uAEBC\uC838 \uC788\uC73C\uBA74 \uB2E4\uC74C \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0BC \uB54C \uCD94\uCD9C\uD569\uB2C8\uB2E4). \uADF8\uB798\uC11C \uB2E4\uC74C \uBA54\uC2DC\uC9C0 \uB54C \uADF8 \uB2F5\uC7A5\uC758 \uAE30\uC5B5\uC774 \uC774\uBBF8 \uC900\uBE44\uB418\uC5B4 \uC788\uACE0, \uC138\uC158\uC758 \uB9C8\uC9C0\uB9C9 \uB2F5\uC7A5\uB3C4 \uAE30\uC5B5\uC5D0\uC11C \uBE60\uC9C0\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uB300\uC2E0 \uADF8 20\uCD08\uAC00 \uC9C0\uB09C \uB4A4\uC5D0 \uB9AC\uB864\uD558\uAC70\uB098 \uACE0\uCE58\uBA74, \uBC84\uB824\uC9C0\uB294 \uCD94\uCD9C \uD55C \uBC88 \uAC12(\uCD94\uCD9C \uBAA8\uB378 \uD638\uCD9C 1\uD68C)\uC744 \uB0C5\uB2C8\uB2E4. \uC774 \uC124\uC815\uC774 \uC5C6\uB294 \uC0AC\uC774\uB4DC\uCE74\uC5D0\uC11C\uB294 \uBC14\uAFC0 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.",
+      "On: a reply is extracted about 20 seconds after it finishes instead of when you answer it, so memory of it is ready for your next message and the last reply of a session is not lost. A reroll or edit after those 20 seconds pays for one extraction that is thrown away (one call to the extraction model). A sidecar without this setting cannot change it."
     ],
     // pinning a character (PHASE-60 S8)
     "tune.pin_at": ["\uBA54\uC2DC\uC9C0\uC5D0\uC11C @\uC774\uB984\uC73C\uB85C \uC778\uBB3C \uACE0\uC815", "Pin a character with @name in a message"],
@@ -1627,14 +1782,26 @@ ${revisionHash}`;
     };
   }
   var CACHED_CHATS = 2;
+  var CACHED_CHARS_LIMIT = 12e6;
+  function snapshotChars(s) {
+    const c = s[9];
+    const d = s[10];
+    return (typeof c === "string" ? c.length : 0) + (typeof d === "string" ? d.length : 0);
+  }
   function createManifestBuilder() {
     const chats = /* @__PURE__ */ new Map();
-    return async function build(chat, characterRef, labels = {}) {
+    let totalChars = 0;
+    async function build(chat, characterRef, labels = {}) {
       const messages = Array.isArray(chat.message) ? chat.message : [];
       const chatKey = String(chat.id ?? "");
-      const previous = chats.get(chatKey) ?? /* @__PURE__ */ new Map();
-      chats.delete(chatKey);
+      const prevEntry = chats.get(chatKey);
+      const previous = prevEntry?.map ?? /* @__PURE__ */ new Map();
+      if (prevEntry) {
+        totalChars -= prevEntry.chars;
+        chats.delete(chatKey);
+      }
       const next = /* @__PURE__ */ new Map();
+      let nextChars = 0;
       const entries = new Array(messages.length);
       const snapshots = new Array(messages.length);
       const missing = [];
@@ -1648,6 +1815,7 @@ ${revisionHash}`;
         if (hit && sameSnapshot(hit.snapshot, snapshot)) {
           entries[i] = hit.entry;
           next.set(id, hit);
+          nextChars += snapshotChars(hit.snapshot);
         } else {
           missing.push(i);
         }
@@ -1658,100 +1826,27 @@ ${revisionHash}`;
         const entry = manifestEntry(m, hashes[j]);
         entries[i] = entry;
         const snapshot = snapshots[i];
-        if (snapshot) next.set(m.chatId, { snapshot, entry });
+        if (snapshot) {
+          next.set(m.chatId, { snapshot, entry });
+          nextChars += snapshotChars(snapshot);
+        }
       });
-      chats.set(chatKey, next);
-      while (chats.size > CACHED_CHATS) chats.delete(chats.keys().next().value);
+      chats.set(chatKey, { map: next, chars: nextChars });
+      totalChars += nextChars;
+      while (chats.size > CACHED_CHATS || chats.size > 1 && totalChars > CACHED_CHARS_LIMIT) {
+        const oldestKey = chats.keys().next().value;
+        const evicted = chats.get(oldestKey);
+        chats.delete(oldestKey);
+        if (evicted) totalChars -= evicted.chars;
+      }
       return finish(chat, messages, entries, characterRef, labels, missing.length);
-    };
-  }
-
-  // src/placement.ts
-  var MEMORY_MARKER = "[NMOS.memory]";
-  function isTextPart(part) {
-    return typeof part === "object" && part !== null && !Array.isArray(part) && part.type === "text" && typeof part.text === "string";
-  }
-  function findMarker(prompt) {
-    if (!Array.isArray(prompt)) return null;
-    for (let i = 0; i < prompt.length; i += 1) {
-      const m = prompt[i];
-      if (!m || typeof m !== "object") continue;
-      const content = m.content;
-      if (typeof content === "string") {
-        const offset = content.indexOf(MEMORY_MARKER);
-        if (offset >= 0) return { message: i, part: null, offset };
-      } else if (Array.isArray(content)) {
-        for (let j = 0; j < content.length; j += 1) {
-          const part = content[j];
-          if (!isTextPart(part)) continue;
-          const offset = part.text.indexOf(MEMORY_MARKER);
-          if (offset >= 0) return { message: i, part: j, offset };
-        }
-      }
     }
-    return null;
-  }
-  function replaceInString(text2, packet, placed) {
-    if (!text2.includes(MEMORY_MARKER)) return { text: text2, changed: false, placed };
-    const parts = text2.split(MEMORY_MARKER);
-    if (placed) return { text: parts.join(""), changed: true, placed: true };
-    return { text: `${parts[0] ?? ""}${packet}${parts.slice(1).join("")}`, changed: true, placed: true };
-  }
-  function resolvePlaceholders(prompt, packet) {
-    if (!Array.isArray(prompt)) return prompt;
-    const cleanPacket = typeof packet === "string" ? packet.split(MEMORY_MARKER).join("") : "";
-    let out = null;
-    let placed = false;
-    for (let i = 0; i < prompt.length; i += 1) {
-      const m = prompt[i];
-      if (!m || typeof m !== "object") continue;
-      const content = m.content;
-      if (typeof content === "string") {
-        const res = replaceInString(content, cleanPacket, placed);
-        placed = res.placed;
-        if (res.changed) {
-          if (out === null) out = prompt.slice();
-          out[i] = { ...m, content: res.text };
-        }
-      } else if (Array.isArray(content)) {
-        let newParts = null;
-        for (let j = 0; j < content.length; j += 1) {
-          const part = content[j];
-          if (!isTextPart(part)) continue;
-          const res = replaceInString(part.text, cleanPacket, placed);
-          placed = res.placed;
-          if (res.changed) {
-            if (newParts === null) newParts = content.slice();
-            newParts[j] = { ...part, text: res.text };
-          }
-        }
-        if (newParts !== null) {
-          if (out === null) out = prompt.slice();
-          out[i] = { ...m, content: newParts };
-        }
+    return Object.assign(build, {
+      clear() {
+        chats.clear();
+        totalChars = 0;
       }
-    }
-    return out ?? prompt;
-  }
-  function stripMarkers(prompt) {
-    return resolvePlaceholders(prompt, "");
-  }
-  function holdsText(prompt, text2) {
-    if (!text2 || typeof text2 !== "string" || !Array.isArray(prompt)) return false;
-    for (let i = 0; i < prompt.length; i += 1) {
-      const m = prompt[i];
-      if (!m || typeof m !== "object") continue;
-      const content = m.content;
-      if (typeof content === "string") {
-        if (content.includes(text2)) return true;
-      } else if (Array.isArray(content)) {
-        for (let j = 0; j < content.length; j += 1) {
-          const part = content[j];
-          if (isTextPart(part) && part.text.includes(text2)) return true;
-        }
-      }
-    }
-    return false;
+    });
   }
 
   // src/prompt.ts
@@ -1760,15 +1855,23 @@ ${revisionHash}`;
   var GUARD_RESERVE_TOKENS = 40;
   function contentText(content) {
     if (typeof content === "string") return content;
-    if (content == null) return "";
-    return JSON.stringify(content);
+    if (Array.isArray(content)) return content.filter(isTextPart).map((part) => part.text).join("\n");
+    return "";
   }
   function isActive(message) {
-    return message != null && message.disabled !== true && !message.isComment;
+    return message != null && message.disabled !== true && message.disabled !== "allBefore" && !message.isComment;
+  }
+  function activeStartIndex(messages) {
+    if (!Array.isArray(messages)) return 0;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]?.disabled === "allBefore") return i + 1;
+    }
+    return 0;
   }
   function latestUserIndex(messages) {
     if (!Array.isArray(messages)) return -1;
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const start = activeStartIndex(messages);
+    for (let i = messages.length - 1; i >= start; i -= 1) {
       const m = messages[i];
       if (m && m.role === "user" && isActive(m)) return i;
     }
@@ -1785,43 +1888,129 @@ ${revisionHash}`;
     if (!Array.isArray(prompt)) return -1;
     const anchor = userTurnAnchor(hostMessages);
     if (!anchor) return -1;
-    for (let i = prompt.length - 1; i >= 0; i -= 1) {
-      if (prompt[i]?.role === "assistant") continue;
-      const sent = cleanText(contentText(prompt[i]?.content));
-      if (sent.includes(anchor)) return i;
+    if (anchor.length >= SHORT_TURN) {
+      for (let i = prompt.length - 1; i >= 0; i -= 1) {
+        if (prompt[i]?.role === "assistant") continue;
+        const sent = cleanText(contentText(prompt[i]?.content));
+        if (sent.includes(anchor)) return i;
+      }
+      return -1;
     }
-    return -1;
+    const texts = prompt.map((m) => cleanText(contentText(m?.content)));
+    const latest = latestUserIndex(hostMessages);
+    const matches = matchPromptToHost(prompt, hostMessages);
+    let floor = -1;
+    for (const [hostIdx, promptIdx] of matches) if (hostIdx < latest && promptIdx > floor) floor = promptIdx;
+    const search = (from) => {
+      const newest = (ok) => {
+        for (let i = prompt.length - 1; i > from; i -= 1) if (prompt[i]?.role !== "assistant" && ok(i)) return i;
+        return -1;
+      };
+      let at = newest((i) => texts[i] === anchor);
+      if (at < 0) at = newest((i) => prompt[i]?.role === "user" && holdsWord(texts[i], anchor));
+      if (at < 0) at = newest((i) => holdsWord(texts[i], anchor));
+      return at;
+    };
+    let found = search(floor);
+    if (found < 0 && floor >= 0) found = search(-1);
+    if (found < 0) return -1;
+    if (matches.size === 0 && hasAnchorableHistory(hostMessages, latest)) {
+      let newestUser = -1;
+      for (let i = prompt.length - 1; i >= 0 && newestUser < 0; i -= 1) if (prompt[i]?.role === "user") newestUser = i;
+      const dialogue = prompt.some((m, i) => i < newestUser && m?.role === "assistant");
+      return dialogue && texts[newestUser] === anchor ? newestUser : -1;
+    }
+    return found;
   }
-  function hasPacket(prompt) {
-    return Array.isArray(prompt) && prompt.some((m) => m?.role === "system" && contentText(m.content).includes(PACKET_TAG));
+  var SHORT_TURN = 6;
+  var WORD_CHAR = /[\p{L}\p{N}]/u;
+  function charBefore(text2, at) {
+    if (at <= 0) return "";
+    const low = text2.charCodeAt(at - 1);
+    if (low >= 56320 && low <= 57343 && at >= 2) {
+      const high = text2.charCodeAt(at - 2);
+      if (high >= 55296 && high <= 56319) return text2.slice(at - 2, at);
+    }
+    return text2.charAt(at - 1);
+  }
+  function charAt(text2, at) {
+    const point = text2.codePointAt(at);
+    return point === void 0 ? "" : String.fromCodePoint(point);
+  }
+  function holdsWord(text2, word) {
+    const edgeStart = WORD_CHAR.test(charAt(word, 0));
+    const edgeEnd = WORD_CHAR.test(charBefore(word, word.length));
+    for (let at = text2.indexOf(word); at >= 0; at = text2.indexOf(word, at + 1)) {
+      const before = charBefore(text2, at);
+      const after = charAt(text2, at + word.length);
+      if ((!edgeStart || !before || !WORD_CHAR.test(before)) && (!edgeEnd || !after || !WORD_CHAR.test(after))) return true;
+    }
+    return false;
+  }
+  function hasAnchorableHistory(hostMessages, latest) {
+    for (let i = activeStartIndex(hostMessages); i < latest; i += 1) {
+      const m = hostMessages[i];
+      if (isActive(m) && cleanText(selectedContent(m)).length >= MIN_ANCHOR) return true;
+    }
+    return false;
+  }
+  var PACKET_END = "</NarrativeMemory>";
+  function hasPacket(prompt, hostMessages) {
+    if (!Array.isArray(prompt)) return false;
+    if (prompt.some((m) => m?.role === "system" && contentText(m.content).includes(PACKET_TAG))) return true;
+    if (!Array.isArray(hostMessages)) return false;
+    let chat = null;
+    const echoed = (block) => {
+      chat ??= hostMessages.map((h) => {
+        const raw = selectedContent(h);
+        return { raw, clean: cleanText(raw) };
+      });
+      const clean = cleanText(block);
+      return chat.some((h) => h.raw.includes(block) || clean.length >= 2 * MIN_ANCHOR && h.clean.includes(clean));
+    };
+    return prompt.some((m) => {
+      if (!m || m.role === "system") return false;
+      const text2 = contentText(m.content);
+      for (let at = text2.indexOf(PACKET_TAG); at >= 0; at = text2.indexOf(PACKET_TAG, at + 1)) {
+        const end = text2.indexOf(PACKET_END, at);
+        if (end < 0) return false;
+        if (!echoed(text2.slice(at, end + PACKET_END.length))) return true;
+      }
+      return false;
+    });
   }
   function cleanText(value) {
-    return normalizeText(value).replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ").replace(/<[^>\n]{1,500}>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    return normalizeText(value).replace(/<(style|script|thoughts|think|thinking)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ").replace(/<[^>\n]{1,500}>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
   }
   function anchorOf(text2, size = 48) {
     if (text2.length <= size) return text2;
     const start = Math.floor((text2.length - size) / 2);
     return text2.slice(start, start + size);
   }
-  function matchPromptToHost(prompt, hostMessages, minAnchor = 16, maxMisses = 3) {
+  function matchPromptToHost(prompt, hostMessages, minAnchor = MIN_ANCHOR, maxMisses = 3) {
     const matches = /* @__PURE__ */ new Map();
     if (!Array.isArray(prompt) || !Array.isArray(hostMessages)) return matches;
     const texts = prompt.map((m) => cleanText(contentText(m?.content)));
+    const start = activeStartIndex(hostMessages);
     let pointer = texts.length - 1;
     let misses = 0;
-    for (let i = hostMessages.length - 1; i >= 0 && pointer >= 0; i -= 1) {
+    for (let i = hostMessages.length - 1; i >= start && pointer >= 0; i -= 1) {
       const m = hostMessages[i];
       if (!m || !isActive(m)) continue;
       const text2 = cleanText(selectedContent(m));
       if (text2.length < minAnchor) continue;
       const anchor = anchorOf(text2);
       let found = -1;
+      let other = -1;
       for (let k = pointer; k >= 0; k -= 1) {
-        if (texts[k].includes(anchor)) {
-          found = k;
+        if (!texts[k].includes(anchor)) continue;
+        if (rolesFit(m.role, prompt[k]?.role)) {
+          if (!(other >= 0 && prompt[k]?.role === "system")) found = k;
           break;
         }
+        if (other < 0) other = k;
       }
+      if (found < 0) found = other;
       if (found >= 0) {
         matches.set(i, found);
         pointer = found - 1;
@@ -1832,8 +2021,22 @@ ${revisionHash}`;
     }
     return matches;
   }
-  function inContextIds(prompt, hostMessages, minAnchor = 16, maxMisses = 3) {
-    const matches = matchPromptToHost(prompt, hostMessages, minAnchor, maxMisses);
+  var MIN_ANCHOR = 16;
+  function rolesFit(host, prompt) {
+    return host === "user" ? prompt !== "assistant" : prompt !== "user";
+  }
+  function markerCount(text2) {
+    return text2 ? text2.split(MEMORY_MARKER).length - 1 : 0;
+  }
+  function historyMarkerIndices(prompt, hostMessages, matches = matchPromptToHost(prompt, hostMessages)) {
+    const out = /* @__PURE__ */ new Set();
+    for (const [hostIdx, promptIdx] of matches) {
+      const own = markerCount(selectedContent(hostMessages[hostIdx]));
+      if (own > 0 && markerCount(contentText(prompt[promptIdx]?.content)) <= own) out.add(promptIdx);
+    }
+    return out;
+  }
+  function inContextIds(prompt, hostMessages, minAnchor = 16, maxMisses = 3, matches = matchPromptToHost(prompt, hostMessages, minAnchor, maxMisses)) {
     if (matches.size === 0) return [];
     let boundary = hostMessages.length;
     for (const i of matches.keys()) {
@@ -1889,18 +2092,48 @@ ${GUARD_LINE}` : "";
     const after = Array.isArray(prompt) ? textAfterMarker(prompt[marker.message], marker) : "";
     return !cleanText(after).includes(anchor);
   }
+  var SAYS_NOTHING = /* @__PURE__ */ new Set(["*says nothing*", "says nothing"]);
+  function isSaysNothing(message) {
+    return message != null && SAYS_NOTHING.has(cleanText(selectedContent(message)).toLowerCase());
+  }
+  var CONTINUE_QUERY_TAIL = 400;
+  var BURST_MESSAGES = 3;
+  var BURST_QUERY_CHARS = 2e4;
   function queryTexts(hostMessages) {
     const userIndex = latestUserIndex(hostMessages);
-    const query = userIndex >= 0 ? normalizeText(selectedContent(hostMessages[userIndex])) : "";
+    let query = userIndex >= 0 ? normalizeText(selectedContent(hostMessages[userIndex])) : "";
     let previousAi = "";
-    for (let i = userIndex - 1; i >= 0; i -= 1) {
-      const m = hostMessages[i];
-      if (m.role === "char" && isActive(m)) {
-        previousAi = normalizeText(selectedContent(m));
-        break;
+    let isContinue = false;
+    const start = activeStartIndex(hostMessages);
+    const activeAi = (from, to) => {
+      for (let i = from; i >= to; i -= 1) {
+        const m = hostMessages[i];
+        if (m.role === "char" && isActive(m)) return normalizeText(selectedContent(m));
       }
+      return null;
+    };
+    if (userIndex < 0) return { query, previousAi, isContinue };
+    const after = activeAi(hostMessages.length - 1, userIndex + 1);
+    if (after !== null) {
+      previousAi = after;
+      isContinue = true;
+    } else {
+      previousAi = activeAi(userIndex - 1, start) ?? "";
     }
-    return { query, previousAi };
+    if (isSaysNothing(hostMessages[userIndex])) {
+      isContinue = true;
+      if (previousAi.trim()) query = previousAi.slice(-CONTINUE_QUERY_TAIL);
+      return { query, previousAi, isContinue };
+    }
+    const parts = [query];
+    for (let i = userIndex - 1; i >= start && parts.length < BURST_MESSAGES; i -= 1) {
+      const m = hostMessages[i];
+      if (!isActive(m)) continue;
+      if (m.role !== "user" || isSaysNothing(m)) break;
+      parts.unshift(normalizeText(selectedContent(m)));
+    }
+    if (parts.length > 1) query = parts.filter((p) => p.trim()).join("\n").slice(-BURST_QUERY_CHARS);
+    return { query, previousAi, isContinue };
   }
 
   // src/budget.ts
@@ -1924,8 +2157,28 @@ ${GUARD_LINE}` : "";
   }
 
   // src/trim.ts
-  var DROPPABLE_KEYS = /* @__PURE__ */ new Set(["role", "content", "memo", "attr", "thoughts"]);
-  var MIN_ANCHOR = 16;
+  var DROPPABLE_KEYS = /* @__PURE__ */ new Set([
+    "role",
+    "content",
+    "memo",
+    "attr",
+    "thoughts",
+    "name",
+    "removable",
+    "cachePoint"
+  ]);
+  function createTrimScan(prompt, hostMessages) {
+    const cleaned = [];
+    return {
+      prompt,
+      hostMessages,
+      older: /* @__PURE__ */ new Map(),
+      clean: (i) => cleaned[i] ??= cleanText(selectedContent(hostMessages[i]))
+    };
+  }
+  function scanFor(scan, prompt, hostMessages) {
+    return scan && scan.prompt === prompt && scan.hostMessages === hostMessages ? scan : createTrimScan(prompt, hostMessages);
+  }
   function sameText(prompt, hostMessages, p, i) {
     const m = prompt[p];
     if (!m || typeof m.content !== "string") return false;
@@ -1933,27 +2186,35 @@ ${GUARD_LINE}` : "";
     if (!sent) return false;
     return sent === cleanText(selectedContent(hostMessages[i]));
   }
-  function trimPrompt(prompt, hostMessages, keepFromId) {
+  function trimPrompt(prompt, hostMessages, keepFromId, scan) {
     const refuse = () => ({ prompt, dropped: 0, savedTokens: 0, reason: "format" });
     if (!Array.isArray(prompt) || !Array.isArray(hostMessages) || typeof keepFromId !== "string" || !keepFromId) {
       return refuse();
     }
     try {
+      if (prompt.some((m) => m != null && typeof m.content !== "string" && !Array.isArray(m.content))) return refuse();
+      const start = activeStartIndex(hostMessages);
+      const active = (i) => i >= start && isActive(hostMessages[i]);
       const b = hostMessages.findIndex(
-        (m) => isActive(m) && m?.chatId != null && String(m.chatId) === keepFromId
+        (m, i) => active(i) && m?.chatId != null && String(m.chatId) === keepFromId
       );
       if (b < 0) return refuse();
       if (b > latestUserIndex(hostMessages)) return refuse();
-      const turn = userTurnIndex(prompt, hostMessages);
+      const s = scanFor(scan, prompt, hostMessages);
+      const turn = s.turn ??= userTurnIndex(prompt, hostMessages);
       if (turn < 0) return refuse();
-      const pairs = matchPromptToHost(prompt, hostMessages);
+      const pairs = s.pairs ??= matchPromptToHost(prompt, hostMessages);
+      const matched = new Set(pairs.values());
+      let lowestMatched = Infinity;
+      for (const k of matched) if (k < lowestMatched) lowestMatched = k;
+      const injected = (p2, i) => prompt[p2]?.role === "system" && !matched.has(p2) && !sameText(prompt, hostMessages, p2, i);
       let K = turn;
       for (const [hostIdx, promptIdx] of pairs) {
         if (hostIdx >= b && promptIdx < K) K = promptIdx;
       }
       let j = -1;
-      for (let i = b - 1; i >= 0; i -= 1) {
-        if (isActive(hostMessages[i]) && pairs.has(i)) {
+      for (let i = b - 1; i >= start; i -= 1) {
+        if (active(i) && pairs.has(i)) {
           j = i;
           break;
         }
@@ -1964,8 +2225,9 @@ ${GUARD_LINE}` : "";
       const run = /* @__PURE__ */ new Map([[jPrompt, j]]);
       let q = jPrompt + 1;
       for (let i = j + 1; i < b; i += 1) {
-        if (!isActive(hostMessages[i])) continue;
+        if (!active(i)) continue;
         if (pairs.has(i)) return refuse();
+        while (q < K && injected(q, i)) q += 1;
         if (q < K && sameText(prompt, hostMessages, q, i)) {
           run.set(q, i);
           q += 1;
@@ -1974,8 +2236,9 @@ ${GUARD_LINE}` : "";
         }
       }
       let p = jPrompt - 1;
-      for (let i = j - 1; i >= 0; i -= 1) {
-        if (!isActive(hostMessages[i])) continue;
+      for (let i = j - 1; i >= start; i -= 1) {
+        if (!active(i)) continue;
+        while (p > lowestMatched && injected(p, i)) p -= 1;
         if (pairs.has(i)) {
           if (pairs.get(i) === p) {
             run.set(p, i);
@@ -2001,43 +2264,95 @@ ${GUARD_LINE}` : "";
         if (k < runStart) runStart = k;
         if (hostIdx < runOldest) runOldest = hostIdx;
       }
-      const before = prompt.slice(0, runStart).map((m) => cleanText(contentText(m?.content)));
-      if (before.length > 0) {
-        for (let i = runOldest - 1; i >= 0; i -= 1) {
-          if (!isActive(hostMessages[i])) continue;
-          const text2 = cleanText(selectedContent(hostMessages[i]));
-          if (text2.length < MIN_ANCHOR) continue;
-          const anchor = anchorOf(text2);
-          if (before.some((t2) => t2.includes(anchor))) return refuse();
+      const olderKey = `${runStart}:${runOldest}`;
+      let olderHeld = s.older.get(olderKey);
+      if (olderHeld === void 0) {
+        olderHeld = false;
+        const before = prompt.slice(0, runStart).map((m) => cleanText(contentText(m?.content)));
+        if (before.length > 0) {
+          for (let i = runOldest - 1; i >= start && !olderHeld; i -= 1) {
+            if (!active(i)) continue;
+            const text2 = s.clean(i);
+            if (text2.length < MIN_ANCHOR) continue;
+            const anchor = anchorOf(text2);
+            if (before.some((t2) => t2.includes(anchor))) olderHeld = true;
+          }
         }
+        s.older.set(olderKey, olderHeld);
       }
+      if (olderHeld) return refuse();
       let savedTokens = 0;
       for (const [k, hostIdx] of run) {
         const m = prompt[k];
         if (!m || m.role !== "user" && m.role !== "assistant") return refuse();
         if (typeof m.content !== "string") return refuse();
         if (Object.keys(m).some((key) => !DROPPABLE_KEYS.has(key))) return refuse();
-        if (m.content.includes(MEMORY_MARKER)) return refuse();
+        if (markerCount(m.content) > markerCount(selectedContent(hostMessages[hostIdx]))) return refuse();
         if (k >= K || k >= turn) return refuse();
         const sent = cleanText(m.content).length;
-        const own = cleanText(selectedContent(hostMessages[hostIdx])).length;
+        const own = s.clean(hostIdx).length;
         if (sent > 1.25 * own + 64) return refuse();
         savedTokens += estimateTokens(m.content);
       }
+      let newest = -1;
+      for (const k of run.keys()) if (k > newest) newest = k;
       const boundary = cleanText(selectedContent(hostMessages[b]));
       if (boundary) {
-        let newest = -1;
-        for (const k of run.keys()) if (k > newest) newest = k;
         const sent = cleanText(prompt[newest]?.content);
         const own = cleanText(selectedContent(hostMessages[run.get(newest)]));
         const at = own ? sent.lastIndexOf(own) : -1;
         const tail = at >= 0 ? sent.slice(at + own.length) : sent;
         if (tail.includes(boundary)) return refuse();
       }
-      const out = prompt.filter((_, idx) => !run.has(idx));
+      let point;
+      let pointAt = -1;
+      for (const k of run.keys()) {
+        const value = prompt[k]?.cachePoint;
+        if (value !== void 0 && value !== null && value !== false && k > pointAt) {
+          point = value;
+          pointAt = k;
+        }
+      }
+      const out = [];
+      let moved = pointAt < 0;
+      for (let idx = 0; idx < prompt.length; idx += 1) {
+        if (run.has(idx)) continue;
+        const m = prompt[idx];
+        if (!moved && idx > newest) {
+          moved = true;
+          const own = m?.cachePoint;
+          if (m && typeof m === "object" && (own === void 0 || own === null || own === false)) {
+            out.push({ ...m, cachePoint: point });
+            continue;
+          }
+        }
+        out.push(m);
+      }
       return { prompt: out, dropped: run.size, savedTokens, reason: null };
     } catch {
       return refuse();
+    }
+  }
+  function canTrimPrompt(prompt, hostMessages, scan) {
+    try {
+      if (!Array.isArray(prompt) || !Array.isArray(hostMessages)) return false;
+      const s = scanFor(scan, prompt, hostMessages);
+      const latest = latestUserIndex(hostMessages);
+      const turn = s.turn ??= userTurnIndex(prompt, hostMessages);
+      if (latest < 0 || turn < 0) return false;
+      let oldest = -1;
+      for (const [hostIdx, promptIdx] of s.pairs ??= matchPromptToHost(prompt, hostMessages)) {
+        if (hostIdx < latest && promptIdx < turn && (oldest < 0 || hostIdx < oldest)) oldest = hostIdx;
+      }
+      if (oldest < 0) return false;
+      for (let i = oldest + 1; i <= latest; i += 1) {
+        if (!isActive(hostMessages[i])) continue;
+        const id = hostMessages[i]?.chatId;
+        return id != null && trimPrompt(prompt, hostMessages, String(id), s).reason === null;
+      }
+      return false;
+    } catch {
+      return false;
     }
   }
 
@@ -2063,6 +2378,7 @@ ${GUARD_LINE}` : "";
   var DeadlineError = class extends Error {
   };
   var FAILED_TRIM = { keepFromId: null, keepFromTurn: null, reason: "failed" };
+  var FORMAT_TRIM = { keepFromId: null, keepFromTurn: null, reason: "format" };
   function keepRecentTurnsOf(settings) {
     if (!settings.trimOldTurns) return 0;
     const n = settings.keepRecentTurns;
@@ -2085,24 +2401,52 @@ ${GUARD_LINE}` : "";
     return { recordedThroughTurn: finiteOrNull(c.recorded_through_turn), coveredThroughTurn: finiteOrNull(c.covered_through_turn) };
   }
   var SUCCESS_TTL_MS = 10 * 6e4;
+  var EMPTY_TTL_MS = 6e4;
   var FAILURE_TTL_MS = 3e4;
+  var REFUSED_TRIM_TTL_MS = 10 * 6e4;
   var CACHE_LIMIT = 64;
   var RETRY_MEMO_TTL_MS = 12e4;
   var RETRY_MEMO_LIMIT = 4;
   var BODY_CHUNK = 250;
   var NAME_TTL_MS = 10 * 6e4;
+  var NAMES_LIMIT = 8;
   var CANON_TIMEOUT_MS = 3e4;
   var CANON_ROUNDS = 20;
   var CANON_BATCH_CHARS = 8e5;
-  var TEXT_HASH_LIMIT = 4e3;
-  var PERSONA_TTL_MS = 3e4;
+  var TEXT_HASH_LIMIT = 512;
+  var TEXT_HASH_CHARS_LIMIT = 2e6;
+  var TEXT_HASH_SINGLE_MAX = 2e5;
+  var PERSONA_TTL_MS = 5e3;
   function personaOf(chat, host) {
     const list = Array.isArray(host.personas) ? host.personas : [];
     const bound = chat.bindedPersona ? list.find((p) => p?.id === chat.bindedPersona) : void 0;
     const name = (bound ?? list[host.selected])?.name;
     return typeof name === "string" && name.trim() ? name.trim() : null;
   }
-  function createAdapter(host, onActivity) {
+  var OUTPUT_SYNC_MS = 2e4;
+  var OUTPUT_SYNC_TIMEOUT_MS = 3e4;
+  var OUTPUT_SYNC_WAIT_MS = 1e3;
+  var CONFIG_REFRESH_MS = 5 * 6e4;
+  var CONFIG_TIMEOUT_MS = 5e3;
+  function outputSwitchOf(config) {
+    const on = config?.extraction?.on_output;
+    return on === true;
+  }
+  var COVERAGE_PATH = /^\/v1\/conversations\/([^/?]+)\/coverage(?:\?.*)?$/;
+  function memoryMark(answer) {
+    const a = answer ?? {};
+    const parts = [a.extraction?.compiled, a.embeddings?.embedded, a.canon?.read, a.produced?.facts, a.produced?.summaries].map((v) => typeof v === "number" ? v : null);
+    return parts.every((v) => v === null) ? null : JSON.stringify(parts);
+  }
+  function sidecarKey(settings) {
+    return settings.sidecarUrl.replace(/\/+$/, "");
+  }
+  function defaultSetTimer(run, ms) {
+    const handle = setTimeout(run, ms);
+    handle.unref?.();
+    return handle;
+  }
+  function createAdapter(host, onActivity, options = {}) {
     const cache = /* @__PURE__ */ new Map();
     const returnedMemo = /* @__PURE__ */ new Map();
     const conversations = /* @__PURE__ */ new Map();
@@ -2110,11 +2454,33 @@ ${GUARD_LINE}` : "";
     const canonSent = /* @__PURE__ */ new Map();
     const canonQueue = /* @__PURE__ */ new Map();
     const textHashes = /* @__PURE__ */ new Map();
+    let textHashChars = 0;
+    const heldCard = /* @__PURE__ */ new Map();
+    const refusedTrim = /* @__PURE__ */ new Map();
     let canonUnsupported = false;
     let personas = null;
     const buildManifest = createManifestBuilder();
     let last = null;
     let epoch = 0;
+    const outputSyncMs = options.outputSyncMs ?? OUTPUT_SYNC_MS;
+    const setTimer = options.setTimer ?? defaultSetTimer;
+    const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle));
+    let outputTimer = null;
+    let turnSeq = 0;
+    let outputRunning = null;
+    let outputSwitch = null;
+    const setRefreshTimer = options.setRefreshTimer ?? defaultSetTimer;
+    let refreshing = false;
+    let disposed = false;
+    let refreshHandle = null;
+    let configStarted = 0;
+    let configFence = 0;
+    let configNoted = 0;
+    let configSaved = 0;
+    let dropSeq = 0;
+    const droppedAt = /* @__PURE__ */ new Map();
+    const coverageMarks = /* @__PURE__ */ new Map();
+    const syncedLength = /* @__PURE__ */ new Map();
     function invalidate() {
       epoch++;
       cache.clear();
@@ -2125,17 +2491,23 @@ ${GUARD_LINE}` : "";
       } catch {
       }
     }
+    function setName(chatId, entry) {
+      if (disposed) return;
+      names.delete(chatId);
+      names.set(chatId, entry);
+      while (names.size > NAMES_LIMIT) names.delete(names.keys().next().value);
+    }
     function refreshCharacter(chatId) {
       const hit = names.get(chatId);
-      names.set(chatId, { name: hit?.name ?? null, card: hit?.card ?? null, at: host.now() });
+      setName(chatId, { name: hit?.name ?? null, card: hit?.card ?? null, at: host.now() });
       if (host.card) {
         host.card(chatId).then((card) => {
-          if (card) names.set(chatId, { name: card.name?.trim() || null, card, at: host.now() });
+          if (card) setName(chatId, { name: card.name?.trim() || null, card, at: host.now() });
         }).catch(() => {
         });
       } else if (host.characterName) {
         host.characterName(chatId).then((name) => {
-          if (name) names.set(chatId, { name, card: null, at: host.now() });
+          if (name) setName(chatId, { name, card: null, at: host.now() });
         }).catch(() => {
         });
       }
@@ -2163,14 +2535,31 @@ ${GUARD_LINE}` : "";
       const character = names.get(chat.id);
       const texts = canonTexts(character?.card ?? null, chat, lore, personaRecord(chat));
       const held = heldKeys(texts, prompt);
-      if (character?.card?.desc?.trim() && !held.includes("card:desc")) refreshCharacter(chat.id);
+      const fields = CARD_FIELDS.filter((f) => held.includes(f));
+      const before = heldCard.get(chat.id);
+      heldCard.delete(chat.id);
+      heldCard.set(chat.id, fields);
+      while (heldCard.size > CACHE_LIMIT) heldCard.delete(heldCard.keys().next().value);
+      const card = character?.card;
+      if (card?.desc?.trim() && !held.includes("card:desc") || card && before?.some((f) => f !== "card:desc" && !fields.includes(f) && !!card[f.slice(5)]?.trim())) refreshCharacter(chat.id);
       if (!character?.card) return { held, snapshot: null };
       const entries = await within(Promise.all(texts.map(async (t2) => {
         let hash = textHashes.get(t2.text);
-        if (!hash) {
-          hash = await canonHash(t2.text);
+        if (hash) {
+          textHashes.delete(t2.text);
           textHashes.set(t2.text, hash);
-          while (textHashes.size > TEXT_HASH_LIMIT) textHashes.delete(textHashes.keys().next().value);
+        } else {
+          hash = await canonHash(t2.text);
+          if (t2.text.length <= TEXT_HASH_SINGLE_MAX) {
+            if (!textHashes.has(t2.text)) textHashChars += t2.text.length;
+            textHashes.delete(t2.text);
+            textHashes.set(t2.text, hash);
+            while (textHashes.size > TEXT_HASH_LIMIT || textHashes.size > 1 && textHashChars > TEXT_HASH_CHARS_LIMIT) {
+              const oldest = textHashes.keys().next().value;
+              textHashes.delete(oldest);
+              textHashChars -= oldest.length;
+            }
+          }
         }
         return { key: t2.key, hash, metadata: t2.metadata };
       })), deadline, "the canon hashes");
@@ -2188,7 +2577,7 @@ ${GUARD_LINE}` : "";
       queue.running = true;
       void (async () => {
         for (let current2 = snapshot; current2; current2 = queue.next, queue.next = null) {
-          if (canonSent.get(key) === current2.id) continue;
+          if (disposed || canonSent.get(key) === current2.id) continue;
           try {
             if (await uploadCanon(settings, chatId, current2)) {
               canonSent.set(key, current2.id);
@@ -2203,6 +2592,7 @@ ${GUARD_LINE}` : "";
         }
         queue.running = false;
         queue.next = null;
+        if (canonQueue.get(key) === queue) canonQueue.delete(key);
       })();
     }
     async function uploadCanon(settings, chatId, snapshot) {
@@ -2236,14 +2626,51 @@ ${GUARD_LINE}` : "";
       if (!personas || host.now() - personas.at > PERSONA_TTL_MS) warmPersonas();
       return personas?.value ? personaOf(chat, personas.value) : null;
     }
-    function remember(key, packet, ttl, failed = false, memory = null, vectors = null, canon, trim = null, coverage = null) {
-      cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon, trim, coverage });
+    function remember(key, packet, ttl, failed = false, memory = null, vectors = null, canon, trim = null, coverage = null, chatId) {
+      cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon, trim, coverage, chatId });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
     }
     function promptSignature(prompt) {
       if (!Array.isArray(prompt)) return null;
       try {
-        return JSON.stringify(prompt.map((m) => [m?.role ?? null, m?.content ?? null]));
+        let h1 = 2166136261;
+        let h2 = 2654435761;
+        let h3 = 2246822507;
+        let h4 = 3266489909;
+        let chars = 0;
+        const mix = (code) => {
+          h1 = Math.imul(h1 ^ code, 16777619) >>> 0;
+          h2 = Math.imul(h2 ^ code + 17, 2246822507) >>> 0;
+          h3 = Math.imul(h3 ^ code * 31 + 7, 3266489909) >>> 0;
+          h4 = Math.imul(h4 ^ (code << 5 ^ code >>> 2), 668265263) >>> 0;
+        };
+        const feed = (s) => {
+          chars += s.length;
+          mix(s.length);
+          for (let i = 0; i < s.length; i++) mix(s.charCodeAt(i));
+        };
+        for (let i = 0; i < prompt.length; i++) {
+          const m = prompt[i];
+          mix(30);
+          if (typeof m?.role === "string") {
+            mix(1);
+            feed(m.role);
+          } else {
+            mix(0);
+          }
+          mix(31);
+          const c = m?.content;
+          if (typeof c === "string") {
+            mix(2);
+            feed(c);
+          } else if (c == null) {
+            mix(0);
+          } else {
+            mix(3);
+            feed(JSON.stringify(c));
+          }
+        }
+        return `${prompt.length}:${chars}:${h1.toString(16)}:${h2.toString(16)}:${h3.toString(16)}:${h4.toString(16)}`;
       } catch {
         return null;
       }
@@ -2303,7 +2730,7 @@ ${GUARD_LINE}` : "";
         throw error;
       }
     }
-    async function sync(settings, manifest, bodies, deadline) {
+    async function sync(settings, manifest, bodies, deadline, live) {
       const request = { ...manifest, plugin_build: PLUGIN_BUILD };
       let result = await call(settings, "/v1/sync/reconcile", request, deadline);
       let rewritten2 = 0;
@@ -2313,6 +2740,7 @@ ${GUARD_LINE}` : "";
         const needed = keys.map((k) => bodies.get(k));
         if (needed.some((b) => !b)) throw new Error("sidecar asked for an unknown body");
         for (let i = 0; i < needed.length; i += BODY_CHUNK) {
+          if (live && !live()) throw new Error("a newer request or reply came first");
           const last2 = i + BODY_CHUNK >= needed.length;
           const out = await call(settings, "/v1/sync/bodies", {
             host: "pocketrisu",
@@ -2365,6 +2793,10 @@ ${GUARD_LINE}` : "";
           emit({ type: "request-end", outcome: "chat-off", chars: 0, conversationId: null });
           return prompt;
         }
+        if (hasPacket(prompt, messages)) {
+          emit({ type: "request-abandon" });
+          return prompt;
+        }
         const turn = userTurnIndex(prompt, messages);
         if (turn < 0) {
           const reason = "the latest user message was not found in the prompt";
@@ -2390,35 +2822,60 @@ ${GUARD_LINE}` : "";
           });
           return prompt;
         }
-        const marker = findMarker(prompt);
+        turnSeq++;
+        cancelOutputSync();
+        const scan = createTrimScan(prompt, messages);
+        scan.turn = turn;
+        const promptMatches = scan.pairs = matchPromptToHost(prompt, messages);
+        const chatMarkers = historyMarkerIndices(prompt, messages, promptMatches);
+        const marker = findMarker(prompt, chatMarkers);
+        const skipIn = (p) => chatMarkers.size === 0 ? chatMarkers : p === prompt ? chatMarkers : historyMarkerIndices(p, messages);
         const position = settings.injectPosition;
         const after = landsAfterUserTurn(prompt, messages, position, turn, marker);
         const budget = after ? Math.max(0, settings.reservedMemoryTokens - GUARD_RESERVE_TOKENS) : settings.reservedMemoryTokens;
         const place = (p, packet2, at) => {
-          if (!packet2) return { out: stripMarkers(p), placed: false };
-          if (holdsText(p, packet2.split(MEMORY_MARKER).join(""))) return { out: stripMarkers(p), placed: false };
-          const text2 = after ? withGuard(packet2) : packet2;
-          return {
-            out: marker ? resolvePlaceholders(p, text2) : stripMarkers(injectPacket(p, text2, position, at)),
-            placed: true
-          };
+          if (!packet2) return { out: stripMarkers(p), placed: false, held: false };
+          const plain = packet2.split(MEMORY_MARKER).join("");
+          if (holdsText(p, plain)) return { out: stripMarkers(p), placed: false, held: true };
+          const here = !marker ? null : p === prompt ? marker : findMarker(p, skipIn(p));
+          const lands = here === marker ? after : landsAfterUserTurn(p, messages, position, at, here);
+          let out = here ? resolvePlaceholders(p, lands ? withGuard(packet2) : packet2, skipIn(p)) : p;
+          if (!holdsText(out, plain)) out = injectPacket(p, position === "end" ? withGuard(packet2) : packet2, position, at);
+          out = stripMarkers(out);
+          const held = holdsText(out, plain);
+          return { out, placed: held, held };
         };
         const finishPrompt = (packet2, decision2) => {
           let p = prompt;
           let dropped = 0;
           let savedTokens = 0;
           let reason = decision2?.reason ?? null;
+          let refused = false;
           if (decision2?.keepFromId) {
             if (!packet2) reason = "empty_packet";
             else {
-              const r = trimPrompt(prompt, messages, decision2.keepFromId);
+              const r = trimPrompt(prompt, messages, decision2.keepFromId, scan);
+              if (r.reason !== null) {
+                refused = true;
+                refusedTrim.delete(chat.id);
+                refusedTrim.set(chat.id, { id: decision2.keepFromId, at: host.now() });
+                while (refusedTrim.size > CACHE_LIMIT) refusedTrim.delete(refusedTrim.keys().next().value);
+                return { out: prompt, trim: { dropped: 0, savedTokens: 0, reason: r.reason, keepFromTurn: null }, refused };
+              }
               p = r.prompt;
               dropped = r.dropped;
               savedTokens = r.savedTokens;
               reason = r.reason;
             }
           }
-          const { out, placed } = place(p, packet2, turn - dropped);
+          const { out, placed, held } = place(p, packet2, turn - dropped);
+          if (dropped > 0 && !held) {
+            return {
+              out: prompt,
+              trim: { dropped: 0, savedTokens: 0, reason: "format", keepFromTurn: null },
+              refused: true
+            };
+          }
           if (out !== prompt && (placed || dropped > 0)) memoiseReturned(out);
           const outcome2 = {
             dropped,
@@ -2426,7 +2883,7 @@ ${GUARD_LINE}` : "";
             reason,
             keepFromTurn: dropped > 0 ? decision2?.keepFromTurn ?? null : null
           };
-          return { out, trim: outcome2 };
+          return { out, trim: outcome2, refused };
         };
         const shown = (o) => ({ dropped: o.dropped, savedTokens: o.savedTokens, reason: o.reason });
         const t0 = host.now();
@@ -2436,8 +2893,11 @@ ${GUARD_LINE}` : "";
           { characterName: characterName(chat.id), personaName: personaName(chat) }
         ), deadline, "the manifest");
         const manifestMs = host.now() - t0;
-        const inContext = inContextIds(prompt, messages);
-        key = await within(sha256Hex(JSON.stringify([
+        const inContext = inContextIds(prompt, messages, void 0, void 0, promptMatches);
+        const refusedAt = refusedTrim.get(chat.id);
+        if (refusedAt && host.now() - refusedAt.at > REFUSED_TRIM_TTL_MS) refusedTrim.delete(chat.id);
+        let askTrim = k > 0 && canTrimPrompt(prompt, messages, scan) && !(refusedAt && host.now() - refusedAt.at <= REFUSED_TRIM_TTL_MS && trimPrompt(prompt, messages, refusedAt.id, scan).reason !== null);
+        const keyOf = (withTrim) => within(sha256Hex(JSON.stringify([
           chat.id,
           mode,
           prompt.length,
@@ -2450,16 +2910,28 @@ ${GUARD_LINE}` : "";
           settings.authToken,
           budget,
           !!settings.trimOldTurns,
-          k
+          k,
+          withTrim
         ])), deadline, "the cache key");
+        key = await keyOf(askTrim);
         const canon = await observeCanon(chat, prompt, deadline);
         const canonKey = JSON.stringify([canon?.snapshot?.id ?? null, canon?.held ?? []]);
-        const cached = cache.get(key);
-        if (cached && cached.expires > host.now() && (cached.failed || cached.canon === canonKey)) {
+        const lookup = (at) => {
+          const entry = cache.get(at);
+          return { cached: entry, hit: entry && entry.expires > host.now() && (entry.failed || entry.canon === canonKey) ? finishPrompt(entry.packet, k > 0 ? entry.failed ? FAILED_TRIM : entry.trim ?? FAILED_TRIM : null) : null };
+        };
+        let { cached, hit } = lookup(key);
+        if (hit?.refused) {
+          cache.delete(key);
+          askTrim = false;
+          key = await keyOf(false);
+          ({ cached, hit } = lookup(key));
+        }
+        if (cached && hit && !hit.refused) {
           const known = conversations.get(chat.id);
           if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
           const outcome2 = cached.packet ? "injected" : "nothing-relevant";
-          const done2 = finishPrompt(cached.packet, k > 0 ? cached.failed ? FAILED_TRIM : cached.trim ?? FAILED_TRIM : null);
+          const done2 = hit;
           if (!cached.failed) last = {
             at: Date.now(),
             ms: Math.round(host.now() - started),
@@ -2484,17 +2956,24 @@ ${GUARD_LINE}` : "";
           });
           return done2.out;
         }
+        if (outputRunning?.chatId === chat.id) await settleWithin(
+          outputRunning.done,
+          Math.min(OUTPUT_SYNC_WAIT_MS, (deadline - host.now()) / 2)
+        );
+        const dropsBefore = dropSeq;
         const t1 = host.now();
         const synced = await sync(settings, request, bodies, deadline);
         const syncMs = host.now() - t1;
+        noteSynced(chat.id, messages.length);
         if (synced.conversation_id) {
           conversations.delete(chat.id);
           conversations.set(chat.id, synced.conversation_id);
           while (conversations.size > CACHE_LIMIT) conversations.delete(conversations.keys().next().value);
         }
-        const { query, previousAi } = queryTexts(messages);
+        const { query, previousAi, isContinue } = queryTexts(messages);
+        if (isContinue) host.debug("[NMOS] continue: recall asks with the reply being continued");
         const t2 = host.now();
-        const retrieved = await call(settings, "/v1/retrieve", {
+        const retrieve = (withTrim) => call(settings, "/v1/retrieve", {
           host: "pocketrisu",
           chat_id: chat.id,
           active_commit: synced.active_commit,
@@ -2506,17 +2985,48 @@ ${GUARD_LINE}` : "";
           client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
           canon_manifest_id: canon?.snapshot?.id ?? null,
           canon_held: canon?.held ?? [],
-          // Only when the owner turned trimming on: without it the request is the one sent before PHASE-60.
-          ...k > 0 ? { trim: { keep_recent_turns: k, step: k } } : {}
+          // Only when the owner turned trimming on and the prompt can take a cut: otherwise the request is the one sent
+          // before PHASE-60.
+          ...withTrim ? { trim: { keep_recent_turns: k, step: k } } : {}
         }, deadline, void 0, late);
+        let retrieved = await retrieve(askTrim);
         if (canon?.snapshot && synced.conversation_id) syncCanon(settings, synced.conversation_id, chat.id, canon.snapshot);
-        const packet = retrieved.freshness === "fresh" ? retrieved.packet.text : "";
-        const memory = retrieved.freshness === "fresh" ? retrieved.memory ?? null : null;
-        const vectors = retrieved.freshness === "fresh" ? retrieved.vectors ?? null : null;
-        const decision = k > 0 ? trimDecisionOf(retrieved.freshness === "fresh", retrieved.trim) : null;
-        const coverage = coverageOf(retrieved.coverage);
+        const answer = (r, withTrim) => {
+          const fresh = r.freshness === "fresh";
+          return {
+            packet: fresh ? r.packet.text : "",
+            memory: fresh ? r.memory ?? null : null,
+            // older sidecars send none
+            vectors: fresh ? r.vectors ?? null : null,
+            coverage: coverageOf(r.coverage),
+            decision: k > 0 ? withTrim ? trimDecisionOf(fresh, r.trim) : FORMAT_TRIM : null
+          };
+        };
+        let got = answer(retrieved, askTrim);
         if (epoch !== since) throw new Error("memory changed during this request");
-        remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors, canonKey, decision, coverage);
+        let done = finishPrompt(got.packet, got.decision);
+        if (done.refused) {
+          key = await keyOf(false);
+          retrieved = await retrieve(false);
+          got = answer(retrieved, false);
+          if (epoch !== since) throw new Error("memory changed during this request");
+          done = finishPrompt(got.packet, got.decision);
+        }
+        const { packet, memory, vectors, decision, coverage } = got;
+        if (retrieved.freshness === "fresh" && (droppedAt.get(chat.id) ?? 0) <= dropsBefore) {
+          remember(
+            key,
+            packet,
+            packet ? SUCCESS_TTL_MS : EMPTY_TTL_MS,
+            false,
+            memory,
+            vectors,
+            canonKey,
+            decision,
+            coverage,
+            chat.id
+          );
+        }
         host.debug("[NMOS] request done", {
           ms: Math.round(host.now() - started),
           manifestMs: Math.round(manifestMs),
@@ -2525,7 +3035,6 @@ ${GUARD_LINE}` : "";
           packetChars: packet.length
         });
         const outcome = packet ? "injected" : "nothing-relevant";
-        const done = finishPrompt(packet, decision);
         last = {
           at: Date.now(),
           ms: Math.round(host.now() - started),
@@ -2583,15 +3092,188 @@ ${GUARD_LINE}` : "";
         return stripMarkers(prompt);
       }
     }
+    function cancelOutputSync() {
+      if (outputTimer === null) return;
+      try {
+        clearTimer(outputTimer);
+      } catch {
+      }
+      outputTimer = null;
+    }
+    function scheduleOutputSync(chatId, seen, replyId, replyLength) {
+      cancelOutputSync();
+      if (!(outputSyncMs > 0) || disposed) return;
+      try {
+        const handle = setTimer(() => {
+          if (outputTimer === handle) outputTimer = null;
+          const done = outputSync(chatId, seen, replyId, replyLength);
+          const running = { chatId, done };
+          outputRunning = running;
+          void done.finally(() => {
+            if (outputRunning === running) outputRunning = null;
+          });
+        }, outputSyncMs);
+        outputTimer = handle;
+      } catch (error) {
+        host.debug("[NMOS] background sync not scheduled:", error instanceof Error ? error.message : error);
+      }
+    }
+    async function outputSync(chatId, seen, replyId, replyLength) {
+      const live = () => turnSeq === seen;
+      try {
+        const settings = await host.settings();
+        if (!live() || !settings.enabled || !settings.sidecarUrl || settings.offChats?.includes(chatId) || !secureContext() || !outputOn(settings)) return;
+        const chat = await host.currentChat();
+        if (!live() || !chat?.id || chat.id !== chatId) return;
+        const messages = Array.isArray(chat.message) ? chat.message : [];
+        if (!messages.some((m) => m?.chatId === replyId) || messages.length < (syncedLength.get(chatId) ?? 0) || messages.length > replyLength || chat.isStreaming === true) {
+          host.debug("[NMOS] background sync skipped: the chat read is not the one replied in", {
+            messages: messages.length,
+            synced: syncedLength.get(chatId) ?? null
+          });
+          return;
+        }
+        const deadline = host.now() + OUTPUT_SYNC_TIMEOUT_MS;
+        const { request, bodies } = await within(buildManifest(
+          chat,
+          firstSaying(messages),
+          { characterName: characterName(chat.id), personaName: personaName(chat) }
+        ), deadline, "the manifest");
+        if (!live()) return;
+        dropChatPackets(chatId);
+        const synced = await sync(settings, { ...request, trigger: "output" }, bodies, deadline, live);
+        noteSynced(chatId, messages.length);
+        if (synced.conversation_id) {
+          conversations.delete(chatId);
+          conversations.set(chatId, synced.conversation_id);
+          while (conversations.size > CACHE_LIMIT) conversations.delete(conversations.keys().next().value);
+        }
+        dropChatPackets(chatId);
+        host.debug("[NMOS] reply synced in the background", { status: synced.status });
+      } catch (error) {
+        host.debug("[NMOS] background sync after the reply failed:", error instanceof Error ? error.message : error);
+      }
+    }
+    function noteSynced(chatId, length) {
+      syncedLength.delete(chatId);
+      syncedLength.set(chatId, length);
+      while (syncedLength.size > CACHE_LIMIT) syncedLength.delete(syncedLength.keys().next().value);
+    }
+    async function settleWithin(work, ms) {
+      if (!(ms > 0)) return;
+      let timer;
+      await Promise.race([work, new Promise((resolve) => {
+        timer = setTimeout(resolve, ms);
+      })]);
+      clearTimeout(timer);
+    }
+    function dropChatPackets(chatId) {
+      for (const [k, entry] of cache) if (entry.chatId === chatId) cache.delete(k);
+      droppedAt.delete(chatId);
+      droppedAt.set(chatId, ++dropSeq);
+      while (droppedAt.size > CACHE_LIMIT) droppedAt.delete(droppedAt.keys().next().value);
+    }
+    function noteCoverage(conversationId, answer) {
+      const mark = memoryMark(answer);
+      if (mark === null || coverageMarks.get(conversationId) === mark) return;
+      coverageMarks.delete(conversationId);
+      coverageMarks.set(conversationId, mark);
+      while (coverageMarks.size > CACHE_LIMIT) coverageMarks.delete(coverageMarks.keys().next().value);
+      for (const [chatId, id] of conversations) if (id === conversationId) dropChatPackets(chatId);
+    }
+    function outputOn(settings) {
+      return outputSwitch?.url === sidecarKey(settings) && outputSwitch.on === true;
+    }
+    function noteConfig(settings, seq, save, config) {
+      if (save) {
+        configFence = Math.max(configFence, configStarted);
+        if (seq < configSaved) return;
+        configSaved = seq;
+      } else if (seq < configNoted || seq <= configFence) {
+        return;
+      }
+      configNoted = Math.max(configNoted, seq);
+      outputSwitch = { url: sidecarKey(settings), on: config === null ? null : outputSwitchOf(config) };
+    }
+    async function readConfig() {
+      let settings = null;
+      let seq = 0;
+      try {
+        settings = await host.settings();
+        if (!settings.enabled || !settings.sidecarUrl) return;
+        seq = ++configStarted;
+        noteConfig(
+          settings,
+          seq,
+          false,
+          await call(settings, "/v1/config", void 0, host.now() + CONFIG_TIMEOUT_MS, "GET")
+        );
+      } catch (error) {
+        if (settings?.sidecarUrl && seq) noteConfig(settings, seq, false, null);
+        host.debug("[NMOS] sidecar settings not read:", error instanceof Error ? error.message : error);
+      }
+    }
+    function warmConfig() {
+      if (refreshing || disposed) return;
+      refreshing = true;
+      const next = () => {
+        if (disposed) return;
+        try {
+          refreshHandle = setRefreshTimer(() => {
+            refreshHandle = null;
+            if (disposed) return;
+            void readConfig().finally(next);
+          }, CONFIG_REFRESH_MS);
+        } catch (error) {
+          refreshing = false;
+          host.debug("[NMOS] sidecar settings refresh not scheduled:", error instanceof Error ? error.message : error);
+        }
+      };
+      void readConfig().finally(next);
+    }
+    function dispose() {
+      disposed = true;
+      turnSeq++;
+      cancelOutputSync();
+      if (refreshHandle !== null) {
+        try {
+          clearTimer(refreshHandle);
+        } catch {
+        }
+        refreshHandle = null;
+      }
+      cache.clear();
+      returnedMemo.clear();
+      conversations.clear();
+      names.clear();
+      canonSent.clear();
+      canonQueue.clear();
+      textHashes.clear();
+      textHashChars = 0;
+      heldCard.clear();
+      refusedTrim.clear();
+      droppedAt.clear();
+      coverageMarks.clear();
+      syncedLength.clear();
+      buildManifest.clear();
+      personas = null;
+      last = null;
+    }
     function onOutput(arg2) {
+      const seen = ++turnSeq;
+      cancelOutputSync();
       void (async () => {
         const settings = await host.settings();
         if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id || settings.offChats?.includes(arg2.chat.id)) return;
+        const index = arg2.messageIndex ?? -1;
+        const message = index >= 0 ? arg2.chat.message?.[index] : void 0;
+        if (turnSeq === seen && outputOn(settings) && typeof message?.chatId === "string" && message.chatId) {
+          scheduleOutputSync(arg2.chat.id, seen, message.chatId, arg2.chat.message.length);
+        }
+        for (const [k, entry] of cache) if (entry.chatId === arg2.chat.id && !entry.packet && !entry.failed) cache.delete(k);
         adviseOnce(settings.language);
         reachOnce(settings.language, settings.sidecarUrl);
         emit({ type: "background", conversationId: conversations.get(arg2.chat.id) ?? null });
-        const index = arg2.messageIndex ?? -1;
-        const message = index >= 0 ? arg2.chat.message?.[index] : void 0;
         await call(settings, "/v1/output", {
           host: "pocketrisu",
           chat_id: arg2.chat.id,
@@ -2644,9 +3326,18 @@ ${GUARD_LINE}` : "";
     async function api(method, path, body, timeoutMs = 9e4) {
       const settings = await host.settings();
       const change = method !== "GET";
+      const config = path === "/v1/config" && (method === "GET" || method === "PUT");
+      const covered = method === "GET" ? COVERAGE_PATH.exec(path)?.[1] : void 0;
+      const seq = config ? ++configStarted : 0;
       if (change) invalidate();
       try {
-        return await call(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : void 0);
+        const out = await call(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : void 0);
+        if (config) noteConfig(settings, seq, method === "PUT", out);
+        if (covered) noteCoverage(covered, out);
+        return out;
+      } catch (error) {
+        if (config) noteConfig(settings, seq, method === "PUT", null);
+        throw error;
       } finally {
         if (change) invalidate();
       }
@@ -2663,8 +3354,9 @@ ${GUARD_LINE}` : "";
       }
       return res.bytes;
     }
-    return { beforeRequest, onOutput, status, api, file, warmPersonas };
+    return { beforeRequest, onOutput, status, api, file, warmPersonas, warmConfig, dispose };
   }
+  var CARD_FIELDS = ["card:desc", "card:personality", "card:scenario"];
   function firstSaying(messages) {
     for (const m of messages) if (m.role === "char" && m.saying) return m.saying;
     return null;
@@ -2965,8 +3657,10 @@ ${GUARD_LINE}` : "";
     let expiryTimer = null;
     let pollErrors = 0;
     let lastPoll = -Infinity;
+    let disposed = false;
     let queue = Promise.resolve();
     function run(task) {
+      if (disposed) return;
       queue = queue.then(task).catch(fail);
     }
     async function fail(error) {
@@ -2977,7 +3671,7 @@ ${GUARD_LINE}` : "";
       });
     }
     async function active() {
-      if (!problem && await deps.enabled()) return true;
+      if (!disposed && !problem && await deps.enabled()) return true;
       stopPolling();
       await erase();
       return false;
@@ -3037,6 +3731,7 @@ ${GUARD_LINE}` : "";
     async function render2() {
       if (expiryTimer !== null) deps.clearTimer(expiryTimer);
       expiryTimer = null;
+      if (disposed) return erase();
       const now = deps.now();
       const v = view(state, now, await deps.lang());
       if (!v) return erase();
@@ -3052,7 +3747,7 @@ ${GUARD_LINE}` : "";
         if (v.fraction !== null) await d.fill.setStyle("width", `${Math.round(v.fraction * 100)}%`);
       }
       const next = nextChange(state, now);
-      if (next !== null) expiryTimer = deps.setTimer(() => {
+      if (next !== null && !disposed) expiryTimer = deps.setTimer(() => {
         expiryTimer = null;
         run(render2);
       }, next - now);
@@ -3066,7 +3761,7 @@ ${GUARD_LINE}` : "";
       stopPolling();
     }
     function startPolling() {
-      if (pollTimer !== null || !conversation) return;
+      if (disposed || pollTimer !== null || !conversation) return;
       pollErrors = 0;
       pollTimer = deps.setTimer(() => run(poll), Math.max(0, lastPoll + MIN_POLL_GAP_MS - deps.now()));
     }
@@ -3095,7 +3790,7 @@ ${GUARD_LINE}` : "";
         again = !/HTTP 404/.test(message) && ++pollErrors < MAX_POLL_ERRORS;
       }
       await render2();
-      if (again) pollTimer = deps.setTimer(() => run(poll), POLL_MS);
+      if (again && !disposed) pollTimer = deps.setTimer(() => run(poll), POLL_MS);
     }
     return {
       /** Request-path activity from core.ts. */
@@ -3133,6 +3828,22 @@ ${GUARD_LINE}` : "";
           stopPolling();
           state = EMPTY;
           await erase();
+        });
+      },
+      /** Plugin unload/re-import: stop timers and remove the pill/listener from the host page. Never throws. */
+      dispose() {
+        disposed = true;
+        conversation = null;
+        where = null;
+        stopPolling();
+        if (expiryTimer !== null) {
+          try {
+            deps.clearTimer(expiryTimer);
+          } catch {
+          }
+          expiryTimer = null;
+        }
+        void erase().catch(() => {
         });
       },
       /** Why the display stopped for this session, if it did. */
@@ -3343,8 +4054,8 @@ ${GUARD_LINE}` : "";
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/person/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|undo_batch|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
-  var BULK_KINDS = /* @__PURE__ */ new Set(["thread_close", "fact_retract", "fact_lock", "fact_restore", "state_dismiss"]);
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|undo_batch|alias_join|branch_inherit|told_retract|fact_hidden|attention_dismiss|fact_add):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var BULK_KINDS = /* @__PURE__ */ new Set(["thread_close", "fact_retract", "fact_lock", "fact_restore", "state_dismiss", "attention_dismiss"]);
   var ID2 = /^-?[0-9a-f-]{1,64}$/;
   function bulkRequest(raw) {
     if (raw === void 0) return void 0;
@@ -3353,7 +4064,13 @@ ${GUARD_LINE}` : "";
     if ("undo" in r) return typeof r.undo === "string" && ID2.test(r.undo) && Object.keys(r).length === 1 ? { undo: r.undo } : null;
     if (typeof r.kind !== "string" || !BULK_KINDS.has(r.kind) || typeof r.item !== "string" || !ID2.test(r.item)) return null;
     if (r.outcome !== void 0 && (typeof r.outcome !== "string" || !/^[a-z_]{1,32}$/.test(r.outcome))) return null;
-    return { kind: r.kind, item: r.item, ...typeof r.outcome === "string" ? { outcome: r.outcome } : {} };
+    if (r.attention !== void 0 && r.attention !== "role_held" && r.attention !== "alias_held") return null;
+    return {
+      kind: r.kind,
+      item: r.item,
+      ...typeof r.outcome === "string" ? { outcome: r.outcome } : {},
+      ...r.attention === "role_held" || r.attention === "alias_held" ? { attention: r.attention } : {}
+    };
   }
   function bulkMark(value) {
     if (!value || value.length > 2e3) return null;
@@ -4936,6 +5653,8 @@ html,body{margin:0;background:${PALETTE.bg}}
     const exportButton = el("button", { text: L("exp.chat") });
     const notesButton = el("button", { text: L("notes.open") });
     const notesCard = el("div", { class: "card", style: "display:none" });
+    const factAddButton = el("button", { text: L("rp.fact_add") });
+    const factAddCard = el("div", { class: "card", style: "display:none" });
     let notesFor = null;
     let hubConversation = null;
     let viewsOn = false;
@@ -4955,6 +5674,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         rebuildButton,
         exportButton,
         notesButton,
+        factAddButton,
         deleteButton
       ),
       el("details", { class: "sub help" }, el("summary", { text: L("act.help") }), el("p", { text: L("act.sub") }))
@@ -4989,6 +5709,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       actions,
       actionMsg,
       notesCard,
+      factAddCard,
       bulkBar,
       modeCard,
       statusCard,
@@ -5064,6 +5785,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       const spot = el("div");
       button.addEventListener("click", () => {
         if (action.kind === "fact_correct") correctForm(action, button);
+        else if (action.kind === "fact_hidden") hiddenForm(action, button);
+        else if (action.kind === "branch_inherit") void branchInherit(action, button, spot);
         else if (action.kind === "undo" && (action.extra === "name_split" || action.extra === "entity_exclude")) {
           void undoSplit(action, button, spot);
         } else if (action.kind === "entity_exclude") void notACharacter(action, button, spot);
@@ -5157,6 +5880,82 @@ html,body{margin:0;background:${PALETTE.bg}}
       spot.replaceChildren(el("span", { class: "rpform" }, text2, turn, save2, cancel));
       text2.focus();
     }
+    function hiddenForm(action, button) {
+      const spot = button.parentElement;
+      if (!spot) return;
+      const who = el("input", { type: "text", placeholder: L("fh.char"), "aria-label": L("fh.char") });
+      const mode = el(
+        "select",
+        { class: "mini" },
+        el("option", { value: "1", text: L("fh.hide") }),
+        el("option", { value: "0", text: L("fh.unhide") })
+      );
+      const save2 = el("button", { class: "mini", text: L("save") });
+      const cancel = el("button", { class: "mini", text: L("cancel") });
+      cancel.addEventListener("click", () => spot.replaceChildren(...repairControls(action)));
+      save2.addEventListener("click", () => {
+        const name = who.value.trim();
+        if (!name) return void who.focus();
+        void repairNow(action, save2, { character: name, hidden: mode.value === "1" });
+      });
+      spot.replaceChildren(el("span", { class: "rpform" }, who, mode, save2, cancel));
+      who.focus();
+    }
+    async function branchInherit(action, button, spot) {
+      const conversation = inspectorConversation(inspectorPath) ?? action.item;
+      if (!conversation) return;
+      const path = `/v1/conversations/${conversation}/branch-inherit`;
+      button.disabled = true;
+      let preview;
+      try {
+        preview = await deps.api("POST", path, { dry_run: true }, 3e4);
+      } catch (error) {
+        say(actionMsg, errorText(lang, error), "err");
+        button.disabled = false;
+        return;
+      }
+      const c = preview.copied ?? {};
+      const total = Object.values(c).reduce((a, b) => a + (Number(b) || 0), 0);
+      if (preview.status !== "done" || total === 0) {
+        say(actionMsg, L("bi.empty", { s: preview.status ?? "empty" }), "ok");
+        spot.replaceChildren();
+        button.disabled = false;
+        return;
+      }
+      const ok = el("button", { class: "mini", text: L("bi.confirm") });
+      const cancel = el("button", { class: "mini", text: L("cancel") });
+      cancel.addEventListener("click", () => {
+        spot.replaceChildren();
+        button.disabled = false;
+      });
+      ok.addEventListener("click", async () => {
+        ok.disabled = true;
+        try {
+          const res = await deps.api("POST", path, { dry_run: false }, 6e4);
+          const rc = res.copied ?? {};
+          spot.replaceChildren();
+          say(actionMsg, L("bi.done", { x: rc.extractions ?? 0, s: rc.summaries ?? 0, r: rc.repairs ?? 0 }), "ok");
+          await showInspector();
+        } catch (error) {
+          say(actionMsg, errorText(lang, error), "err");
+          ok.disabled = false;
+        }
+      });
+      spot.replaceChildren(el(
+        "div",
+        { class: "preview" },
+        el("b", { text: L("bi.title") }),
+        el("div", { text: L("bi.preview", {
+          p: preview.prefix ?? 0,
+          x: c.extractions ?? 0,
+          s: c.summaries ?? 0,
+          e: c.embeddings ?? 0,
+          r: c.repairs ?? 0,
+          l: c.links ?? 0
+        }) }),
+        el("div", { class: "btns" }, ok, cancel)
+      ));
+    }
     async function aliasJoin(action, button, spot) {
       const conversation = inspectorConversation(inspectorPath);
       const pair = aliasPair(action);
@@ -5237,6 +6036,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         body = {};
       } else if (action.kind === "secret_found_out" || action.kind === "secret_keep") {
         body.character = action.extra;
+      } else if (action.kind === "attention_dismiss" && action.extra) {
+        body.attention = action.extra;
       }
       button.disabled = true;
       try {
@@ -5420,7 +6221,13 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       for (const spot of Array.from(page.querySelectorAll("span.rp[data-repair]"))) {
         const action = repairAction(spot.getAttribute("data-repair"));
-        if (action) spot.replaceChildren(...repairControls(action));
+        if (!action) continue;
+        spot.replaceChildren(...repairControls(action));
+        if (action.kind === "fact_retract" && spot.closest("#s-facts") && !spot.closest("details.fold")) {
+          const hid = el("span", { class: "rp" });
+          hid.replaceChildren(...repairControls({ kind: "fact_hidden", item: action.item, extra: null }));
+          spot.after(hid);
+        }
       }
       for (const item of Array.from(picked)) if (!closers.has(item)) picked.delete(item);
       bulkGroups = /* @__PURE__ */ new Map();
@@ -5558,6 +6365,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         actionConversation = conversation;
         notesCard.replaceChildren();
         notesCard.style.display = "none";
+        factAddCard.replaceChildren();
+        factAddCard.style.display = "none";
         notesFor = null;
         say(actionMsg, "");
         disarm();
@@ -5747,6 +6556,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       const msg = el("div", { class: "msg", role: "status" });
       const card = found.card;
+      const cardLabel = found.card_name || card || "";
       const act = async (button, method, path, body, done) => {
         button.disabled = true;
         try {
@@ -5774,8 +6584,8 @@ html,body{margin:0;background:${PALETTE.bg}}
             track,
             "POST",
             "/v1/parsers/card/track",
-            { card, keys: c.keys },
-            L("sw.tracked_now", { card })
+            { card, conversation_id: conversation, keys: c.keys },
+            L("sw.tracked_now", { card: cardLabel })
           ));
           box.append(el("div", { class: "btns" }, track));
           return box;
@@ -5788,6 +6598,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         const savePins = el("button", { text: L("sw.save_pins") });
         savePins.addEventListener("click", () => void act(savePins, "PUT", "/v1/parsers/card/pins", {
           card,
+          conversation_id: conversation,
           keys: pins.map((p) => p.querySelector("input")).filter((i) => i.checked).map((i) => i.value)
         }, L("sw.pins_saved")));
         const buttons = el("div", { class: "btns" }, savePins);
@@ -5797,7 +6608,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             untrack,
             "POST",
             "/v1/parsers/card/untrack",
-            { card, rule_id: c.rule_id },
+            { card, conversation_id: conversation, rule_id: c.rule_id },
             L("sw.untracked")
           ));
           buttons.append(untrack);
@@ -5809,7 +6620,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       });
       statusCard.replaceChildren(
         el("h2", { text: L("sw.title") }),
-        el("p", { class: "sub", text: card ? L("sw.sub", { card }) : L("sw.no_card") }),
+        el("p", { class: "sub", text: card ? L("sw.sub", { card: cardLabel }) : L("sw.no_card") }),
         ...rows.length ? rows : [el("p", { class: "muted", text: L("sw.none") })],
         msg
       );
@@ -6242,6 +7053,98 @@ html,body{margin:0;background:${PALETTE.bg}}
       if (!notesCard.childElementCount) buildNotes(conversation);
       notesCard.style.display = "";
     });
+    factAddButton.addEventListener("click", () => {
+      const conversation = actionConversation;
+      if (!conversation) return;
+      if (factAddCard.style.display !== "none") return void (factAddCard.style.display = "none");
+      factAddCard.style.display = "";
+      void buildFactAdd(conversation);
+    });
+    async function buildFactAdd(conversation) {
+      factAddCard.replaceChildren(el("b", { text: L("fa.title") }), el("p", { class: "sub", text: L("act.working") }));
+      let msgs;
+      try {
+        msgs = await deps.api("GET", `/v1/conversations/${conversation}/messages?limit=40`, void 0, 15e3);
+      } catch (error) {
+        factAddCard.replaceChildren(el("b", { text: L("fa.title") }), el("p", { class: "msg err", text: errorText(lang, error) }));
+        return;
+      }
+      if (!msgs.length) {
+        factAddCard.replaceChildren(el("b", { text: L("fa.title") }), el("p", { class: "sub", text: L("fa.no_msgs") }));
+        return;
+      }
+      const preds = [
+        ["has_status", "character", null],
+        ["located_in", "character", "place"],
+        ["identity", "character", null],
+        ["has_trait", "character", null],
+        ["relationship", "character", "character"],
+        ["role_toward", "character", "character"],
+        ["feels_toward", "character", "character"],
+        ["addresses", "character", "character"],
+        ["possesses", "character", "item"],
+        ["member_of", "character", "group"],
+        ["knows", "character", null],
+        ["goal", "character", null],
+        ["promised", "character", "character"],
+        ["event", "character", null],
+        ["world_fact", "concept", null]
+      ];
+      const msgSel = el("select", { "aria-label": L("fa.msg") }, ...msgs.map((m) => el("option", { value: m.host_logical_id, text: `t${m.turn} #${m.position} (${m.name || m.role}) ${m.preview.slice(0, 48)}` })));
+      const predSel = el("select", { "aria-label": L("fa.pred") }, ...preds.map(([p]) => el("option", { value: p, text: p })));
+      const subj = el("input", { type: "text", placeholder: L("fa.subj"), "aria-label": L("fa.subj") });
+      const obj = el("input", { type: "text", placeholder: L("fa.obj"), "aria-label": L("fa.obj") });
+      const val = el("input", { type: "text", placeholder: L("fa.val"), "aria-label": L("fa.val") });
+      const hid = el("input", { type: "text", placeholder: L("fa.hidden"), "aria-label": L("fa.hidden") });
+      const save2 = el("button", { class: "primary", text: L("save") });
+      const cancel = el("button", { text: L("cancel") });
+      const formMsg = el("div", { class: "msg" });
+      cancel.addEventListener("click", () => {
+        factAddCard.style.display = "none";
+      });
+      save2.addEventListener("click", async () => {
+        const s = subj.value.trim();
+        if (!s) return void say(formMsg, L("fa.need_subj"), "err");
+        const spec = preds.find(([p]) => p === predSel.value) ?? preds[0];
+        const o = obj.value.trim() || null;
+        const v = val.value.trim() || null;
+        const hidden = hid.value.split(",").map((x) => x.trim()).filter(Boolean);
+        const fact = {
+          predicate: spec[0],
+          subject: s,
+          subject_type: spec[1],
+          ...o ? { object: o, object_type: spec[2] ?? "character" } : {},
+          ...v ? { value: v } : {},
+          ...hidden.length ? { hidden_from: hidden } : {}
+        };
+        save2.disabled = true;
+        say(formMsg, L("act.working"));
+        try {
+          await deps.api(
+            "POST",
+            `/v1/conversations/${conversation}/repairs`,
+            { kind: "fact_add", item: msgSel.value, fact },
+            15e3
+          );
+          factAddCard.replaceChildren();
+          factAddCard.style.display = "none";
+          say(actionMsg, L("rp.done"), "ok");
+          await showInspector();
+        } catch (error) {
+          say(formMsg, errorText(lang, error), "err");
+          save2.disabled = false;
+        }
+      });
+      factAddCard.replaceChildren(
+        el("b", { text: L("fa.title") }),
+        el("div", { class: "row" }, msgSel),
+        el("div", { class: "row" }, predSel),
+        el("div", { class: "row" }, subj, obj),
+        el("div", { class: "row" }, val, hid),
+        el("div", { class: "btns" }, save2, cancel),
+        formMsg
+      );
+    }
     const notesCache = /* @__PURE__ */ new Map();
     let notesElapsedTimer = null;
     function clearNotesTimer() {
@@ -6380,6 +7283,12 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("option", { value: "3000", text: L("notes.short") }),
         el("option", { value: "6000", text: L("notes.long") })
       );
+      const language2 = el(
+        "select",
+        { "aria-label": L("notes.language") },
+        el("option", { value: "chat", text: L("notes.lang_chat") }),
+        el("option", { value: "en", text: L("notes.lang_en") })
+      );
       const secrets = el("input", { type: "checkbox" });
       const warn = el("p", { class: "sub warn", text: L("notes.secrets_warn"), style: "display:none" });
       secrets.addEventListener("change", () => {
@@ -6431,7 +7340,12 @@ html,body{margin:0;background:${PALETTE.bg}}
             unsaved = true;
           }
         }
-        const body = { sections, chars: Number(length.value), secrets: secrets.checked };
+        const body = {
+          sections,
+          chars: Number(length.value),
+          secrets: secrets.checked,
+          ...language2.value !== "chat" ? { language: language2.value } : {}
+        };
         if (custom.checked) Object.assign(body, { custom_prompt: text2, custom_setting: setting.checked });
         try {
           const r = await deps.api(
@@ -6462,7 +7376,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           el("p", { class: "sub", text: L("notes.sub") }),
           ...kinds.map((k) => k.row),
           customArea,
-          el("div", { class: "row" }, field(L("notes.length"), length)),
+          el("div", { class: "row" }, field(L("notes.length"), length), field(L("notes.language"), language2)),
           el("div", { class: "check" }, secrets, el("span", { text: L("notes.secrets") })),
           warn,
           el("div", { class: "btns" }, make2),
@@ -6477,7 +7391,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("h3", { text: L("notes.config_head") }),
         ...kinds.map((k) => k.row),
         customArea,
-        el("div", { class: "row" }, field(L("notes.length"), length)),
+        el("div", { class: "row" }, field(L("notes.length"), length), field(L("notes.language"), language2)),
         el("div", { class: "check" }, secrets, el("span", { text: L("notes.secrets") })),
         warn,
         estBar,
@@ -6861,6 +7775,28 @@ html,body{margin:0;background:${PALETTE.bg}}
     const canonFacts = el("input", { type: "checkbox" });
     const pinAt = el("input", { type: "checkbox", disabled: true });
     let pinAtKnown = false;
+    const extractOnOutput = el("input", { type: "checkbox", disabled: true });
+    let extractOnOutputKnown = false;
+    const embedChunks = el("input", {
+      type: "number",
+      min: MIN_EMBED_MAX_CHUNKS,
+      max: MAX_EMBED_MAX_CHUNKS,
+      step: 1,
+      disabled: true
+    });
+    let embedChunksKnown = false;
+    const embedChunksHint = el("p", { class: "sub" });
+    const showEmbedChunks = () => {
+      const chars = embedChunkChars(embedChunks.value);
+      embedChunksHint.textContent = !embedChunksKnown ? L("tune.embed_chunks_fixed") : chars === null ? L("tune.embed_chunks_range", { min: MIN_EMBED_MAX_CHUNKS, max: MAX_EMBED_MAX_CHUNKS }) : L("tune.embed_chunks_hint", {
+        n: embedChunks.value.trim(),
+        chars: chars.toLocaleString("en-US"),
+        d: DEFAULT_EMBED_MAX_CHUNKS,
+        dchars: (DEFAULT_EMBED_MAX_CHUNKS * EMBED_CHUNK_CHARS).toLocaleString("en-US")
+      });
+    };
+    embedChunks.addEventListener("input", showEmbedChunks);
+    showEmbedChunks();
     settingsView.append(el(
       "div",
       { class: "card" },
@@ -6874,11 +7810,15 @@ html,body{margin:0;background:${PALETTE.bg}}
         field(L("tune.embed_wait"), embedWait)
       ),
       el("p", { class: "sub", text: L("tune.embed_wait_hint") }),
+      el("div", { class: "row" }, field(L("tune.embed_chunks"), embedChunks)),
+      embedChunksHint,
       el("div", { class: "row" }, field(L("tune.top_k"), topK), field(L("tune.facts"), factsLimit), field(L("tune.backfill"), backfill)),
       el("div", { class: "check" }, summaries, el("span", { text: L("tune.summaries") })),
       el("p", { class: "sub", text: L("tune.summaries_hint") }),
       el("div", { class: "check" }, canonFacts, el("span", { text: L("tune.canon_facts") })),
       el("p", { class: "sub", text: L("tune.canon_facts_hint") }),
+      el("div", { class: "check" }, extractOnOutput, el("span", { text: L("tune.extract_on_output") })),
+      el("p", { class: "sub", text: L("tune.extract_on_output_hint") }),
       el("div", { class: "check" }, pinAt, el("span", { text: L("tune.pin_at") })),
       el("p", { class: "sub", text: L("tune.pin_at_hint") })
     ));
@@ -7219,7 +8159,9 @@ html,body{margin:0;background:${PALETTE.bg}}
           backfill: backfill.value,
           summaries: summaries.checked,
           canonFacts: canonFacts.checked,
-          pinAt: pinAt.checked
+          pinAt: pinAt.checked,
+          embedChunks: embedChunks.value,
+          extractOnOutput: extractOnOutput.checked
         },
         trim: { on: trimOn.checked, keep: trimKeep.value }
       };
@@ -7304,6 +8246,13 @@ html,body{margin:0;background:${PALETTE.bg}}
       pinAtKnown = typeof cfg.recall.pin_at_mentions === "boolean";
       pinAt.checked = cfg.recall.pin_at_mentions === true;
       pinAt.disabled = !pinAtKnown;
+      embedChunksKnown = typeof cfg.embeddings.max_chunks === "number";
+      embedChunks.value = embedChunksKnown ? String(cfg.embeddings.max_chunks) : "";
+      embedChunks.disabled = !embedChunksKnown;
+      extractOnOutputKnown = typeof cfg.extraction.on_output === "boolean";
+      extractOnOutput.checked = cfg.extraction.on_output === true;
+      extractOnOutput.disabled = !extractOnOutputKnown;
+      showEmbedChunks();
       fillParsers(cfg);
     }
     async function loadAll() {
@@ -7399,7 +8348,12 @@ html,body{margin:0;background:${PALETTE.bg}}
           deadline.value = String(args.deadline_ms);
           baseline = { ...baseline, conn: values().conn };
         }
-        const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown }, baseline);
+        const body = configBody(d, v, {
+          pinAt: pinAtKnown,
+          rerank: rerankKnown,
+          embedChunks: embedChunksKnown,
+          extractOnOutput: extractOnOutputKnown
+        }, baseline);
         const tight = (d.includes("tune") || d.includes("conn")) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline) ? ` ${L("tune.embed_wait_tight", { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : "";
         if (!Object.keys(body).length) {
           fillServer(await deps.api("GET", "/v1/config", void 0, 5e3));
@@ -7436,13 +8390,23 @@ html,body{margin:0;background:${PALETTE.bg}}
     revert.addEventListener("click", () => void loadAll());
     let onDocClick = null;
     let onDocKey = null;
-    function shut() {
+    function cleanupPanel() {
+      window.clearTimeout(armTimer);
       stopWorkerAuto();
       clearNotesTimer();
       hideToast();
       activeModalCancel = null;
       if (onDocClick) document.removeEventListener("click", onDocClick);
       if (onDocKey) document.removeEventListener("keydown", onDocKey);
+      closers.clear();
+      bulkGroups.clear();
+      picked.clear();
+      bulkPicked.clear();
+      knownChats = [];
+      lastMeta = null;
+    }
+    function shut() {
+      cleanupPanel();
       root.remove();
       current = null;
       void deps.hide();
@@ -7483,8 +8447,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       const next = langOf(language.value);
       await deps.setArg("language", next);
-      if (onDocClick) document.removeEventListener("click", onDocClick);
-      if (onDocKey) document.removeEventListener("keydown", onDocKey);
+      cleanupPanel();
       root.remove();
       current = await render(deps, next, shown);
     });
@@ -9003,6 +9966,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     });
     const control = {
       event: hud.event,
+      dispose: hud.dispose,
       async enable() {
         if (typeof risuai.requestPluginPermission !== "function" || typeof risuai.getRootDocument !== "function") {
           return "unsupported";
@@ -9052,6 +10016,19 @@ html,body{margin:0;background:${PALETTE.bg}}
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 6e4);
+  }
+  function onPluginUnload(teardown) {
+    try {
+      if (typeof risuai.onUnload !== "function") return false;
+      const answer = risuai.onUnload(teardown);
+      if (answer && typeof answer.then === "function") {
+        answer.then(void 0, () => {
+        });
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }
   async function registerHooks(beforeRequest, onOutput, status, api, file, hud) {
     await risuai.addRisuReplacer("beforeRequest", beforeRequest);
@@ -9121,6 +10098,11 @@ html,body{margin:0;background:${PALETTE.bg}}
       hud
     );
     adapter.warmPersonas();
+    adapter.warmConfig();
+    onPluginUnload(() => {
+      adapter.dispose();
+      hud.dispose();
+    });
     console.log("[NMOS] adapter loaded", { version: "0.6.0" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();

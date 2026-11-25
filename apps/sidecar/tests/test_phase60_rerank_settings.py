@@ -11,6 +11,7 @@ import psycopg
 import pytest
 from psycopg.types.json import Jsonb
 
+from base_rules import base_rules  # noqa: F401 -- autouse: the base's keys, without the revision marker (PHASE-66 part 5)
 from conftest import make_client
 from nmos_sidecar import canonfacts, extraction, rerank, reveals, summaries, vectors
 from nmos_sidecar.config import Settings

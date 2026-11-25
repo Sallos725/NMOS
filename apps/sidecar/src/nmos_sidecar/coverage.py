@@ -16,6 +16,7 @@ from uuid import UUID
 import psycopg
 
 from . import facts, summaries
+from .entities import norm
 
 _SERVED_TURNS = """
 SELECT DISTINCT am.turn
@@ -98,11 +99,13 @@ def read(
     served: frozenset[int] | None = None,
     latest_replied: int | None = None,
     read_view: bool = True,
+    carried: Any = None,
 ) -> Coverage:
     """Read extraction and summary coverage for `head` up to `upto` (as of `known_at` for a replay).
 
     With `read_view=False` (the request path once its packet is compiled) and no `secrets` at hand, no memory view
     is read to tell held summaries apart: no summary counts as covering, so coverage is under-reported, never over.
+    `carried` (`carry.target_rows`): the link the packet reads, so its carried secrets hold summaries here too.
     """
     if served is None:
         served, latest_replied = extraction_state(conn, head, upto=upto, known_at=known_at)
@@ -110,12 +113,18 @@ def read(
     summarized: set[int] = set()
     if summarize_key and served and (read_view or secrets is not None):
         view = summaries.current(conn, conv_id, head, summarize_key, None, upto=upto, known_at=known_at)
-        have = [x for x in view["scenes"] if x["summary"] is not None]
+        # an empty summary (a window too short to summarize, or one stored before an empty reply failed its job)
+        # tells nothing, so it covers nothing
+        have = [x for x in view["scenes"] if x["summary"] is not None and str(x["summary"].get("text") or "").strip()]
         if have:
             if secrets is None and extractor_key:
-                secrets = facts.memory_view(conn, head, extractor_key, upto, known_at)["secrets"]
+                # with the carry link the packet reads (`carried`): a summary it would hold covers nothing
+                secrets = facts.memory_view(conn, head, extractor_key, upto, known_at, carried=carried)["secrets"]
+            # At LEAK_NEAR, as a scene with one a secret is kept from holds it: a turn its summary may not tell in
+            # such a scene is not covered, so a trim does not cut it away.
+            everyone = frozenset(norm(n) for s in secrets or () if s.get("open") for n in s["open"])
             for x in have:
-                if not secrets or not summaries.held(x["summary"], secrets):
+                if not secrets or not summaries.held(x["summary"], secrets, everyone):
                     w = x["window"]
                     summarized.update(range(w.first_turn, w.last_turn + 1))
     covered = frozenset(served & summarized)

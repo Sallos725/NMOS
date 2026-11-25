@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_extraction_model import call, said, valid  # noqa: E402
 from eval_phase8_model import Scene, hint  # noqa: E402
 
-from nmos_sidecar.extraction import COMPILER_VERSION, SYSTEM_PROMPT, build_prompt, normalize  # noqa: E402
+from nmos_sidecar.extraction import COMPILER_VERSION, SYSTEM_PROMPT, build_prompt, normalize, own_items  # noqa: E402
 from nmos_sidecar.generations import fingerprint  # noqa: E402
 from nmos_sidecar.llm import parse_json_object  # noqa: E402
 from nmos_sidecar.predicates import registry_prompt  # noqa: E402
@@ -108,7 +108,7 @@ def main() -> None:
         if not reply.get("error"):
             parsed = parse_json_object(reply["text"]) if reply["text"] else {}
             items = parsed.get("assertions") if isinstance(parsed.get("assertions"), list) else []
-            record["assertions"] = normalize(items, "\n".join(x for _, _, x in scene.target), scene.hints)
+            record["assertions"] = normalize(own_items(items), "\n".join(x for _, _, x in scene.target), scene.hints)
             ok, detail = scene.check(record["assertions"], scene)
             record["check"] = {"pass": ok, "detail": detail}
         return record

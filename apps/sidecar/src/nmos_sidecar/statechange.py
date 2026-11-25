@@ -4,6 +4,7 @@ window. Pure functions over the windows `state.windows` reads; no database here.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -68,14 +69,72 @@ def change(before: str | None, after: str) -> str | None:
     return list_change(before, after)
 
 
+def base(key: str) -> str:
+    """A status key's last part, lower-cased and trimmed (`서연.HP` → `hp`): `source_time.base`'s convention (its
+    BASE_SQL), here because `source_time` imports this module."""
+    return key.strip().lower().rsplit(".", 1)[-1].strip()
+
+
+def _norm(key: str) -> str:
+    return key.strip().lower()
+
+
+def _split(key: str) -> tuple[str, str] | None:
+    """(entity, key) of a key the parser wrote as `f"{entity}.{key}"` (`parsers._key`): its first dot, nothing spaced
+    beside it (both parts are stored trimmed), so "Mr. Kim" is one key. None for any other key."""
+    head, dot, rest = key.partition(".")
+    if not dot or not head.strip() or not rest.strip() or head[-1].isspace() or rest[0].isspace():
+        return None
+    return head.strip(), rest
+
+
+def entity_prefixes(keys: Iterable[str], declared: Collection[str] = (),
+                    declared_prefixes: Collection[str] = ()) -> frozenset[str]:
+    """The prefixes the status-window parser added for characters, among the keys of one window (or one history read):
+    an `E` of `E.key` that another prefix shares a key with. The parser prefixes a window's keys only when one reply
+    holds the windows of two or more characters that share a key (`statusshape.characters`); a dot the key itself has
+    (`P.ATK`, `Max.HP`) has no such partner. A key the rule set declares (`declared`: a rule's `keys`, `key` or `watch`)
+    or writes with a rule's `prefix` (`declared_prefixes`) is never split, whatever shares it."""
+    own = {_norm(d) for d in declared}
+    rests: dict[str, set[str]] = {}
+    for key in keys:
+        if _norm(key) in own or any(p and key.strip().startswith(p) for p in declared_prefixes):
+            continue
+        if (parts := _split(key)) is not None:
+            rests.setdefault(parts[0], set()).add(_norm(parts[1]))
+    return frozenset(e for e, r in rests.items() if any(r & rests[o] for o in rests if o != e))
+
+
+def covered(key: str, names: frozenset[str] | set[str] | tuple[str, ...],
+            prefixes: Collection[str] | None = None) -> bool:
+    """Whether a pin or a watch names a key: the key itself, or the key the parser prefixed for a character, so `HP`
+    covers `HP`, `서연.HP` and `민지.HP` while `서연.HP` covers only itself.
+
+    `prefixes`: the character prefixes of the window the key is in (`entity_prefixes`); a key under any other prefix
+    is a key of its own (`P.ATK` is not `ATK`, `Max.HP` is not `HP`), and a name with a dot covers a character's key
+    too (`P.ATK` covers `서연.P.ATK`). Without them (no window at hand) any parser-shaped prefix of a bare name counts.
+    A window keeps bare keys until one reply holds two characters' windows (`statusshape.characters`); a pin set on
+    the bare key keeps covering them then."""
+    if key in names:
+        return True
+    parts = _split(key)
+    if parts is None:
+        return False
+    entity, rest = parts
+    if prefixes is not None and entity not in prefixes:
+        return False
+    want = _norm(rest)
+    return any(_norm(n) == want for n in names if prefixes is not None or "." not in n)
+
+
 def scene_key(key: str) -> bool:
     """A date, time or place key, also under an entity (`도윤.location`)."""
-    return key.rsplit(".", 1)[-1].strip().casefold() in SCENE_KEYS
+    return base(key) in SCENE_KEYS
 
 
 def core_keys(windows: list[dict[str, Any]], pins: frozenset[str] | set[str] = frozenset()) -> set[str]:
-    """Pinned keys, scene keys, and those that changed in at least half of the last CORE_WINDOWS windows (PHASE-43
-    Q3)."""
+    """Pinned keys (and the keys they cover, `covered`), scene keys, and those that changed in at least half of the
+    last CORE_WINDOWS windows (PHASE-43 Q3)."""
     recent = windows[-CORE_WINDOWS:]
     counts: dict[str, int] = {}
     for prev, cur in zip(recent, recent[1:]):
@@ -84,7 +143,11 @@ def core_keys(windows: list[dict[str, Any]], pins: frozenset[str] | set[str] = f
                 counts[key] = counts.get(key, 0) + 1
     floor = max(1, len(recent) // 2)
     scene = {k for w in recent for k in w["values"] if scene_key(k)}
-    return set(pins) | scene | {k for k, n in counts.items() if n >= floor}
+    pinned: set[str] = set()
+    for w in recent if pins else ():
+        prefixes = entity_prefixes(w["values"])
+        pinned |= {k for k in w["values"] if covered(k, pins, prefixes)}
+    return set(pins) | pinned | scene | {k for k, n in counts.items() if n >= floor}
 
 
 @dataclass(frozen=True)
@@ -98,8 +161,9 @@ class Told:
 def tell(windows: list[dict[str, Any]], pins: frozenset[str] | set[str] = frozenset(),
          asked: frozenset[str] | set[str] = frozenset(), by_turn: bool = True) -> list[Told]:
     """The status as core values and changes: core keys' current values; other keys only when the last window changed
-    them (or first set them); a list's whole value only when the message asked about it. With one window there is
-    nothing to compare: every key is new and told. Keys absent from the last window are left out."""
+    them (or first set them) or the message asked about them (`asked`, whole); a list's whole value only when the
+    message asked about it. With one window there is nothing to compare: every key is new and told. Keys absent from
+    the last window are left out."""
     if not windows:
         return []
     last = windows[-1]
@@ -110,7 +174,7 @@ def tell(windows: list[dict[str, Any]], pins: frozenset[str] | set[str] = frozen
     for key, value in last["values"].items():
         before = None if prev is None else prev.get(key)
         changed = prev is None or before != value
-        if key not in core and not changed:
+        if key not in core and not changed and key not in asked:
             continue
         mark = change(before, value)
         listed = _items(value) is not None

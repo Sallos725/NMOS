@@ -207,6 +207,7 @@ def run(args: argparse.Namespace) -> None:
                 if not isinstance(items, list):
                     raise LLMError("model reply has no `assertions` list")
                 items = [x for x in items if not (isinstance(x, dict) and x.get("predicate") in X.DERIVED)]
+                items = getattr(X, "own_items", list)(items)  # capped before the derived rows (review F5)
                 items += X.revealed(parsed, p["secrets"], p["text"])
                 if p["roles"]:  # extract-v16: the listed endings, as the worker writes them
                     items = X.ended_roles(parsed, items, p["roles"], p["shown"], hints=p["hints"], persona=p["persona"])

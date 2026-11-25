@@ -2,6 +2,8 @@
 
 The rule errs toward not pinning; a missed pin is today's behaviour, a wrong pin silences a living character.
 The word lists are read-side constants of `packet-v20`: a change to them is a new policy, so traces replay.
+`v21=True` reads the `packet-v21` lists below (more ways to say died, hearsay, a faked death, idioms); the default is
+`packet-v20`'s rule, unchanged.
 """
 
 from __future__ import annotations
@@ -184,11 +186,14 @@ def _normalize(value: str | None) -> str:
     return norm(unicodedata.normalize("NFC", value))
 
 
-def is_gone_status(value: str | None) -> bool:
+def is_gone_status(value: str | None, *, v21: bool = False) -> bool:
     """Whether a `has_status` value plainly says the character itself is dead, missing or gone for good, now.
 
     Not when it also says recovered, alive or found, a negation, a near miss or hearsay; nor when the word is
-    someone else's fate, a warrior, a missing object, or a leave that is not plainly for good."""
+    someone else's fate, a warrior, a missing object, or a leave that is not plainly for good. `v21`: `packet-v21`'s
+    lists and guards (`_is_gone_status_v21`)."""
+    if v21:
+        return _is_gone_status_v21(value)
     text = _normalize(value)
     if not text:
         return False
@@ -213,7 +218,195 @@ def is_gone_status(value: str | None) -> bool:
     return matched
 
 
-def is_gone_place(name: str | None) -> bool:
-    """Whether a `located_in` place's whole normalized name is a non-place (e.g. 저승, the afterlife)."""
+def is_gone_place(name: str | None, *, v21: bool = False) -> bool:
+    """Whether a `located_in` place's whole normalized name is a non-place (e.g. 저승, the afterlife). `v21` adds
+    `NOT_PLACES_V21`."""
     text = _normalize(name)
-    return bool(text) and text in NOT_PLACES
+    return bool(text) and (text in NOT_PLACES or (v21 and text in NOT_PLACES_V21))
+
+
+def is_gone_vital(value: str | None) -> bool:
+    """Whether a vital-status value says the character is gone. No `vital_status` predicate is specified yet: until one
+    is, this is `packet-v21`'s status rule, so a vital value reads exactly as a status value does."""
+    return _is_gone_status_v21(value)
+
+
+# --- packet-v21 ----------------------------------------------------------------------------------------------------------
+# More ways to say a character died, was killed or is gone (the v20 words stay: these are added), hearsay, a faked
+# death and idioms that only look like a death. Still errs toward not pinning.
+
+GONE_KO_V21: tuple[str, ...] = GONE_KO + (
+    "죽은",  # only as a state ("죽은 상태", "죽은 채", the whole value): `_ko_counts_v21`
+    "살해",
+    "피살",
+    "처형",
+    "참수",
+    "사살",
+    "독살",
+    "익사",
+    "자살",
+    "순직",
+    "별세",
+    "타계",
+    "숨짐",
+    "숨졌",
+    "숨을 거둠",
+    "숨을 거두",
+    "숨을 거뒀",
+    "소멸",
+    "세상을 떠남",
+    "세상을 떠났",
+    "세상을 떠나",
+)
+
+GONE_EN_V21: tuple[str, ...] = GONE_EN + (
+    "died",
+    "murdered",
+    "executed",
+    "slain",
+    "perished",
+    "passed away",
+    "banished",
+    "assassinated",
+)
+
+# Hearsay, a guess or a faked death: no pin (v20's NEAR_MISS stays; `reported` was an own-state word there).
+NEAR_MISS_V21: tuple[str, ...] = NEAR_MISS + (
+    "보임",
+    "보인다",
+    "것 같",
+    "듯",
+    "reported",
+    "allegedly",
+    "supposedly",
+    "apparently",
+    "fake",
+    "faked",
+    "faking",
+    "feigned",
+    "feigning",
+)
+
+NOT_PLACES_V21: frozenset[str] = frozenset({
+    "저세상",
+    "황천",
+    "황천길",
+    "the beyond",
+    "the great beyond",
+})
+
+_KO_FOLLOWERS_V21 = _KO_FOLLOWERS + "남났"
+_EN_FOLLOWERS_V21: tuple[str, ...] = _EN_FOLLOWERS + (
+    "to",
+    "of",
+    "for",
+    "while",
+    "with",
+    "under",
+    "due to",
+    "because",
+    "before",
+    "when",
+    "near",
+)
+
+_GONE_KO_V21_RE = re.compile(
+    r"(?<!\w)(?:"
+    + "|".join(re.escape(w) for w in sorted(GONE_KO_V21, key=len, reverse=True))
+    + r")(?=$|\W|["
+    + _KO_FOLLOWERS_V21
+    + r"])"
+)
+_GONE_EN_V21_RE = re.compile(
+    r"\b(?:"
+    + "|".join(re.escape(w) for w in sorted(GONE_EN_V21, key=len, reverse=True))
+    + r")\b(?=$|[^\w\s]|\s+(?:"
+    + "|".join(re.escape(w) for w in sorted(_EN_FOLLOWERS_V21, key=len, reverse=True))
+    + r")\b)"
+)
+_NEAR_MISS_KO_V21 = tuple(p for p in NEAR_MISS_V21 if not p.isascii())
+_NEAR_MISS_EN_V21_RE = _en_pattern(tuple(p for p in NEAR_MISS_V21 if p.isascii()))
+# A faked death in Korean: "사망(위장)", "사망 위장 중", "죽음 위장", "죽음을 위장함", "위장 사망" (위장 alone is also the
+# stomach: "위장 출혈로 사망" is a death).
+_FAKED_KO = re.compile(r"(?:사망|죽음|죽은|실종)\W*(?:을|를)?\s*(?:위장|가장)|(?:위장|가장)\s*(?:사망|죽음|실종)")
+# Idioms the words appear in that say nothing about death: "dead on her feet", "dead in the water", "dead to the
+# world", "missing from class". A word inside one does not count.
+_EN_IDIOM = re.compile(
+    r"\bdead\s+(?:on\s+(?:\w+\s+)?feet|in\s+the\s+water|to\s+(?:the\s+world|me|him|her|them|us|you)\b|"
+    r"from\s+(?:exhaustion|tiredness|fatigue|the\s+neck\s+up))"
+    r"|\bmissing\s+from\s+(?:\w+\s+)?(?:class(?:es)?|work|school|practice|lessons?|meetings?|the\s+meeting|dinner|"
+    r"breakfast|lunch|training|rehearsals?|the\s+(?:team|lineup|roster|picture))\b"
+)
+# Alive or returned (v20's words), but "found" only when it is a finding of the living: not "found dead / killed",
+# not "never / not / hasn't been found", not a body found; "발견" not "시체로 발견", "죽은 채 발견", "발견되지 않음".
+_ALIVE_KO_V21_RE = re.compile(r"살아(?!남지\s*못)|(?<!시체로 )(?<!시신으로 )(?<!사체로 )(?<!채 )(?<!채로 )"
+                              r"발견(?!되지|\s*안\s*됨|하지\s*못|\s*못)")
+_ALIVE_EN_V21_RE = re.compile(r"\bliving\b|\bback from\b|\bfound\b(?!\s+(?:dead|killed|murdered|slain|lifeless|drowned|"
+                              r"executed|hanged|in\s+pieces))")
+_EN_FOUND_NEG = re.compile(r"(?:\bnot|\bnever|n't|\bnobody|\bno one|\byet to be|\bwithout being)(?:\s+\w+){0,2}\s+$|"
+                           r"\b(?:body|bodies|corpse|remains)(?:\s+(?:was|were|had been|has been|is|are))?\s+$")
+# The subject's own state (v20's `_KO_OWN` / `_EN_OWN`) also after a word that says why, how or when: "독살당해 사망함",
+# "칼에 찔려 사망함", "화재로 인해 사망", "3년 전 실종됨", "결국 숨짐". Not after a bare noun ("동생 실종", "아버지 사망"),
+# and not after "reported" (hearsay).
+_KO_OWN_V21 = re.compile(
+    r"(?:^|(?:에서|중|에|로|결국|끝내|이미|마침내|인해|인하여|때문에|탓에|끝에|후|뒤|전|후에|뒤에|"
+    r"[가-힣](?:해|여|어|아|려|져|서|고|며|다가))\s+)$"
+)
+_EN_OWN_V21 = re.compile(r"(?:^|\b(?:is|was|were|went|gone|got|still|been|now|found|has|have|had|later|eventually|"
+                         r"finally|already|tragically|recently)\s+)$")
+
+
+def _ko_counts_v21(text: str, m: re.Match[str]) -> bool:
+    before, after = text[:m.start()], text[m.end():]
+    if _KO_OTHER_SUBJECT.search(before) or _KO_MODIFIES_NOUN.match(after):
+        return False
+    word = m.group(0)
+    if word == "떠남":  # gone for good only when it says so ("영영 떠남"); a bare "떠남" is a leave
+        return bool(_LEAVE_FOR_GOOD.search(text))
+    if word == "죽은":  # a state, not a modifier: "죽은 상태", "죽은 채", the whole value
+        return bool(re.match(r"\s*(?:상태|채|$)", after)) and _KO_OWN_V21.search(before) is not None
+    if not _KO_OWN_V21.search(before):
+        return False
+    if word == "전사":
+        return bool(_JEONSA_DIED.match(after) or _JEONSA_CONTEXT.search(before))
+    return True
+
+
+def _en_counts_v21(text: str, m: re.Match[str]) -> bool:
+    before = text[:m.start()]
+    return not _EN_OTHER_SUBJECT.search(before) and bool(_EN_OWN_V21.search(before))
+
+
+def _alive_v21(text: str) -> bool:
+    if _ALIVE_KO_V21_RE.search(text):
+        return True
+    return any(m.group(0) != "found" or not _EN_FOUND_NEG.search(text[:m.start()])
+               for m in _ALIVE_EN_V21_RE.finditer(text))
+
+
+def _is_gone_status_v21(value: str | None) -> bool:
+    text = _normalize(value)
+    if not text:
+        return False
+    if any(w in text for w in RECOVERED_KO) or _RECOVERED_EN_RE.search(text):
+        return False
+    if _alive_v21(text):
+        return False
+    if (any(p in text for p in _NEAR_MISS_KO_V21) or _NEAR_MISS_EN_V21_RE.search(text) or _FAKED_KO.search(text)):
+        return False
+
+    matched = False
+    for m in _GONE_KO_V21_RE.finditer(text):
+        if _KO_POST_NEG.match(text[m.end():]) or _KO_PRE_NEG.search(text[:m.start()]):
+            return False
+        matched = matched or _ko_counts_v21(text, m)
+
+    idioms = [(i.start(), i.end()) for i in _EN_IDIOM.finditer(text)]
+    for m in _GONE_EN_V21_RE.finditer(text):
+        if any(a <= m.start() < b for a, b in idioms):
+            continue
+        if _EN_PRE_NEG.search(text[:m.start()]):
+            return False
+        matched = matched or _en_counts_v21(text, m)
+
+    return matched

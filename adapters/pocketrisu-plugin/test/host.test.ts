@@ -21,13 +21,13 @@ describe('plugin arguments', () => {
 });
 
 describe('trimming old dialogue (PHASE-60 S1)', () => {
-  it('is off with 20 recent turns when unset', async () => {
+  it('is off with 16 recent turns when unset', async () => {
     withArgs({});
     const s = await risuHost.settings();
-    expect([s.trimOldTurns, s.keepRecentTurns]).toEqual([false, 20]);
+    expect([s.trimOldTurns, s.keepRecentTurns]).toEqual([false, 16]);
     withArgs({ trim_old_turns: 0, keep_recent_turns: 0 });  // PocketRisu's unset int
     const d = await risuHost.settings();
-    expect([d.trimOldTurns, d.keepRecentTurns]).toEqual([false, 20]);
+    expect([d.trimOldTurns, d.keepRecentTurns]).toEqual([false, 16]);
   });
 
   it('is on with trim_old_turns 1', async () => {
@@ -37,8 +37,8 @@ describe('trimming old dialogue (PHASE-60 S1)', () => {
     expect((await risuHost.settings()).trimOldTurns).toBe(false);
   });
 
-  it('keeps keep_recent_turns within 4..200, 0 or invalid meaning 20', async () => {
-    const cases: [string | number, number][] = [[0, 20], [2, 4], [999, 200], [33, 33], ['x', 20], [-5, 20]];
+  it('keeps keep_recent_turns within 4..200, 0 or invalid meaning 16', async () => {
+    const cases: [string | number, number][] = [[0, 16], [2, 4], [999, 200], [33, 33], ['x', 16], [-5, 16]];
     for (const [value, expected] of cases) {
       withArgs({ keep_recent_turns: value });
       expect((await risuHost.settings()).keepRecentTurns, String(value)).toBe(expected);
@@ -129,5 +129,28 @@ describe('archive files (ADR 0050, H21)', () => {
     expect(await risuHost.requestFile!('http://127.0.0.1:8790/v1/archive', {}, 1000, 'direct'))
       .toEqual({ status: 409, bytes: null, json: { detail: 'refused' } });
     expect(calls[1]?.[1]).not.toHaveProperty('networkRoute');
+  });
+});
+
+describe('onPluginUnload (review item 9)', () => {
+  it("registers the teardown with the host's onUnload, and says false on a host without one", async () => {
+    const { onPluginUnload } = await import('../src/host');
+    const registered: (() => void)[] = [];
+    (globalThis as { risuai?: unknown }).risuai = { onUnload: (fn: () => void) => { registered.push(fn); } };
+    const teardown = () => {};
+    expect(onPluginUnload(teardown)).toBe(true);
+    expect(registered).toEqual([teardown]);
+    (globalThis as { risuai?: unknown }).risuai = {};
+    expect(onPluginUnload(teardown)).toBe(false);
+    (globalThis as { risuai?: unknown }).risuai = { onUnload: () => { throw new Error('refused'); } };
+    expect(onPluginUnload(teardown)).toBe(false);
+    // The sandbox's proxy answers every name with a function; one the host lacks rejects later: handled.
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    (globalThis as { risuai?: unknown }).risuai = { onUnload: () => Promise.reject(new Error('no such method')) };
+    expect(onPluginUnload(teardown)).toBe(true);
+    await new Promise((r) => setTimeout(r, 10));
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
   });
 });
