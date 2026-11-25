@@ -250,3 +250,27 @@ def test_a_replay_reads_the_pins_its_request_recorded(migrated):
         assert c.get(f"/v1/trace/{out['trace_id']}/replay").json()["reproduced"] is True
         now = recall(c, chat, "다음.", budget=1200)["packet"]["text"]
         assert '<Item key="place"' in now and '<Item key="items"' not in now  # the pins in force now are told now
+
+
+def test_the_status_flags_of_a_renamed_card_stay(migrated, tmp_path):
+    """Every reader of the chat's card goes through its binding: the flags (PHASE-39 Q4) read the same card after a
+    rename as before it."""
+    import re
+    from test_state_history import RULE, bar as gold_bar
+    path = tmp_path / "rules.json"
+    path.write_text(json.dumps({"rules": [{**RULE, "card": CARD, "watch": ["Gold"]}]}), encoding="utf-8")
+    chat = SimChat()
+    chat.user("시작.")
+    chat.reply(gold_bar(1, 100))
+    chat.user("쉰다.")
+    chat.reply(gold_bar(1, 70))  # Gold changed without the reply saying so
+    chat.user("다음.")
+    with make_client(migrated, parsers_file=str(path)) as c:
+        sync(c, chat, character_name=CARD, character_ref=REF)
+        conv = conversation(migrated, chat)
+        flags = lambda: re.findall(r'data-repair="state_dismiss:([0-9a-f]{16})"',  # noqa: E731
+                                   c.get(f"/v1/inspector/c/{conv}?lang=en").json()["html"])
+        before = flags()
+        assert len(before) == 1
+        sync(c, chat, character_name=RENAMED, character_ref=REF)
+        assert flags() == before
