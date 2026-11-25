@@ -597,3 +597,28 @@ describe("recall's query on a Continue (G7)", () => {
     expect(retrieve).not.toHaveProperty('is_continue');  // the request keeps its shape
   });
 });
+
+describe('timers at an unload or re-import (review item 9)', () => {
+  it('dispose clears a waiting sync and the 5-minute read, and neither is set again', async () => {
+    const h = harness();
+    const adapter = await h.start();
+    expect(h.refreshTimers).toHaveLength(1);
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.pending()).toHaveLength(1);
+    adapter.dispose();
+    expect(h.pending()).toHaveLength(0);
+    expect((h.refreshTimers[0] as unknown as { cleared?: boolean }).cleared).toBe(true);
+    // A refresh that fires anyway (a host that cannot clear it) reads nothing and sets no next one.
+    h.refreshTimers[0]!.run();
+    await settle();
+    expect(h.refreshTimers).toHaveLength(1);
+    expect(h.paths()).toEqual(['/v1/output']);
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.timers.filter((t) => !t.cleared)).toHaveLength(0);
+    adapter.warmConfig();
+    await settle();
+    expect(h.refreshTimers).toHaveLength(1);
+  });
+});

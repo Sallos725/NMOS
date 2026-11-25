@@ -326,6 +326,9 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   let refreshing = false;
   // Config answers in order (review nit 9): each read or save is numbered when it starts. A read that started before
   // a save answered may carry the value from before it, and an answer older than one already noted is not news.
+  // Unloaded (or re-imported): no timer is set again, and the waiting ones are cleared (`dispose`).
+  let disposed = false;
+  let refreshHandle: unknown = null;
   let configStarted = 0;
   let configFence = 0;
   let configNoted = 0;
@@ -906,7 +909,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
    *  waiting one; never throws. */
   function scheduleOutputSync(chatId: string, seen: number, replyId: string): void {
     cancelOutputSync();
-    if (!(outputSyncMs > 0)) return;
+    if (!(outputSyncMs > 0) || disposed) return;
     try {
       const handle = setTimer(() => {
         if (outputTimer === handle) outputTimer = null;
@@ -1027,17 +1030,35 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
   /** At load (after the hooks): reads the switch now and again every `CONFIG_REFRESH_MS`, in the background. */
   function warmConfig(): void {
-    if (refreshing) return;
+    if (refreshing || disposed) return;
     refreshing = true;
     const next = (): void => {
+      if (disposed) return;
       try {
-        setRefreshTimer(() => { void readConfig().finally(next); }, CONFIG_REFRESH_MS);
+        refreshHandle = setRefreshTimer(() => {
+          refreshHandle = null;
+          if (disposed) return;
+          void readConfig().finally(next);
+        }, CONFIG_REFRESH_MS);
       } catch (error) {
         refreshing = false;
         host.debug('[NMOS] sidecar settings refresh not scheduled:', error instanceof Error ? error.message : error);
       }
     };
     void readConfig().finally(next);
+  }
+
+  /** The plugin is unloaded or re-imported (the host's `onUnload`, where it has one): the 5-minute read of the
+   *  sidecar's settings and a waiting background sync are cleared, and neither is set again; a sync already running
+   *  stops before its next step. Never throws. */
+  function dispose(): void {
+    disposed = true;
+    turnSeq++;
+    cancelOutputSync();
+    if (refreshHandle !== null) {
+      try { clearTimer(refreshHandle); } catch { /* the chain finds `disposed` set when it fires */ }
+      refreshHandle = null;
+    }
   }
 
   /** Output listener: provisional hint only (H7), and the background sync after the reply (G6). Never awaited work,
@@ -1155,7 +1176,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return res.bytes;
   }
 
-  return { beforeRequest, onOutput, status, api, file, warmPersonas, warmConfig };
+  return { beforeRequest, onOutput, status, api, file, warmPersonas, warmConfig, dispose };
 }
 
 const CARD_FIELDS = ['card:desc', 'card:personality', 'card:scenario'];
