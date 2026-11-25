@@ -791,11 +791,18 @@ def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] |
     workers never extract a turn before the turns its hints come from; a later live turn waits for the earlier one, so
     a chat's live turns run oldest first (chats still newest first). Only a dead job lets the turns after it go; a
     first-sight or backfill job also waits while an earlier one waits for a retry (PHASE-30 Q2), a live turn does not.
-    A less urgent earlier job (a history turn) never holds a more urgent one."""
+    A less urgent earlier job (a history turn) never holds a more urgent one.
+
+    A claim left `running` for 10 minutes (its worker died mid-call) is queued again, and given up on (`dead`, as
+    `fail` ends a job) once it has been claimed MAX_ATTEMPTS times (review F8): requeued for ever, it would hold every
+    later turn of its chat behind it."""
     with conn.transaction():
         conn.execute(
-            "UPDATE job SET status = 'queued', locked_at = NULL, updated_at = now()"
-            " WHERE status = 'running' AND locked_at < now() - interval '10 minutes'"
+            "UPDATE job SET status = CASE WHEN attempts >= %(max)s THEN 'dead' ELSE 'queued' END, locked_at = NULL,"
+            " last_error = CASE WHEN attempts >= %(max)s THEN left(%(lost)s || coalesce(': ' || last_error, ''), 1000)"
+            " ELSE last_error END, updated_at = now()"
+            " WHERE status = 'running' AND locked_at < now() - interval '10 minutes'",
+            {"max": MAX_ATTEMPTS, "lost": LOST},
         )
         return conn.execute(
             """
@@ -819,6 +826,9 @@ def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] |
             {"handled": [f"{kind}|{key}" for kind, key in handled.items()], "recent": RECENT_PRIORITY,
              "first": FIRST_PRIORITY, "live": LIVE_PRIORITY},
         ).fetchone()
+
+
+LOST = "worker lost the job (still running after 10 minutes), given up after the last attempt"
 
 
 def finish(conn: psycopg.Connection, job_id: int, status: str, locked_at: Any = None) -> None:

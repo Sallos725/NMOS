@@ -153,3 +153,30 @@ def test_the_canon_reader_cannot_be_made_to_store_more_than_forty_rows(migrated)
             " FROM extraction x JOIN assertion a ON a.extraction_id = x.id JOIN projection_generation g"
             " ON g.key = x.extractor_key WHERE g.kind = 'canon' GROUP BY 1").fetchall()
     assert counts and max(r["n"] for r in counts) == X.MAX_ASSERTIONS and sum(r["learned"] for r in counts) == 0
+
+
+# --- F8: a job left running by a dead worker is given up on ----------------------------------------------------------
+
+def test_a_job_stuck_running_dies_after_its_last_attempt_and_lets_the_chat_go_on(migrated):
+    from nmos_sidecar.extraction import claim
+    from simchat import SimChat
+    from test_extraction import filler
+
+    chat = SimChat()
+    filler(chat, 3)
+    chat.user("next")
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+    with _connect(migrated) as conn:
+        handled = {"extract": active_generation(conn, "extract").key}
+        stuck = claim(conn, handled)
+        assert claim(conn, handled) is None  # its chat's later turns wait behind it
+        conn.execute("UPDATE job SET locked_at = now() - interval '11 minutes' WHERE id = %s", (stuck["id"],))
+        again = claim(conn, handled)  # requeued: its worker is gone, but it has attempts left
+        assert again["id"] == stuck["id"] and again["attempts"] == 2
+        conn.execute("UPDATE job SET locked_at = now() - interval '11 minutes', attempts = %s WHERE id = %s",
+                     (X.MAX_ATTEMPTS, stuck["id"]))
+        later = claim(conn, handled)
+        assert later is not None and later["id"] > stuck["id"]  # the chat goes on
+        dead = conn.execute("SELECT status, last_error FROM job WHERE id = %s", (stuck["id"],)).fetchone()
+        assert dead["status"] == "dead" and dead["last_error"].startswith(X.LOST)
