@@ -239,12 +239,18 @@ export function personaOf(chat: HostChat, host: HostPersonas): string | null {
   return typeof name === 'string' && name.trim() ? name.trim() : null;
 }
 
-/** How long after a reply its chat is synced in the background (G6), unless a request or another reply comes first. */
+/** How long after a reply its chat is synced in the background (G6), unless a request or another reply comes first;
+ *  only while the sidecar reports `extraction.on_output: true` (it then extracts the reply early, PHASE-67). */
 export const OUTPUT_SYNC_MS = 20_000;
 /** The background sync's own time limit: it holds no request, so it is not cut at the request deadline. */
 const OUTPUT_SYNC_TIMEOUT_MS = 30_000;
 /** A request of the chat a background sync is still running for waits this long at most for it to end. */
 const OUTPUT_SYNC_WAIT_MS = 1000;
+
+/** How often the sidecar's settings are read again in the background for `extraction.on_output` (G6): a change made
+ *  anywhere but this panel is seen within this plus `CONFIG_TIMEOUT_MS`; one saved from this panel at once. */
+export const CONFIG_REFRESH_MS = 5 * 60_000;
+const CONFIG_TIMEOUT_MS = 5000;
 
 /** Timers for the background sync after a reply (G6), injectable so tests need not wait. */
 export interface AdapterOptions {
@@ -252,6 +258,20 @@ export interface AdapterOptions {
   outputSyncMs?: number;
   setTimer?: (run: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
+  /** The timer of the slow background read of the sidecar's settings (`CONFIG_REFRESH_MS`), apart from `setTimer`. */
+  setRefreshTimer?: (run: () => void, ms: number) => unknown;
+}
+
+/** `extraction.on_output` of a `GET`/`PUT /v1/config` answer: `false` when the sidecar does not report it (older than
+ *  the switch), never anything but a boolean. */
+export function outputSwitchOf(config: unknown): boolean {
+  const on = (config as { extraction?: { on_output?: unknown } } | null)?.extraction?.on_output;
+  return on === true;
+}
+
+/** The sidecar address as the switch is remembered for it. */
+function sidecarKey(settings: Settings): string {
+  return settings.sidecarUrl.replace(/\/+$/, '');
 }
 
 function defaultSetTimer(run: () => void, ms: number): unknown {
@@ -285,6 +305,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   let outputTimer: unknown = null;
   let turnSeq = 0;
   let outputRunning: { chatId: string; done: Promise<void> } | null = null;
+  // The sidecar's switch for extracting a reply right after it (`extraction.on_output`, PHASE-67), for the sidecar
+  // address it was read from: the background sync runs only while it is `true` there. Learned from the answers of
+  // `/v1/config` (the panel's, the read at load and the slow one after it), never on a request or a reply; `on: null`
+  // is not known (not read yet, or the read failed): off.
+  let outputSwitch: { url: string; on: boolean | null } | null = null;
+  const setRefreshTimer = options.setRefreshTimer ?? defaultSetTimer;
+  let refreshing = false;
 
   /** Drops every cached packet, and every packet still being fetched. */
   function invalidate(): void {
@@ -843,7 +870,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     const live = () => turnSeq === seen;
     try {
       const settings = await host.settings();
-      if (!live() || !settings.enabled || !settings.sidecarUrl || settings.offChats?.includes(chatId) || !secureContext()) return;
+      if (!live() || !settings.enabled || !settings.sidecarUrl || settings.offChats?.includes(chatId) || !secureContext()
+        || !outputOn(settings)) return;  // the switch turned off (or another sidecar set) while it waited
       const chat = await host.currentChat();
       if (!live() || !chat?.id || chat.id !== chatId) return;  // another chat is open: its own next request syncs it
       const messages: HostMessage[] = Array.isArray(chat.message) ? chat.message : [];
@@ -880,6 +908,44 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     for (const [k, entry] of cache) if (entry.chatId === chatId) cache.delete(k);
   }
 
+  /** Whether the sidecar now set extracts a reply right after it, as last read from it. */
+  function outputOn(settings: Settings): boolean {
+    return outputSwitch?.url === sidecarKey(settings) && outputSwitch.on === true;
+  }
+
+  /** Remembers the switch from an answer of `/v1/config` (`null`: the read failed or its answer is unknown). */
+  function noteConfig(settings: Settings, config: unknown | null): void {
+    outputSwitch = { url: sidecarKey(settings), on: config === null ? null : outputSwitchOf(config) };
+  }
+
+  /** Reads the sidecar's settings for the switch; never throws. Not while NMOS is off: nothing reaches the sidecar. */
+  async function readConfig(): Promise<void> {
+    let settings: Settings | null = null;
+    try {
+      settings = await host.settings();
+      if (!settings.enabled || !settings.sidecarUrl) return;
+      noteConfig(settings, await call<unknown>(settings, '/v1/config', undefined, host.now() + CONFIG_TIMEOUT_MS, 'GET'));
+    } catch (error) {
+      if (settings?.sidecarUrl) noteConfig(settings, null);
+      host.debug('[NMOS] sidecar settings not read:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  /** At load (after the hooks): reads the switch now and again every `CONFIG_REFRESH_MS`, in the background. */
+  function warmConfig(): void {
+    if (refreshing) return;
+    refreshing = true;
+    const next = (): void => {
+      try {
+        setRefreshTimer(() => { void readConfig().finally(next); }, CONFIG_REFRESH_MS);
+      } catch (error) {
+        refreshing = false;
+        host.debug('[NMOS] sidecar settings refresh not scheduled:', error instanceof Error ? error.message : error);
+      }
+    };
+    void readConfig().finally(next);
+  }
+
   /** Output listener: provisional hint only (H7), and the background sync after the reply (G6). Never awaited work,
    *  never throws. */
   function onOutput(arg: { chat?: HostChat; messageIndex?: number }): void {
@@ -888,8 +954,9 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     void (async () => {
       const settings = await host.settings();
       if (!settings.enabled || !settings.sidecarUrl || !arg?.chat?.id || settings.offChats?.includes(arg.chat.id)) return;
-      // Scheduled first: whatever happens to the notification below, the reply is synced.
-      if (turnSeq === seen) scheduleOutputSync(arg.chat.id, seen);
+      // Scheduled first: whatever happens to the notification below, the reply is synced. Only when the sidecar
+      // extracts a reply right after it: otherwise the sync would only cost (and a request could wait on it).
+      if (turnSeq === seen && outputOn(settings)) scheduleOutputSync(arg.chat.id, seen);
       // A reply is extracted after it (H7): an empty packet cached for this chat may have memory now. A packet with
       // memory stays for a reroll of an unchanged chat until the background sync has the reply.
       for (const [k, entry] of cache) if (entry.chatId === arg.chat.id && !entry.packet && !entry.failed) cache.delete(k);
@@ -958,9 +1025,17 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     // reuse a packet built before it (a deleted chat's memory, old facts), nor one fetched while it ran. Also when the
     // answer failed or came after the timeout: the sidecar may have applied it, or apply it then.
     const change = method !== 'GET';
+    // The panel's reads and saves of the sidecar's settings carry the switch for the background sync (G6): a save
+    // is in force at once. One that failed may or may not have been applied: not known until the next read.
+    const config = path === '/v1/config' && (method === 'GET' || method === 'PUT');
     if (change) invalidate();
     try {
-      return await call<T>(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : undefined);
+      const out = await call<T>(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : undefined);
+      if (config) noteConfig(settings, out);
+      return out;
+    } catch (error) {
+      if (config) noteConfig(settings, null);
+      throw error;
     } finally {
       if (change) invalidate();
     }
@@ -980,7 +1055,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return res.bytes;
   }
 
-  return { beforeRequest, onOutput, status, api, file, warmPersonas };
+  return { beforeRequest, onOutput, status, api, file, warmPersonas, warmConfig };
 }
 
 const CARD_FIELDS = ['card:desc', 'card:personality', 'card:scenario'];

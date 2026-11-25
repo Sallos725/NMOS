@@ -1,7 +1,8 @@
 // Tier 4, plugin side: the background sync after a reply (G6) and recall's query on a Continue (G7).
 
 import { describe, expect, it, vi } from 'vitest';
-import { createAdapter, OUTPUT_SYNC_MS, type HostPort, type HttpResult, type Settings } from '../src/core';
+import { CONFIG_REFRESH_MS, createAdapter, OUTPUT_SYNC_MS, outputSwitchOf, type AdapterOptions, type HostPort, type HttpResult,
+  type Settings } from '../src/core';
 import { BURST_MESSAGES, CONTINUE_QUERY_TAIL, hasPacket, queryTexts } from '../src/prompt';
 import type { HostChat, HostMessage, PromptMessage } from '../src/types';
 
@@ -23,10 +24,19 @@ const prompt: PromptMessage[] = [
   { role: 'user', content: 'Where did we hide the lantern?' },
 ];
 
-/** A sidecar that answers every sync at once, and timers the test runs by hand. */
-function harness(overrides: Partial<Settings> = {}, handler?: (path: string, body: any) => Promise<HttpResult> | HttpResult) {
+/** What `GET /v1/config` answers for the switch: a boolean, not reported (an older sidecar), or a failed read. */
+type SwitchAnswer = boolean | 'absent' | 'fail';
+
+/** A sidecar that answers every sync at once, and timers the test runs by hand. `config`: its switch
+ *  `extraction.on_output` (PHASE-67), on unless a test says otherwise. */
+function harness(overrides: Partial<Settings> = {}, handler?: (path: string, body: any) => Promise<HttpResult> | HttpResult,
+  config: SwitchAnswer = true) {
   const calls: { path: string; body: any }[] = [];
   const timers: { run: () => void; ms: number; cleared: boolean }[] = [];
+  const refreshTimers: { run: () => void; ms: number }[] = [];
+  let switchAnswer: SwitchAnswer = config;
+  const configAnswer = (): HttpResult => (switchAnswer === 'fail' ? { status: 503, json: { detail: 'down' } }
+    : { status: 200, json: { extraction: { backfill: 0, ...(switchAnswer === 'absent' ? {} : { on_output: switchAnswer }) } } });
   const debug = vi.fn();
   let current: HostChat | null = structuredClone(replied);
   const answer = (path: string, body: any): HttpResult => {
@@ -46,6 +56,7 @@ function harness(overrides: Partial<Settings> = {}, handler?: (path: string, bod
     request: async (_method, url, body) => {
       const path = url.replace('http://sidecar', '');
       calls.push({ path, body });
+      if (path === '/v1/config') return configAnswer();
       return handler ? handler(path, body) : answer(path, body);
     },
     warn: () => {},
@@ -55,14 +66,24 @@ function harness(overrides: Partial<Settings> = {}, handler?: (path: string, bod
   const options = {
     setTimer: (run: () => void, ms: number) => { const t = { run, ms, cleared: false }; timers.push(t); return t; },
     clearTimer: (handle: unknown) => { (handle as { cleared: boolean }).cleared = true; },
+    setRefreshTimer: (run: () => void, ms: number) => { const t = { run, ms }; refreshTimers.push(t); return t; },
   };
   const pending = () => timers.filter((t) => !t.cleared);
   const fire = async () => {
     for (const t of pending()) { t.cleared = true; t.run(); }
     await settle();
   };
-  return { host, calls, timers, pending, fire, debug, options, setChat: (c: HostChat | null) => { current = c; },
-    paths: () => calls.map((c) => c.path) };
+  /** The adapter as `entry.ts` starts it: the switch read at load; that read is left out of `calls`. */
+  const start = async (extra: AdapterOptions = {}) => {
+    const adapter = createAdapter(host, undefined, { ...options, ...extra });
+    adapter.warmConfig();
+    await settle();
+    calls.length = 0;
+    return adapter;
+  };
+  return { host, calls, timers, refreshTimers, pending, fire, debug, options, start,
+    setSwitch: (a: SwitchAnswer) => { switchAnswer = a; },
+    setChat: (c: HostChat | null) => { current = c; }, paths: () => calls.map((c) => c.path) };
 }
 
 const settle = async () => { for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0)); };
@@ -70,7 +91,7 @@ const settle = async () => { for (let i = 0; i < 20; i += 1) await new Promise((
 describe('background sync after a reply (G6)', () => {
   it('syncs the chat as it is once the wait is over, marked as after a reply, and nothing more', async () => {
     const h = harness();
-    const adapter = createAdapter(h.host, undefined, h.options);
+    const adapter = await h.start();
     adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
     await settle();
     expect(h.paths()).toEqual(['/v1/output']);  // the notification at once; the sync waits
@@ -88,7 +109,7 @@ describe('background sync after a reply (G6)', () => {
 
   it('reads the chat when the wait is over, not the output snapshot (H7)', async () => {
     const h = harness();
-    const adapter = createAdapter(h.host, undefined, h.options);
+    const adapter = await h.start();
     const later = structuredClone(replied);
     later.message![3]!.data = `${REPLY} (rewritten by a trigger)`;
     adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
@@ -101,7 +122,7 @@ describe('background sync after a reply (G6)', () => {
 
   it('waits again after each reply: one sync for replies in a row', async () => {
     const h = harness();
-    const adapter = createAdapter(h.host, undefined, h.options);
+    const adapter = await h.start();
     adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
     await settle();
     adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
@@ -114,7 +135,7 @@ describe('background sync after a reply (G6)', () => {
 
   it('is cancelled by a main request (a reroll, a quick reply), but not by an auxiliary one (Auto Suggest)', async () => {
     const h = harness();
-    const adapter = createAdapter(h.host, undefined, h.options);
+    const adapter = await h.start();
     adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
     await settle();
     await adapter.beforeRequest([{ role: 'user', content: 'suggest something' }], 'submodel');
@@ -141,7 +162,7 @@ describe('background sync after a reply (G6)', () => {
       if (path === '/v1/retrieve') return { status: 200, json: { freshness: 'fresh', packet: { text: PACKET } } };
       return { status: 202, json: {} };
     });
-    const adapter = createAdapter(h.host, undefined, h.options);
+    const adapter = await h.start();
     adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
     await settle();
     await h.fire();  // the background reconcile is on its way
@@ -160,7 +181,7 @@ describe('background sync after a reply (G6)', () => {
 
   it('does nothing once another chat is open', async () => {
     const h = harness();
-    const adapter = createAdapter(h.host, undefined, h.options);
+    const adapter = await h.start();
     adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
     await settle();
     h.setChat({ ...structuredClone(replied), id: 'chat-2' });
@@ -171,7 +192,7 @@ describe('background sync after a reply (G6)', () => {
   it('is not scheduled when NMOS is off, off for the chat, or the wait is 0', async () => {
     for (const [overrides, ms] of [[{ enabled: false }, undefined], [{ offChats: ['chat-1'] }, undefined], [{}, 0]] as const) {
       const h = harness(overrides);
-      const adapter = createAdapter(h.host, undefined, { ...h.options, ...(ms === undefined ? {} : { outputSyncMs: ms }) });
+      const adapter = await h.start(ms === undefined ? {} : { outputSyncMs: ms });
       adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
       await settle();
       await h.fire();
@@ -186,7 +207,7 @@ describe('background sync after a reply (G6)', () => {
         active_commit: 'commit-1', manifest_hash: 'm' } }
         : path === '/v1/retrieve' ? { status: 200, json: { freshness: 'fresh', packet: { text: PACKET } } }
           : { status: 202, json: {} }));
-    const adapter = createAdapter(h.host, undefined, h.options);
+    const adapter = await h.start();
     adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
     await settle();
     await h.fire();
@@ -196,7 +217,7 @@ describe('background sync after a reply (G6)', () => {
 
   it('fails open: an unreachable sidecar neither throws nor stops the next request', async () => {
     const h = harness({}, () => { throw new Error('TypeError: Failed to fetch'); });
-    const adapter = createAdapter(h.host, undefined, h.options);
+    const adapter = await h.start();
     expect(() => adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 })).not.toThrow();
     await settle();
     expect(h.pending()).toHaveLength(1);  // scheduled even though the notification failed
@@ -208,7 +229,7 @@ describe('background sync after a reply (G6)', () => {
 
   it("drops the chat's cached packets once it ran, so a reroll syncs again instead of reusing one", async () => {
     const h = harness();
-    const adapter = createAdapter(h.host, undefined, h.options);
+    const adapter = await h.start();
     h.setChat(structuredClone(baseChat));
     await adapter.beforeRequest(structuredClone(prompt), 'model');
     await adapter.beforeRequest(structuredClone(prompt), 'model');  // the same state: served from the cache
@@ -222,6 +243,112 @@ describe('background sync after a reply (G6)', () => {
     expect(hasPacket(await adapter.beforeRequest(structuredClone(prompt), 'model'))).toBe(true);
     expect(h.paths().filter((p) => p === '/v1/sync/reconcile').length).toBe(reconciles + 1);
     expect(h.paths().filter((p) => p === '/v1/retrieve')).toHaveLength(2);
+  });
+});
+
+describe("the background sync only while the sidecar extracts a reply right after it (extraction.on_output)", () => {
+  /** What a request sends, without its timings (they differ from run to run). */
+  const sent = (calls: { path: string; body: any }[]) => calls.map((c) => {
+    if (!c.body || typeof c.body !== 'object') return [c.path, c.body ?? null];
+    const { client_timings_ms: _t, ...rest } = c.body;
+    return [c.path, rest];
+  });
+
+  it('reads the switch at load and again every few minutes, never on a request or a reply', async () => {
+    const h = harness();
+    const adapter = createAdapter(h.host, undefined, h.options);
+    adapter.warmConfig();
+    adapter.warmConfig();  // once per page
+    await settle();
+    expect(h.paths()).toEqual(['/v1/config']);
+    expect(h.refreshTimers.map((t) => t.ms)).toEqual([CONFIG_REFRESH_MS]);
+    expect(CONFIG_REFRESH_MS).toBe(300_000);
+    h.calls.length = 0;
+    h.setChat(structuredClone(baseChat));
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    h.setChat(structuredClone(replied));
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.paths()).not.toContain('/v1/config');
+    h.refreshTimers[0]!.run();
+    await settle();
+    expect(h.paths().filter((p) => p === '/v1/config')).toHaveLength(1);
+    expect(h.refreshTimers).toHaveLength(2);  // and the next one
+  });
+
+  for (const [label, answer] of [['off', false], ['not reported (an older sidecar)', 'absent'],
+    ['unknown (the read failed)', 'fail'], ['not read yet', null]] as const) {
+    it(`schedules nothing and waits for nothing when the switch is ${label}`, async () => {
+      const h = harness({}, undefined, answer ?? true);
+      const adapter = answer === null ? createAdapter(h.host, undefined, h.options) : await h.start();
+      adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+      await settle();
+      expect(h.timers).toHaveLength(0);  // no timer at all
+      expect(h.paths()).toEqual(['/v1/output']);
+      h.setChat(structuredClone(baseChat));  // a reroll
+      expect(hasPacket(await adapter.beforeRequest(structuredClone(prompt), 'model'))).toBe(true);
+      // The calls are those of a build without the background sync.
+      const without = harness({}, undefined, answer ?? true);
+      const plain = createAdapter(without.host, undefined, { ...without.options, outputSyncMs: 0 });
+      plain.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+      await settle();
+      without.setChat(structuredClone(baseChat));
+      await plain.beforeRequest(structuredClone(prompt), 'model');
+      expect(sent(h.calls)).toEqual(sent(without.calls));
+      expect(h.paths()).toEqual(['/v1/output', '/v1/sync/reconcile', '/v1/sync/bodies', '/v1/retrieve']);
+      expect(h.calls.some((c) => c.body?.trigger !== undefined)).toBe(false);
+    });
+  }
+
+  it("follows the panel: a save that turns it off stops a waiting sync, a read that reports it on starts the next", async () => {
+    const h = harness();
+    const adapter = await h.start();
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.pending()).toHaveLength(1);
+    h.setSwitch(false);
+    await adapter.api('PUT', '/v1/config', { extract_on_output: false });
+    await h.fire();
+    expect(h.paths().filter((p) => p.startsWith('/v1/sync'))).toEqual([]);  // checked again when the wait was over
+    h.setSwitch(true);
+    await adapter.api('GET', '/v1/config');
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    await h.fire();
+    expect(h.paths().filter((p) => p === '/v1/sync/reconcile')).toHaveLength(1);
+  });
+
+  it('a failed panel read or save makes it unknown, so off', async () => {
+    const h = harness();
+    const adapter = await h.start();
+    h.setSwitch('fail');
+    await expect(adapter.api('PUT', '/v1/config', { extract_on_output: true })).rejects.toThrow(/HTTP 503/);
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.timers).toHaveLength(0);
+  });
+
+  it('a read of another sidecar does not count for this one', async () => {
+    let url = 'http://sidecar';
+    const h = harness();
+    const settings = h.host.settings;
+    h.host.settings = async () => ({ ...(await settings()), sidecarUrl: url });
+    const adapter = await h.start();
+    url = 'http://sidecar/';  // the same one, written with a slash
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.pending()).toHaveLength(1);
+    url = 'http://other-sidecar';
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.pending()).toHaveLength(0);
+  });
+
+  it('only a boolean true is on', () => {
+    expect(outputSwitchOf({ extraction: { on_output: true } })).toBe(true);
+    for (const c of [{ extraction: { on_output: false } }, { extraction: { on_output: 'true' } }, { extraction: {} }, {}, null, 1]) {
+      expect(outputSwitchOf(c)).toBe(false);
+    }
   });
 });
 

@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:c228ef49152e".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:2317923399ec".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2195,6 +2195,15 @@ ${GUARD_LINE}` : "";
   var OUTPUT_SYNC_MS = 2e4;
   var OUTPUT_SYNC_TIMEOUT_MS = 3e4;
   var OUTPUT_SYNC_WAIT_MS = 1e3;
+  var CONFIG_REFRESH_MS = 5 * 6e4;
+  var CONFIG_TIMEOUT_MS = 5e3;
+  function outputSwitchOf(config) {
+    const on = config?.extraction?.on_output;
+    return on === true;
+  }
+  function sidecarKey(settings) {
+    return settings.sidecarUrl.replace(/\/+$/, "");
+  }
   function defaultSetTimer(run, ms) {
     const handle = setTimeout(run, ms);
     handle.unref?.();
@@ -2221,6 +2230,9 @@ ${GUARD_LINE}` : "";
     let outputTimer = null;
     let turnSeq = 0;
     let outputRunning = null;
+    let outputSwitch = null;
+    const setRefreshTimer = options.setRefreshTimer ?? defaultSetTimer;
+    let refreshing = false;
     function invalidate() {
       epoch++;
       cache.clear();
@@ -2784,7 +2796,7 @@ ${GUARD_LINE}` : "";
       const live = () => turnSeq === seen;
       try {
         const settings = await host.settings();
-        if (!live() || !settings.enabled || !settings.sidecarUrl || settings.offChats?.includes(chatId) || !secureContext()) return;
+        if (!live() || !settings.enabled || !settings.sidecarUrl || settings.offChats?.includes(chatId) || !secureContext() || !outputOn(settings)) return;
         const chat = await host.currentChat();
         if (!live() || !chat?.id || chat.id !== chatId) return;
         const messages = Array.isArray(chat.message) ? chat.message : [];
@@ -2819,13 +2831,45 @@ ${GUARD_LINE}` : "";
     function dropChatPackets(chatId) {
       for (const [k, entry] of cache) if (entry.chatId === chatId) cache.delete(k);
     }
+    function outputOn(settings) {
+      return outputSwitch?.url === sidecarKey(settings) && outputSwitch.on === true;
+    }
+    function noteConfig(settings, config) {
+      outputSwitch = { url: sidecarKey(settings), on: config === null ? null : outputSwitchOf(config) };
+    }
+    async function readConfig() {
+      let settings = null;
+      try {
+        settings = await host.settings();
+        if (!settings.enabled || !settings.sidecarUrl) return;
+        noteConfig(settings, await call(settings, "/v1/config", void 0, host.now() + CONFIG_TIMEOUT_MS, "GET"));
+      } catch (error) {
+        if (settings?.sidecarUrl) noteConfig(settings, null);
+        host.debug("[NMOS] sidecar settings not read:", error instanceof Error ? error.message : error);
+      }
+    }
+    function warmConfig() {
+      if (refreshing) return;
+      refreshing = true;
+      const next = () => {
+        try {
+          setRefreshTimer(() => {
+            void readConfig().finally(next);
+          }, CONFIG_REFRESH_MS);
+        } catch (error) {
+          refreshing = false;
+          host.debug("[NMOS] sidecar settings refresh not scheduled:", error instanceof Error ? error.message : error);
+        }
+      };
+      void readConfig().finally(next);
+    }
     function onOutput(arg2) {
       const seen = ++turnSeq;
       cancelOutputSync();
       void (async () => {
         const settings = await host.settings();
         if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id || settings.offChats?.includes(arg2.chat.id)) return;
-        if (turnSeq === seen) scheduleOutputSync(arg2.chat.id, seen);
+        if (turnSeq === seen && outputOn(settings)) scheduleOutputSync(arg2.chat.id, seen);
         for (const [k, entry] of cache) if (entry.chatId === arg2.chat.id && !entry.packet && !entry.failed) cache.delete(k);
         adviseOnce(settings.language);
         reachOnce(settings.language, settings.sidecarUrl);
@@ -2884,9 +2928,15 @@ ${GUARD_LINE}` : "";
     async function api(method, path, body, timeoutMs = 9e4) {
       const settings = await host.settings();
       const change = method !== "GET";
+      const config = path === "/v1/config" && (method === "GET" || method === "PUT");
       if (change) invalidate();
       try {
-        return await call(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : void 0);
+        const out = await call(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : void 0);
+        if (config) noteConfig(settings, out);
+        return out;
+      } catch (error) {
+        if (config) noteConfig(settings, null);
+        throw error;
       } finally {
         if (change) invalidate();
       }
@@ -2903,7 +2953,7 @@ ${GUARD_LINE}` : "";
       }
       return res.bytes;
     }
-    return { beforeRequest, onOutput, status, api, file, warmPersonas };
+    return { beforeRequest, onOutput, status, api, file, warmPersonas, warmConfig };
   }
   var CARD_FIELDS = ["card:desc", "card:personality", "card:scenario"];
   function firstSaying(messages) {
@@ -8663,6 +8713,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       hud
     );
     adapter.warmPersonas();
+    adapter.warmConfig();
     console.log("[NMOS] adapter loaded", { version: "0.6.0" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();
