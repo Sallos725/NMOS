@@ -233,7 +233,8 @@ def unchecked(conn: psycopg.Connection, key: str, rkey: str, conv: UUID) -> list
     if any(r["check_id"] is not None and r["listed"] for r in rows):
         stale = _stale(rows, conn.execute(FOUND, params).fetchall())
     now = conn.execute(SECRETS_NOW, params).fetchall() if rows else []
-    held = conn.execute(SECRETS_HELD, {"rids": [s["rid"] for s in now], "hashes": [s["turn_hash"] for s in now],
+    pairs = sorted({(s["rid"], s["turn_hash"]) for s in now})  # once each: a turn's second secret doubled every row
+    held = conn.execute(SECRETS_HELD, {"rids": [p[0] for p in pairs], "hashes": [p[1] for p in pairs],
                                        "not_secrets": params["not_secrets"]}).fetchall() if now else []
     carried = _carried_since(conn, conv) if rows else None
     lived = [(s, _holders(s, held, now)) for s in now]

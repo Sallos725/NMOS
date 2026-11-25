@@ -249,7 +249,7 @@ def test_a_re_extraction_that_rewords_a_secret_queues_no_check(migrated, db):
 def test_a_secret_the_owner_reopens_is_checked_for_the_turns_that_looked_while_it_was_closed(migrated, db):
     from test_tier2_api_wiring import _in_order
     with make_client(migrated, **LLM) as c:
-        _, conv, _ = _in_order(c, migrated, db)
+        _, conv, model = _in_order(c, migrated, db)
         ex, rv = active_generation(db, "extract"), active_generation(db, "reveal")
         (s,) = [x for x in c.get(f"/v1/conversations/{conv}/secrets").json() if "lecture" in x["text"]]
         res = c.post(f"/v1/conversations/{conv}/repairs",
@@ -261,6 +261,11 @@ def test_a_secret_the_owner_reopens_is_checked_for_the_turns_that_looked_while_i
         assert reveals.unchecked(db, ex.key, rv.key, conv) == []
         assert c.post(f"/v1/conversations/{conv}/repairs/{rep}/remove").status_code == 200
         assert [r["turn"] for r in reveals.unchecked(db, ex.key, rv.key, conv)] == [1, 2]
+        assert reveals.schedule(db, rv.key, ex.key, conv) == 2
+        db.commit()
+        drain(migrated, model)
+        assert reveals.unchecked(db, ex.key, rv.key, conv) == []  # checked once: settled
+        assert reveals.schedule(db, rv.key, ex.key, conv) == 0
 
 
 def test_a_continue_link_carrying_a_secret_makes_the_turns_that_looked_before_it_look_again(migrated):
@@ -271,6 +276,11 @@ def test_a_continue_link_carrying_a_secret_makes_the_turns_that_looked_before_it
             assert reveals.unchecked(conn, ex.key, rv.key, tgt) == []
             _link_continue(conn, tgt, src)
             assert [r["turn"] for r in reveals.unchecked(conn, ex.key, rv.key, tgt)] == [0, 1, 2]
+            assert reveals.schedule(conn, rv.key, ex.key, tgt) == 3
+        drain(migrated, _finder)
+        with _connect(migrated) as conn:
+            assert reveals.unchecked(conn, ex.key, rv.key, tgt) == []  # checked once: settled
+            assert reveals.schedule(conn, rv.key, ex.key, tgt) == 0
 
 
 # --- F12: a saved whole number written as a float ----------------------------------------------------------------
@@ -376,3 +386,27 @@ def test_a_solo_secret_is_listed_once_in_the_worker_and_in_the_reveal_check(migr
         with _connect(migrated) as conn:
             check = conn.execute("SELECT hints FROM extraction WHERE window_hash LIKE 'reveal:%'").fetchone()["hints"]
             assert [s.get("solo") for s in check["secrets"] if "좋아" in s["text"]] == [True]
+
+
+def test_a_reworded_secret_beside_another_secret_of_its_turn_queues_no_check(migrated, db):
+    """Rule 1 (the turn's only secret with that head) where the turn holds two secrets of different heads, and the
+    reworded one shares no word with what it said before."""
+    from test_tier2_api_wiring import _copy_extraction, _in_order, _newer_extract, _served_extraction
+    other = {"subject": "Luca", "subject_type": "character", "predicate": "knows", "value": "the vault code is 4417",
+             "modality": "actual", "knowledge": "limited", "known_by": ["Luca"], "hidden_from": ["Noel"],
+             "status": "valid", "epistemic": "stated", "polarity": "positive", "source": "narration"}
+    with make_client(migrated, **LLM) as c:
+        _, conv, _ = _in_order(c, migrated, db)
+        ex, rv = active_generation(db, "extract"), active_generation(db, "reveal")
+        old = _served_extraction(db, 0, ex.key)
+        rid = db.execute("SELECT source_revision_id AS r FROM extraction WHERE id = %s", (old,)).fetchone()["r"]
+        db.execute(f"INSERT INTO assertion (extraction_id, source_revision_id, {', '.join(other)})"
+                   f" VALUES (%s, %s, {', '.join(['%s'] * len(other))})", (old, rid, *other.values()))
+        db.commit()
+        assert reveals.unchecked(db, ex.key, rv.key, conv) == []
+        newer = _newer_extract(db)
+        xid = _copy_extraction(db, 0, ex.key, newer)
+        db.execute("UPDATE assertion SET value = 'sneak into the hall at dusk' WHERE extraction_id = %s"
+                   " AND predicate = 'goal'", (xid,))
+        db.commit()
+        assert reveals.unchecked(db, newer.key, rv.key, conv) == []

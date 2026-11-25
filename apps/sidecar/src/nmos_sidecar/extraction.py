@@ -1192,7 +1192,8 @@ def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
               and (s["open"] or (s.get("solo") and not s["ended"]))]
     for s in listed:
         names = set()
-        for name in [*s["holders"], *s["open"]]:
+        # a solo secret's people are its holders: the fold's `open` for one names everyone the chat knows
+        for name in [*s["holders"], *([] if s.get("solo") else s["open"])]:
             e = r.entity("character", name)
             names |= {norm(n) for n in (e["names"] if e else [name])}
         names = {n for n in names - r.persona_names if len(n) >= 2}
