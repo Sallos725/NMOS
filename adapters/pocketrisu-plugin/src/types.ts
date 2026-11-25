@@ -69,6 +69,9 @@ export interface ReconcileRequest {
   persona_name?: string;
   /** This plugin's build id (ADR 0037); older sidecars ignore it. */
   plugin_build?: string;
+  /** What started this sync when not a request: `output` for the background sync after a reply (G6). Older sidecars
+   *  ignore it. */
+  trigger?: 'output';
   hash_version: 1;
   messages: ManifestMessage[];
 }

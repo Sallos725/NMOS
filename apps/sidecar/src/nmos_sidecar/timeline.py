@@ -109,6 +109,8 @@ def segments(fact: dict[str, Any], now: int,
                "turn": h.get("turn")}
         if h.get("when_happened"):
             seg["when_happened"] = h["when_happened"]
+        if h.get("address_condition"):
+            seg["address_condition"] = h["address_condition"]
         out.append(seg)
     if out and fact.get("owner") and out[-1]["outcome"] == "current":
         out[-1]["owner"] = True  # only the current version carries the owner's mark (PHASE-32 Q10)
@@ -123,6 +125,7 @@ def _merged(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
         last = out[-1] if out else None
         if (last is not None and s["value"] == last["value"] and s["negative"] == last["negative"]
                 and s["canon"] == last["canon"] and s.get("when_happened") == last.get("when_happened")
+                and s.get("address_condition") == last.get("address_condition")
                 and s["start"] <= last["end"] + 1):
             last.update(end=max(last["end"], s["end"]), outcome=s["outcome"], owner=s.get("owner", False))
             continue
@@ -297,6 +300,16 @@ def _group(p: _Page, title: str, rows: list[str], more: int, folded: list[str] =
             f"{''.join(rows)}{rest}{fold}</details>")
 
 
+def _address_cond(t: T, f: dict[str, Any]) -> str:
+    if f.get("predicate") != "addresses":
+        return ""
+    cond = f.get("address_condition")
+    if not isinstance(cond, dict) or cond.get("scope") not in ("public", "private", "situational"):
+        return ""
+    when = cond.get("when").strip() if isinstance(cond.get("when"), str) else ""
+    return when or t(f"ac.{cond['scope']}")
+
+
 def _label(t: T, predicate: str, obj: str | None = None) -> str:
     name = t(f"p.{predicate}")
     return f"{name} → {obj}" if obj else name
@@ -366,9 +379,14 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
         return f"{name}: {f['object']}" if f["predicate"] == "possesses" and f.get("object") else name
 
     state_rows, state_more, steady_rows, steady_more, canon_rows, canon_more = lanes(state, state_label, split=True)
+    def rel_label(f: dict[str, Any]) -> str:
+        base = _label(t, f["predicate"], f["object"])
+        cond = _address_cond(t, f)
+        return f"{base} [{cond}]" if cond else base
+
     p.selectable = False  # relationships start closed: the first detail is not chosen from them
     rel_rows, rel_more, steady_rels, steady_rels_more, canon_rels, canon_rels_more = lanes(
-        rels, lambda f: _label(t, f["predicate"], f["object"]), split=True)
+        rels, rel_label, split=True)
     p.selectable = True
 
     held = set(names)

@@ -789,13 +789,26 @@ def _value_marks(fact: dict[str, Any], names: frozenset[str], places: bool = Tru
 def replaced_marks(facts: list[dict[str, Any]], names: frozenset[str], places: bool = True,
                    calls: bool = True) -> list[tuple[int, set[str], set[str], set[str], set[str]]]:
     """For each fact with an earlier version of its own predicate: its current turn, the marks of what its earlier
-    versions said that the current one does not (quoted, words), and the current version's own (quoted, words)."""
+    versions said that the current one does not (quoted, words), and the current version's own (quoted, words).
+    For conditional `addresses` (PHASE-64), a quoted form still active in another current condition slot for the same
+    pair is not treated as replaced."""
+    active_addr: dict[tuple[str, str], str] = {}
+    if calls:
+        for f in facts:
+            if f["predicate"] == "addresses" and f.get("polarity", "positive") != "negative":
+                pair = (_flat(str((f.get("subject_entity") or {}).get("id") or f.get("subject") or "")),
+                        _flat(str((f.get("object_entity") or {}).get("id") or f.get("object") or "")))
+                active_addr[pair] = active_addr.get(pair, "") + " " + _flat(f.get("value"))
     out = []
     for f in facts:
         if f.get("turn") is None:
             continue
         now_q, now_w = _value_marks(f, names, places, calls)
         cur = _flat(" ".join(t for t in (f.get("object"), f.get("value")) if t))
+        if calls and f["predicate"] == "addresses":
+            pair = (_flat(str((f.get("subject_entity") or {}).get("id") or f.get("subject") or "")),
+                    _flat(str((f.get("object_entity") or {}).get("id") or f.get("object") or "")))
+            cur = cur + " " + active_addr.get(pair, "")
         old_q: set[str] = set()
         old_w: set[str] = set()
         for h in f.get("history") or ():

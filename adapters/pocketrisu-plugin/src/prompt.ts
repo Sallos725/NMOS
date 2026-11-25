@@ -344,18 +344,63 @@ export function landsAfterUserTurn(
   return !cleanText(after).includes(anchor);
 }
 
-/** Text of the latest active user message and of the AI message just before it. */
-export function queryTexts(hostMessages: HostMessage[]): { query: string; previousAi: string } {
+/** The user message PocketRisu adds itself on "Continue Response" with `useSayNothing` on (HOST-FACTS Q3 S4). */
+const SAYS_NOTHING = new Set(['*says nothing*', 'says nothing']);
+export function isSaysNothing(message: HostMessage | null | undefined): boolean {
+  return message != null && SAYS_NOTHING.has(cleanText(selectedContent(message)).toLowerCase());
+}
+/** A Continue asks with the end of the reply it continues: as long as the sidecar's short-message embedding takes of
+ *  the previous reply (`retrieval.SEM_QUERY_REPLY_TAIL`). */
+export const CONTINUE_QUERY_TAIL = 400;
+/** Consecutive user messages at the end (one input sent as several) asked with together, oldest first, and their cap. */
+export const BURST_MESSAGES = 3;
+export const BURST_QUERY_CHARS = 20_000;
+
+/**
+ * What recall is asked with: the latest active user message and the AI reply before it, as before, except for a
+ * Continue (G7, `isContinue`):
+ * - `useSayNothing` on (the host's default): the latest user message is the host's `*says nothing*`, which is no
+ *   query; the end of the reply being continued is asked with instead.
+ * - `useSayNothing` off: the latest user message is older than one or more AI replies after it (a reroll removes the
+ *   tail before the request, H14, so only a Continue leaves one there); the reply before is the latest of those, the
+ *   one being continued.
+ * Several user messages in a row at the end are one input sent in parts: up to the last `BURST_MESSAGES` are joined.
+ */
+export function queryTexts(hostMessages: HostMessage[]): { query: string; previousAi: string; isContinue: boolean } {
   const userIndex = latestUserIndex(hostMessages);
-  const query = userIndex >= 0 ? normalizeText(selectedContent(hostMessages[userIndex])) : '';
+  let query = userIndex >= 0 ? normalizeText(selectedContent(hostMessages[userIndex])) : '';
   let previousAi = '';
+  let isContinue = false;
   const start = activeStartIndex(hostMessages);
-  for (let i = userIndex - 1; i >= start; i -= 1) {
-    const m = hostMessages[i] as HostMessage;
-    if (m.role === 'char' && isActive(m)) {
-      previousAi = normalizeText(selectedContent(m));
-      break;
+  const activeAi = (from: number, to: number): string | null => {
+    for (let i = from; i >= to; i -= 1) {
+      const m = hostMessages[i] as HostMessage;
+      if (m.role === 'char' && isActive(m)) return normalizeText(selectedContent(m));
     }
+    return null;
+  };
+  if (userIndex < 0) return { query, previousAi, isContinue };  // no turn: the request is skipped before recall
+  const after = activeAi(hostMessages.length - 1, userIndex + 1);
+  if (after !== null) {
+    previousAi = after;
+    isContinue = true;
+  } else {
+    previousAi = activeAi(userIndex - 1, start) ?? '';
   }
-  return { query, previousAi };
+  if (isSaysNothing(hostMessages[userIndex])) {
+    isContinue = true;
+    // Without a reply before it there is nothing better to ask with than the message itself.
+    if (previousAi.trim()) query = previousAi.slice(-CONTINUE_QUERY_TAIL);
+    return { query, previousAi, isContinue };
+  }
+  // Earlier user messages of the same input: active user messages right before it, up to an AI reply.
+  const parts = [query];
+  for (let i = userIndex - 1; i >= start && parts.length < BURST_MESSAGES; i -= 1) {
+    const m = hostMessages[i] as HostMessage;
+    if (!isActive(m)) continue;
+    if (m.role !== 'user' || isSaysNothing(m)) break;
+    parts.unshift(normalizeText(selectedContent(m)));
+  }
+  if (parts.length > 1) query = parts.filter((p) => p.trim()).join('\n').slice(-BURST_QUERY_CHARS);
+  return { query, previousAi, isContinue };
 }

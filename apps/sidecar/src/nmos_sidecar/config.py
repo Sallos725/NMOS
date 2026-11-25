@@ -15,6 +15,14 @@ RERANK_TIMEOUT_MS = (50, 5000)  # PHASE-60 S5: the reranker's own wait, in milli
 # PHASE-62 S1: the cap on each message the extraction model is shown, in normalized characters, inclusive. The lower
 # bound is the default (`extraction.TARGET_CHARS`, `summaries.MESSAGE_CHARS`): what every earlier release read.
 TARGET_CHARS = (6000, 36000)
+# Chunks embedded per message (`Settings.embed_max_chunks`, ADR 0062), inclusive: under one embeds nothing and marks
+# every embed job done; 64 × 700 = 44,800 normalized characters, past the extraction cap's upper bound. The panel saves
+# it too (Tier 2 E8): a change is a new embedding projection, re-embedded locally with no model call.
+EMBED_MAX_CHUNKS = (1, 64)
+# The extractors NMOS_EXTRACT_COMPILER may select (empty: `extraction.DEFAULT_COMPILER`). extract-v20 is PHASE-64's
+# (conditional forms of address, ADR 0091); extract-v21 is PHASE-66's (extract-v20 with the typed ontology).
+EXTRACT_COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19", "extract-v20",
+                     "extract-v21")
 
 # PHASE-61 S1 (ADR 0088 item 1): the extra request body merged into every chat-completions body of the extraction model.
 EXTRA_BODY_MAX_BYTES = 2048  # as canonical JSON (`canonical_body`), UTF-8
@@ -168,7 +176,8 @@ class Settings:
     extract_hints: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_HINTS", "40")))
     # The extractor (PHASE-28 Q3): empty is `extraction.DEFAULT_COMPILER` (extract-v16 since 2026-10-04: it lists the roles
     # in force and ends one as listed); "extract-v15" selects the earlier extractor. Part of the extractor generation: a change re-extracts every chat once,
-    # but a switch among extract-v16, extract-v18 and extract-v19 (PHASE-58 S3, PHASE-60 S7) re-extracts nothing.
+    # but a switch among extract-v16, extract-v18, extract-v19, extract-v20 and extract-v21 (PHASE-58 S3, PHASE-60 S7,
+    # PHASE-64, PHASE-66) re-extracts nothing.
     extract_compiler: str = field(default_factory=lambda: os.environ.get("NMOS_EXTRACT_COMPILER", ""))
     # Scene summaries and the story so far (PHASE-12, ADR 0042, 0043), written by the extraction model; "0" or the
     # plugin's switch turns them off. Needs NMOS_LLM_URL.
@@ -252,18 +261,23 @@ class Settings:
 
     def __post_init__(self) -> None:
         # A misspelt extractor would be a generation of its own (a full re-extraction): refused at startup.
-        if self.extract_compiler not in ("", "extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19"):
-            raise ValueError("NMOS_EXTRACT_COMPILER must be empty, extract-v15, extract-v16, extract-v17, extract-v18 or"
-                             f" extract-v19, not {self.extract_compiler!r}")
+        if self.extract_compiler not in ("", *EXTRACT_COMPILERS):
+            raise ValueError(f"NMOS_EXTRACT_COMPILER must be empty, {', '.join(EXTRACT_COMPILERS[:-1])} or"
+                             f" {EXTRACT_COMPILERS[-1]}, not {self.extract_compiler!r}")
         # Under 6,000 it would read less than every release did; 36,000 is past the longest reply measured, and a
         # scene summary reads 8 turns of them in one call (PHASE-62 S1b): another value is refused at startup.
         if (isinstance(self.extract_target_chars, bool) or not isinstance(self.extract_target_chars, int)
                 or not TARGET_CHARS[0] <= self.extract_target_chars <= TARGET_CHARS[1]):
             raise ValueError(f"NMOS_EXTRACT_TARGET_CHARS must be a whole number from {TARGET_CHARS[0]} to"
                              f" {TARGET_CHARS[1]}, not {self.extract_target_chars!r}")
-        # A cap under one would embed nothing and mark every embed job done (ADR 0062): refused at startup.
-        if self.embed_max_chunks < 1:
-            raise ValueError(f"NMOS_EMBED_MAX_CHUNKS must be at least 1, not {self.embed_max_chunks}")
+        # A cap under one would embed nothing and mark every embed job done (ADR 0062); one over EMBED_MAX_CHUNKS[1]
+        # is past what the panel may save: refused at startup.
+        if isinstance(self.embed_max_chunks, bool) or not isinstance(self.embed_max_chunks, int):
+            raise ValueError(f"NMOS_EMBED_MAX_CHUNKS must be a whole number, not {self.embed_max_chunks!r}")
+        if self.embed_max_chunks < EMBED_MAX_CHUNKS[0]:
+            raise ValueError(f"NMOS_EMBED_MAX_CHUNKS must be at least {EMBED_MAX_CHUNKS[0]}, not {self.embed_max_chunks}")
+        if self.embed_max_chunks > EMBED_MAX_CHUNKS[1]:
+            raise ValueError(f"NMOS_EMBED_MAX_CHUNKS must be at most {EMBED_MAX_CHUNKS[1]}, not {self.embed_max_chunks}")
         # A format NMOS does not speak, or a wait no reranker answers in (or one that holds the request too long).
         if self.rerank_format not in rerank.FORMATS:
             raise ValueError(f"NMOS_RERANK_FORMAT must be {' or '.join(rerank.FORMATS)}, not {self.rerank_format!r}")

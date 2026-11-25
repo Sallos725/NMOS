@@ -19,7 +19,7 @@ import psycopg
 
 from .entities import norm
 from .facts import _parse_feeling
-from .predicates import REGISTRY, stored_knowledge
+from .predicates import REGISTRY, address_slot, stored_knowledge
 from .repairs import _ekey, _established, restated
 from .secrets import secret_text
 
@@ -41,7 +41,7 @@ ORDER BY am.turn
 ROWS = """
 SELECT id, extraction_id, subject, subject_type, predicate, object, object_type, value, epistemic, confidence, evidence,
        knowledge, known_by, hidden_from, polarity, modality, source, asserted_by, salience, participants::text AS participants,
-       outcome, because, when_happened, feeling::text AS feeling
+       outcome, because, when_happened, feeling::text AS feeling, address_condition::text AS address_condition
 FROM assertion WHERE extraction_id = ANY(%s) AND status = 'valid' ORDER BY id
 """
 
@@ -69,6 +69,8 @@ def find(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, 
             row["when_happened"] = when
         if (detail := row.pop("feeling")) is not None:  # extract-v18 only (PHASE-58): a restore keeps how it felt
             row["feeling"] = _parse_feeling(detail)
+        if (cond := row.pop("address_condition", None)) is not None:  # extract-v20 only (PHASE-64): other rows read as before
+            row["address_condition"] = json.loads(cond)
         if row["known_by"] or row["hidden_from"]:
             stored_knowledge(row)
         by.setdefault(row["extraction_id"], []).append(row)
@@ -77,11 +79,12 @@ def find(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, 
     def hold(a: dict[str, Any]) -> tuple:
         """What memory must hold for a fact not to be dropped: the same predicate, subject, object (as entities) and
         polarity, and for a predicate that accumulates the same value: one other event of a character does not hold
-        the event a re-extraction left out."""
+        the event a re-extraction left out. An address holds only its own condition slot (PHASE-64)."""
         pred = REGISTRY.get(a["predicate"])
         value = norm(a.get("value")) if pred is not None and pred.cardinality == "multi" else None
-        return (a["predicate"], _ekey(r, a.get("subject_type"), a["subject"]), _ekey(r, a.get("object_type"), a.get("object")),
+        base = (a["predicate"], _ekey(r, a.get("subject_type"), a["subject"]), _ekey(r, a.get("object_type"), a.get("object")),
                 a.get("polarity") or "positive", value)
+        return base + (address_slot(a),) if a["predicate"] == "addresses" else base
 
     held = {hold(a) for a in view.get("assertions") or () if _established(a)}
     out = []

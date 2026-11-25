@@ -123,8 +123,10 @@ class CanonSyncResponse(BaseModel):
 
 
 class TrimRequest(BaseModel):
-    """Opt-in step-quantized old-turn trim parameters (PHASE-60 S1, ADR 0083 item 5)."""
-    keep_recent_turns: int = Field(default=20, ge=4, le=200)
+    """Opt-in step-quantized old-turn trim parameters (PHASE-60 S1, ADR 0083 item 5). The default keeps 16 recent turns
+    (Tier 2, owner-agreed: a multiple of the scene-summary window, `summaries.WINDOW`, aligned with the plugin); a
+    request may name another."""
+    keep_recent_turns: int = Field(default=16, ge=4, le=200)
     step: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")

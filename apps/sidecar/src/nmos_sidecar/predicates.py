@@ -87,12 +87,13 @@ TOLD = Predicate(
     "the subject passed on to the object something that matters later, which the object did not have: a secret,"
     " news of an event, a fact about someone, a warning or a rumour (value: what was passed on)",
 )
-# extract-v20 (PHASE-64 part 1): the full typed ontology, all of it in its own extension, so REGISTRY (hashed into every
-# extractor key) and extract-v19's extension stay as they were. Dedicated slots for what `has_status`, `located_in`
-# and `identity` used to carry together (a death, a home, a cover), a guise, a rank in a group, what is inside what,
-# and the epistemic pair `believes` (not factive, unlike `knows`) and `forgot`. Two REGISTRY predicates are widened
-# here for extract-v20 only, by an entry of the same name: `role_toward` and `promised` between groups too.
-V20_ONTOLOGY: tuple[Predicate, ...] = (
+# extract-v21 (PHASE-66): the full typed ontology, all of it in its own extension, so REGISTRY (hashed into every
+# extractor key) and extract-v19's and extract-v20's extensions stay as they were. Dedicated slots for what
+# `has_status`, `located_in` and `identity` used to carry together (a death, a home, a cover), a guise, a rank in a
+# group, what is inside what, and the epistemic pair `believes` (not factive, unlike `knows`) and `forgot`. Two
+# REGISTRY predicates are widened here for extract-v21 only, by an entry of the same name: `role_toward` and
+# `promised` between groups too.
+V21_ONTOLOGY: tuple[Predicate, ...] = (
     Predicate("vital_status", ("character",), None, True, "single",
               "whether the subject is alive, dead, missing, exiled, sealed or petrified (value: that state); its own"
               " slot, apart from has_status"),
@@ -115,22 +116,26 @@ V20_ONTOLOGY: tuple[Predicate, ...] = (
     Predicate("forgot", ("character",), None, True, "multi",
               "what the subject has lost from memory (value: the memory, \"all\", or \"since turn N\")"),
 )
-_V20_WIDENED = (
+_V21_WIDENED = (
     Predicate("role_toward", ("character", "group"), ("character", "group"), True, "single",
               REGISTRY["role_toward"].description, per_object=True),
     Predicate("promised", ("character", "group"), ("character", "group"), True, "multi",
               REGISTRY["promised"].description),
 )
-V20_PREDICATES = frozenset(p.name for p in V20_ONTOLOGY)  # the predicates extract-v20 adds
+V21_PREDICATES = frozenset(p.name for p in V21_ONTOLOGY)  # the predicates extract-v21 adds
 EXTENSIONS: dict[str, dict[str, Predicate]] = {
     "extract-v19": {"told": TOLD},
-    "extract-v20": {"told": TOLD, **{p.name: p for p in _V20_WIDENED}, **{p.name: p for p in V20_ONTOLOGY}},
+    "extract-v20": {"told": TOLD},
+    "extract-v21": {"told": TOLD, **{p.name: p for p in _V21_WIDENED}, **{p.name: p for p in V21_ONTOLOGY}},
 }
-ONTOLOGY_PREDICATES = frozenset(EXTENSIONS["extract-v20"])  # extract-v20's extension: its own and the widened ones
-# Predicates of a compiler extension that also keep `with` (PHASE-60 S8).
-EXTENSION_PARTICIPANTS: dict[str, frozenset[str]] = {"extract-v19": frozenset({"told"}),
-                                                     "extract-v20": frozenset({"told"})}
-# Predicates whose row keeps a `value` although the registry does not ask for one (`takes_value`): extract-v20's
+ONTOLOGY_PREDICATES = frozenset(EXTENSIONS["extract-v21"])  # extract-v21's extension: its own and the widened ones
+# Predicates of a compiler extension that also keep `with` (PHASE-60 S8, PHASE-64, PHASE-66).
+EXTENSION_PARTICIPANTS: dict[str, frozenset[str]] = {
+    "extract-v19": frozenset({"told"}),
+    "extract-v20": frozenset({"told"}),
+    "extract-v21": frozenset({"told"}),
+}
+# Predicates whose row keeps a `value` although the registry does not ask for one (`takes_value`): extract-v21's
 # optional note on a guise. Not a REGISTRY predicate, so no earlier generation's rows change.
 OPTIONAL_VALUE = frozenset({"disguised_as"})
 
@@ -390,17 +395,17 @@ def outcome(item: dict[str, Any]) -> str | None:
     return value if value in OUTCOMES else None
 
 
-# extract-v20 (PHASE-64 part 1): a cause, and a time apart from the turn's, on the state and business predicates too.
-V20_TIMED = frozenset({"addresses", "role_toward", "lives_in", "located_in", "promised", "destroyed", "vital_status",
+# extract-v21 (PHASE-66): a cause, and a time apart from the turn's, on the state and business predicates too.
+V21_TIMED = frozenset({"addresses", "role_toward", "lives_in", "located_in", "promised", "destroyed", "vital_status",
                        "threat", "goal", "owes", "told"})
-CAUSED_V20 = CAUSED | V20_TIMED
-V20 = "extract-v20"
+CAUSED_V21 = CAUSED | V21_TIMED
+V21 = "extract-v21"
 
 
 def because(item: dict[str, Any], compiler: str | None = None) -> str | None:
-    """The cause the model quoted, on CAUSED predicates only (CAUSED_V20 for extract-v20), at most 200 characters;
+    """The cause the model quoted, on CAUSED predicates only (CAUSED_V21 for extract-v21), at most 200 characters;
     never inferred here."""
-    if item.get("predicate") not in (CAUSED_V20 if compiler == V20 else CAUSED):
+    if item.get("predicate") not in (CAUSED_V21 if compiler == V21 else CAUSED):
         return None
     value = str(item.get("because") or "").strip()
     return value[:200] if value and value.casefold() not in ("null", "none", "-") else None
@@ -440,21 +445,106 @@ def feeling(item: dict[str, Any]) -> dict[str, Any] | None:
 
 # extract-v19 (PHASE-60 S7, ADR 0086): when the turn places an event or a promise at another time than the turn.
 HAPPENED_PREDICATES = frozenset({"event", "promised"})
-HAPPENED_V20 = HAPPENED_PREDICATES | V20_TIMED
+HAPPENED_V21 = HAPPENED_PREDICATES | V21_TIMED
 
 
 def when_happened(item: dict[str, Any], limit: int, compiler: str | None = None) -> str | None:
-    """The `when_happened` of an `event` or a `promised` (PHASE-60 S7; HAPPENED_V20 for extract-v20): the phrase as
+    """The `when_happened` of an `event` or a `promised` (PHASE-60 S7; HAPPENED_V21 for extract-v21): the phrase as
     given, trimmed, at most `limit` characters, or None. A phrase, not a timestamp (ADR 0086 item 2): NMOS computes no
     date from it and orders nothing by it. None for any other predicate, for a value that is not text, and for an empty
     or `null`/`none`/`-` one."""
     raw = item.get("when_happened")
-    if item.get("predicate") not in (HAPPENED_V20 if compiler == V20 else HAPPENED_PREDICATES) or not isinstance(raw, str):
+    if item.get("predicate") not in (HAPPENED_V21 if compiler == V21 else HAPPENED_PREDICATES) or not isinstance(raw, str):
         return None
     value = raw.strip()
     if not value or value.casefold() in ("null", "none", "-"):
         return None
     return value[:limit].strip() or None
+
+
+# extract-v20 / canon-v2 (PHASE-64, ADR 0091): conditional forms of address on `addresses` only.
+ADDRESS_SCOPES = ("public", "private", "situational", "all")
+ADDRESS_CONDITION_MAX = 60
+_SCOPE_LABELS = {
+    "public": ("공적인 자리", "in public"),
+    "private": ("사적인 자리", "in private"),
+}
+
+
+def address_condition(item: dict[str, Any], limit: int = ADDRESS_CONDITION_MAX) -> dict[str, Any] | None:
+    """The `address_condition` of an `addresses` row (PHASE-64, ADR 0091): {scope, when}, or None for default /
+    unconditional addresses, any other predicate, or an invalid/empty payload.
+
+    `scope` is one of `public`, `private`, `situational`, `all`. `when` is a short phrase of at most `limit`
+    characters in the chat's language (required for `situational`, always None for `all`, optional for `public` and
+    `private`). A `situational` payload without a non-empty phrase degrades to None so an unnamed slot is never made."""
+    if item.get("predicate") != "addresses":
+        return None
+    return scoped(item.get("address_condition"), limit)
+
+
+def scoped(raw: Any, limit: int = ADDRESS_CONDITION_MAX) -> dict[str, Any] | None:
+    """A {scope, when} condition as `address_condition` reads it (PHASE-64, ADR 0091), from the raw object: `scope` one
+    of ADDRESS_SCOPES, `when` a phrase of at most `limit` characters (required for `situational`, None for `all`);
+    None when it is not an object or gives no valid scope. Shared by extract-v21's `condition` (PHASE-66), so both
+    marks read alike."""
+    if not isinstance(raw, dict):
+        return None
+    scope = str(raw.get("scope") or "").strip().lower()
+    if scope not in ADDRESS_SCOPES:
+        return None
+    if scope == "all":
+        return {"scope": "all", "when": None}
+    raw_when = raw.get("when")
+    when: str | None = None
+    if isinstance(raw_when, str):
+        cleaned = " ".join(raw_when.split())
+        if cleaned and cleaned.casefold() not in ("null", "none", "-"):
+            when = cleaned[:limit].strip() or None
+    if scope == "situational" and not when:
+        return None
+    return {"scope": scope, "when": when}
+
+
+def address_slot(row: Mapping[str, Any]) -> tuple[str, ...]:
+    """The versioning slot of an `addresses` row (PHASE-64, ADR 0091): `("default",)` for unconditional/legacy rows
+    and for `scope="all"` (whose unification closes other slots in `facts._address_versions`), `("public",)` /
+    `("private",)` for canonical scopes, or `("situational", normalized_when)` for situational conditions."""
+    cond = row.get("address_condition")
+    if not isinstance(cond, Mapping):
+        return ("default",)
+    scope = cond.get("scope")
+    if scope in ("public", "private"):
+        return (scope,)
+    if scope == "situational":
+        when = _casefold(cond.get("when"))
+        return ("situational", when) if when else ("default",)
+    return ("default",)
+
+
+def is_address_all(row: Mapping[str, Any]) -> bool:
+    """Whether an `addresses` row explicitly unifies a prior conditional split (`scope="all"`, PHASE-64)."""
+    cond = row.get("address_condition")
+    return row.get("predicate") == "addresses" and isinstance(cond, Mapping) and cond.get("scope") == "all"
+
+
+def address_label(row: Mapping[str, Any], lang: str | None = None) -> str | None:
+    """Display label for a conditional `addresses` row, or None for default / `all` / non-`addresses` rows."""
+    if row.get("predicate") != "addresses":
+        return None
+    cond = row.get("address_condition")
+    if not isinstance(cond, Mapping):
+        return None
+    scope = cond.get("scope")
+    if scope not in ("public", "private", "situational"):
+        return None
+    when = cond.get("when")
+    if isinstance(when, str) and when.strip():
+        return when.strip()
+    pair = _SCOPE_LABELS.get(scope)
+    if pair is None:
+        return None
+    return pair[0] if lang == "ko" else pair[1]
 
 
 SALIENCES = ("major", "minor")
@@ -527,15 +617,15 @@ def knowledge(item: dict[str, Any]) -> tuple[str, list[str] | None, list[str] | 
     return scope, known or None, hidden or None, note
 
 
-# extract-v20 (PHASE-64 part 1): `knowledge_scope` with `public_except`, everyone but `hidden_from`. The `knowledge`
+# extract-v21 (PHASE-66): `knowledge_scope` with `public_except`, everyone but `hidden_from`. The `knowledge`
 # column keeps public|limited|unknown (its CHECK, migration 0009): a public-except fact is stored there as limited, as
 # every earlier generation stores it, so no earlier reader meets a word it does not know.
-KNOWLEDGE_SCOPES_V20 = ("public", "public_except", "limited", "unknown")
+KNOWLEDGE_SCOPES_V21 = ("public", "public_except", "limited", "unknown")
 
 
 def knowledge_scope(item: dict[str, Any],
                     marks: tuple[str, list[str] | None, list[str] | None, str | None] | None = None) -> str | None:
-    """The four-way scope of one raw assertion (extract-v20), from its sanitized marks (`knowledge`, or `marks` when
+    """The four-way scope of one raw assertion (extract-v21), from its sanitized marks (`knowledge`, or `marks` when
     already read) so the two columns never contradict: "public_except" when the model calls it public (or public
     except) and someone is still in `hidden_from` after the contradiction check; otherwise the `knowledge` scope
     itself (a public-except fact with nobody left in `hidden_from` reads as `knowledge` reads it: unknown, or limited
@@ -547,15 +637,18 @@ def knowledge_scope(item: dict[str, Any],
     return "public_except" if hidden and word in ("public", "public_except") else scope
 
 
-# extract-v20 (PHASE-64 part 1): when a fact holds. A form of address, a tie, a role, a feeling, an identity, a cover, a
-# condition or a promise can hold only in public or in private, before some people, under a guise or in a situation
-# ("존댓말, '과장님'" at work, "반말, '오빠'" alone). Only these keys, each bounded, and the whole at most
+# extract-v21 (PHASE-66): when a fact other than a form of address holds. A tie, a role, a feeling, an identity, a
+# cover, a condition or a promise can hold only in public, in private or in another settled situation, the same
+# vocabulary and bounds as `address_condition` (`scoped`: scope public|private|situational|all, `when` at most 60
+# characters, required for situational, null for all), so a reader treats both alike. `addresses` keeps
+# `address_condition` alone (PHASE-64): one representation for a conditional address. Two bounded keys of its own
+# beside them: `audience` (before whom) and `as_guise` (under which guise); never with "all". The whole is at most
 # CONDITION_MAX_BYTES of compact JSON (it is stored, and later shown back to the model).
-CONDITIONED_PREDICATES = frozenset({"addresses", "relationship", "role_toward", "feels_toward", "identity",
-                                    "cover_identity", "has_status", "promised"})
-CONDITION_KEYS = ("in_public", "audience", "as_guise", "when")
+CONDITIONED_PREDICATES = frozenset({"relationship", "role_toward", "feels_toward", "identity", "cover_identity",
+                                    "has_status", "promised"})
+CONDITION_KEYS = ("scope", "when", "audience", "as_guise")
 CONDITION_MAX_BYTES = 512
-AUDIENCE_MAX, AUDIENCE_CHARS, GUISE_CHARS, WHEN_CHARS = 8, 80, 80, 120
+AUDIENCE_MAX, AUDIENCE_CHARS, GUISE_CHARS = 8, 80, 80
 _NULLISH = ("null", "none", "-")
 
 
@@ -575,19 +668,19 @@ def _json_size(value: dict[str, Any]) -> int:
 
 
 def condition(item: dict[str, Any]) -> dict[str, Any] | None:
-    """The `condition` of a conditioned predicate (CONDITIONED_PREDICATES), or None.
+    """The `condition` of a conditioned predicate (CONDITIONED_PREDICATES, extract-v21), or None.
 
-    Kept: `in_public` (a JSON boolean only), `audience` (names or {"name"} objects, each at most AUDIENCE_CHARS, no
-    repeat, at most AUDIENCE_MAX), `as_guise` (at most GUISE_CHARS) and `when` (at most WHEN_CHARS). Anything else is
-    dropped, and so is an empty value; with nothing left there is no condition, so an ordinary fact stores none. Over
-    CONDITION_MAX_BYTES, the audience loses its last names, then `when` and `as_guise` their last characters, until it
-    fits. Never inferred from the value text."""
+    {scope, when} as `scoped` reads it (None without a valid scope, or a situational one without `when`: no condition,
+    so an ordinary fact stores none), and beside a scope other than "all": `audience` (names or {"name"} objects, each
+    at most AUDIENCE_CHARS, no repeat, at most AUDIENCE_MAX) and `as_guise` (at most GUISE_CHARS). Any other key is
+    dropped. Over CONDITION_MAX_BYTES, the audience loses its last names and `as_guise` its last characters until it
+    fits; `scope` and `when` are never cut (they name the slot). Never inferred from the value text."""
     raw = item.get("condition") if isinstance(item, dict) else None
     if not isinstance(raw, dict) or item.get("predicate") not in CONDITIONED_PREDICATES:
         return None
-    out: dict[str, Any] = {}
-    if isinstance(raw.get("in_public"), bool):
-        out["in_public"] = raw["in_public"]
+    out = scoped(raw)
+    if out is None or out["scope"] == "all":
+        return out
     if isinstance(raw.get("audience"), list):
         names: list[str] = []
         for entry in raw["audience"]:
@@ -598,21 +691,22 @@ def condition(item: dict[str, Any]) -> dict[str, Any] | None:
                 break
         if names:
             out["audience"] = names
-    for key, limit in (("as_guise", GUISE_CHARS), ("when", WHEN_CHARS)):
-        if value := _phrase(raw.get(key), limit):
-            out[key] = value
-    while _json_size(out) > CONDITION_MAX_BYTES:
+    if guise_name := _phrase(raw.get("as_guise"), GUISE_CHARS):
+        out["as_guise"] = guise_name
+    while _json_size(out) > CONDITION_MAX_BYTES:  # scope and when alone are at most ~260 bytes
         if len(out.get("audience", ())) > 1:
             out["audience"].pop()
-        elif field := next((k for k in ("when", "as_guise") if len(out.get(k) or "") > 1), None):
-            out[field] = out[field][:-1].rstrip() or out[field][:1]
-        else:  # unreachable with the caps above; never store an oversized condition
+        elif len(out.get("as_guise") or "") > 1:
+            out["as_guise"] = out["as_guise"][:-1].rstrip() or out["as_guise"][:1]
+        elif extra := next((k for k in ("audience", "as_guise") if k in out), None):
+            del out[extra]
+        else:  # unreachable: scope and when are bounded far below the cap
             return None
-    return out or None
+    return out
 
 
 def guise(item: dict[str, Any]) -> str | None:
-    """The guise name a fact is held under or toward (extract-v20): the item's `guise`, else its condition's
+    """The guise name a fact is held under or toward (extract-v21): the item's `guise`, else its condition's
     `as_guise`; at most GUISE_CHARS, or None."""
     if not isinstance(item, dict):
         return None
@@ -627,7 +721,7 @@ ITEM_KINDS = ("unique", "fungible")
 def item_kind(item: dict[str, Any]) -> str | None:
     """Whether the item of a `possesses` (its object), a `destroyed`, or a `located_in` or `contained_in` of an item
     (its subject) is one of a kind ("unique") or one of many alike ("fungible": potions, coins, arrows, letters), as the
-    model gave it (extract-v20); None for any other row, and when missing or invalid."""
+    model gave it (extract-v21); None for any other row, and when missing or invalid."""
     if not isinstance(item, dict):
         return None
     predicate = item.get("predicate")
