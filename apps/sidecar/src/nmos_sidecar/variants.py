@@ -115,8 +115,8 @@ LOOSE_MIN = 5  # a shorter loose key matches too much
 
 
 def loose(k: str) -> str:
-    """A spelling key with every run of vowels as one mark: the vowels English names leave to the ear (Daniel, 대니얼,
-    다니엘 → `dvnvr`). Only for the persona's own names (`entities._persona_matcher`), never between two characters."""
+    """A spelling key with every run of vowels as one mark: the vowels English names leave to the ear (Ronan, 로넌,
+    로난 → `rvnvn`). Only for the persona's own names (`entities._persona_matcher`), never between two characters."""
     return re.sub(r"[aeiouwy]+", "v", k)
 
 

@@ -105,7 +105,7 @@ def capture(conn: Any, trace_id: UUID, vector: dict[str, Any] | None = None,
             " JOIN source_object so ON so.id = sr.source_object_id"
             " LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %s"
             " WHERE am.commit_id = %s AND am.position <= %s AND strpos(rt.clean_content, %s) > 0",
-            (retrieval.NORMALIZER_VERSION, trace["head_commit_id"], trace["upto_position"], gold)).fetchall()
+            (audit.normalizer_of(trace), trace["head_commit_id"], trace["upto_position"], gold)).fetchall()
         stages["stored_assertions"] = conn.execute(
             "SELECT a.id, a.subject, a.predicate, a.object, a.value, a.status, a.polarity, a.modality, a.source,"
             " e.extractor_key, e.window_hash, e.discarded_at, e.created_at, am.position, am.turn, am.turn_hash"

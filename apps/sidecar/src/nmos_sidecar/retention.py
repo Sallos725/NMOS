@@ -9,7 +9,9 @@ projection has replaced them:
 - vectors of any embedding projection other than the active one (legacy ones included), for the
   revisions the active projection has embedded, in chats where it has restored every revision an
   older projection had covered and has no work pending;
-- `revision_text` rows of other normalizers, for revisions that have a current-normalizer row.
+- `revision_text` rows of other normalizers, for revisions that have a current-normalizer row. The normalizers
+  NMOS_NORMALIZER may select (`normtext.NORMALIZERS`) are never other: their rows are kept side by side, so a switch
+  back serves them again with nothing written (PHASE-66 part 3).
 
 Only rows the active projection replaced go. Vectors of revisions it did not embed (abandoned branches,
 old edits, disabled messages) stay; everything else on abandoned worldlines is kept (O5, 2026-09-24).
@@ -81,7 +83,7 @@ def prune_embeddings(conn: psycopg.Connection, batch: int = BATCH) -> int:
                 return total
             rids = [r["rid"] for r in conn.execute(
                 _PRUNABLE_REVISIONS,
-                {"conv": None, "key": key, "norm": normtext.NORMALIZER_VERSION, "batch": batch},
+                {"conv": None, "key": key, "norm": normtext.active(), "batch": batch},
             ).fetchall()]
             if rids:
                 # The pruned work's finished jobs become obsolete, so switching back to that projection
@@ -100,17 +102,19 @@ def prune_embeddings(conn: psycopg.Connection, batch: int = BATCH) -> int:
 
 
 def prune_text(conn: psycopg.Connection, batch: int = BATCH) -> int:
-    """Delete normalized text of other normalizers where the current normalizer's row exists."""
+    """Delete normalized text of other normalizers where the current normalizer's row exists; a selectable
+    normalizer's rows are kept (`normtext.NORMALIZERS`)."""
     total = 0
     while True:
         with conn.transaction():
             n = conn.execute(
                 "DELETE FROM revision_text WHERE (source_revision_id, normalizer) IN ("
                 " SELECT o.source_revision_id, o.normalizer FROM revision_text o"
-                " WHERE o.normalizer <> %(norm)s AND EXISTS (SELECT 1 FROM revision_text c"
+                " WHERE o.normalizer <> %(norm)s AND o.normalizer <> ALL(%(kept)s)"
+                " AND EXISTS (SELECT 1 FROM revision_text c"
                 "   WHERE c.source_revision_id = o.source_revision_id AND c.normalizer = %(norm)s)"
                 " LIMIT %(batch)s)",
-                {"norm": normtext.NORMALIZER_VERSION, "batch": batch},
+                {"norm": normtext.active(), "kept": list(normtext.NORMALIZERS), "batch": batch},
             ).rowcount
         total += n
         if n < batch:

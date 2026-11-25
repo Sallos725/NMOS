@@ -113,7 +113,7 @@ def summarizer(settings: Settings) -> Generation | None:
         return None
     return generations.make(
         "summarize", settings.llm_url, settings.llm_model, version=VERSION,
-        prompt=generations.fingerprint(SCENE_PROMPT + STORY_PROMPT), normalizer=normtext.NORMALIZER_VERSION,
+        prompt=generations.fingerprint(SCENE_PROMPT + STORY_PROMPT), normalizer=normtext.active(),
         json_mode=settings.llm_json_mode, window=WINDOW, lag=LAG, message_chars=settings.extract_target_chars,
         **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
     )
@@ -509,7 +509,7 @@ def cut_windows(conn: psycopg.Connection, conv: UUID, head: UUID, gen: Generatio
         elif status in (None, "obsolete"):
             sizes = conn.execute("SELECT coalesce(sum(least(rt.clean_chars, %s)), 0)::int AS shown FROM revision_text rt"
                                  " WHERE rt.source_revision_id = ANY(%s) AND rt.normalizer = %s",
-                                 (cap, list(w.members), normtext.NORMALIZER_VERSION)).fetchone()["shown"]
+                                 (cap, list(w.members), normtext.active())).fetchone()["shown"]
             todo.append(w)
             shown += sizes
             more += max(0, sizes - int(s["coverage"].get("used") or 0))
