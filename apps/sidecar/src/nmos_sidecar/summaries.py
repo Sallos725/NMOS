@@ -546,6 +546,8 @@ def reply_text(parsed: dict[str, Any], cap: int) -> str:
     text = parsed.get("summary")
     if not isinstance(text, str):  # an answer without one fails the job, so it is retried (as G3 for extraction)
         raise LLMError("model reply has no `summary` text")
+    if not text.strip():  # an empty one too: stored, it would count as covering turns nothing tells (review F5)
+        raise LLMError("model reply has an empty `summary`")
     return _cut(text, cap)
 
 

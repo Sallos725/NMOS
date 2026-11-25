@@ -237,3 +237,34 @@ def test_no_stored_summary_listed_under_an_earlier_key_form_is_held():
         assert summaries.unlisted({"last_turn": 7, "coverage": {"secrets": []}}, [secret]) == [secret]
     # the three Tier 1 predicates keep exactly the key Tier 1 stored
     assert [summaries.secret_key(s) for s, _ in forms[:3]] == ["은열쇠", "지하감옥", "암살단"]
+
+
+# --- item 5: an empty summary never covers, and an empty reply fails its job ------------------------------------------
+
+def test_an_empty_reply_fails_the_job_and_an_empty_summary_covers_nothing(migrated):
+    from nmos_sidecar import coverage
+    from nmos_sidecar.worker import run_once
+    from test_packet_ledger import extract
+    from test_summaries import ON as SUMMARIES_ON, story_chat
+
+    chat = story_chat(16)
+    chat.user("Now asking a question at turn 16.")
+    with make_client(migrated, **SUMMARIES_ON) as c:
+        sync(c, chat)
+        extract(migrated)
+        cid = UUID(conv_id(c, chat))
+    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+        gen = active_generation(conn, "summarize")
+        run_once(conn, {"summarize": (gen.key, lambda cn, job: summaries.process(
+            cn, job, lambda s, u: ({"summary": "  "}, "{}"), gen))})
+        job = conn.execute("SELECT * FROM job WHERE kind = 'summarize' AND attempts > 0").fetchone()
+        assert job["status"] == "queued" and job["attempts"] == 1 and "empty" in job["last_error"]
+        assert conn.execute("SELECT count(*) AS n FROM summary").fetchone()["n"] == 0
+        head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (cid,)).fetchone()["head_commit_id"]
+        # a row stored empty before this change (or a window too short to summarize) covers nothing
+        conn.execute("UPDATE job SET status = 'done' WHERE id = %s", (job["id"],))
+        w = summaries.windows(conn, head)[0]
+        summaries._insert(conn, cid, gen, "scene", w.key, list(w.members), w.first_turn, w.last_turn, "", "", {}, None)
+        assert summaries.current(conn, cid, head, gen.key)["scenes"][0]["summary"]["text"] == ""
+        cov = coverage.read(conn, cid, head, gen.key, extractor_key=active_generation(conn, "extract").key)
+    assert cov.recorded_through_turn == 15 and cov.covered_through_turn is None

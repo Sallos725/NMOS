@@ -113,7 +113,9 @@ def read(
     summarized: set[int] = set()
     if summarize_key and served and (read_view or secrets is not None):
         view = summaries.current(conn, conv_id, head, summarize_key, None, upto=upto, known_at=known_at)
-        have = [x for x in view["scenes"] if x["summary"] is not None]
+        # an empty summary (a window too short to summarize, or one stored before an empty reply failed its job)
+        # tells nothing, so it covers nothing
+        have = [x for x in view["scenes"] if x["summary"] is not None and str(x["summary"].get("text") or "").strip()]
         if have:
             if secrets is None and extractor_key:
                 # with the carry link the packet reads (`carried`): a summary it would hold covers nothing
