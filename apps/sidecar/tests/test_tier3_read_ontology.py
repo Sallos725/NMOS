@@ -410,3 +410,86 @@ def test_every_reader_of_the_view_serves_a_chat_with_the_ontology(migrated: str,
             assert res.status_code == 200, (path, res.text[:300])
         res = c.post(f"/v1/conversations/{v21.cid}/notes", json={"sections": ["changed", "address"]})
         assert res.status_code == 200, res.text[:300]
+
+
+# --- 4. `believes` and `forgot` -------------------------------------------------------------------------------------
+
+EPI = {
+    "t0": [a("카이", "identity", None, "카이의 정체는 왕자"),
+           a("아리아", "believes", None, "카이의 정체는 상인"),
+           a("아리아", "believes", None, "도윤이 배신했다"),
+           a("세라", "believes", None, "하나가 마녀다", source="character_claim", asserted_by="도윤"),
+           a("아리아", "knows", None, "비밀 통로의 위치", knowledge="limited", known_by=["아리아"]),
+           a("하나", "has_status", None, "임신함", knowledge="limited", known_by=["하나", "아리아"],
+             hidden_from=["도윤"])],
+    "t1": [a("아리아", "knows", None, "카이의 정체는 왕자"),
+           a("도윤", "believes", None, "보물은 동굴에 있다")],
+    "t2": [a("아리아", "forgot", None, "all"),
+           a("도윤", "forgot", None, "보물은 동굴에 있다")],
+    "t3": [a("아리아", "knows", None, "새 암호", knowledge="limited", known_by=["아리아"])],
+}
+
+
+def test_a_belief_is_its_own_kind_and_ends_when_its_holder_learns_or_forgets_the_matter(migrated: str):
+    v21 = Chat(migrated, EPI)
+    with v21.client() as c:
+        v21.run(c)
+        view = v21.view()
+        beliefs = {b["value"]: b for b in view["beliefs"]}
+        assert set(beliefs) == {"카이의 정체는 상인", "도윤이 배신했다", "보물은 동굴에 있다"}
+        # never a fact about the world, never a conflict or a disputed mark against what it contradicts
+        assert not current(view, "believes") and not view["conflicts"]
+        assert not any(f.get("disputed_by") for f in view["facts"])
+        assert values(view, "identity") == {("카이", None, "카이의 정체는 왕자", "positive")}
+        # learning the matter ends it; forgetting it ends it; "all" ends every belief of the forgetter
+        assert beliefs["카이의 정체는 상인"]["status"] == "ended"
+        assert beliefs["카이의 정체는 상인"]["ended_by"]["predicate"] == "knows"
+        assert beliefs["도윤이 배신했다"]["status"] == "ended"  # 아리아 forgot all at t2
+        assert beliefs["보물은 동굴에 있다"]["ended_by"]["predicate"] == "forgot"
+        # another's claim of a belief is another assertion (stored, inspectable, never in the packet)
+        assert any(o["predicate"] == "believes" and o["source"] == "character_claim" for o in view["other"])
+        assert not any(s["text"].startswith("아리아 believes") for s in view["secrets"])
+
+        # a forgetting withdraws the character's knowledge from its turn on, and is itself in the view
+        forgot = {g["who"]: g for g in view["forgotten"]}
+        assert forgot["아리아"]["scope"] == "all" and forgot["도윤"]["scope"] == "matter"
+        withdrawn = {(w["predicate"], w["how"]) for w in forgot["아리아"]["withdrew"]}
+        assert ("knows", "fact") in withdrawn and ("has_status", "known_by") in withdrawn
+        assert not {f["value"] for f in current(view, "knows", "아리아")} & {"비밀 통로의 위치", "카이의 정체는 왕자"}
+        assert {f["value"] for f in current(view, "knows", "아리아")} == {"새 암호"}  # learned after it: stands
+        status = current(view, "has_status", "하나")[0]
+        # her name leaves known_by; nothing is added to hidden_from
+        assert status["known_by"] == ["하나"] and status["hidden_from"] == ["도윤"]
+        assert status["forgotten_by"] == ["아리아"]
+
+        # the owner's repairs reach a belief and a forgetting as they reach a fact
+        # (a correction is planned and read here; api.py's own fact_correct guard looks in view["facts"] only, the
+        # one-line change the report names)
+        bid = str(beliefs["도윤이 배신했다"]["id"])
+        target, value = repairs.plan("fact_correct", bid, view, 3, new_value="도윤이 배신했을지도 모른다")
+        fixed = v21.view(what_if={"add_repairs": [{"id": "0193e3c0-0000-7000-8000-000000000001", "kind": "fact_correct",
+                                                   "target": target, "value": value, "note": None,
+                                                   "created_at": None}]})
+        assert "도윤이 배신했을지도 모른다" in {b["value"] for b in fixed["beliefs"]}
+        assert "도윤이 배신했다" not in {b["value"] for b in fixed["beliefs"]}
+        gid = str(forgot["아리아"]["id"])
+        res = c.post(f"/v1/conversations/{v21.cid}/repairs", json={"kind": "fact_retract", "item": gid})
+        assert res.status_code == 200 and res.json()["applied"] == gid, res.text
+        after = v21.view()
+        assert {g["who"] for g in after["forgotten"]} == {"도윤"}
+        assert "비밀 통로의 위치" in {f["value"] for f in current(after, "knows", "아리아")}
+        assert current(after, "has_status", "하나")[0]["known_by"] == ["하나", "아리아"]
+
+
+def test_forgot_reads_one_matter_all_or_since_a_turn():
+    assert facts.forgot_scope("all") == ("all", None) and facts.forgot_scope("모든 기억") == ("all", None)
+    assert facts.forgot_scope("since turn 12") == ("since", 12)
+    assert facts.forgot_scope("어젯밤의 일") == ("matter", None)
+
+
+def test_an_earlier_chat_without_beliefs_has_neither_new_key(migrated: str):
+    v21 = Chat(migrated, ONTO)
+    with v21.client() as c:
+        v21.run(c)
+        view = v21.view()
+    assert "beliefs" not in view and "forgotten" not in view

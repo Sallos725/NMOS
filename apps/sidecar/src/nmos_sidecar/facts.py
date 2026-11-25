@@ -24,10 +24,11 @@ from .predicates import (EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, address_label,
                          stored_knowledge, whereabouts)
 from . import canon, canonfacts
 from .repairs import (IN_FORCE, READ_REGISTRY, REPAIR_COLUMNS, apply_facts, apply_locks, cardinality, conditional,
-                      exclusions, fungible, is_v21, live, pins, quoted_turns, read_predicate, secret_events, slot,
-                      slotted, splits_of, thread_events, unedited_quotes, unifies)
+                      epistemic, exclusions, fungible, is_v21, live, pins, quoted_turns, read_predicate, secret_events,
+                      slot, slotted, splits_of, thread_events, unedited_quotes, unifies)
+from .secrets import secret_text
 from .secrets import fold as fold_secrets
-from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
+from .threads import MATCH_MIN, PREDICATES as THREAD_PREDICATES, fold as fold_threads, similarity
 
 if TYPE_CHECKING:  # carry imports this module: never at run time
     from .carry import Carried
@@ -690,7 +691,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                 "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "repairs": [],
                 "assertions": [], "resolution": None, **({"told": []} if told else {})}
     served = served_assertions(conn, head, extractor_key, upto, known_at)
-    rows = [r for r in served if read_predicate(r)]  # PHASE-66: extract-v21's own predicates on its own rows
+    # PHASE-66: extract-v21's own predicates on its own rows; its beliefs and forgettings as kinds of their own
+    rows = [r for r in served if read_predicate(r) or epistemic(r)]
     # The conversation, the owner's repairs as of the read (ADR 0044) and the read's last turn, in one query.
     found = conn.execute(
         "SELECT w.conversation_id, c.host_persona_name, c.canon_manifest_id, r.id, r.kind, r.target, r.value, r.note,"
@@ -744,7 +746,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     for row in canon_rows:
         _annotate(row, r)
     # Carried rows (ADR 0085): after the canon, before every row of the story; their openings open threads first.
-    carried_rows = [x for x in carried_all if read_predicate(x) and x["predicate"] != "also_called"]
+    carried_rows = [x for x in carried_all if (read_predicate(x) or epistemic(x)) and x["predicate"] != "also_called"]
     for row in carried_rows:
         _annotate(row, r)
     carried_openings = [x for x in carried_rows if x["predicate"] in THREAD_PREDICATES]
@@ -795,8 +797,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
     # A carried row (ADR 0085) is a secret too: what was kept from someone in the earlier chat still is until this story
     # shows them finding it out, and the summary and excerpt gates keep it.
-    secrets, unrevealed, reveals = fold_secrets([x for x in rows if not x.get("canon")] if canon_rows else rows, r,
-                                                secret_events(in_force, r, applied))
+    # PHASE-66: a belief or a forgetting is no fact, so no secret either (its knowledge marks stay on its own row)
+    believed = [x for x in rows if epistemic(x)]
+    secret_rows = [x for x in rows if not x.get("canon")] if canon_rows else rows
+    secrets, unrevealed, reveals = fold_secrets([x for x in secret_rows if not epistemic(x)] if believed else secret_rows,
+                                                r, secret_events(in_force, r, applied))
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     by_repair = {s["id"]: s["repair"] for s in secrets if s.get("repair")}
     for row in rows:
@@ -818,6 +823,10 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     consumed |= reveals
     for row in rows:
         if row["id"] in consumed:
+            continue
+        if believed and epistemic(row):  # PHASE-66: told apart below (`_epistemic`), or another assertion
+            if (row.get("source") or "narration") != "narration" or (row.get("modality") or "actual") != "actual":
+                other.append(row)
             continue
         if row["source"] == "character_claim" and row["modality"] in ("actual", "unknown"):
             # A claim's truth is unknown by nature; the model may say so (owner decision 2026-09-24).
@@ -842,6 +851,9 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                     held.append({"kind": "locked", "fact": lock["id"], "turn": lock["turn"], "position": lock["position"],
                                  "text": fact_text(lock), "repair": lock["locked"], "against": _brief(a)})
     facts = [f for history in narrated.values() for f in _versions(history, r)]
+    if believed:  # PHASE-66: beliefs, and what a character forgot withdrawn from them
+        aside = {id(x) for x in other}
+        beliefs, forgotten, facts = _epistemic([x for x in believed if id(x) not in aside], rows, facts, r)
     by_key: dict[tuple, list[dict[str, Any]]] = {}
     for f in facts:
         by_key.setdefault(version_key(f, r), []).append(f)
@@ -882,6 +894,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             "repairs": [_report(rep, applied, r, excluded, pinned) for rep in repairs], "assertions": rows,
             "resolution": r,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
+    if believed:
+        view["beliefs"], view["forgotten"] = beliefs, forgotten
     if told:
         view["told"] = told_view(told_rows(served), r, excluded)
     if carried is not None:
@@ -891,6 +905,105 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         view["regression"] = [line for x in carried.regression
                               if (line := _regression_kept(_regression_line(x, r), r, forgotten)) is not None]
     return view
+
+
+_SINCE = re.compile(r"since\s+turn\s+(\d+)", re.IGNORECASE)
+_LISTED = re.compile(r"^\[turn -?\d+\]\s*")  # a reveal's value names its listed secret's turn (ADR 0033)
+FORGOT_ALL = frozenset({"all", "everything", "전부", "모두", "전부 다", "모든 것", "모든 기억"})
+
+
+def forgot_scope(value: str | None) -> tuple[str, int | None]:
+    """What a `forgot` value withdraws (extract-v21: "the memory, \"all\", or \"since turn N\""): ("all", None),
+    ("since", N), or ("matter", None) for a memory named by its text."""
+    text = " ".join(str(value or "").split())
+    if text.casefold() in FORGOT_ALL:
+        return "all", None
+    if m := _SINCE.search(text):
+        return "since", int(m.group(1))
+    return "matter", None
+
+
+def _about(value: str | None, f: Mapping[str, Any]) -> bool:
+    """Whether a named matter (a belief's, a forgetting's) is this row's: its value, or its line, at least MATCH_MIN
+    alike (the bar a thread's close or a reveal's text needs, ADR 0019)."""
+    matter = _LISTED.sub("", str(value or ""))
+    return bool(matter) and max(similarity(matter, _LISTED.sub("", str(f.get("value") or ""))),
+                                similarity(matter, secret_text(f))) >= MATCH_MIN
+
+
+def _epistemic(believed: list[dict[str, Any]], rows: list[dict[str, Any]], facts: list[dict[str, Any]],
+               r: Resolution) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """extract-v21's `believes` and `forgot` (PHASE-66), narrated and actual, oldest first: (beliefs, forgotten, facts).
+
+    A belief is what its subject takes to be true, which may be false. It is never a fact about the world: it folds
+    apart (the latest per character and matter, a denial current as "no longer believes"), opens no conflict and no
+    `disputed` mark against the fact it contradicts, and is `held` until the same character later knows or learns the
+    matter (a `knows` or `learned` row, `_about`) or forgets it; then `ended`, with `ended_by`.
+
+    A forgetting withdraws, from its turn on, its character's knowledge of the matter (`forgot_scope`: one named
+    matter, "all", or "since turn N"): a current `knows` fact of theirs stated at or before it leaves `facts`, and their
+    name leaves the `known_by` of a fact they knew by then (a reveal's turn, else the fact's). Nothing is added to
+    `hidden_from`: nothing is hidden beyond what the marks already did. Each forgetting lists what it `withdrew`; a
+    later `knows` (or reveal) after it stands."""
+    order = {id(x): i for i, x in enumerate(rows)}
+    learners = [x for x in rows if x["predicate"] in ("knows", "learned") and x.get("polarity") != "negative"
+                and (x.get("source") or "narration") == "narration" and (x.get("modality") or "actual") == "actual"]
+    forgets = [g for g in believed if g["predicate"] == "forgot" and g.get("polarity") != "negative"]
+    who = lambda x: r.key("character", x["subject"])  # noqa: E731
+
+    def forgets_it(g: dict[str, Any], start: int | None, f: Mapping[str, Any]) -> bool:
+        scope, since = forgot_scope(g.get("value"))
+        if start is not None and g.get("turn") is not None and start > g["turn"]:
+            return False  # learned after the forgetting
+        if scope == "all":
+            return True
+        if scope == "since":
+            return start is not None and since is not None and start >= since
+        return _about(g.get("value"), f)
+
+    latest: dict[tuple, dict[str, Any]] = {}
+    for b in believed:
+        if b["predicate"] == "believes":
+            latest[(who(b), _norm(b.get("value")))] = b
+    beliefs = []
+    for b in sorted(latest.values(), key=lambda x: x["position"], reverse=True):
+        out = {**b, "status": "held"}
+        ender = next((x for x in sorted(learners + forgets, key=lambda x: order.get(id(x), 0))
+                      if order.get(id(x), -1) > order.get(id(b), -1) and who(x) == who(b)
+                      and (forgets_it(x, b.get("turn"), b) if x["predicate"] == "forgot" else _about(b.get("value"), x))),
+                     None)
+        if ender is not None:
+            out["status"] = "ended"
+            out["ended_by"] = _brief(ender)
+        beliefs.append(out)
+    forgotten = []
+    kept_facts = facts
+    for g in forgets:
+        withdrew: list[dict[str, Any]] = []
+        name = g["subject"]
+        k = who(g)
+        next_facts = []
+        for f in kept_facts:
+            if f["predicate"] == "knows" and who(f) == k and f["position"] <= g["position"] \
+                    and forgets_it(g, f.get("turn"), f):
+                withdrew.append({"id": f["id"], "turn": f.get("turn"), "predicate": f["predicate"],
+                                 "text": fact_text(f), "how": "fact"})
+                continue
+            knew = [n for n in f.get("known_by") or () if r.key("character", n) == k]
+            if knew and f["position"] <= g["position"]:
+                start = next((x.get("turn") for x in f.get("revealed") or () if r.key("character", x["to"]) == k),
+                             f.get("turn"))
+                if forgets_it(g, start, f):
+                    f["known_by"] = [n for n in f["known_by"] if n not in knew] or None
+                    f["forgotten_by"] = list(f.get("forgotten_by") or []) + knew
+                    withdrew.append({"id": f["id"], "turn": f.get("turn"), "predicate": f["predicate"],
+                                     "text": fact_text(f), "how": "known_by"})
+            next_facts.append(f)
+        kept_facts = next_facts
+        scope, since = forgot_scope(g.get("value"))
+        forgotten.append({**g, "scope": scope, "since": since, "who": name, "withdrew": withdrew})
+    forgotten.sort(key=lambda x: x["position"], reverse=True)
+    return beliefs, forgotten, kept_facts
 
 
 TOLD_SHOWN = ("id", "turn", "position", "subject", "object", "value", "knowledge", "known_by", "hidden_from",

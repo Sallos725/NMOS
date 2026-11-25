@@ -20,7 +20,7 @@ import psycopg
 from .entities import norm
 from .facts import _parse_feeling, ontology_marks
 from .predicates import stored_knowledge
-from .repairs import _ekey, _established, cardinality, read_predicate, restated, slot, slotted
+from .repairs import _ekey, _established, cardinality, epistemic, read_predicate, restated, slot, slotted
 from .secrets import secret_text
 
 NOT_FACTS = frozenset({"learned", "also_called"})  # a reveal and a name link are not facts (ADR 0033, 0012)
@@ -48,8 +48,9 @@ FROM assertion WHERE extraction_id = ANY(%s) AND status = 'valid' ORDER BY id
 
 
 def _fact(a: dict[str, Any]) -> bool:
-    """A fact memory keeps: narrated (legacy rows without a source count as narration) and actual (ADR 0013)."""
-    return (read_predicate(a) and a["predicate"] not in NOT_FACTS and (a.get("source") or "narration") == "narration"
+    """A fact memory keeps: narrated (legacy rows without a source count as narration) and actual (ADR 0013); an
+    extract-v21 belief or forgetting too (PHASE-66), which a restore brings back as its own kind."""
+    return ((read_predicate(a) or epistemic(a)) and a["predicate"] not in NOT_FACTS and (a.get("source") or "narration") == "narration"
             and (a.get("modality") or "actual") == "actual")
 
 

@@ -110,6 +110,11 @@ def read_predicate(row: Mapping[str, Any]) -> bool:
     return p in REGISTRY or (p in V21_PREDICATES and p not in EPISTEMIC and is_v21(row))
 
 
+def epistemic(row: Mapping[str, Any]) -> bool:
+    """An extract-v21 `believes` or `forgot` row (PHASE-66): a kind of its own in the view, never a fact."""
+    return row.get("predicate") in EPISTEMIC and is_v21(row)
+
+
 def cardinality(row: Mapping[str, Any]) -> str | None:
     """How a row's facts accumulate: its predicate's cardinality (READ_REGISTRY), but an extract-v21 `role_toward`
     accumulates (PHASE-66: several roles toward one counterpart, each ended by its own denial). None for a predicate
@@ -808,6 +813,9 @@ def pins(repairs: list[dict[str, Any]], r: Resolution | None) -> list[dict[str, 
 def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None, new_object: str | None,
                new_value: str | None, turn: int | None, version_key: Callable[..., tuple] | None = None) -> tuple[dict, dict]:
     f = next((f for f in view["facts"] if str(f["id"]) == item), None)
+    if f is None:  # PHASE-66: a belief or a forgetting the view lists apart is repaired as a fact is
+        f = next((b for b in (*(view.get("beliefs") or ()), *(view.get("forgotten") or ())) if str(b["id"]) == item),
+                 None)
     if f is None and kind in ("fact_retract", "fact_lock", "fact_correct"):
         # a canon fact the story superseded: the owner keeps the story's (retract) or canon's (lock) (PHASE-14 Q4), or
         # canon's as corrected (PHASE-57 B2: the correction is locked with it)
