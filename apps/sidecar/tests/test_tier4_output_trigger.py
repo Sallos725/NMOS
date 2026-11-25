@@ -397,6 +397,36 @@ def test_until_the_user_continues_the_reply_serves_nothing_of_its_own(on, migrat
     assert "Akari located in lighthouse" in packet["packet"]["text"]
 
 
+def _seen(c, chat: SimChat) -> tuple[dict, list]:
+    """What a request and the panel see now: the retrieve answer (no trace id) and the chat's facts."""
+    out = recall(c, chat, "Where is Akari now? lighthouse", in_context=[chat.messages[-1]["chatId"]])
+    out.pop("trace_id")
+    conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)
+    return out, c.get(f"/v1/conversations/{conv['id']}/facts", params={"history": True}).json()
+
+
+def test_a_finished_early_extraction_and_embedding_change_nothing_a_request_sees_before_acceptance(migrated, db):
+    from test_vectors import drain_embeddings
+
+    with make_client(migrated, extract_on_output=True, **LLM, **EMBED) as c:
+        chat = SimChat()
+        story(chat)
+        sync(c, chat)
+        drain(migrated, Counting())
+        drain_embeddings(migrated)
+        chat.reply("Akari moved to the lighthouse.")
+        sync(c, chat, trigger="output")
+        before = _seen(c, chat)
+        model = Counting()
+        assert drain(migrated, model) == 1 and model.calls == 1
+        assert drain_embeddings(migrated) == 1
+        rid = rev_of(db, "Akari moved to the lighthouse.")["id"]
+        assert db.execute("SELECT count(*) AS n FROM revision_embedding WHERE source_revision_id = %s",
+                          (rid,)).fetchone()["n"] > 0
+        assert _seen(c, chat) == before  # extracted and embedded, still provisional: the same packet and facts
+        assert "lighthouse" not in before[0]["packet"]["text"]
+
+
 # --- switching off withdraws queued early work; the accept path still extracts it -------------------------------------
 
 def test_switching_off_withdraws_queued_early_jobs_and_the_accept_queues_them_again(on, migrated, db):
@@ -422,8 +452,8 @@ def test_switching_off_keeps_an_early_job_whose_reply_was_accepted(on, migrated,
 # --- item 7: fail-open ------------------------------------------------------------------------------------------------
 
 def test_a_scheduling_error_is_swallowed_and_the_sync_applies(on, migrated, db, monkeypatch, caplog):
-    def broken(*args, **kwargs):
-        raise RuntimeError("boom")
+    def broken(conn, *args, **kwargs):
+        conn.execute("SELECT 1/0")  # a failed statement: only its savepoint is rolled back, not the sync
 
     monkeypatch.setattr(extraction, "enqueue_open_turn", broken)
     chat = SimChat()
@@ -434,8 +464,11 @@ def test_a_scheduling_error_is_swallowed_and_the_sync_applies(on, migrated, db, 
     assert "early extraction not scheduled" in caplog.text
     assert rev_of(db, "Akari moved to the lighthouse.") is not None  # the sync's own writes are kept
     assert recall(on, chat, "Where is Akari now?")["packet"] is not None
+    assert db.execute("SELECT count(*) AS n FROM host_observation WHERE raw_manifest->>'trigger' = 'output'"
+                      ).fetchone()["n"] == 1  # committed with the sync
     chat.user("Is she still there?")
-    sync(on, chat)
+    assert sync(on, chat)["status"] == "applied"
+    assert rev_of(db, "Akari moved to the lighthouse.")["lifecycle"] == "accepted"
     model = Counting()
     drain(migrated, model)
     packet = recall(on, chat, "Where is Akari now?", in_context=[m["chatId"] for m in chat.messages[-2:]])
