@@ -29,7 +29,7 @@ from .gone import is_gone_place, is_gone_status, is_gone_vital
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
-from . import normtext
+from . import generations, normtext
 from .rerank import Reranker
 from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
                      CHANGE_POLICIES, CONTENTS, COVERAGE_POLICIES, GONE_POLICIES, LABEL_POLICIES, STATE_HISTORY_KEYS,
@@ -3060,7 +3060,9 @@ def _unextracted(conn: psycopg.Connection, head: UUID, ids: list[Any], extractor
     """The revisions among `ids` whose turn on the head the generation has not extracted (PHASE-33 Q5). A turn is
     extracted once, on its last message, for every message of it; an extraction of the turn as it was before an edit
     (another window, ADR 0008) does not count, as `readmodel.membership` counts it. With `known_at`, as of an earlier
-    request (a replay): an extraction written since does not count, one discarded since still does."""
+    request (a replay): an extraction written since does not count, one discarded since still does. An extraction of a
+    carry-on peer of the generation (`generations.peers`: it differs only in `revision` or `normalizer`, PHASE-66
+    part 5) counts as its own: a revision bump leaves no turn unextracted."""
     return {str(r["id"]) for r in conn.execute(
         """
         SELECT am.source_revision_id AS id FROM active_membership am
@@ -3068,10 +3070,11 @@ def _unextracted(conn: psycopg.Connection, head: UUID, ids: list[Any], extractor
           AND NOT EXISTS (SELECT 1 FROM active_membership t JOIN extraction x ON x.source_revision_id = t.source_revision_id
                            AND x.window_hash = t.turn_hash
                           WHERE t.commit_id = %(head)s AND t.turn = am.turn AND t.turn_hash IS NOT NULL
-                            AND x.extractor_key = %(key)s
+                            AND x.extractor_key = ANY(%(keys)s)
                             AND x.created_at <= coalesce(%(at)s::timestamptz, now())
                             AND (x.discarded_at IS NULL OR x.discarded_at > coalesce(%(at)s::timestamptz, now())))
-        """, {"head": head, "ids": ids, "key": extractor_key, "at": known_at}, prepare=False).fetchall()}
+        """, {"head": head, "ids": ids, "keys": generations.peers(conn, extractor_key), "at": known_at},
+        prepare=False).fetchall()}
 
 
 def _quote_speakers(conn: psycopg.Connection, ids: list[Any], extractor_key: str | None,

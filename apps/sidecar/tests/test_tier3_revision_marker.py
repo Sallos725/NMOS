@@ -139,8 +139,6 @@ def test_peers_are_the_generations_that_differ_only_in_a_carry_on_field(db):
 # --- the deploy, end to end -------------------------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="retrieval._unextracted counts only the active extractor's extractions: after"
-                   " the bump every turn is unextracted and the packet takes one more excerpt (decision pending)")
 def test_deploying_over_a_database_the_production_image_wrote_queues_nothing_and_serves_the_same(migrated, db):
     model, emb = Model(), FakeEmbedder()
     chat = story()
@@ -183,6 +181,13 @@ def test_deploying_over_a_database_the_production_image_wrote_queues_nothing_and
         assert recall(c, chat, "Where is Hana?")["packet"]["text"] == before["packet"]
         replayed = c.get(f"/v1/trace/{trace}/replay").json()
         assert replayed["reproduced"] is True, replayed
+        # what a carry-on peer did counts as done (owner decision 2026-11-25, Q2/Q3): "extract all history" fills only what
+        # is missing (it queued the same nothing before the bump), and so does a backfill-window schedule
+        pressed = c.post(f"/v1/conversations/{cid}/extract-history").json()["queued"]
+        assert {k: pressed.get(k, 0) for k in ("extract", "canon", "summarize", "reveal")} == dict.fromkeys(
+            ("extract", "canon", "summarize", "reveal"), 0), pressed
+        assert extraction.schedule_generation(db, new["extract"].key, 50, cid) == 0
+        db.execute("UPDATE job SET status = 'obsolete' WHERE status = 'queued'")  # the press's local embed jobs, if any
 
         # the story goes on: the new turn is extracted under the new key, the old turns stay served as they were
         chat.reply("Hana is in the bell tower.")
@@ -218,3 +223,19 @@ def test_a_checked_chat_needs_no_check_again_after_the_bump(migrated, db):
     with make_client(migrated, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
         ex3, rv3 = active_generation(db, "extract"), active_generation(db, "reveal")
         assert {r["turn"] for r in reveals.unchecked(db, ex3.key, rv3.key, conv)} == {1, 2}
+
+
+def test_a_model_change_still_moves_the_history_when_the_owner_asks(migrated, db):
+    """Control for the peers rule: a model change is no peer, so "extract all history" re-extracts every turn the new
+    model has not (PHASE-57: the button moves the chat to the new model), as before the marker."""
+    model = Model()
+    chat = story(12)
+    with make_client(migrated, embedder=FakeEmbedder(), **LLM, **EMB) as c:
+        sync(c, chat)
+        drain(migrated, model)
+        before = db.execute("SELECT count(*) AS n FROM extraction WHERE window_hash NOT LIKE 'canon:%%'"
+                            " AND window_hash NOT LIKE 'reveal:%%'").fetchone()["n"]
+    with make_client(migrated, embedder=FakeEmbedder(), llm_url=LLM["llm_url"], llm_model="fake-2", **EMB) as c:
+        db.execute("UPDATE job SET status = 'obsolete' WHERE status = 'queued'")
+        pressed = c.post(f"/v1/conversations/{conv_id(c, chat)}/extract-history").json()["queued"]
+        assert pressed["extract"] == before == 12

@@ -2498,7 +2498,9 @@ def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv:
     every older turn at background priority (per-chat "extract all history", D22). A rebuild's discarded
     turns are always queued. Queued jobs of other generations become obsolete; their extractions stay
     for audit and for fallback. With `uncovered` (PHASE-57 A3: a model change carried on, a startup or a save
-    with no generation change), a turn an earlier generation serves is not queued: only what nothing serves.
+    with no generation change), a turn an earlier generation serves is not queued: only what nothing serves. A turn a
+    carry-on peer of `key` extracted (`generations.peers`: only `revision` or `normalizer` differs, PHASE-66 part 5)
+    counts as extracted by `key`, so neither the backfill window nor "extract all history" pays for it again.
     """
     with conn.transaction():
         conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'extract'"
@@ -2512,14 +2514,14 @@ def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv:
             FROM elig e
             WHERE e.turn_hash IS NOT NULL
               AND NOT EXISTS (SELECT 1 FROM extraction x WHERE x.source_revision_id = e.rid
-                                AND x.window_hash = e.turn_hash AND x.extractor_key = %(key)s
-                                AND x.discarded_at IS NULL)
+                                AND x.window_hash = e.turn_hash AND x.extractor_key = ANY(%(peers)s)
+                                AND x.discarded_at IS NULL)  -- a carry-on peer's counts as its own (PHASE-66 part 5)
               AND (e.turn >= e.turns - %(n)s OR %(all)s OR """ + REBUILD_PENDING + """)
               AND NOT (%(uncovered)s AND """ + OLDER_SERVES + """)
             ORDER BY e.conv, e.turn  -- claim() takes backfill in id order: oldest turns first
             """ + REQUEUE,
-            {"conv": conv, "key": key, "n": backfill, "all": history, "recent": RECENT_PRIORITY,
-             "history": HISTORY_PRIORITY, "uncovered": uncovered},
+            {"conv": conv, "key": key, "peers": generations.peers(conn, key), "n": backfill, "all": history,
+             "recent": RECENT_PRIORITY, "history": HISTORY_PRIORITY, "uncovered": uncovered},
         ).rowcount
 
 

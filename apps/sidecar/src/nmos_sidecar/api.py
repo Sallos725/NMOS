@@ -1048,7 +1048,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 turns = [t for t in turns if t["turn"] in set(body.turns)]
             with conn.transaction():
                 discarded = extraction.discard_turns(conn, turns)
-                queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id)
+                # the discarded turns (nothing serves them) and nothing else: no turn an earlier generation still serves
+                queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, uncovered=True)
             log.info("reextract joined turns conversation=%s link=%s turns=%d discarded=%d queued=%d", conv_id,
                      link_id, len(turns), discarded, queued)
             return {"turns": [t["turn"] for t in turns], "discarded": discarded, "queued": queued,
@@ -2090,7 +2091,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                           choice=choice)
                         ex = rt["extractor"]
                         if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
-                            queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)
+                            queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill,
+                                                                     uncovered=True)  # what nothing serves (PHASE-66 part 5)
                         if before["settings"].extract_on_output and not rt["settings"].extract_on_output:
                             extraction.withdraw_early(conn)  # PHASE-67: off means no early call starts from now on
                         prepared = dict(rt)

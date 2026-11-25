@@ -247,9 +247,18 @@ READ = """(SELECT count(*) AS calls, max((x.coverage->>'parts')::int) AS parts,
                   count(*) FILTER (WHERE x.coverage ? 'reused_from') AS reused
            FROM extraction x WHERE x.source_revision_id = f.rid AND x.extractor_key = %(gen)s
              AND x.discarded_at IS NULL AND split_part(x.window_hash, ':', 3) = f.wtag)"""
-# Those not read completely yet: no part, or some parts missing (a job stopped between parts).
-WANTED = ("SELECT f.* FROM (" + IN_FORCE + ") f CROSS JOIN LATERAL " + READ
-          + " rd WHERE rd.parts IS NULL OR rd.calls < rd.parts")
+# Whether a carry-on peer of the generation (`generations.peers`: only `revision` or `normalizer` differs, PHASE-66
+# part 5) has read the text whole, each generation's read chosen as in READ_ANY: its read counts as the generation's own.
+READ_PEERS = ("(SELECT coalesce(bool_or(r.n >= r.parts), false) AS complete FROM ("
+              " SELECT count(*) AS n, max((x.coverage->>'parts')::int) AS parts FROM extraction x"
+              " WHERE x.source_revision_id = f.rid AND x.extractor_key = ANY(%(peers)s) AND x.discarded_at IS NULL"
+              " AND (split_part(x.window_hash, ':', 3) = f.ntag"
+              " OR (f.carry AND split_part(x.window_hash, ':', 3) = 'plain'))"
+              " GROUP BY x.extractor_key, split_part(x.window_hash, ':', 3)) r)")
+# Those not read completely yet: some parts missing (a job stopped between parts), or no part and no carry-on peer's
+# whole read.
+WANTED = ("SELECT f.* FROM (" + IN_FORCE + ") f CROSS JOIN LATERAL " + READ + " rd CROSS JOIN LATERAL " + READ_PEERS
+          + " rp WHERE (rd.parts IS NOT NULL AND rd.calls < rd.parts) OR (rd.parts IS NULL AND NOT rp.complete)")
 
 # Whether any canon generation has read the text whole (PHASE-57 A3): a model change carried on, a sync or a startup
 # reads only what none has. A read the active generation stopped between parts still goes on. Each generation's read is
@@ -287,7 +296,8 @@ def schedule(conn: psycopg.Connection, key: str, conv: UUID | None = None, any_g
             " INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority)"
             " SELECT 'canon', 'canon:' || w.rid || ':' || w.wtag || ':' || %(gen)s, w.conv, " + payload + ", %(priority)s"
             " FROM wanted w ORDER BY w.conv, w.key " + REQUEUE,
-            {"conv": conv, "gen": key, "priority": PRIORITY, "macro": MACRO_SQL}).rowcount
+            {"conv": conv, "gen": key, "peers": generations.peers(conn, key), "priority": PRIORITY,
+             "macro": MACRO_SQL}).rowcount
 
 
 def requeue(conn: psycopg.Connection, conv: UUID) -> int:
