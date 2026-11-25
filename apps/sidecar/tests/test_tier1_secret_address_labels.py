@@ -37,7 +37,7 @@ def test_a_bracket_and_colon_elsewhere_split_as_before():
 # Finding 2: the label is not part of the object's name; the slot is compared apart, as Phase 64 folds slots. A reveal
 # is text, and a `when` phrase does not say whether it was a public, private or situational form's: against a public or
 # private secret of the listed turn, a phrase worded anew is that secret only when it is the one such secret there
-# (owner decision 2026-11-25). With two, neither ends (fail-safe: it stays hidden; a repair can end it).
+# (coordinator decision 2026-11-25). With two, neither ends (fail-safe: it stays hidden; a repair can end it).
 def said(pos: int, when: str | None, scope: str = "private", value: str = "오빠") -> dict:
     return kept(pos, "하나", "addresses", "타쿠", value, address_condition={"scope": scope, "when": when})
 

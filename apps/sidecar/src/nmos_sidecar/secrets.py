@@ -207,7 +207,7 @@ def _hits(pool: list[dict[str, Any]], reveal: str | None, listed_hash: str | Non
              and (listed_hash is None or s.get("turn_hash") in (None, listed_hash))]
     same = [s for s, head in heads if head]
     if not same:
-        # A form of address whose label the re-extraction worded anew (PHASE-64; owner decision 2026-11-25): a public
+        # A form of address whose label the re-extraction worded anew (PHASE-64; coordinator decision 2026-11-25): a public
         # or private secret of the listed turn whose slot the label cannot tell is it only when it is the one such
         # secret. With two (a public and a private one of the pair), neither ends: the secret stays hidden, fail-safe,
         # and a repair can end it.
