@@ -108,16 +108,56 @@ ACTIVE_ASSERTIONS_AS_OF = ACTIVE_ASSERTIONS_TEMPLATE.format(
     upto=" AND am.position <= %(upto)s", known=_KNOWN.format(t="e"), known_r=_KNOWN.format(t="r"))
 
 
+def _with_open_turn(template: str) -> str:
+    """The same read also serving the open turn (PHASE-67 part 2, owner decision 2026-11-25): the head's last member,
+    when it is a provisional reply of a turn (its user has not answered) whose extraction by the active generation
+    exists and is not discarded. Its rows are marked `open_turn`. Only the author's note and carry read it; a request
+    never does (`memory_view(include_open_turn=...)`)."""
+    out = template
+    for old, new in (
+        ("am.turn_hash, sr.lifecycle, sr.metadata, so.host_logical_id",
+         "am.turn_hash, sr.lifecycle, sr.metadata, so.host_logical_id,\n"
+         "           (sr.lifecycle = 'provisional' AND am.turn IS NOT NULL AND am.position = (\n"
+         "                SELECT max(position) FROM active_membership WHERE commit_id = %(head)s)) AS is_open"),
+        ("e.source_revision_id AS rid, e.window_hash, e.created_at",
+         "e.source_revision_id AS rid, e.window_hash, e.created_at, m.is_open"),
+        ("AND m.lifecycle = 'accepted'", "AND (m.lifecycle = 'accepted' OR (m.is_open AND e.extractor_key = %(key)s))"),
+        ("       l.turn_hash,\n", "       l.turn_hash, l.is_open AS open_turn,\n"),
+    ):
+        assert out.count(old) == 1, old
+        out = out.replace(old, new)
+    return out
+
+
+ACTIVE_ASSERTIONS_OPEN = _with_open_turn(ACTIVE_ASSERTIONS)
+ACTIVE_ASSERTIONS_AS_OF_OPEN = _with_open_turn(ACTIVE_ASSERTIONS_AS_OF)
+# The open turn a read with `include_open_turn` served (provenance for the note and a carry snapshot).
+OPEN_TURN = """
+SELECT am.turn, am.position, am.source_revision_id AS revision, so.host_logical_id, sr.revision_hash
+FROM active_membership am
+JOIN source_revision sr ON sr.id = am.source_revision_id
+JOIN source_object so ON so.id = sr.source_object_id
+WHERE am.commit_id = %(head)s AND am.turn IS NOT NULL AND sr.lifecycle = 'provisional'
+  AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+  AND am.position = (SELECT max(position) FROM active_membership WHERE commit_id = %(head)s)
+  AND (%(upto)s::int IS NULL OR am.position <= %(upto)s::int)
+  AND EXISTS (SELECT 1 FROM extraction e WHERE e.source_revision_id = am.source_revision_id
+              AND e.window_hash = am.turn_hash AND e.extractor_key = %(key)s AND e.discarded_at IS NULL)
+"""
+
+
 def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, upto: int | None = None,
-                      known_at: datetime | None = None) -> list[dict[str, Any]]:
+                      known_at: datetime | None = None, open_turn: bool = False) -> list[dict[str, Any]]:
     """ACTIVE_ASSERTIONS with participants parsed. They are fetched as text and parsed only where present:
     decoding every jsonb value through the driver cost ≈10 ms per fact read at 10,000 messages
     (docs/perf/phase8-extraction.md). Knowledge marks stored as a {"name", …} repr read as the name
-    (stored_knowledge). With `upto` or `known_at`, the read as of an earlier request."""
+    (stored_knowledge). With `upto` or `known_at`, the read as of an earlier request. With `open_turn`, the open turn's
+    finished early extraction too (`_with_open_turn`), its rows marked `open_turn`."""
     if upto is None and known_at is None:
-        rows = conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
+        rows = conn.execute(ACTIVE_ASSERTIONS_OPEN if open_turn else ACTIVE_ASSERTIONS,
+                            {"head": head, "key": extractor_key}).fetchall()
     else:
-        rows = conn.execute(ACTIVE_ASSERTIONS_AS_OF, {
+        rows = conn.execute(ACTIVE_ASSERTIONS_AS_OF_OPEN if open_turn else ACTIVE_ASSERTIONS_AS_OF, {
             "head": head, "key": extractor_key, "upto": upto if upto is not None else 2**31 - 1,
             "known_at": known_at}).fetchall()
     for r in rows:
@@ -132,6 +172,8 @@ def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, 
         if (cond := r.pop("address_condition")) is not None:  # extract-v20 only (PHASE-64): other rows read as before
             r["address_condition"] = _parse_address_condition(cond)
         ontology_marks(r)
+        if open_turn and r.pop("open_turn"):  # PHASE-67: only the open turn's rows keep the mark
+            r["open_turn"] = True
     return rows
 
 
@@ -662,7 +704,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                 known_at: datetime | None = None, canon_manifest: str | None = None,
                 canon_exact: bool = False, canon_key: str | None = None,
                 canon_facts: Any = LIVE, what_if: dict[str, Any] | None = None,
-                told: bool = False, carried: Carried | None = None) -> dict[str, list[dict[str, Any]]]:
+                told: bool = False, carried: Carried | None = None,
+                include_open_turn: bool = False) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -708,12 +751,19 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     neither the resolution nor a fold; the owner's `memory` exclusions leave them out as they leave rows out and take
     the excluded from their rememberers (`_regression_kept`). Either way the view gains `carried` and `regression`;
     without it, neither.
+
+    With `include_open_turn` (PHASE-67, owner decision 2026-11-25: the author's note and carry only, never a request),
+    the open turn's finished early extraction is read as if its reply were accepted (`_with_open_turn`): the head's last
+    member, a provisional reply whose extraction by the active generation exists and is not discarded. Its rows fold
+    with every other turn's (secrets, threads, knowledge marks alike), marked `open_turn`, and the view gains
+    `open_turn` {turn, position, revision, host_logical_id, revision_hash}. A reply rerolled, swiped, edited or removed
+    is no head member, so it never counts. Without the option, or with no such extraction, nothing changes.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
                 "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "repairs": [],
                 "assertions": [], "resolution": None, **({"told": []} if told else {})}
-    served = served_assertions(conn, head, extractor_key, upto, known_at)
+    served = served_assertions(conn, head, extractor_key, upto, known_at, open_turn=include_open_turn)
     # PHASE-66: extract-v21's own predicates on its own rows; its beliefs and forgettings as kinds of their own
     rows = [r for r in served if read_predicate(r) or epistemic(r)]
     # The conversation, the owner's repairs as of the read (ADR 0044) and the read's last turn, in one query.
@@ -741,8 +791,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             what_if.get("add_links", ()))
     # Carried rows (ADR 0085), copied: a read annotates and folds its rows in place, and the link's rows are reused. The
     # source's persona is this chat's (S6): its stored marker reads as the persona name the host reports here.
+    finale = None
     if carried is not None:
         carried = carried.for_persona(conv["host_persona_name"])
+        from .carry import finale_left  # carry imports this module: here, not at import time
+        carried, finale = finale_left(conn, carried)  # PHASE-67: a source finale replaced since serves nothing
     carried_all = [{**x, "known_by": list(x["known_by"]) if x.get("known_by") else None,
                     "hidden_from": list(x["hidden_from"]) if x.get("hidden_from") else None}
                    for x in carried.rows] if carried is not None and carried.mode == "continue" else []
@@ -919,11 +972,16 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
     if believed:
         view["beliefs"], view["forgotten"] = beliefs, forgotten
+    if include_open_turn and (finale := conn.execute(OPEN_TURN, {"head": head, "key": extractor_key,
+                                                                  "upto": upto}).fetchone()) is not None:
+        view["open_turn"] = dict(finale)  # PHASE-67: the read took the provisional finale; absent otherwise
     if told:
         view["told"] = told_view(told_rows(served), r, excluded)
     if carried is not None:
         view["carried"] = {"link": carried.link, "source": carried.source, "mode": carried.mode,
                            "names": carried.names, "rows": len(carried_rows), "story": carried.story}
+        if finale is not None:  # PHASE-67: the snapshot took the source's provisional finale; stale once replaced
+            view["carried"]["finale"] = finale
         forgotten = {i for i, x in excluded.items() if x["scope"] == "memory"}  # as the rows above leave them out
         view["regression"] = [line for x in carried.regression
                               if (line := _regression_kept(_regression_line(x, r), r, forgotten)) is not None]
