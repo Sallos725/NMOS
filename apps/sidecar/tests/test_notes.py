@@ -183,8 +183,12 @@ def test_assembled_without_a_model_open_threads_from_the_store():
 
 
 def test_nothing_to_tell_before_the_first_scene_summary():
-    out = notes.chronicle(told(), THREADS, [], [], 3000, model=Writer())
-    assert out["body"] == "" and out["reason"] == "no_scenes"
+    """Without a scene summary, a thread or a NOW fact there is nothing to tell (a thread kept from someone, or a
+    relationship fact, does not count). With threads the first turns get a chronicle: test_tier2_notes_status_vectors."""
+    kept_thread = {**THREADS[0], "knowledge": "limited", "hidden_from": ["Kaito"]}
+    for threads in ([], [kept_thread]):
+        out = notes.chronicle(told(), threads, [], [], 3000, model=Writer())
+        assert out["body"] == "" and out["reason"] == "no_scenes"
 
 
 def test_a_scene_that_tells_a_kept_secret_is_left_out():
@@ -206,7 +210,7 @@ def test_a_scene_written_before_a_secret_it_should_keep_is_left_out():
 def test_the_model_writes_events_and_now_in_english_the_store_writes_open_threads():
     notes.clear_cache()
     w = Writer({"events": "- Hana went to the mill (t0–7).", "now": "- Hana is at the mill."})
-    out = notes.chronicle(told(scene(0, 7, "하나가 방앗간에 갔다.")), THREADS, [], [], 3000, model=w)
+    out = notes.chronicle(told(scene(0, 7, "하나가 방앗간에 갔다.")), THREADS, [], [], 3000, model=w, language="en")
     assert out["made"] == "model" and len(w.calls) == 1
     assert out["body"] == ("## Chronicle (t0–7)\n- Hana went to the mill (t0–7).\n\n## Now\n- Hana is at the mill.\n\n"
                            + OPEN)

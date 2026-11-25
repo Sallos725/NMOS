@@ -25,6 +25,9 @@ CHUNK_CHARS = 700
 # and re-embeds; the default is unchanged, so an upgrade does not.
 MAX_CHUNKS = 8
 CHUNKER_VERSION = "chunk-v1"  # bump when chunks() can cut differently
+# Opt-in overlap between consecutive chunks (`chunks(..., overlap=CHUNK_OVERLAP)`), for a later projection such as
+# one under `clean-v4`. Not in `projection()`'s key and not used by `process_embed` yet: `chunk-v1` cuts with none.
+CHUNK_OVERLAP = 100
 DOCUMENT_PROFILE = "plain"  # documents are embedded without an instruction prefix
 RECENT_PRIORITY, HISTORY_PRIORITY = 200, 950
 
@@ -40,21 +43,44 @@ def projection(settings: Settings) -> Generation | None:
     )
 
 
-def chunks(text: str, size: int = CHUNK_CHARS, limit: int = MAX_CHUNKS) -> list[tuple[int, int]]:
+def _overlap_start(text: str, prev_start: int, prev_end: int, overlap: int) -> int:
+    """Where the chunk after [prev_start, prev_end) starts with `overlap`: `overlap` characters before `prev_end`,
+    moved forward to the nearest sentence, line or word start within that stretch, and always after `prev_start`."""
+    floor = prev_start + 1  # forward progress: never at or before the previous chunk's start
+    back = max(floor, prev_end - overlap)
+    if back >= prev_end:
+        return prev_end
+    window = text[back:prev_end]
+    for pattern in (r"[.!?。！？…]\s+|\n", r"\s+"):  # a sentence or line start first, else a word start
+        m = re.search(pattern, window)
+        if m and back + m.end() < prev_end:
+            return back + m.end()
+    return back
+
+
+def chunks(text: str, size: int = CHUNK_CHARS, limit: int = MAX_CHUNKS, overlap: int = 0) -> list[tuple[int, int]]:
     """(start, end) spans of at most `size` chars, cut at paragraph/sentence boundaries when possible; at most `limit`
-    of them, from the text's start (the rest of a longer message is not embedded: K13)."""
+    of them, from the text's start (the rest of a longer message is not embedded: K13).
+
+    With `overlap` (opt-in, e.g. CHUNK_OVERLAP; 0 cuts exactly as `chunk-v1` always has), each chunk after the first
+    starts up to `overlap` characters before the previous one ended, at a sentence or word start when one is in that
+    stretch, so a fact that straddles a cut is whole in one chunk. Spans index the text given; every chunk starts and
+    ends after the one before it, and the last one ends at the text's end or at the cap."""
     spans: list[tuple[int, int]] = []
     start, n = 0, len(text)
+    overlap = max(0, min(int(overlap), size // 2))  # at least half of each chunk is new text
     while start < n and len(spans) < limit:
         end = min(n, start + size)
         if end < n:
             window = text[start:end]
             cut = max(window.rfind("\n"), max((m.end() for m in re.finditer(r"[.!?。！？…]\s", window)), default=-1))
-            if cut > size // 3:
+            if cut > size // 3 and not (spans and start + cut <= spans[-1][1]):  # an overlapped chunk ends further
                 end = start + cut
         if text[start:end].strip():
             spans.append((start, end))
-        start = end
+        if end >= n:
+            break
+        start = _overlap_start(text, start, end, overlap) if overlap and spans else end
     return spans
 
 
