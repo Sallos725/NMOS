@@ -184,15 +184,21 @@ NAMED = "coalesce((sr.metadata->>'named')::boolean, sr.content ~* %(macro)s)"
 NTAG = "CASE WHEN e.key = 'persona' OR e.key LIKE 'card:%%' OR " + NAMED + " THEN e.tag ELSE 'plain' END"
 WTAG = NTAG + " AS wtag"
 # Owner decision 2026-11-25 (carry forward): a persona or card text without the macros was read `plain` before Tier 1
-# B7. Such a read stays served, and stays the read of its generation, until a read under the names exists: B7 changed
-# what a new read is, not what an earlier one was worth (no paid re-read on deploy). `CARRY`: whether entry `e` of
-# revision `sr` may have one. Never a text with the macros, a lorebook entry or the note.
+# B7. Such a read stays served, and stays the read of its generation, until a complete read under the names exists:
+# B7 changed what a new read is, not what an earlier one was worth (no paid re-read on deploy). `CARRY`: whether entry
+# `e` of revision `sr` may have one. Never a text with the macros, a lorebook entry or the note.
 CARRY = "((e.key = 'persona' OR e.key LIKE 'card:%%') AND NOT " + NAMED + ")"
-# The window suffix a read of generation %(gen)s has: the carried `plain` while that generation has a `plain` read of
-# the revision and none under the names (`carried_tag` is the same in Python).
+# One read per (revision, generation), never both (duplicate facts) and never neither: the one under the names when it
+# is complete or there is no `plain` read, else the carried `plain` one. A read under one window suffix is complete
+# when every part the text has under that suffix is there, not discarded: as many parts as the `parts` each part
+# records (`READ`). So a names read that started and stopped beside a `plain` one serves nothing and is not resumed.
+# GTAG (what a generation reads, wants, covers and dedupes), READ_ANY, ROWS and `carried_tag` all choose so.
+_COMPLETE_OF = ("(SELECT coalesce(count(*) >= max((y.coverage->>'parts')::int), false) FROM extraction y"
+                " WHERE y.source_revision_id = sr.id AND y.extractor_key = %(gen)s AND y.discarded_at IS NULL"
+                " AND split_part(y.window_hash, ':', 3) = {tag})")
 _READ_OF = ("EXISTS (SELECT 1 FROM extraction y WHERE y.source_revision_id = sr.id AND y.extractor_key = %(gen)s"
             " AND y.discarded_at IS NULL AND split_part(y.window_hash, ':', 3) = {tag})")
-GTAG = ("CASE WHEN " + CARRY + " AND NOT " + _READ_OF.format(tag="e.tag") + " AND " + _READ_OF.format(tag="'plain'")
+GTAG = ("CASE WHEN " + CARRY + " AND NOT " + _COMPLETE_OF.format(tag="e.tag") + " AND " + _READ_OF.format(tag="'plain'")
         + " THEN 'plain' ELSE " + NTAG + " END AS wtag")
 
 # The revisions a canon generation reads, of each chat's canon in force: the card's fields, the note and the persona,
@@ -233,16 +239,15 @@ WANTED = ("SELECT f.* FROM (" + IN_FORCE + ") f CROSS JOIN LATERAL " + READ
 
 # Whether any canon generation has read the text whole (PHASE-57 A3): a model change carried on, a sync or a startup
 # reads only what none has. A read the active generation stopped between parts still goes on. Each generation's read is
-# the one under the names, else its carried `plain` one (CARRY).
+# one (CARRY, GTAG): the names read when complete, else a carried `plain` one; so a generation has read the text whole
+# exactly when its names read or its carried `plain` read is complete.
 READ_ANY = """(SELECT coalesce(bool_or(r.n >= r.parts), false) AS complete FROM (
-               SELECT count(*) AS n, max((x.coverage->>'parts')::int) AS parts,
-                      split_part(x.window_hash, ':', 3) <> f.ntag AS carried,
-                      bool_or(split_part(x.window_hash, ':', 3) = f.ntag) OVER (PARTITION BY x.extractor_key) AS named
+               SELECT count(*) AS n, max((x.coverage->>'parts')::int) AS parts
                FROM extraction x JOIN projection_generation g ON g.key = x.extractor_key AND g.kind = 'canon'
                WHERE x.source_revision_id = f.rid AND x.discarded_at IS NULL
                  AND (split_part(x.window_hash, ':', 3) = f.ntag
                       OR (f.carry AND split_part(x.window_hash, ':', 3) = 'plain'))
-               GROUP BY x.extractor_key, split_part(x.window_hash, ':', 3)) r WHERE NOT (r.carried AND r.named))"""
+               GROUP BY x.extractor_key, split_part(x.window_hash, ':', 3)) r)"""
 WANTED_ANY = ("SELECT f.* FROM (" + IN_FORCE + ") f CROSS JOIN LATERAL " + READ + " rd CROSS JOIN LATERAL " + READ_ANY
               + " ra WHERE (rd.parts IS NOT NULL AND rd.calls < rd.parts) OR NOT ra.complete")
 
@@ -290,14 +295,18 @@ def wtag(key: str, named_: bool, entries: list[dict[str, Any]]) -> str:
 
 def carried_tag(conn: psycopg.Connection, rid: UUID, gen: str, key: str, named_: bool, tag: str) -> str:
     """The window suffix generation `gen`'s read of revision `rid` has (GTAG in SQL): `plain` for a persona or card
-    text without the macros that `gen` read `plain` and has not read under the names (`tag`), else `tag`."""
+    text without the macros that `gen` read `plain` and has not read completely under the names (`tag`: every part
+    the text has under it), else `tag`."""
     if named_ or not (key == "persona" or key.startswith("card:")) or tag == "plain":
         return tag
     seen = conn.execute(
-        "SELECT coalesce(bool_or(split_part(window_hash, ':', 3) = %s), false) AS named,"
+        "SELECT count(*) FILTER (WHERE split_part(window_hash, ':', 3) = %(tag)s) AS n,"
+        " max((coverage->>'parts')::int) FILTER (WHERE split_part(window_hash, ':', 3) = %(tag)s) AS parts,"
         " coalesce(bool_or(split_part(window_hash, ':', 3) = 'plain'), false) AS plain FROM extraction"
-        " WHERE source_revision_id = %s AND extractor_key = %s AND discarded_at IS NULL", (tag, rid, gen)).fetchone()
-    return "plain" if seen["plain"] and not seen["named"] else tag
+        " WHERE source_revision_id = %(rid)s AND extractor_key = %(gen)s AND discarded_at IS NULL",
+        {"tag": tag, "rid": rid, "gen": gen}).fetchone()
+    complete = seen["parts"] is not None and seen["n"] >= seen["parts"]
+    return "plain" if seen["plain"] and not complete else tag
 
 
 def manifest_names(conn: psycopg.Connection, conv: UUID,
@@ -520,10 +529,14 @@ r AS (
     JOIN source_revision sr ON sr.source_object_id = so.id AND sr.revision_hash = e.hash
     WHERE EXISTS (SELECT 1 FROM extraction x WHERE x.source_revision_id = sr.id)
 ),
-reads AS (  -- a generation's read under the names, else its carried `plain` one (CARRY)
+reads AS (  -- one read per generation (CARRY): the names read when complete or alone, else the carried `plain` one;
+            -- complete as of `at`, since the window is taken over the rows the WHERE keeps
     SELECT r.key, r.ord, r.rid, x.id AS xid, x.window_hash, x.extractor_key, x.compiler_version, g.activated_at,
            split_part(x.window_hash, ':', 3) <> r.wtag AS carried,
-           bool_or(split_part(x.window_hash, ':', 3) = r.wtag) OVER (PARTITION BY r.rid, x.extractor_key) AS named
+           bool_or(split_part(x.window_hash, ':', 3) <> r.wtag) OVER w AS plain,
+           coalesce(count(*) FILTER (WHERE split_part(x.window_hash, ':', 3) = r.wtag) OVER w
+                    >= max((x.coverage->>'parts')::int) FILTER (WHERE split_part(x.window_hash, ':', 3) = r.wtag) OVER w,
+                    false) AS named
     FROM r JOIN extraction x ON x.source_revision_id = r.rid
                             AND (split_part(x.window_hash, ':', 3) = r.wtag
                                  OR (r.carry AND split_part(x.window_hash, ':', 3) = 'plain'))
@@ -532,12 +545,13 @@ reads AS (  -- a generation's read under the names, else its carried `plain` one
     -- the instant its trace records), so an extraction committed during the request is read by neither it nor a replay
     WHERE x.created_at <= coalesce(%(at)s::timestamptz, now())
       AND (x.discarded_at IS NULL OR x.discarded_at > coalesce(%(at)s::timestamptz, now()))
+    WINDOW w AS (PARTITION BY r.rid, x.extractor_key)
 ),
 live AS (
     SELECT d.key, d.ord, d.rid, d.xid, d.window_hash, d.extractor_key, d.compiler_version,
            first_value(d.extractor_key) OVER (PARTITION BY d.rid
                ORDER BY d.extractor_key = %(gen)s DESC, d.activated_at DESC, d.extractor_key) AS chosen
-    FROM reads d WHERE NOT (d.carried AND d.named)
+    FROM reads d WHERE d.carried = (d.plain AND NOT d.named)  -- the carried rows exactly when `plain` is the one
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence,
        a.evidence, a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
