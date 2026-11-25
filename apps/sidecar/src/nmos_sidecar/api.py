@@ -29,7 +29,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from . import (__version__, archive, audit, canon, canonfacts, carry, dropped, endings, extraction, generations, inspector, ledger,
+from . import (__version__, archive, audit, branch, canon, canonfacts, carry, dropped, endings, extraction, generations, inspector, ledger,
                memorymap, normtext, notes, overuse, views,
                plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
                vectors)
@@ -386,7 +386,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  response.status_code, (time.perf_counter() - started) * 1000)
         return response
 
-    def enqueue(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids, trigger: str = "request") -> None:
+    def enqueue(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids, trigger: str = "request",
+                inherited: bool = False) -> None:
         cur = rt["settings"]
         if rt["extractor"] or rt["projection"]:
             enqueue_after_apply(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids,
@@ -396,6 +397,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                 embed_backfill=cur.embed_backfill)
         if cur.extract_on_output and (rt["extractor"] or rt["projection"]):
             early(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids, trigger)
+        if inherited and (rt["extractor"] or rt["projection"]):
+            covered(conn, conv_id)
+
+    def covered(conn, conv_id) -> None:
+        """PHASE-67 part 2: a branch that inherited its origin's memory (`inherited`: its marker, read with its lock)
+        queues no job for what a copy holds; any other chat runs nothing here. Fail-open: an error is logged and the
+        jobs stay (they finish without a call)."""
+        try:
+            with conn.transaction():
+                branch.drop_covered(conn, conv_id)
+        except Exception as e:  # noqa: BLE001
+            log.warning("inherited jobs not settled conversation=%s (%s)", conv_id, type(e).__name__)
 
     def early(conn, conv_id, old_head, old_lifecycle, manifest, lifecycle, ids, trigger) -> None:
         """PHASE-67: an output sync queues the open turn now; an applied sync that changed the previous open turn
@@ -464,7 +477,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         # From the tail's first turn on is enough: lifecycle and turn hashes change only there.
         offset = tail.turn_start - tail.start
         enqueue(conn, conv.id, tail.entries[offset:], lifecycle, entries[offset:], {**lifecycle, **result.lifecycle},
-                revision_ids, body.trigger)
+                revision_ids, body.trigger, conv.inherited)
         summarize_after(conn, conv.id, head, since=length)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=full_hash, changes_summary=result.summary, commit_reason=None)
@@ -498,8 +511,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             f"{conv.id}:{result.manifest_hash}:manifest",
         )
         head = ledger.apply_plan(conn, conv, state, result, observation, manifest, settings.extract_turns)
+        inherited = conv.inherited
+        if state.head is None and result.branch:  # PHASE-67 part 2: before the jobs, so none is queued for the prefix
+            inherited = (branch.on_first_sync(conn, conv.id) or {}).get("status") == "done"
         enqueue(conn, conv.id, state.head, state.lifecycle, manifest, {**state.lifecycle, **result.lifecycle},
-                state.revision_ids, body.trigger)
+                state.revision_ids, body.trigger, inherited)
         summarize_after(conn, conv.id, head, since=len(state.head or []) if result.commit_reason is None else None)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,
@@ -1238,7 +1254,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if body.kind == "entity_exclude":
                 host_character(conn, conv_id, view, body.entity_type, body.item)
             if (body.kind == "fact_correct" and not body.lock
-                    and not any(str(f["id"]) == body.item for f in view["facts"])):
+                    and not any(str(f["id"]) == body.item for f in [*view["facts"], *(view.get("beliefs") or ()), *(view.get("forgotten") or ())])):
                 # a canon statement the story replaced: corrected alone it would be replaced at once (PHASE-57 B2)
                 raise HTTPException(status_code=422, detail="a statement the story replaced is corrected with its lock")
             target, value = plan_repair(conn, head, view, body)
@@ -1649,6 +1665,21 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             log.info("rebuild conversation=%s discarded=%d queued=%d canon=%d", conv_id, discarded, queued, read)
             return {"discarded": discarded, "queued": {"extract": queued, "canon": read},
                     "coverage": coverage_view(conn, conv_id)}
+
+    @app.post("/v1/conversations/{conv_id}/branch-inherit", dependencies=[Depends(auth)])
+    def branch_inherit(conv_id: UUID, request: Request, body: dict[str, Any] | None = None):
+        """PHASE-67 part 2, item 5: a branch synced before inheritance existed (or whose first copy failed) takes its
+        origin's memory for the common prefix on request: what the branch has of its own wins, zero model and embedding
+        calls. `{"dry_run": true}` (the default) answers what it would copy and writes nothing."""
+        dry_run = (body or {}).get("dry_run", True)
+        if not isinstance(dry_run, bool):
+            raise HTTPException(status_code=422, detail="dry_run must be a boolean")
+        with request.app.state.pool.connection() as conn:
+            if conn.execute("SELECT 1 FROM conversation WHERE id = %s FOR UPDATE", (conv_id,)).fetchone() is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            result = branch.backfill(conn, conv_id, dry_run=dry_run)
+        log.info("branch inherit conversation=%s dry_run=%s result=%s", conv_id, dry_run, result)
+        return result
 
     @app.post("/v1/conversations/{conv_id}/delete", dependencies=[Depends(auth)])
     def delete_conversation(conv_id: UUID, request: Request):
@@ -2144,6 +2175,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                         canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
                                         canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
                                         canon_facts=view.get("canon_facts", 0), dropped=lost,
+                                        beliefs=view.get("beliefs"), forgotten=view.get("forgotten"),  # PHASE-66
                                         endings=role_ends, span=inspector.span_of(span),
                                         cast=None if embed else cast_of(view, traces), lazy=lazy,
                                         overuse=overuse.placement(readmodel.ledgers(conn, conv_id)),
@@ -2269,6 +2301,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
              "story": told.get("story"), "scenes": list(reversed(scenes)),
              "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
              "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+        for key in ("beliefs", "forgotten"):  # PHASE-66 part 5: extract-v21 only; absent, the screen is as before
+            if view.get(key):
+                d[key] = view[key]
         if (carried := carry_data(conn, cid, view)) is not None:  # PHASE-60 S6: only a chat with a link in force
             d["carry"] = carried
         return d
@@ -2361,6 +2396,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "knows": [s for s in view["secrets"] if s.get("open") and names & {norm(n) for n in s.get("holders") or []}],
                 "kept": [s for s in view["secrets"] if names & {norm(n) for n in s.get("open") or []}],
                 "marks": marks, "first": 0, "last": last, "entities": character_ids(view)}
+        for key in ("beliefs", "forgotten"):  # PHASE-66 part 5: this person's, extract-v21 only
+            if own := [b for b in view.get(key) or () if str((b.get("subject_entity") or {}).get("id")) == eid]:
+                data[key] = own
         if (carried := carry_data(conn, cid, view, eid)) is not None:  # PHASE-60 S6: only a chat with a link in force
             data["carry"] = carried
         return with_told(data, told_chain(view["told"], eid))  # PHASE-60 S8: the chains this person tells or hears
