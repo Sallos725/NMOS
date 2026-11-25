@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:582c51d7d767".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:5cbee61df387".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2252,6 +2252,7 @@ ${GUARD_LINE}` : "";
     let dropSeq = 0;
     const droppedAt = /* @__PURE__ */ new Map();
     const coverageMarks = /* @__PURE__ */ new Map();
+    const syncedLength = /* @__PURE__ */ new Map();
     function invalidate() {
       epoch++;
       cache.clear();
@@ -2657,6 +2658,7 @@ ${GUARD_LINE}` : "";
         const t1 = host.now();
         const synced = await sync(settings, request, bodies, deadline);
         const syncMs = host.now() - t1;
+        noteSynced(chat.id, messages.length);
         if (synced.conversation_id) {
           conversations.delete(chat.id);
           conversations.set(chat.id, synced.conversation_id);
@@ -2796,13 +2798,13 @@ ${GUARD_LINE}` : "";
       }
       outputTimer = null;
     }
-    function scheduleOutputSync(chatId, seen) {
+    function scheduleOutputSync(chatId, seen, replyId) {
       cancelOutputSync();
       if (!(outputSyncMs > 0)) return;
       try {
         const handle = setTimer(() => {
           if (outputTimer === handle) outputTimer = null;
-          const done = outputSync(chatId, seen);
+          const done = outputSync(chatId, seen, replyId);
           const running = { chatId, done };
           outputRunning = running;
           void done.finally(() => {
@@ -2814,7 +2816,7 @@ ${GUARD_LINE}` : "";
         host.debug("[NMOS] background sync not scheduled:", error instanceof Error ? error.message : error);
       }
     }
-    async function outputSync(chatId, seen) {
+    async function outputSync(chatId, seen, replyId) {
       const live = () => turnSeq === seen;
       try {
         const settings = await host.settings();
@@ -2822,6 +2824,13 @@ ${GUARD_LINE}` : "";
         const chat = await host.currentChat();
         if (!live() || !chat?.id || chat.id !== chatId) return;
         const messages = Array.isArray(chat.message) ? chat.message : [];
+        if (!messages.some((m) => m?.chatId === replyId) || messages.length < (syncedLength.get(chatId) ?? 0)) {
+          host.debug("[NMOS] background sync skipped: the chat read is not the one replied in", {
+            messages: messages.length,
+            synced: syncedLength.get(chatId) ?? null
+          });
+          return;
+        }
         const deadline = host.now() + OUTPUT_SYNC_TIMEOUT_MS;
         const { request, bodies } = await within(buildManifest(
           chat,
@@ -2831,6 +2840,7 @@ ${GUARD_LINE}` : "";
         if (!live()) return;
         dropChatPackets(chatId);
         const synced = await sync(settings, { ...request, trigger: "output" }, bodies, deadline, live);
+        noteSynced(chatId, messages.length);
         if (synced.conversation_id) {
           conversations.delete(chatId);
           conversations.set(chatId, synced.conversation_id);
@@ -2841,6 +2851,11 @@ ${GUARD_LINE}` : "";
       } catch (error) {
         host.debug("[NMOS] background sync after the reply failed:", error instanceof Error ? error.message : error);
       }
+    }
+    function noteSynced(chatId, length) {
+      syncedLength.delete(chatId);
+      syncedLength.set(chatId, length);
+      while (syncedLength.size > CACHE_LIMIT) syncedLength.delete(syncedLength.keys().next().value);
     }
     async function settleWithin(work, ms) {
       if (!(ms > 0)) return;
@@ -2902,13 +2917,15 @@ ${GUARD_LINE}` : "";
       void (async () => {
         const settings = await host.settings();
         if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id || settings.offChats?.includes(arg2.chat.id)) return;
-        if (turnSeq === seen && outputOn(settings)) scheduleOutputSync(arg2.chat.id, seen);
+        const index = arg2.messageIndex ?? -1;
+        const message = index >= 0 ? arg2.chat.message?.[index] : void 0;
+        if (turnSeq === seen && outputOn(settings) && typeof message?.chatId === "string" && message.chatId) {
+          scheduleOutputSync(arg2.chat.id, seen, message.chatId);
+        }
         for (const [k, entry] of cache) if (entry.chatId === arg2.chat.id && !entry.packet && !entry.failed) cache.delete(k);
         adviseOnce(settings.language);
         reachOnce(settings.language, settings.sidecarUrl);
         emit({ type: "background", conversationId: conversations.get(arg2.chat.id) ?? null });
-        const index = arg2.messageIndex ?? -1;
-        const message = index >= 0 ? arg2.chat.message?.[index] : void 0;
         await call(settings, "/v1/output", {
           host: "pocketrisu",
           chat_id: arg2.chat.id,

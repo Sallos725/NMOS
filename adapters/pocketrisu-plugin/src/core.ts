@@ -331,6 +331,10 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   // What a conversation's coverage (`GET /v1/conversations/{id}/coverage`, the HUD's polls and the panel's reads) last
   // said its memory holds: a change means an extraction, embedding or canon read finished since.
   const coverageMarks = new Map<string, string>();
+  // How many messages of a chat the plugin last synced (a request or the background sync): a background sync never
+  // sends a snapshot shorter than that (a chat still loading reads as 0 messages, HOST-FACTS Q8 item 7, and an empty
+  // manifest would retract the whole head).
+  const syncedLength = new Map<string, number>();
 
   /** Drops every cached packet, and every packet still being fetched. */
   function invalidate(): void {
@@ -766,6 +770,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const t1 = host.now();
       const synced = await sync(settings, request, bodies, deadline);
       const syncMs = host.now() - t1;
+      noteSynced(chat.id, messages.length);
       if (synced.conversation_id) {
         conversations.delete(chat.id);
         conversations.set(chat.id, synced.conversation_id);
@@ -870,13 +875,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   /** Syncs chat `chatId` in the background once the wait after its reply is over (G6), so the reply is in memory (and
    *  can be extracted) before the next message, and the panel's Author's Note, Carry and Inspector see it. Replaces a
    *  waiting one; never throws. */
-  function scheduleOutputSync(chatId: string, seen: number): void {
+  function scheduleOutputSync(chatId: string, seen: number, replyId: string): void {
     cancelOutputSync();
     if (!(outputSyncMs > 0)) return;
     try {
       const handle = setTimer(() => {
         if (outputTimer === handle) outputTimer = null;
-        const done = outputSync(chatId, seen);
+        const done = outputSync(chatId, seen, replyId);
         const running = { chatId, done };
         outputRunning = running;
         void done.finally(() => { if (outputRunning === running) outputRunning = null; });
@@ -888,8 +893,11 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   }
 
   /** The sync a request would make, of the chat as it is now: the `output` snapshot is provisional (H7), and the chat
-   *  read now must still be the one replied in (there is no hook for a chat switch). */
-  async function outputSync(chatId: string, seen: number): Promise<void> {
+   *  read now must still be the one replied in (there is no hook for a chat switch). It must also still be the chat
+   *  itself: a snapshot without reply `replyId`, or shorter than the plugin last synced, may be a chat still loading
+   *  (HOST-FACTS Q8 item 7) whose manifest would retract the head; on doubt nothing is sent, and the next request
+   *  syncs the chat as always. */
+  async function outputSync(chatId: string, seen: number, replyId: string): Promise<void> {
     const live = () => turnSeq === seen;
     try {
       const settings = await host.settings();
@@ -898,6 +906,11 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const chat = await host.currentChat();
       if (!live() || !chat?.id || chat.id !== chatId) return;  // another chat is open: its own next request syncs it
       const messages: HostMessage[] = Array.isArray(chat.message) ? chat.message : [];
+      if (!messages.some((m) => m?.chatId === replyId) || messages.length < (syncedLength.get(chatId) ?? 0)) {
+        host.debug('[NMOS] background sync skipped: the chat read is not the one replied in', {
+          messages: messages.length, synced: syncedLength.get(chatId) ?? null });
+        return;
+      }
       const deadline = host.now() + OUTPUT_SYNC_TIMEOUT_MS;
       const { request, bodies } = await within(buildManifest(chat, firstSaying(messages),
         { characterName: characterName(chat.id), personaName: personaName(chat) }), deadline, 'the manifest');
@@ -906,6 +919,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // before its request (H14), and a reroll served from the cache would skip the sync that takes it out again.
       dropChatPackets(chatId);
       const synced = await sync(settings, { ...request, trigger: 'output' }, bodies, deadline, live);
+      noteSynced(chatId, messages.length);
       if (synced.conversation_id) {
         conversations.delete(chatId);
         conversations.set(chatId, synced.conversation_id);
@@ -917,6 +931,12 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     } catch (error) {
       host.debug('[NMOS] background sync after the reply failed:', error instanceof Error ? error.message : error);
     }
+  }
+
+  function noteSynced(chatId: string, length: number): void {
+    syncedLength.delete(chatId);
+    syncedLength.set(chatId, length);
+    while (syncedLength.size > CACHE_LIMIT) syncedLength.delete(syncedLength.keys().next().value as string);
   }
 
   /** Waits for `work` (which never rejects) up to `ms`; never throws. */
@@ -994,15 +1014,18 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       if (!settings.enabled || !settings.sidecarUrl || !arg?.chat?.id || settings.offChats?.includes(arg.chat.id)) return;
       // Scheduled first: whatever happens to the notification below, the reply is synced. Only when the sidecar
       // extracts a reply right after it: otherwise the sync would only cost (and a request could wait on it).
-      if (turnSeq === seen && outputOn(settings)) scheduleOutputSync(arg.chat.id, seen);
+      // The reply's id goes with it: a chat read later that does not hold it is not synced (no id: never scheduled).
+      const index = arg.messageIndex ?? -1;
+      const message = index >= 0 ? arg.chat.message?.[index] : undefined;
+      if (turnSeq === seen && outputOn(settings) && typeof message?.chatId === 'string' && message.chatId) {
+        scheduleOutputSync(arg.chat.id, seen, message.chatId);
+      }
       // A reply is extracted after it (H7): an empty packet cached for this chat may have memory now. A packet with
       // memory stays for a reroll of an unchanged chat until the background sync has the reply.
       for (const [k, entry] of cache) if (entry.chatId === arg.chat.id && !entry.packet && !entry.failed) cache.delete(k);
       adviseOnce(settings.language);
       reachOnce(settings.language, settings.sidecarUrl);
       emit({ type: 'background', conversationId: conversations.get(arg.chat.id) ?? null });
-      const index = arg.messageIndex ?? -1;
-      const message = index >= 0 ? arg.chat.message?.[index] : undefined;
       await call(settings, '/v1/output', {
         host: 'pocketrisu',
         chat_id: arg.chat.id,
