@@ -189,9 +189,10 @@ class Settings:
     # empty (as the compose files pass an unset variable) or "0"; the plugin's switch sets it too.
     pin_at_mentions: bool = field(default_factory=lambda: os.environ.get("NMOS_PIN_AT_MENTIONS", "0") not in ("", "0"))
     # PHASE-67: an output sync (the plugin's background sync after a reply, `trigger: "output"`) extracts and embeds the
-    # newest reply's turn before the user continues (ADR 0008 amendment draft). Off by default: on, a reroll after the
-    # plugin's debounce pays for one extraction that is thrown away. The panel's switch sets it too.
-    extract_on_output: bool = field(default_factory=lambda: os.environ.get("NMOS_EXTRACT_ON_OUTPUT", "0") not in ("", "0"))
+    # newest reply's turn before the user continues (ADR 0008 amendment draft). On by default (owner, 2026-11-25): a
+    # reroll after the plugin's debounce pays for one extraction that is thrown away; "0" turns it off, as the other
+    # switches. The panel's switch sets it too. Nothing is queued by the switch itself: only an output sync queues.
+    extract_on_output: bool = field(default_factory=lambda: os.environ.get("NMOS_EXTRACT_ON_OUTPUT", "1") != "0")
     # Turns extracted when NMOS first sees a chat (ADR 0008: turns, not messages).
     extract_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_BACKFILL", "100")))
     # Embeddings are cheap (local models): cover far more history on first sight than LLM extraction.
