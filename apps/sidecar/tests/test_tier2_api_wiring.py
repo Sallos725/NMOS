@@ -32,8 +32,8 @@ def test_extract_v20_is_a_selectable_extractor_and_a_misspelt_one_is_still_refus
     assert Settings(extract_compiler="extract-v20").extract_compiler == "extract-v20"
     for ok in ("", *EXTRACT_COMPILERS):
         Settings(extract_compiler=ok)
-    with pytest.raises(ValueError, match="NMOS_EXTRACT_COMPILER must be empty, extract-v15.* or extract-v20"):
-        Settings(extract_compiler="extract-v21")
+    with pytest.raises(ValueError, match="NMOS_EXTRACT_COMPILER must be empty, extract-v15.* or extract-v21"):
+        Settings(extract_compiler="extract-v22")
 
 
 def test_packet_policy_follows_the_packet_compilers_policies():

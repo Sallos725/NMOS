@@ -20,8 +20,9 @@ TARGET_CHARS = (6000, 36000)
 # it too (Tier 2 E8): a change is a new embedding projection, re-embedded locally with no model call.
 EMBED_MAX_CHUNKS = (1, 64)
 # The extractors NMOS_EXTRACT_COMPILER may select (empty: `extraction.DEFAULT_COMPILER`). extract-v20 is PHASE-64's
-# (conditional forms of address, ADR 0091).
-EXTRACT_COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19", "extract-v20")
+# (conditional forms of address, ADR 0091); extract-v21 is PHASE-66's (extract-v20 with the typed ontology).
+EXTRACT_COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19", "extract-v20",
+                     "extract-v21")
 
 # PHASE-61 S1 (ADR 0088 item 1): the extra request body merged into every chat-completions body of the extraction model.
 EXTRA_BODY_MAX_BYTES = 2048  # as canonical JSON (`canonical_body`), UTF-8
@@ -175,7 +176,8 @@ class Settings:
     extract_hints: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_HINTS", "40")))
     # The extractor (PHASE-28 Q3): empty is `extraction.DEFAULT_COMPILER` (extract-v16 since 2026-10-04: it lists the roles
     # in force and ends one as listed); "extract-v15" selects the earlier extractor. Part of the extractor generation: a change re-extracts every chat once,
-    # but a switch among extract-v16, extract-v18, extract-v19 and extract-v20 (PHASE-58 S3, PHASE-60 S7, PHASE-64) re-extracts nothing.
+    # but a switch among extract-v16, extract-v18, extract-v19, extract-v20 and extract-v21 (PHASE-58 S3, PHASE-60 S7,
+    # PHASE-64, PHASE-66) re-extracts nothing.
     extract_compiler: str = field(default_factory=lambda: os.environ.get("NMOS_EXTRACT_COMPILER", ""))
     # Scene summaries and the story so far (PHASE-12, ADR 0042, 0043), written by the extraction model; "0" or the
     # plugin's switch turns them off. Needs NMOS_LLM_URL.

@@ -92,8 +92,11 @@ MODEL_FIELDS = ("model", "endpoint", "request", "temperature")
 # with a field on rows both write the same way, so the facts older turns have stay as good as they were. extract-v19
 # (PHASE-60 S7, ADR 0086 item 6) is extract-v18 with fields and a predicate on rows the others write the same way;
 # extract-v20 (PHASE-64, ADR 0091) adds conditional forms of address on `addresses` with the same spec fields, so a
-# switch among the four differs in `compiler` and `prompt` alone.
-ADDS = frozenset({"extract-v16", "extract-v18", "extract-v19", "extract-v20"})
+# switch among the four differs in `compiler` and `prompt` alone. extract-v21 (PHASE-66) is extract-v20 with the typed
+# ontology's predicates and marks on rows the others write the same way; its spec keeps the same field names (what else
+# it changes is in its `prompt`), so a switch to it from any of the four re-extracts nothing either. extract-v17 stays
+# outside: its own `speakers` field makes a switch a version.
+ADDS = frozenset({"extract-v16", "extract-v18", "extract-v19", "extract-v20", "extract-v21"})
 ADDS_FIELDS = ("compiler", "prompt")
 # The cap on each message the model is shown (PHASE-62 S1, S2, ADR 0090): `target_chars` in an extract or a reveal
 # generation's spec, `message_chars` in a summarize generation's. A change of it alone re-derives nothing: what was
