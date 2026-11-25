@@ -19,6 +19,7 @@ from typing import Any
 from . import tokens
 from .facts import symmetric
 from .inspector import _act, _close, _v, feeling_detail, feeling_dot, happened_mark, happened_text
+from .predicates import address_label
 from .summaries import content
 from .threads import KINDS as THREAD_KINDS
 
@@ -456,9 +457,10 @@ def _pair_bits(p: dict[str, Any], lang: str) -> list[str]:
     for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
         for f in p[k]:
             value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
+            cond = f" [{label}]" if (pred == "addresses" and (label := address_label(f, lang))) else ""
             h = happened_mark(_own(f), lang)
             m = carried_mark(f, lang)
-            bits.append(_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)} ") + feeling_dot(f, lang)
+            bits.append(_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)}{cond} ") + feeling_dot(f, lang)
                         + _v(f"{value}") + feeling_detail(f, lang) + (f" {h}" if h else "") + (f" {m}" if m else ""))
     return bits
 
@@ -941,10 +943,11 @@ def _tie_text(e: dict[str, Any], lang: str) -> str:
     bits = []
     for f in e["facts"] + e["speech"]:
         value = f'"{f.get("value")}"' if f["predicate"] == "addresses" else f.get("value")
+        cond = f" [{label}]" if (f["predicate"] == "addresses" and (label := address_label(f, lang))) else ""
         if f["predicate"] == "relationship" and symmetric(f.get("value")):
             bits.append(f"{word('relationship', lang)} {value}")
         else:
-            bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {word(f['predicate'], lang)} {value}")
+            bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {word(f['predicate'], lang)}{cond} {value}")
     return ", ".join(bits)
 
 

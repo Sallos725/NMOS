@@ -17,7 +17,7 @@ from uuid import UUID
 
 import psycopg
 
-from .predicates import REGISTRY, stored_knowledge
+from .predicates import REGISTRY, address_slot, stored_knowledge
 from .repairs import _ekey, _established, restated
 from .secrets import secret_text
 
@@ -39,7 +39,7 @@ ORDER BY am.turn
 ROWS = """
 SELECT id, extraction_id, subject, subject_type, predicate, object, object_type, value, epistemic, confidence, evidence,
        knowledge, known_by, hidden_from, polarity, modality, source, asserted_by, salience, participants::text AS participants,
-       outcome, because, when_happened
+       outcome, because, when_happened, address_condition::text AS address_condition
 FROM assertion WHERE extraction_id = ANY(%s) AND status = 'valid' ORDER BY id
 """
 
@@ -65,19 +65,24 @@ def find(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, 
         row["participants"] = json.loads(row["participants"]) if row["participants"] else None
         if (when := row.pop("when_happened")) is not None:  # extract-v19 only (PHASE-60 S7): other rows read as before
             row["when_happened"] = when
+        if (cond := row.pop("address_condition")) is not None:  # extract-v20 only (PHASE-64): other rows read as before
+            row["address_condition"] = json.loads(cond)
         if row["known_by"] or row["hidden_from"]:
             stored_knowledge(row)
         by.setdefault(row["extraction_id"], []).append(row)
     r = view.get("resolution")
-    held = {(a["predicate"], _ekey(r, a.get("subject_type"), a["subject"]), _ekey(r, a.get("object_type"), a.get("object")))
-            for a in view.get("assertions") or () if _established(a)}
+
+    def held_key(a: dict[str, Any]) -> tuple[Any, ...]:
+        base = (a["predicate"], _ekey(r, a.get("subject_type"), a["subject"]), _ekey(r, a.get("object_type"), a.get("object")))
+        return base + (address_slot(a),) if a["predicate"] == "addresses" else base
+
+    held = {held_key(a) for a in view.get("assertions") or () if _established(a)}
     out = []
     for p in pairs:
         old = [a for a in by.get(p["old"], []) if _fact(a)]
         again = restated(old, by.get(p["new"], []), r)
         for i, a in enumerate(old):
-            if i in again or (a["predicate"], _ekey(r, a.get("subject_type"), a["subject"]),
-                              _ekey(r, a.get("object_type"), a.get("object"))) in held:
+            if i in again or held_key(a) in held:
                 continue
             out.append({**a, "turn": p["turn"], "turn_hash": p["turn_hash"], "text": secret_text(a),
                         "replaced": str(p["old"]), "by": str(p["new"])})
