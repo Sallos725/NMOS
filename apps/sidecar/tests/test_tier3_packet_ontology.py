@@ -224,14 +224,17 @@ def test_public_except_is_known_to_all_but_the_listed_and_not_gated_as_limited()
     f = v21row(4, "하나", "has_status", None, "임신함", **C, knowledge="limited", knowledge_scope="public_except",
                hidden_from=["도윤"])
     r = res([f, row(9, "도윤", "event", None, "x", **C), row(8, "카이토", "event", None, "x", **C)])
+    # the scene layer reads public_except for every policy (`scene.private`): such rows exist only in chats an
+    # extract-v21 read, so no older recorded request changes
     assert not retrieval._private(f, scene_of(r, "하나", "카이토"), r, True)
-    assert retrieval._private(f, scene_of(r, "하나", "카이토"), r, False)  # v20 gates it as limited
+    assert not retrieval._private(f, scene_of(r, "하나", "카이토"), r, False)
     assert retrieval._private(f, scene_of(r, "하나", "도윤"), r, True)
     line = retrieval.entry_v21(f, False, False, False, False, Shown())
     assert 'knowledge="public_except" hidden_from="도윤"' in line.xml
     assert PUBLIC_EXCEPT_NOTE in compile_lines([], 2000, facts=[line], policy="packet-v21").text
-    assert retrieval.missing_v21(f, scene_of(r, "하나", "도윤"), r) == (["하나"], ["도윤"])
-    assert retrieval.narrator_knows_v21(f, "카이토", r) and not retrieval.narrator_knows_v21(f, "도윤", r)
+    from nmos_sidecar import scene
+    assert scene.missing(f, scene_of(r, "하나", "도윤"), r) == (["하나"], ["도윤"])
+    assert scene.narrator_knows(f, "카이토", r) and not scene.narrator_knows(f, "도윤", r)
 
 
 # --- 7. a claim's cause -----------------------------------------------------------------------------------------------
@@ -335,3 +338,111 @@ def test_a_belief_kept_from_someone_in_the_scene_is_private_and_strict_withholds
         assert c.put(f"/v1/conversations/{v21.cid}/memory-mode", json={"strict": True}).status_code == 200
         strict = recall(c, v21.chat, "하나랑 도윤은 뭐 해?", budget=1500)["packet"]["text"]
     assert "도윤이 범인이다" not in strict and "<Secret " in strict
+
+
+# --- PHASE-66 follow-up: what was waiting --------------------------------------------------------------------------
+
+
+def test_clean_v4_drops_an_echoed_character_group_and_note():
+    from nmos_sidecar.packet import clean_text, clean_text_v4
+    echo = ('  <Note>Memory from earlier.</Note>\n    <Character name="하나">\n'
+            '      <Fact kind="located_in" turn="3">하나 located in 광장</Fact>\n    </Character>\n'
+            '<Belief by="하나" turn="1">하나 believes: x</Belief>그녀가 웃었다.')
+    assert clean_text_v4(echo) == "그녀가 웃었다."
+    assert "Memory from earlier." in clean_text(echo)  # clean-v3 as it was
+
+
+def test_a_slot_bundle_with_a_disputed_line_moves_whole_and_shows_its_dispute():
+    against = v21row(9, "하나", "relationship", "도윤", "원수", **CC)
+    pub = dataclasses.replace(fact_entry({**cond(1, "동료", "public"), "disputed_by": against}),
+                              marks={SLOT_BUNDLE: "slot:x"})
+    priv = dataclasses.replace(fact_entry(cond(2, "연인", "private", "둘만 있을 때")), marks={SLOT_BUNDLE: "slot:x"})
+    plain = fact_entry(v21row(5, "하나", "relationship", "카이토", "친구", **CC))
+    out = compile_lines([], 3000, lead=[pub, priv, plain], policy="packet-v21", risky=frozenset({"1"}))
+    order = [e["ref"]["assertion"] for e in out.ledger if e["placed"]]
+    assert order.index(1) + 1 == order.index(2) and order.index(5) < order.index(1)  # together, after the plain one
+    assert 'disputed="true"' in out.text
+    v20 = compile_lines([], 3000, lead=[pub, priv, plain], policy="packet-v20", risky=frozenset({"1"}))
+    assert [e["ref"]["assertion"] for e in v20.ledger if e["placed"]][-1] == 1  # v20 moves the line alone
+
+
+def test_cast_says_where_an_item_carried_is_kept():
+    held = v21row(1, "하나", "possesses", "편지", None, **C, object_type="item")
+    box = v21row(2, "편지", "contained_in", "상자", None, subject_type="item", object_type="item")
+    r = res([held, box])
+    groups = dict(cast_groups(view_of([held, box]), scene_of(r, "하나"), r, "", V21, shown_v21=Shown())[0])
+    assert [line.ref["assertion"] for line in groups["하나"]] == [1, 2]
+    groups = dict(cast_groups(view_of([held, box]), scene_of(r, "하나"), r, "", V20)[0])
+    assert [line.ref["assertion"] for line in groups["하나"]] == [1]
+
+
+def test_carried_and_regression_beliefs_are_beliefs():
+    carried = {**belief(1, "하나", "도윤이 범인이다"), "carried": "link-1", "turn": -1}
+    _, lines = beliefs(view_of(beliefs=[carried]), ["하나"])
+    assert lines[0].kind == "belief" and 'source="carried"' in lines[0].xml and "<Fact" not in lines[0].xml
+    r = res([row(1, "하나", "event", None, "x", **C)])
+    remembered = {**belief(3, "하나", "세계가 멸망했다"), "line": "belief", "known_by": ["하나"],
+                  "knowledge": "limited", "names": ["하나"]}
+    view = view_of(regression=[remembered])
+    lines = retrieval.regression_lines(Gathered(), view, r, "하나는 뭘 기억해?", "", set(), V21)
+    assert [line.kind for line in lines] == ["belief"] and 'timeline="previous"' in lines[0].xml and lines[0].private
+    assert retrieval.regression_lines(Gathered(), view, r, "하나는 뭘 기억해?", "", set(), V20) == []
+
+
+def test_a_guise_held_fact_is_private_while_one_who_does_not_know_is_present():
+    f = {**v21row(4, "유나", "feels_toward", "카이", "동경", **CC),
+         "toward_guise": {"guise": "카이", "of": "루카", "disguise": 7}}
+    view = view_of([f], disguises=[{"id": 7, "subject": "루카", "guise": "카이", "kept_from": ["유나"]}])
+    shadow = retrieval.guise_row(f, view)
+    r = res([f, row(9, "루카", "event", None, "x", **C), row(8, "세라", "event", None, "x", **C)])
+    assert retrieval._private(shadow, scene_of(r, "유나", "세라"), r, True)
+    assert not retrieval._private(shadow, scene_of(r, "세라"), r, True)
+    line = retrieval.entry_v21(shadow, False, False, False, False, Shown())
+    assert 'toward_guise="카이" wearer="루카"' in line.xml
+    out = compile_lines([], 2000, facts=[line], policy="packet-v21").text
+    assert packet.GUISE_NOTE in out
+
+
+def test_a_guise_held_feeling_renders_in_private_before_the_unaware_one(migrated):
+    from test_sidecar_integration import recall
+    from test_tier3_read_ontology import GUISE, Chat
+    v21 = Chat(migrated, GUISE, name="w4-guise")
+    with v21.client() as c:
+        v21.run(c)
+        text = recall(c, v21.chat, "유나는 카이를 어떻게 생각해?", budget=2000)["packet"]["text"]
+    assert 'toward_guise="카이"' in text
+    private = text.split("<Private>", 1)[1].split("</Private>", 1)[0] if "<Private>" in text else ""
+    outside = text.replace(private, "")
+    assert 'toward_guise="카이"' in private and 'wearer="루카"' not in outside
+
+
+def test_packet_v21_ranks_with_the_ontology_and_older_policies_call_as_before(migrated, monkeypatch):
+    from conftest import make_client
+    from test_generations import LLM
+    from test_phase60_gone import ask, story
+    seen: list[dict] = []
+    real = retrieval.relevant_facts
+    monkeypatch.setattr(retrieval, "relevant_facts", lambda *a, **kw: seen.append(kw) or real(*a, **kw))
+    for policy in ("packet-v21", "packet-v20"):
+        seen.clear()
+        with make_client(migrated, packet_policy=policy, **LLM) as c:
+            chat = story(c, migrated, "세라의 상태: 전투 중 전사.")
+            ask(c, migrated, chat, "하나는 등불을 들고 있어?")
+        assert seen, policy
+        if policy == "packet-v21":
+            assert all(kw.get("ontology") is True for kw in seen)
+        else:
+            assert not any("ontology" in kw for kw in seen)  # the call packet-v20 always made
+
+
+def test_a_name_alone_brings_a_v21_vital_status_under_v21(migrated):
+    from test_sidecar_integration import recall
+    from test_tier3_read_ontology import Chat, a
+    script = {"t0": [a("세라", "vital_status", None, "생존"), a("세라", "located_in", "광장", None, ot="place")]}
+    v21 = Chat(migrated, script, name="w5-onto-rank")
+    with v21.client() as c:
+        v21.run(c)
+        out = recall(c, v21.chat, "세라는?", budget=1500)
+        trace = c.get(f"/v1/trace/{out['trace_id']}").json()
+    vital = [e for e in trace["lines"] if "vital status" in (e.get("text") or "")]
+    assert vital and vital[0]["placed"] and vital[0]["label"] == "required"

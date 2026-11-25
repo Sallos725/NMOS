@@ -52,6 +52,9 @@ BELIEF_NOTE = (" A Belief is what that character believes: it may be false, and 
                " that character acts on it as true.")
 FORGOT_MARK = "<Forgot "
 FORGOT_NOTE = " A Forgot line says that character no longer remembers it; others who knew it still do."
+GUISE_MARK = " toward_guise="
+GUISE_NOTE = (" toward_guise marks how someone who does not know treats a character in a guise; wearer is who it is:"
+              " one character, not two.")
 PUBLIC_EXCEPT_MARK = 'knowledge="public_except"'
 PUBLIC_EXCEPT_NOTE = " knowledge=\"public_except\" is known to everyone except those in hidden_from."
 # Added to the Note only when a kept line uses the mark (ADR 0013), so other packets stay as they were.
@@ -87,7 +90,8 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                # packet-v21 only (`_V20_MARKS` gates these too)
                (BELIEF_MARK, BELIEF_NOTE),
                (FORGOT_MARK, FORGOT_NOTE),
-               (PUBLIC_EXCEPT_MARK, PUBLIC_EXCEPT_NOTE))
+               (PUBLIC_EXCEPT_MARK, PUBLIC_EXCEPT_NOTE),
+               (GUISE_MARK, GUISE_NOTE))
 MAX_EXCERPT_CHARS = 480
 # packet-v10 grows an excerpt to at most this many sentences (owner, 2026-09-30): growing to the whole length brought
 # back more values the story had since replaced (docs/perf/lexical-recall.md, "Step 4"); packet-v11 lifts the cap for a
@@ -191,10 +195,11 @@ _DROP_CLOSE_V4 = re.compile(r"</(" + "|".join(_DROP_NAMES_V4) + r")\s*>", re.IGN
 _LEADING_REASONING = re.compile(r"\s*<(think|thinking|reasoning)\b[^<>\n]*>", re.IGNORECASE)
 _BLANK_LINE = re.compile(r"\n[ \t\u00a0]*\n")
 # NMOS's own markup as the packet writes it, clean-v3's set plus the leaf lines packet-v8 and later write (<Summary>,
-# <Secret>, <Quote>) and the containers whose children are tags (<StateHistory>, <Regression>), dropped whole.
+# <Secret>, <Quote>, the <Note>, packet-v21's <Belief> and <Forgot>) and the containers whose children are tags
+# (<StateHistory>, <Regression>, a <Cast> group's <Character>), dropped whole.
 _MEMORY_MARKUP_V4 = re.compile(r"<NarrativeMemory\b[^>]*>.*?</NarrativeMemory\s*>"
-                               r"|<(StateHistory|Regression)\b[^<>]*>.*?</\1\s*>"
-                               r"|<(Fact|Claim|Thread|Excerpt|Summary|Secret|Quote)\b[^<>]*>[^<]*</\2\s*>"
+                               r"|<(StateHistory|Regression|Character)\b[^<>]*>.*?</\1\s*>"
+                               r"|<(Fact|Claim|Thread|Excerpt|Summary|Secret|Quote|Note|Belief|Forgot)\b[^<>]*>[^<]*</\2\s*>"
                                r"|<Item\s[^<>]*\bkey=[^<>]*>[^<]*</Item\s*>", re.DOTALL)
 # A table cell is a word boundary: `<th>위치</th><td>북부 성채</td>` reads "위치 북부 성채", never "위치북부 성채".
 _CELL_TAG = re.compile(rf"</?(?:td|th)\b{_ATTRS}>", re.IGNORECASE)
@@ -424,6 +429,7 @@ CARRY_POLICIES = frozenset({"packet-v20", "packet-v21"})  # a request reads the 
 V21_POLICIES = frozenset({"packet-v21"})
 # The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
 _V20_MARKS = {BELIEF_MARK: V21_POLICIES, FORGOT_MARK: V21_POLICIES, PUBLIC_EXCEPT_MARK: V21_POLICIES,
+              GUISE_MARK: V21_POLICIES,
               GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES,
               HAPPENED_MARK: HAPPENED_POLICIES, TOLD_MARK: TOLD_POLICIES, CARRIED_MARK: CARRY_POLICIES,
               REGRESSION_MARK: CARRY_POLICIES}
@@ -856,9 +862,16 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     excerpts, and emitted after <Facts> and <Private> as one <Regression> group whose remembered_by is the placed lines'
     rememberers in `regression_names`' order (the link's); no group when none is placed. Every other policy ignores it."""
     if policy in LABEL_POLICIES and risky:  # a risky line is offered after the other supportive ones (PHASE-34 Q1)
-        def demoted(line: Line) -> bool:
+        def risky_line(line: Line) -> bool:
             ref = str(line.ref.get("assertion"))
             return ref in risky and ref not in named and not line.private and line.kind != "secret"
+        # packet-v21: a slot bundle moves whole when one of its lines is risky, so it is never split (its dispute is
+        # still shown on that line); every other policy demotes line by line
+        shaky = ({line.marks[SLOT_BUNDLE] for line in (*(facts or []), *(lead or [])) if line.marks.get(SLOT_BUNDLE)
+                  and risky_line(line)} if policy in V21_POLICIES else set())
+
+        def demoted(line: Line) -> bool:
+            return risky_line(line) or (bool(shaky) and line.marks.get(SLOT_BUNDLE) in shaky)
         # a risky lead line (how two stand, disputed) goes after the ordinary facts too: lead is placed first
         facts = ([f for f in (facts or []) if not demoted(f)] + [f for f in (lead or []) if demoted(f)]
                  + [f for f in (facts or []) if demoted(f)])

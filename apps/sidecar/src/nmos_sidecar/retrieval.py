@@ -1249,7 +1249,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                           else (lambda f: bool(_rested([f], "fact", rest, g)))) if rest else None,
                                     persona_questions=persona_questions, persona_entity=persona_entity,
                                     persona_query_names=question_names, persona_added=persona_added,
-                                    pinned=pinned, pin_named=g.pin_named)
+                                    pinned=pinned, pin_named=g.pin_named,
+                                    **({"ontology": True} if v21 else {}))  # packet-v21: extract-v21's NOW and ASKS
             ranked = [pooled.get(id(f), f) for f in ranked] if pooled else ranked
             # packet-v19 (PHASE-46): a question that names no one and shares no fact's words gets no added fact or
             # claim slots; the configured limits still choose (small talk took 30 facts and 8 claims at 4,000 tokens).
@@ -1282,7 +1283,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     aliases=aliases, named=g.named, named_by_words=options.policy in NAMED_POLICIES,
                                     risky=contradicted, persona_questions=persona_questions,
                                     persona_entity=persona_entity, persona_query_names=question_names,
-                                    persona_added=persona_added)
+                                    persona_added=persona_added, **({"ontology": True} if v21 else {}))
             ranked = [pooled.get(id(f), f) for f in ranked] if pooled else ranked
             ranked = _rested(ranked, "claim", rest, g, v21=True) if v21 else _rested(ranked, "claim", rest, g)
             if options.policy in LABEL_POLICIES:
@@ -1295,6 +1296,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             before, cause = options.policy in BEFORE_POLICIES, causes
             marks = options.history_marks
             happened = options.policy in HAPPENED_POLICIES  # packet-v20 (PHASE-60 S7)
+            if v21 and view.get("disguises"):  # packet-v21: what someone unaware holds toward a guise
+                facts = [guise_row(f, view) for f in facts]
             g.lead = _moded([entry_v21(f, _private(f, g.cast, r, v21), before, cause, marks, shown21, happened=happened)
                              for f in facts if f["predicate"] in STANDING],
                             facts, g, r, options)
@@ -1903,9 +1906,14 @@ FORGOT_MAX = 2  # packet-v21: lines of what someone no longer remembers, at most
 def belief_line(b: dict[str, Any]) -> str:
     """A held belief as its own line (PHASE-66): who believes it and what, with the row's knowledge marks; never a
     <Fact>."""
-    turn = b["turn"] if b.get("turn") is not None else b["position"]
     who = b.get("subject") or "?"
-    return (f"    <Belief by={quoteattr(who)} turn=\"{turn}\"{_knowledge_attrs(b)}>"
+    if b.get("timeline"):  # a previous timeline's (a regression link): nobody here knows it (ADR 0085 item 5)
+        where = f" timeline={quoteattr(b['timeline'])}"
+    elif b.get("carried"):  # what an earlier chat this one continues had its holder believe (ADR 0085 item 4)
+        where = ' source="carried"'
+    else:
+        where = f" turn=\"{b['turn'] if b.get('turn') is not None else b['position']}\""
+    return (f"    <Belief by={quoteattr(who)}{where}{_knowledge_attrs(b)}>"
             f"{xml_escape(who + ' believes: ' + (b.get('value') or ''))}</Belief>")
 
 
@@ -1921,27 +1929,27 @@ def belief_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous
         return []
     present = scene.names(g.cast, r, aliases)
     keys = set(g.cast)
-    held = [b for b in view.get("beliefs") or () if b.get("status") == "held" and not b.get("carried")
-            and b.get("subject") and b.get("host_logical_id") not in in_context]
+    held = [b for b in view.get("beliefs") or () if b.get("status", "held") == "held"  # carried: held when carried
+            and b.get("subject") and (b.get("carried") or b.get("host_logical_id") not in in_context)]
     held = [b for b in held if scene.key(r, b["subject"]) in keys
             or any(n in norm(query) for n in _side_names(b, "subject", r, aliases))]
     held = _rested(held, "belief", rest, g, v21=True)  # supportive: a tired one rests as a fact does
     if not held:
         return []
     ranked = relevant_facts(held, query, previous_ai, in_context, len(held), persona=r.persona_names, present=present,
-                            aliases=aliases, named=g.named)
+                            aliases=aliases, named=g.named, ontology=True)
     chosen = {id(b) for b in ranked}
     ranked += sorted((b for b in held if id(b) not in chosen), key=lambda b: b["position"], reverse=True)
     picked: list[dict[str, Any]] = []
     for b in ranked:
         if len(picked) >= BELIEFS_MAX:
             break
-        if present_leaks(b.get("value"), view.get("secrets") or [], present):
+        if not _private(b, g.cast, r, True) and present_leaks(b.get("value"), view.get("secrets") or [], present):
             if options.policy in LABEL_POLICIES:
                 g.hidden_entries.append(hidden_entry("belief", {"assertion": b["id"]}, b.get("turn"), "secret_gate"))
             continue
         picked.append(b)
-    lines = [_scoped(Line("belief", belief_line(b), assertion_ref(b), b.get("turn"),
+    lines = [_scoped(Line("belief", belief_line(b), assertion_ref(b), None if b.get("carried") else b.get("turn"),
                           f"{b['subject']} believes: {b.get('value') or ''}", b.get("value") or "",
                           {"hidden_from": list(b["hidden_from"])} if b.get("hidden_from") else {},
                           _private(b, g.cast, r, True)), b, True) for b in picked]
@@ -1973,11 +1981,6 @@ def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptio
             text = w.get("text") or ""
             if not text:
                 continue
-            if present_leaks(text, view.get("secrets") or [], present):
-                if options.policy in LABEL_POLICIES:
-                    g.hidden_entries.append(hidden_entry("forgot", {"assertion": e["id"], "withdrew": w.get("id")},
-                                                         e.get("turn"), "secret_gate"))
-                continue
             turn = e["turn"] if e.get("turn") is not None else e.get("position")
             # the line says what was known: it is as private as that fact was (its marks as stored, before the
             # forgetting took the forgetter out of known_by), or as the forgetting is when the fact was not limited
@@ -1988,6 +1991,13 @@ def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptio
                 gone_from = {scene.key(r, n) for n in (who, *(src.get("forgotten_by") or ()))}
                 marked = {**marked, "known_by": [n for n in marked["known_by"]
                                                  if scene.key(r, n) not in gone_from] or None}
+            # a line every present character may read must not say a secret kept from one of them (a private one is
+            # isolated by its marks, as the fact it withdrew was)
+            if not _private(marked, g.cast, r, True) and present_leaks(text, view.get("secrets") or [], present):
+                if options.policy in LABEL_POLICIES:
+                    g.hidden_entries.append(hidden_entry("forgot", {"assertion": e["id"], "withdrew": w.get("id")},
+                                                         e.get("turn"), "secret_gate"))
+                continue
             xml = (f"    <Forgot by={quoteattr(who)} turn=\"{turn}\"{_knowledge_attrs(marked)}>"
                    f"{xml_escape(who + ' does not remember: ' + text)}</Forgot>")
             ref = {**assertion_ref(e), "withdrew": w.get("id")}
@@ -2000,32 +2010,52 @@ def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptio
     return _moded(out, rows, g, r, options)
 
 
-def public_except(f: Mapping[str, Any]) -> bool:
+GUISE_MARK = " toward_guise="
+
+
+def guise_row(f: dict[str, Any], view: Mapping[str, Any]) -> dict[str, Any]:
+    """packet-v21: a fact held toward a guise (`toward_guise`, PHASE-66 part 2) as the packet reads it: kept, as its
+    disguise is, from those the disguise is kept from (`kept_from`), and known to everyone else (public_except), so
+    it goes to <Private> while one of them is present and its line may name the wearer. Any other row as it is."""
+    tg = f.get("toward_guise")
+    if not isinstance(tg, Mapping):
+        return f
+    d = next((d for d in view.get("disguises") or () if str(d.get("id")) == str(tg.get("disguise"))), None)
+    kept = list((d or {}).get("kept_from") or ())
+    if not kept:
+        return f
+    return {**f, "knowledge": "limited", "knowledge_scope": "public_except", "known_by": None,
+            "hidden_from": list(dict.fromkeys([*(f.get("hidden_from") or ()), *kept]))}
+
+
+def guise_marked(line: Line, f: Mapping[str, Any]) -> Line:
+    """packet-v21: a guise-held fact's line names the guise and its wearer on its tag (`toward_guise="G" wearer="X"`):
+    how someone who does not know treats X in the guise G. One character, not two (soft: no hard POV isolation)."""
+    tg = f.get("toward_guise")
+    if not isinstance(tg, Mapping) or not tg.get("guise"):
+        return line
+    attrs = f"{GUISE_MARK}{quoteattr(str(tg['guise']))} wearer={quoteattr(str(tg.get('of') or ''))}"
+
+    def marked(xml: str) -> str:
+        if not xml or GUISE_MARK in xml:
+            return xml
+        tag, sep, rest = xml.partition(">")
+        return tag + attrs + sep + rest
+
+    return dataclasses.replace(line, xml=marked(line.xml), private_xml=marked(line.private_xml))
+
+
+def public_except(f: Mapping[str, Any], r: Any = None) -> bool:
     """An extract-v21 row everyone knows but the characters in `hidden_from` (`knowledge_scope = public_except`; stored
-    as `limited`, PHASE-66)."""
-    return f.get("knowledge_scope") == "public_except" and bool(f.get("hidden_from"))
+    as `limited`, PHASE-66), as the scene reads it (`scene._except`: a group named there reads as limited)."""
+    return f.get("knowledge_scope") == "public_except" and bool(f.get("hidden_from")) and (
+        r is None or scene._except(dict(f), r) is not None)
 
 
 def _private(f: dict[str, Any], cast: dict[str, str], r: Any, v21: bool) -> bool:
-    """`scene.private`, but under packet-v21 a public-except row is private only when someone it is kept from is in
-    the scene: everyone else knows it, so it is never gated as `limited` (who knows it is not only `known_by`)."""
-    if v21 and public_except(f):
-        return r is not None and any(scene.key(r, n) in cast for n in f["hidden_from"])
+    """`scene.private`. A public-except row (extract-v21) is read there for every policy: private only when someone it
+    is kept from is in the scene (`scene._except`); `v21` is kept for the call sites only."""
     return scene.private(f, cast, r)
-
-
-def narrator_knows_v21(f: Mapping[str, Any], narrator: str, r: Any) -> bool:
-    """packet-v21: a first-person narrator knows a public-except row unless they are one it is kept from."""
-    if r is None:
-        return norm(narrator) not in {norm(n) for n in f.get("hidden_from") or ()}
-    return scene.key(r, narrator) not in {scene.key(r, n) for n in f.get("hidden_from") or ()}
-
-
-def missing_v21(f: Mapping[str, Any], cast: dict[str, str], r: Any) -> tuple[list[str], list[str]]:
-    """packet-v21's (holders, not knowing) of a public-except row in this scene: everyone present but those it is kept
-    from, and those of them present."""
-    hidden = {scene.key(r, n) for n in f.get("hidden_from") or ()}
-    return [name for k, name in cast.items() if k not in hidden], [name for k, name in cast.items() if k in hidden]
 
 
 PUBLIC_EXCEPT_MARK = 'knowledge="public_except"'
@@ -2091,7 +2121,7 @@ def entry_v21(f: dict[str, Any], private: bool, before: bool, cause: bool, marks
     if inline := feeling_inline(f):
         line = dataclasses.replace(line, xml=fact_line(row, before, cause, marks, gone, happened,
                                                        body=fact_text(row) + inline))
-    return _scoped(line, f, True)
+    return guise_marked(_scoped(line, f, True), f)
 
 
 CAST_PEERS = 2  # packet-v21: feelings toward and forms of address for other scene characters, per <Cast> group
@@ -2100,7 +2130,9 @@ CAST_ONTOLOGY = ("vital_status", "holds_rank", "cover_identity")  # packet-v21: 
 
 
 def cast_facts_v21(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, Any]], bool],
-                   to_cast: Callable[[dict[str, Any]], bool]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+                   to_cast: Callable[[dict[str, Any]], bool],
+                   containers: Mapping[str, dict[str, Any]] | None = None
+                   ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """packet-v21's <Cast> group, as (what `cast_facts` picks: the Inspector's rule and packet-v20's group, unchanged;
     the extra lines): the character's newest feeling toward each other scene character (`to_cast`, not the persona), at
     most CAST_PEERS of them, and how they address the persona and each other scene character, at most CAST_PEERS + 1
@@ -2117,6 +2149,9 @@ def cast_facts_v21(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, 
         if len(group) > 1:
             pick.remove(f)
             extra += [x for x in group if x not in extra]
+    for f in [x for x in pick if x["predicate"] == "possesses"]:  # where each item carried is kept (contained_in)
+        if (where := (containers or {}).get(norm(f.get("object") or ""))) is not None and where not in extra:
+            extra.append(where)
     for p in CAST_ONTOLOGY:  # whether they live, their rank, their cover: the newest of each
         rows = sorted((f for f in facts if f["predicate"] == p and f.get("polarity") != "negative"),
                       key=lambda f: f["position"], reverse=True)
@@ -2216,10 +2251,10 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
             return False
         if row.get("carried"):  # an earlier chat's (ADR 0085): not where a character stands in this one's scene
             return False
-        if v21 and public_except(row):
-            return not options.narrator or narrator_knows_v21(row, options.narrator, r)
         return not options.narrator or scene.narrator_knows(row, options.narrator, r)
 
+    if v21 and view.get("disguises"):  # packet-v21: a guise-held row is read as guise_row reads it
+        view = {**view, "facts": [guise_row(f, view) for f in view["facts"]]}
     mine: dict[str, list[dict[str, Any]]] = {}
     unshown_pairs: set[tuple[str, str]] = set()  # packet-v21: a pair with a form of address the scene may not read
     unshown_slots: set[tuple] = set()  # packet-v21: a conditioned fact with a slot the scene may not read
@@ -2231,6 +2266,12 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
         elif v21 and slot_key(f) is not None and condition_slot(f) != ("default",):
             unshown_slots.add(slot_key(f))  # only a row that holds in a condition (extract-v21) counts
     others = {k for k in cast if k != persona and str(k) not in left_out}
+    # packet-v21: each item's current container (extract-v21 `contained_in`), for the <Cast> line of who carries it
+    containers: dict[str, dict[str, Any]] = {}
+    if v21:
+        for f in sorted((f for f in view["facts"] if f["predicate"] == "contained_in" and f.get("polarity") != "negative"
+                         and shown(f)), key=lambda f: f["position"]):
+            containers[norm(f["subject"])] = f
     groups: list[tuple[str, list[Line]]] = []
     used: set[Any] = set()
 
@@ -2241,7 +2282,8 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
         to_persona = lambda f: scene.key(r, f["object"]) == persona  # noqa: E731
         more: list[dict[str, Any]] = []
         if v21:
-            pick, more = cast_facts_v21(own, to_persona, lambda f: scene.key(r, f["object"]) in others - {k})
+            pick, more = cast_facts_v21(own, to_persona, lambda f: scene.key(r, f["object"]) in others - {k},
+                                        containers)
             # a pair's slots show together or not at all: with one of them private here (or withheld), the pair's
             # forms of address stay in lead and <Private>, as packet-v20 has them
             more = [f for f in more if f["predicate"] != "addresses"
@@ -2596,7 +2638,7 @@ def told_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_a
     names = scene.names(g.cast, r, aliases)
     ranked = relevant_facts(candidates, query, previous_ai, in_context, len(candidates), persona=r.persona_names,
                             present=names, aliases=aliases, named=g.named,
-                            named_by_words=options.policy in NAMED_POLICIES)
+                            named_by_words=options.policy in NAMED_POLICIES, **({"ontology": True} if v21 else {}))
     chosen = {id(t) for t in ranked}
     ranked += sorted((t for t in candidates if id(t) not in chosen and t["host_logical_id"] not in in_context),
                      key=lambda t: t["position"], reverse=True)
@@ -2634,8 +2676,14 @@ def regression_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, prev
     persona = r.persona_names
     facts = relevant_facts([x for x in rows if x["line"] == "fact"], query, previous_ai, in_context, len(rows),
                            options.events_limit, persona, scene.names(g.cast, r, aliases),
-                           causes=options.policy in CAUSE_POLICIES, aliases=aliases)
+                           causes=options.policy in CAUSE_POLICIES, aliases=aliases,
+                           **({"ontology": True} if options.policy in V21_POLICIES else {}))
     thread_rows = [x for x in rows if x["line"] == "thread"]
+    # packet-v21: what the rememberers believed in that timeline, as beliefs (`line: "belief"`), never as facts
+    believed = (relevant_facts([x for x in rows if x["line"] == "belief"], query, previous_ai, in_context, len(rows),
+                               persona=persona, present=scene.names(g.cast, r, aliases), aliases=aliases,
+                               ontology=True)
+                if options.policy in V21_POLICIES else [])
     if options.policy in V21_POLICIES:  # packet-v21: a promise kept or broken in that timeline is remembered too
         threads = carry.regression_threads(thread_rows, query, previous_ai, in_context, len(rows), persona,
                                            about=options.policy in ABOUT_POLICIES, aliases=aliases)
@@ -2648,14 +2696,19 @@ def regression_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, prev
         names = {n for n in variants.widened(x.get("names") or [], aliases) if len(n) >= 2} - persona
         return 2 if any(n in said for n in names) else (1 if any(n in before for n in names) else 0)
 
-    ranked = [(x, i) for i, x in enumerate(facts)] + [(x, i) for i, x in enumerate(threads)]
+    ranked = ([(x, i) for i, x in enumerate(facts)] + [(x, i) for i, x in enumerate(threads)]
+              + [(x, i) for i, x in enumerate(believed)])
     ranked.sort(key=lambda p: (-mention(p[0]), p[1], -(p[0].get("position") or 0)))
     picked = [x for x, _ in ranked[:REGRESSION_MAX]]
     cause = options.policy in CAUSE_POLICIES
     lines = []
     for x in picked:
-        line = (fact_entry(x, True, False, cause, options.history_marks) if x["line"] == "fact"
-                else thread_entry(x, True))
+        if x["line"] == "belief":
+            line = Line("belief", belief_line(x), assertion_ref(x), None,
+                        f"{x.get('subject')} believes: {x.get('value') or ''}", x.get("value") or "", {}, True)
+        else:
+            line = (fact_entry(x, True, False, cause, options.history_marks) if x["line"] == "fact"
+                    else thread_entry(x, True))
         lines.append(dataclasses.replace(line, turn=None, marks={**line.marks,
                                                                  "remembered_by": list(x.get("known_by") or ())}))
     by_id = {x["id"]: x for x in picked}
@@ -2817,9 +2870,7 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
         if row is None:
             out.append(line)
             continue
-        if options.narrator and not (narrator_knows_v21(row, options.narrator, r)
-                                     if options.policy in V21_POLICIES and public_except(row)
-                                     else scene.narrator_knows(row, options.narrator, r)):
+        if options.narrator and not scene.narrator_knows(row, options.narrator, r):
             g.withheld += 1
             g.withheld_lines.append(line)
             if options.policy in LABEL_POLICIES:
@@ -2830,8 +2881,7 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
             out.append(line)  # packet-v21: an unspoken feeling is not a plotted secret; its <Private> line stays
             continue
         if options.strict and line.private and r is not None:
-            holders, absent = (missing_v21(row, g.cast, r) if options.policy in V21_POLICIES and public_except(row)
-                               else scene.missing(row, g.cast, r))
+            holders, absent = scene.missing(row, g.cast, r)
             g.withheld += 1
             g.withheld_lines.append(line)
             if options.policy in LABEL_POLICIES:
