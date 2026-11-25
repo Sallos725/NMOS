@@ -31,8 +31,7 @@ from .repairs import (apply_facts, live, quoted_turns, repairs_of, secret_events
 from .predicates import (ADDRESS_CONDITION_MAX, ADDRESS_SCOPES, DERIVED, EXTENSION_PARTICIPANTS, REGISTRY,
                          address_condition, alias_evidenced, because, condition, feeling, fill_types, guise, item_kind,
                          knowledge, knowledge_scope, mentioned, outcome, participants, horizon, polarity_of,
-                         registry_for,
-                         registry_prompt, salience, semantics, validate, when_happened)
+                         registry_for, registry_prompt, salience, semantics, validate, when_happened)
 from .secrets import NOT_SECRETS, fold as fold_secrets, matches, reveal_value, reveals as reveals_secret, secret_text
 from .source_time import KEYS
 from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity

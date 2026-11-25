@@ -356,8 +356,9 @@ def test_a_reveal_check_reads_the_target_at_its_own_generations_cap(migrated, db
     seen: list[int] = []
     real = reveals.build_prompt
     monkeypatch.setattr(reveals, "build_prompt", lambda ctx, *a, **k: seen.append(ctx["target_chars"]) or real(ctx, *a, **k))
-    monkeypatch.setattr(reveals, "secret_hints", lambda ctx, rows: [{"id": "S1", "turn": 0, "text": "t", "holders": ["A"],
-                                                                      "kept_from": ["B"], "subject": "A"}])
+    monkeypatch.setattr(reveals, "secret_hints",  # **kw: the check also passes a carry link's rows (review F7)
+                        lambda ctx, rows, **kw: [{"id": "S1", "turn": 0, "text": "t", "holders": ["A"],
+                                                  "kept_from": ["B"], "subject": "A"}])
     chat = long_chat(3)
     with make_client(migrated, **LLM, summaries=False, extract_target_chars=CAP) as c:
         sync(c, chat)

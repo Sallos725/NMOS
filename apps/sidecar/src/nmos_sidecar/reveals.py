@@ -29,7 +29,8 @@ from . import generations, normtext
 from .config import Settings
 from .entities import norm
 from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY, ONTOLOGY,
-                         _with_carried, assertion_values, no_nul, build_prompt, coverage_of, earlier_assertions, load_context, normalize,
+                         _with_carried, assertion_values, build_prompt, coverage_of, earlier_assertions, load_context,
+                         no_nul, normalize,
                          revealed, secret_hints, shown_target, with_cap)
 from .generations import Generation
 from .ids import uuid7
@@ -184,26 +185,31 @@ def _stale(rows: list[dict[str, Any]], found: list[dict[str, Any]]) -> set[UUID]
     return out
 
 
-def _held(secret: dict[str, Any], held: list[dict[str, Any]], now: list[dict[str, Any]], seen: Any) -> bool:
-    """Whether an extraction of the secret's turn that was live at `seen` held it, as the read side's fold would take
-    a reveal of either for the other (`secrets`' rules, review F10): the same line; the same head with like content
-    (`matches`); or the same head when it is the turn's only secret with that head, now and in that extraction (a
-    re-extraction that reworded its value). Its `hidden_from` must still cover the secret's: someone new it is kept
-    from could not have been listed."""
+def _holders(secret: dict[str, Any], held: list[dict[str, Any]], now: list[dict[str, Any]]) -> list[tuple[Any, Any]]:
+    """When the extractions of the secret's turn that held it lived ((created_at, discarded_at) each), as the read
+    side's fold would take a reveal of either for the other (`secrets`' rules, review F10): the same line; the same head
+    with like content (`matches`); or the same head when it is the turn's only secret with that head, now and in that
+    extraction (a re-extraction that reworded its value). Its `hidden_from` must still cover the secret's: someone new
+    it is kept from could not have been listed. Judged once per secret; a turn's look is then a time comparison."""
     text = secret_text(secret)
     head = _split(text)[1]
-    alone = sum(1 for s in now if s["rid"] == secret["rid"] and _heads(_split(secret_text(s))[1], head) is True) == 1
-    live = [h for h in held if h["rid"] == secret["rid"] and h["turn_hash"] == secret["turn_hash"]
-            and h["created_at"] < seen and (h["discarded_at"] is None or h["discarded_at"] > seen)
+
+    def same_head(x: dict[str, Any]) -> bool:
+        return _heads(_split(secret_text(x))[1], head) is True
+
+    alone = sum(1 for s in now if s["rid"] == secret["rid"] and same_head(s)) == 1
+    mine = [h for h in held if h["rid"] == secret["rid"] and h["turn_hash"] == secret["turn_hash"]
             and set(h["hidden_from"] or ()) >= set(secret["hidden_from"] or ())]
-    for h in live:
+    heads = {}
+    for h in mine:
+        if same_head(h):
+            heads[h["yid"]] = heads.get(h["yid"], 0) + 1
+    out = []
+    for h in mine:
         other = secret_text(h)
-        if other == text or matches(text, other):
-            return True
-        same = [x for x in live if x["yid"] == h["yid"] and _heads(_split(secret_text(x))[1], head) is True]
-        if alone and len(same) == 1 and same[0] is h:
-            return True
-    return False
+        if other == text or matches(text, other) or (alone and same_head(h) and heads.get(h["yid"]) == 1):
+            out.append((h["created_at"], h["discarded_at"]))
+    return out
 
 
 def _carried_since(conn: psycopg.Connection, conv: UUID) -> Any:
@@ -220,7 +226,7 @@ def _carried_since(conn: psycopg.Connection, conv: UUID) -> Any:
 
 def unchecked(conn: psycopg.Connection, key: str, rkey: str, conv: UUID) -> list[dict[str, Any]]:
     """Turns of the head whose serving extraction (`key`'s first) needs a check of the reveal generation `rkey`
-    (UNCHECKED, `_held`): turn, revision, turn hash and the extraction to check (`xid`)."""
+    (UNCHECKED, `_holders`): turn, revision, turn hash and the extraction to check (`xid`)."""
     params = {"conv": conv, "key": key, "rkey": rkey, "window": WINDOW, "not_secrets": sorted(NOT_SECRETS)}
     rows = conn.execute(UNCHECKED, params).fetchall()
     stale: set[UUID] = set()
@@ -230,11 +236,14 @@ def unchecked(conn: psycopg.Connection, key: str, rkey: str, conv: UUID) -> list
     held = conn.execute(SECRETS_HELD, {"rids": [s["rid"] for s in now], "hashes": [s["turn_hash"] for s in now],
                                        "not_secrets": params["not_secrets"]}).fetchall() if now else []
     carried = _carried_since(conn, conv) if rows else None
+    lived = [(s, _holders(s, held, now)) for s in now]
 
     def needs(t: dict[str, Any]) -> bool:
         if t["needs"] or t["check_id"] in stale or (carried is not None and t["seen"] < carried):
             return True
-        return any(s["turn"] < t["turn"] and not _held(s, held, now, t["seen"]) for s in now)
+        seen = t["seen"]
+        return any(s["turn"] < t["turn"] and not any(c < seen and (d is None or d > seen) for c, d in spans)
+                   for s, spans in lived)
     return [{k: r[k] for k in ("turn", "rid", "turn_hash", "xid")} for r in rows if needs(r)]
 
 
