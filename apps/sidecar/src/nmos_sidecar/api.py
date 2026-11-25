@@ -1534,6 +1534,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             log.info("retry failed conversation=%s retried=%s", conv_id, retried)
             return {"retried": retried, "coverage": coverage_view(conn, conv_id)}
 
+    def leak_check(ask: notes.Ask, model: Any) -> notes.LeakCheck | None:
+        """The cross-language secret check of an author's note (Tier 2 B8): only when a model writes a part in English
+        (`language="en"`) with secrets kept out, the one case where a secret can be told in another script than the
+        chat's. By meaning with the configured embedder (local, no model call), else by one call of the note's model."""
+        if model is None or ask.secrets or ask.language != "en":
+            return None
+        embedder = rt["recall"].embedder
+        return notes.embedding_leak_checker(embedder) if embedder is not None else notes.model_leak_checker(model)
+
     @app.post("/v1/conversations/{conv_id}/notes", dependencies=[Depends(auth)])
     def author_notes(conv_id: UUID, body: dict[str, Any], request: Request):
         """Sections for the chat's author's note (PHASE-50), made on request for the owner to paste: nothing is
@@ -1559,7 +1568,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         # PHASE-61 S6: each call logged as a `note` of this chat, outside the request's connection
         model = (notes.model_for(rt["settings"], log_to=rt["settings"].database_url, conversation_id=conv_id)
                  if ask.model and calls else None)
-        out = notes.make(ask, view, told, last, model, date.today().isoformat(), canon=manifest)
+        # TODO(Wave 3): `notes.make` takes no `held_keys` yet, so the diverged part still reads every lorebook entry.
+        # When it does, pass the lorebook keys this chat's prompts held, `canon.held(conn, conv_id)` read beside the
+        # manifest (keys as `retrieval_trace.canon_held` records them, traces pruned after `trace_retention_days`), or
+        # None when there are none: an empty set would leave out every entry that is not always active.
+        out = notes.make(ask, view, told, last, model, date.today().isoformat(), canon=manifest,
+                         semantic_leaks=leak_check(ask, model))
         log.info("author notes conversation=%s sections=%s made=%s", conv_id, ",".join(ask.sections),
                  ",".join(s["made"] for s in out["sections"]))
         return out
@@ -2209,7 +2223,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def map_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """The memory map (PHASE-55), from the read every request makes, and the newest request's scene."""
         cid, head = conv["id"], conv["head_commit_id"]
-        view = inspector.with_participants(view_of(conn, head, told=True))
+        # Tier 2 (C/15, owner-agreed): the map draws what a carry link in force carries, as the memory screen does
+        view = inspector.with_participants(view_of(conn, head, told=True, carried=True))
         trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
                              " ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
         cast = [str(n) for n in ((trace or {}).get("latency_ms") or {}).get("scene_cast") or []]
