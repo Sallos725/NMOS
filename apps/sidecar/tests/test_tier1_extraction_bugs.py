@@ -139,8 +139,11 @@ def test_a_free_negated_role_between_listed_parties_is_dropped_like_a_negative_o
 
 
 # --- D4: a value on a predicate that takes none --------------------------------------------------------------------
+# Review F1 (2026-11-25): the value is stored again as before Tier 1, under every compiler: a rank in a member_of, a
+# quantity in a possesses is the model's and nothing else holds it. The defect the drop was for (a value splitting the
+# version key or the negation's match) belongs to the read side (`facts.version_key`, `facts.relation`).
 
-def test_a_stray_value_on_a_predicate_without_one_is_dropped():
+def test_a_value_on_a_predicate_without_one_is_stored_as_given():
     assert [takes_value(p) for p in ("located_in", "possesses", "member_of")] == [False] * 3
     assert takes_value("role_toward") and takes_value("not_a_predicate")
     member = {"subject": "하나", "subject_type": "character", "predicate": "member_of", "object": "기사단",
@@ -150,7 +153,10 @@ def test_a_stray_value_on_a_predicate_without_one_is_dropped():
     odd = {"subject": "하나", "subject_type": "character", "predicate": "hates", "value": "브로콜리"}
     rows = X.normalize([member, role, odd], "하나")
     assert [(r["predicate"], r["value"], r["status"]) for r in rows] == [
-        ("member_of", None, "valid"), ("role_toward", "제자", "valid"), ("hates", "브로콜리", "pending")]
+        ("member_of", "정예 단원", "valid"), ("role_toward", "제자", "valid"), ("hates", "브로콜리", "pending")]
+    for compiler in ("extract-v20", "extract-v21"):
+        (row,) = X.normalize([member], "하나", compiler=compiler)
+        assert row["value"] == "정예 단원", compiler
 
 
 # --- D2: what the model was shown -------------------------------------------------------------------------------------

@@ -32,7 +32,7 @@ from .predicates import (ADDRESS_CONDITION_MAX, ADDRESS_SCOPES, DERIVED, EXTENSI
                          address_condition, alias_evidenced, because, condition, feeling, fill_types, guise, item_kind,
                          knowledge, knowledge_scope, mentioned, outcome, participants, horizon, polarity_of,
                          registry_for,
-                         registry_prompt, salience, semantics, takes_value, validate, when_happened)
+                         registry_prompt, salience, semantics, validate, when_happened)
 from .secrets import NOT_SECRETS, fold as fold_secrets, matches, reveal_value, reveals as reveals_secret, secret_text
 from .source_time import KEYS
 from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity
@@ -2125,8 +2125,9 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
               shown: str | None = None, apart: bool = False, horizons: bool = False,
               feelings: bool = False, compiler: str | None = None,
               address_conditions: bool = False) -> list[dict[str, Any]]:
-    """Model output → assertion rows (`capped`: the model's own at most 40, the derived ones all; a `value` on a
-    predicate that takes none dropped, `takes_value`): missing entity types filled from the reply or the
+    """Model output → assertion rows (`capped`: the model's own at most 40, the derived ones all; a `value` is kept
+    on every predicate, one that takes none included: a rank in a `member_of`, a quantity in a `possesses` is the
+    model's and nothing else holds it, review F1): missing entity types filled from the reply or the
     hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
     (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). `shown` (the turn worker, since extract-v14,
     ADR 0054: the target turn as the model saw it, `shown_target`): a quote of EVIDENCE_MIN_CHARS or more that is
@@ -2181,7 +2182,7 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
         out.append({"subject": text("subject", 120) or "?", "subject_type": text("subject_type", 20),
                     "predicate": text("predicate", 40) or "?", "object": text("object", 120),
                     "object_type": text("object_type", 20),
-                    "value": text("value") if takes_value(item.get("predicate"), registry) else None,
+                    "value": text("value"),  # also on a predicate that takes none, as before (review F1)
                     "epistemic": "implied" if item.get("epistemic") == "implied" else "stated",
                     "confidence": confidence, "evidence": text("evidence"), "status": status, "reason": reason,
                     "knowledge": scope, "known_by": known_by, "hidden_from": hidden_from, "polarity": polarity,
