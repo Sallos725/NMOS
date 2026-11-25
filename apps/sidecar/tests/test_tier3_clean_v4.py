@@ -341,3 +341,16 @@ def test_rebuild_rewrites_both_normalizers_text(migrated, db):
         " WHERE sr.content = %s", (ORACLE,)).fetchall()}
     assert got == {"clean-v3": clean_text(ORACLE), "clean-v4": clean_text_v4(ORACLE)}
 
+
+
+def test_canon_evidence_is_looked_for_in_the_active_normalizers_text():
+    from nmos_sidecar import canonfacts
+
+    entry = "{{#if {{getvar::night}}}}밤의 비밀.{{/if}} <마검 발뭉>은 왕의 검이다."
+    normtext.use("clean-v3")
+    v3 = canonfacts.read_blocks(entry, "Hana", "Taku")
+    assert v3 is not None and "마검발뭉" not in v3[0]  # clean-v3 drops the angle-bracket prose
+    normtext.use("clean-v4")
+    v4 = canonfacts.read_blocks(entry, "Hana", "Taku")
+    assert v4 is not None and "마검발뭉" in v4[0]  # evidence a clean-v4 read quotes is found where it stands
+    assert canonfacts.shown(v4, UUID(int=1), "<마검 발뭉>은 왕의 검이다.")

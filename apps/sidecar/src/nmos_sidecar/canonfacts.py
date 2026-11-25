@@ -42,7 +42,6 @@ from .config import Settings
 from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
-from .packet import clean_text
 from .predicates import REGISTRY, registry_prompt, stored_knowledge
 
 log = logging.getLogger("nmos.canon")
@@ -628,7 +627,7 @@ def read_blocks(content: str, character: str | None, user: str | None) -> Blocks
     cleans it (markup dropped) and the name macros replaced, so evidence the model quoted with the names in place
     and without the markup is found where it stands. When the cleaning changed the block tags themselves, the raw
     text with the macros replaced is used."""
-    text, whole = named(clean_text(content), character, user), named(content, character, user)
+    text, whole = named(normtext.clean(content), character, user), named(content, character, user)
     return blocks_of(text if _marks(text) == _marks(whole) else whole)
 
 
