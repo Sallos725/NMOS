@@ -30,7 +30,8 @@ from .repairs import (apply_facts, live, quoted_turns, repairs_of, secret_events
                       unedited_quotes)
 from .predicates import (ADDRESS_CONDITION_MAX, ADDRESS_SCOPES, DERIVED, EXTENSION_PARTICIPANTS, REGISTRY,
                          address_condition, alias_evidenced, because, condition, feeling, fill_types, guise, item_kind,
-                         knowledge, knowledge_scope, outcome, participants, horizon, polarity_of, registry_for,
+                         knowledge, knowledge_scope, mentioned, outcome, participants, horizon, polarity_of,
+                         registry_for,
                          registry_prompt, salience, semantics, takes_value, validate, when_happened)
 from .secrets import NOT_SECRETS, fold as fold_secrets, matches, reveal_value, reveals as reveals_secret, secret_text
 from .source_time import KEYS
@@ -1530,11 +1531,14 @@ def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: s
     (the earlier turns' entities), a name counts for a listed one it resolves to: an alias (서윤 for 한서윤) or the
     persona under another of its names (타쿠미 for {{user}}); the subject stays the name as listed (Tier 1 C4). A secret
     listed `solo` (extract-v21: known to its holders alone) is found out by anyone not among its holders, named as the
-    model names them."""
+    model names them, who is someone: a character the earlier turns know (`resolution`), the persona, or a name the
+    shown TARGET writes, at most SOLO_FOUND of them per secret (review F6). One row per secret and name, however often
+    the answer repeats it (review F4)."""
     out: list[dict[str, Any]] = []
     entries = answer.get("secrets")
     if not secrets or not isinstance(entries, list):
         return out
+    done: set[tuple[int, str]] = set()  # (secret, normalized name) already found out by this answer
     for entry in entries:
         if not isinstance(entry, dict):
             continue
@@ -1555,15 +1559,31 @@ def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: s
         def listed_as(name: str) -> str | None:
             if listed.get("solo"):  # extract-v21: kept from everyone but its holders, so anyone else, as named
                 other = norm(name) not in holders and (resolution is None or _who(resolution, name) not in holders)
-                return (name.strip()[:60] or None) if other else None
+                return (name.strip()[:60] or None) if other and _someone(name, turn_text, resolution) else None
             return kept.get(norm(name)) or (kept.get(_who(resolution, name)) if resolution is not None else None)
 
         names = entry.get("found_out_by") if isinstance(entry.get("found_out_by"), list) else []
         for name in dict.fromkeys(x for n in names if isinstance(n, str) and norm(n) and (x := listed_as(n))):
+            if (int(ref), norm(name)) in done or (
+                    listed.get("solo") and sum(1 for i, _ in done if i == int(ref)) >= SOLO_FOUND):
+                continue
+            done.add((int(ref), norm(name)))
             out.append({"subject": name, "subject_type": "character", "predicate": "learned", "value": reveal_value(listed),
                         "modality": "actual", "source": "narration", "evidence": evidence, "knowledge": "unknown",
                         "epistemic": "stated"})
     return out
+
+
+SOLO_FOUND = 6  # characters who can find out one solo secret in one turn (as many as an event's `with`)
+
+
+def _someone(name: str, shown: str, r: Resolution | None) -> bool:
+    """A name a solo secret may be found out by (review F6): the persona under any of its names, a character the earlier
+    turns know (`r`), or a name the shown TARGET writes as a word of its own. Not "everyone else" or another phrase the
+    model makes up."""
+    if r is not None and (_who(r, name)[0] == "persona" or r.entity("character", name) is not None):
+        return True
+    return mentioned(" ".join(name.split()).casefold(), shown.casefold())
 
 
 def _who(r: Resolution, name: str) -> tuple[str, str]:

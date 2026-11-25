@@ -97,3 +97,59 @@ def test_a_carried_secret_is_found_out_through_a_reveal_check(migrated):
             assert row["subject"] == "카이토" and row["window_hash"].startswith(reveals.WINDOW)
         (secret,) = [s for s in c.get(f"/v1/conversations/{tgt}/secrets").json() if SECRET in s["text"]]
         assert "카이토" in secret["ended"]
+
+
+# --- F4, F6: what `revealed` makes of the model's `secrets` ----------------------------------------------------------
+
+def test_repeated_reveal_entries_store_one_row_per_secret_and_name():
+    secrets = [{"text": "하나 knows: 편지는 가짜다", "holders": ["하나"], "kept_from": ["카이토", "유이"], "turn": 1}]
+    quote = "카이토와 유이는 편지가 가짜라는 걸 알아챘다"
+    entry = {"secret": "S1", "found_out_by": ["카이토", "유이", "카이토"], "evidence": quote}
+    rows = X.revealed({"secrets": [entry] * 200}, secrets, quote)
+    assert sorted(r["subject"] for r in rows) == ["유이", "카이토"]
+
+
+def test_a_solo_secret_is_found_out_only_by_someone_and_by_few():
+    from nmos_sidecar.entities import resolve
+    from test_semantics import row
+    earlier = [row(1, "유이", "located_in", "정원", subject_type="character", object_type="place")]
+    r = resolve(UUID("01900000-0000-7000-8000-0000000000f6"), earlier, ["타쿠미"])
+    secrets = [{"text": "하나 feels: 카이토를 좋아한다", "holders": ["하나"], "kept_from": [], "turn": 1, "solo": True}]
+    quote = "카이토는 하나가 자기를 좋아한다는 걸 알아챘다"
+    names = ["카이토", "유이", "타쿠미", "모두", "everyone else", "하나"] + [f"이름{i}" for i in range(100)]
+    rows = X.revealed({"secrets": [{"secret": "S1", "found_out_by": names, "evidence": quote}]}, secrets, quote, r)
+    # written in the turn, known before, the persona; not a made-up phrase, not a holder
+    assert [x["subject"] for x in rows] == ["카이토", "유이", "타쿠미"]
+    many = [f"인물{i}" for i in range(20)]
+    text = quote + " " + " ".join(many)
+    rows = X.revealed({"secrets": [{"secret": "S1", "found_out_by": many, "evidence": quote}]}, secrets, text, r)
+    assert len(rows) == X.SOLO_FOUND
+
+
+# --- F5: the canon reader keeps the model's own at most 40 -----------------------------------------------------------
+
+def test_the_canon_reader_cannot_be_made_to_store_more_than_forty_rows(migrated):
+    from test_canon import push
+    from test_canon_facts import Model, canon_texts, drain as drain_canon, story
+
+    class Marked(Model):
+        def __call__(self, system: str, user: str) -> tuple[dict, str]:
+            out, raw = super().__call__(system, user)
+            if "CANON" in system and "card's description" in user:
+                marked = {"subject": "Hana", "subject_type": "character", "predicate": "identity", "value": "keeper",
+                          "modality": "actual", "source": "narration", "listed": {"by": "Hana"}, "listed_pair": True}
+                out = {**out, "assertions": [{**marked, "value": f"keeper {i}"} for i in range(150)]
+                       + [{**marked, "predicate": "learned", "value": f"[turn 1] x {i}"} for i in range(150)]}
+            return out, raw
+
+    chat = story()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        push(c, chat, canon_texts())
+        drain_canon(migrated, Marked())
+    with _connect(migrated) as conn:
+        counts = conn.execute(
+            "SELECT x.id, count(a.id) AS n, count(a.id) FILTER (WHERE a.predicate = 'learned') AS learned"
+            " FROM extraction x JOIN assertion a ON a.extraction_id = x.id JOIN projection_generation g"
+            " ON g.key = x.extractor_key WHERE g.kind = 'canon' GROUP BY 1").fetchall()
+    assert counts and max(r["n"] for r in counts) == X.MAX_ASSERTIONS and sum(r["learned"] for r in counts) == 0
