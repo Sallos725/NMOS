@@ -330,3 +330,49 @@ def test_the_clock_shows_a_date_and_time_written_in_one_field(migrated):
         assert X.story_clock(conn, at(head, 5)) == "상태.일시: 4월 13일 오후 3시"
         observe(conn, head, 5, "날짜/시간", "4월 13일 15:00")  # two date-time fields at once: ambiguous, left out
         assert X.story_clock(conn, at(head, 5)) is None
+
+
+# --- the secret engine's solo secrets are listed once (w4-secrets-epistemic) -----------------------------------------
+
+SOLO = "하나는 몰래 카이토를 좋아한다."
+NOTICED = "하나가 카이토를 좋아한다는 걸 유이가 눈치챘다."
+
+
+def _solo_stub(system: str, user: str) -> tuple[dict, str]:
+    target = user.split("TARGET", 1)[-1]
+    if system == reveals.PROMPT:
+        return {"secrets": []}, "{}"
+    items = [{"subject": "하나", "subject_type": "character", "predicate": "feels_toward", "object": "카이토",
+              "object_type": "character", "value": "좋아함", "modality": "actual", "source": "narration",
+              "evidence": SOLO, "knowledge": "limited", "known_by": ["하나"]}] if SOLO in target else []
+    return {"assertions": items, "secrets": []}, "{}"
+
+
+def test_a_solo_secret_is_listed_once_in_the_worker_and_in_the_reveal_check(migrated):
+    from simchat import SimChat
+    chat = SimChat()
+    for text in (SOLO, NOTICED):
+        chat.user("턴.")
+        chat.reply(text)
+    chat.user("계속.")
+    with make_client(migrated, **{**V20, "extract_compiler": "extract-v21"}) as c:
+        sync(c, chat)
+        drain(migrated, _solo_stub)
+        with _connect(migrated) as conn:
+            x = conn.execute(
+                "SELECT x.id, x.source_revision_id AS rid, x.window_hash, x.hints FROM extraction x"
+                " JOIN active_membership am ON am.source_revision_id = x.source_revision_id"
+                " AND am.turn_hash = x.window_hash WHERE am.turn = 1").fetchone()
+            listed = [s for s in (x["hints"] or {}).get("secrets") or [] if "좋아" in s["text"]]
+            assert [s.get("solo") for s in listed] == [True]  # once, from the fold (it was listed twice)
+            conv = conn.execute("SELECT id FROM conversation").fetchone()["id"]
+            rv = active_generation(conn, "reveal")
+            conn.execute("INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority)"
+                         " VALUES ('reveal', %s, %s, %s, %s)",
+                         (f"reveal:{x['id']}:{rv.key}", conv, Jsonb({"extraction_id": str(x["id"]),
+                          "revision_id": str(x["rid"]), "window_hash": x["window_hash"], "generation": rv.key}),
+                          X.HISTORY_PRIORITY))
+        drain(migrated, _solo_stub)
+        with _connect(migrated) as conn:
+            check = conn.execute("SELECT hints FROM extraction WHERE window_hash LIKE 'reveal:%'").fetchone()["hints"]
+            assert [s.get("solo") for s in check["secrets"] if "좋아" in s["text"]] == [True]

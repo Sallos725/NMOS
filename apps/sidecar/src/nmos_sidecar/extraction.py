@@ -32,7 +32,7 @@ from .predicates import (ADDRESS_CONDITION_MAX, ADDRESS_SCOPES, DERIVED, EXTENSI
                          address_condition, alias_evidenced, because, condition, feeling, fill_types, guise, item_kind,
                          knowledge, knowledge_scope, mentioned, outcome, participants, horizon, polarity_of,
                          registry_for, registry_prompt, salience, semantics, validate, when_happened)
-from .secrets import NOT_SECRETS, fold as fold_secrets, matches, reveal_value, reveals as reveals_secret, secret_text
+from .secrets import fold as fold_secrets, reveal_value
 from .source_time import KEYS
 from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity
 from .reconcile import Entry, RevKey, turn_layout
@@ -1174,10 +1174,12 @@ def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
     always in the story, so it does not count as named.
 
     extract-v21 (PHASE-66): with `turn_text` (the TARGET as shown), one whose words the TARGET is about is listed
-    too, and they are ranked by `_relevance` before the cut. `include_solo`: a fact known to its holders alone
-    (`solo_secrets`: limited, `known_by` only) is listed as well, marked `solo`, only when the TARGET's words are about
+    too, and they are ranked by `_relevance` before the cut. `include_solo`: a fact known to its holders alone (the
+    fold's own, `secrets.kept_from_others`, marked `solo`) is listed as well, only when the TARGET's words are about
     it (a holder named is not enough: every private feeling of the scene's people would fill the list), after the
-    secrets kept from someone of the same rank. `carried`: a carry link's rows, folded first."""
+    secrets kept from someone of the same rank; listed while open for someone or while nobody else is known yet (it
+    is kept from whoever comes). Once each: the fold returns it, so it is not added again (it was listed twice once
+    the fold carried solo secrets). `carried`: a carry link's rows, folded first."""
     if limit <= 0 or not (rows or carried):
         return []
     rows, r = _with_carried(ctx, rows, carried)
@@ -1185,8 +1187,10 @@ def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
     target, grams = norm(turn_text), thread_grams(turn_text)
     out = []
-    listed = [s for s in fold_secrets([dict(row) for row in rows], r, secret_events(repairs, r, {}))[0] if s["open"]]
-    for s in listed + (solo_secrets(rows, r) if include_solo else []):
+    folded = fold_secrets([dict(row) for row in rows], r, secret_events(repairs, r, {}))[0]
+    listed = [s for s in folded if (include_solo or not s.get("solo"))
+              and (s["open"] or (s.get("solo") and not s["ended"]))]
+    for s in listed:
         names = set()
         for name in [*s["holders"], *s["open"]]:
             e = r.entity("character", name)
@@ -1197,31 +1201,15 @@ def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
         if rank <= 1 or (not s.get("solo") and any(n in shown for n in names)):
             # turn_hash: not shown to the model; stored with the hints, it tells the read side which content of that
             # turn a reveal was about (ADR 0033 amendment 2)
-            out.append(({"text": s["text"], "holders": s["holders"], "kept_from": s["open"], "turn": s["turn"],
+            # a solo secret's kept_from stays [] as listed before (the prompt says "everyone else"; the fold's own
+            # list names everyone the chat knows)
+            out.append(({"text": s["text"], "holders": s["holders"], "kept_from": [] if s.get("solo") else s["open"],
+                         "turn": s["turn"],
                          "turn_hash": s["turn_hash"], **({"solo": True} if s.get("solo") else {})},
                         (rank, bool(s.get("solo")))))
     if turn_text:
         out.sort(key=lambda x: x[1])  # stable: newest first within a rank
     return [x for x, _ in out][:limit]
-
-
-def solo_secrets(rows: list[dict[str, Any]], r: Resolution) -> list[dict[str, Any]]:
-    """Facts known to their holders alone (extract-v21, PHASE-66), newest first, shaped as `secrets.fold`'s
-    secrets with `open` empty and `solo` set: knowledge `limited` with `known_by` and no `hidden_from`, not dreamed, of
-    a predicate that can be a secret (`secrets.NOT_SECRETS`). One a later `learned` matches (`secrets.matches`, the
-    worker's own reveal of it) is found out already and left out."""
-    found = [a for a in rows if reveals_secret(a)]
-    out = []
-    for a in rows:
-        if (a["predicate"] in NOT_SECRETS or a.get("knowledge") != "limited" or a.get("hidden_from")
-                or not a.get("known_by") or a.get("modality", "actual") == "dreamed"):
-            continue
-        text = secret_text(a)
-        if any(x["position"] > a["position"] and matches(text, x.get("value"), r) for x in found):
-            continue
-        out.append({"text": text, "holders": list(a["known_by"]), "open": [], "turn": a.get("turn"),
-                    "turn_hash": a.get("turn_hash"), "position": a["position"], "solo": True})
-    return sorted(out, key=lambda s: s["position"], reverse=True)
 
 
 def role_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPEN_ROLES, *,
