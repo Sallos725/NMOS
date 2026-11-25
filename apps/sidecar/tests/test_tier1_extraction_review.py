@@ -228,3 +228,46 @@ def test_the_reveal_check_lists_a_secret_only_extract_v21_writes(migrated):
         with _connect(migrated) as conn:
             (row,) = _learned(conn, conv)
             assert row["subject"] == "카이토" and "유이" in row["value"] and row["window_hash"].startswith(reveals.WINDOW)
+
+
+# --- F10, F11, F7: when a turn needs a paid reveal check ------------------------------------------------------------
+
+def test_a_re_extraction_that_rewords_a_secret_queues_no_check(migrated, db):
+    from test_tier2_api_wiring import _copy_extraction, _in_order, _newer_extract
+    with make_client(migrated, **LLM) as c:
+        _, conv, _ = _in_order(c, migrated, db)
+        ex, rv = active_generation(db, "extract"), active_generation(db, "reveal")
+        newer = _newer_extract(db)
+        xid = _copy_extraction(db, 0, ex.key, newer)
+        db.execute("UPDATE assertion SET value = 'watch the evening lecture in secret' WHERE extraction_id = %s"
+                   " AND predicate = 'goal'", (xid,))
+        db.commit()
+        assert reveals.unchecked(db, newer.key, rv.key, conv) == []  # the same secret in other words: held
+        assert reveals.schedule(db, rv.key, newer.key, conv) == 0
+
+
+def test_a_secret_the_owner_reopens_is_checked_for_the_turns_that_looked_while_it_was_closed(migrated, db):
+    from test_tier2_api_wiring import _in_order
+    with make_client(migrated, **LLM) as c:
+        _, conv, _ = _in_order(c, migrated, db)
+        ex, rv = active_generation(db, "extract"), active_generation(db, "reveal")
+        (s,) = [x for x in c.get(f"/v1/conversations/{conv}/secrets").json() if "lecture" in x["text"]]
+        res = c.post(f"/v1/conversations/{conv}/repairs",
+                     json={"kind": "secret_found_out", "item": str(s["id"]), "character": "Noel", "turn": 0})
+        assert res.status_code == 200, res.text
+        rep = res.json()["repair"]["id"]
+        db.execute("UPDATE owner_repair SET created_at = '2000-01-01' WHERE id = %s", (rep,))  # closed before they looked
+        db.commit()
+        assert reveals.unchecked(db, ex.key, rv.key, conv) == []
+        assert c.post(f"/v1/conversations/{conv}/repairs/{rep}/remove").status_code == 200
+        assert [r["turn"] for r in reveals.unchecked(db, ex.key, rv.key, conv)] == [1, 2]
+
+
+def test_a_continue_link_carrying_a_secret_makes_the_turns_that_looked_before_it_look_again(migrated):
+    with make_client(migrated, **V20) as c:
+        src, _, tgt = _world(c, migrated)
+        with _connect(migrated) as conn:
+            ex, rv = active_generation(conn, "extract"), active_generation(conn, "reveal")
+            assert reveals.unchecked(conn, ex.key, rv.key, tgt) == []
+            _link_continue(conn, tgt, src)
+            assert [r["turn"] for r in reveals.unchecked(conn, ex.key, rv.key, tgt)] == [0, 1, 2]
