@@ -55,6 +55,14 @@ without a PocketRisu change.
 | K49 | Restoring an archive from the panel on an iPhone is not a target and was not measured | Data | scope exclusion approved 2026-10-08 (PHASE-38 Q3); behavior unmeasured |
 | K50 | Model calls that failed or were retried are not in the panel's model-use line | Setup | low priority, additional accounting not scheduled (owner preference, 2026-10-09; ADR 0051) |
 | K51 | "Remember AI replies only" leaves user messages out of recall, but facts and summaries are still made from both sides | Memory | accepted for `0.5.0` (owner, 2026-10-24): PHASE-48 step 3 is built once a real full-impersonation chat can be measured; ADR 0077 |
+| K52 | A few names still do not match their spelling in the other script; a persona's derived name can over-match; a nickname two characters share, written reversed, merges them | Memory | PHASE-65 (`resolve-v6`, ADR 0095), on the Tier 1–4 branch, not released; the owner splits a wrong link |
+| K53 | A secret carried from another chat is ended only by the owner; a rare reveal still ends the wrong one of two near-identical secrets | Memory | PHASE-65 (ADR 0033 amendment 4), on the Tier 1–4 branch, not released |
+| K54 | `packet-v21` leaves a claim's stated cause ungated, reads titles from the persona only, and a sequence replay rests differently | Recall | PHASE-65 (ADR 0092), opt-in, not measured |
+| K55 | A secret about a conditional form of address can miss its reveal when the condition is worded differently | Memory | found in review of the Phase 64 base merge; a fix is being made on the Tier 1–4 branch |
+| K56 | Two places' status windows in one reply that share a key are keyed like two characters'; a key that gains a prefix starts a new history | Memory | PHASE-65 (ADR 0094), on the Tier 1–4 branch, not released |
+| K57 | "Diverged from the setting" still reads every lorebook entry, not only those the chat's prompts held | Memory | PHASE-65 S4 built the filter; the note does not pass it yet |
+| K58 | Rows of one extractor, reveal or summarizer generation written before and after PHASE-65 differ | Data | PHASE-65 Open question 1 (no generation change, owner decision open) |
+| K59 | The plugin can reuse a non-empty memory packet for up to 10 minutes after extraction finished or the card changed outside the panel | Recall | PHASE-65 S7 reduced it (empty packets 60 s, dropped after a reply); the rest open |
 
 **1.0 gate classification (owner, 2026-10-12, Linear AGE-82, all as recommended).** The gate asks that every open
 row is a host limit or an accepted trade-off (`docs/ROADMAP-1.0.md`).
@@ -311,6 +319,40 @@ the owner's M0 main chat has one (a feeling only one character knew, printed und
 *Resolved in 0.3.0* (ADR 0038 amendment 1, 2026-10-01, the owner's request): history entries keep their marks, and a
 version kept from someone is printed only under the same marks; requests recorded before replay as they were.
 
+**K52 — Names in two scripts, and derived persona names.** `resolve-v6` (PHASE-65, ADR 0095) links a persona's given
+name, first name and spellings in the other script to the persona, and lets an alias with a direction keep a
+character with two nicknames whole. Still unmatched: 크리스티나 / Christina and 에단 / Ethan (Hangul adds a vowel; the
+spelling keys do not fold th to d). The vowel-folded keys used for the persona only can over-match (a name close to
+the persona's spelling becomes the persona). A nickname two characters share, written reversed (`별명 → A`,
+`별명 → B`), now merges A and B. *Workaround:* the Inspector's split of the link (`name_split`).
+Source: the Tier 1 identity work (`1bc5ee2`, `aa331c1`).
+
+**K53 — A carried secret, and two near-identical secrets.** A row a `continue` link carries is a secret of the target
+when it is kept from someone (ADR 0033 amendment 4), but the extractor is not shown it among the OPEN SECRETS, so no
+turn can report it found out: only the owner's "found out" repair ends it. And a turn with two secrets of one head
+that both have a value, one of which a re-extraction dropped, still ends the survivor at a score of 0 (ADR 0033
+amendment 2 pins that case). *Workaround:* the Inspector's secret repairs. Source:
+the Tier 1 secrets work (`b51b447`).
+
+**K55 — A reveal of a conditional form of address worded differently.** A secret line of an `addresses` fact carries
+its condition (`[in private]`, a `when` phrase; ADR 0091) in its head, and PHASE-65's head comparison reads it as part
+of the object's name. A reveal recorded under one wording of a `when` phrase does not match the same secret after a
+re-extraction words it otherwise, so the secret stays kept (no leak). A `": "` inside a `when` phrase also cuts the
+head early. Source: a read-only review of the Phase 64 base merge (`fde34aa`); a fix is being made after `361130c`.
+
+**K56 — Status windows of places, and a key that gains a prefix.** Since PHASE-65 (ADR 0094) a reply with windows of
+two or more names that share a key not about the scene keys them per name (`서연.HP`, `민지.HP`). A place is told from
+a character only by its keys, so `[교실 | 인원 …]` and `[복도 | 인원 …]` in one reply are prefixed too. On the reply
+where `HP` becomes `서연.HP` and `민지.HP`, the model is told both values with no link to the bare `HP` before it, and
+their histories start there. Bare pins and watches still cover them. The Inspector's flags read the chat's whole state
+history when a watch is bare (not measured at size). Source: the status-key compatibility commit `8afe809` and its
+golden comparison of parsed keys.
+
+**K57 — "Diverged from the setting" reads every lorebook entry.** `divergence` can limit lorebook candidates to the
+entries the chat's prompts held (`held_keys`, PHASE-65 S4), but the author's note does not pass them yet (a TODO in
+`api.py`), so an entry the story never activated can still be compared with the story. Source:
+the Tier 1 canon and state work (`a6769ed`).
+
 ## Recall and gating
 
 **K26 — The token estimate over-counts Korean.** The packet budget is filled against a conservative
@@ -535,6 +577,18 @@ in another language, or one that says the same thing in words the lists lack, is
 excerpt then behaves as under `packet-v14` (ADR 0069).
 *Workaround:* none; the lists are code, not a setting.
 
+**K54 — `packet-v21`'s limits.** Opt-in (ADR 0092). A claim's stated cause (`because`) is not checked against
+secrets (claims render apart from facts). A title becomes an alias only when the persona uses it for one character
+(the cast is not known when aliases are made). Only supportive summaries yield to the lead and `<Private>`; the story
+so far keeps its place. `tools/replay_sequence.py` builds its own rest window without collapsing rerolls, so a
+sequence replay under `packet-v21` rests differently from the live request (`audit.replay` matches it). Nothing of it
+is measured yet. Source: `packet-v21` (`9be7dcd`, `a52e85b`, `a8122a2`).
+
+**K59 — A cached packet after an extraction or a card edit.** The plugin keeps a chat's packet for up to 10 minutes
+for an identical request. Since PHASE-65 an empty packet is kept 60 s and every packet of the chat is dropped after a
+reply, but a non-empty packet can still be reused after the worker finished an extraction, or after the card was
+edited outside the panel, until the 10 minutes pass. Source: the Tier 1 plugin commit `7232ea7`.
+
 ## Data and lifecycle
 
 **K16 — Chat deletes in PocketRisu go unnoticed.** PocketRisu fires no plugin hook for delete, edit,
@@ -603,6 +657,15 @@ unmeasured; that scope decision is not evidence that a restore works there. The 
 offers the button there.
 *Workaround:* restore from a desktop browser that reaches the same sidecar, or with the `archive restore` command
 (README "Export").
+
+**K58 — Rows of one generation written before and after PHASE-65 differ.** PHASE-65 changed code around the
+extraction prompt without a new generation key: the 40-assertion cap counts the model's own items only, an unknown
+polarity parks the row pending, a stray value on a value-less predicate is dropped, the clock line no longer stitches
+two turns (S1); the reveal check's selection and resolution (S6); what the summarizer is shown of a valueless secret
+(S4). Rows stored before keep what the older code wrote (a stray value stays, so a new value-less negative does not
+match an old valued positive). Nothing is re-extracted. Whether these should have been new generations is open
+(PHASE-65 Open question 1). Source: the Tier 1 extraction work (`ffda189`), the wiring (`48051fc`), the canon and
+state work (`a6769ed`).
 
 ## Setup and UI
 

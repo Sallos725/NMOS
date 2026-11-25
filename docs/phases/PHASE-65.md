@@ -353,7 +353,7 @@ During the run, 2026-11-25:
    No key changed, so no turn is re-extracted; the gate would measure the rows written from now on.
 8. **The replay drift of the Tier 1 fixes is listed.** Met (below).
 9. **Docs reflect the change** (`AGENTS.md §12`). This document, ADRs 0092–0095 and the amendments, `ARCHITECTURE.md`
-   D94–D97, `docs/KNOWN-ISSUES.md` K52–K58, `docs/HOST-FACTS.md`.
+   D94–D97, `docs/KNOWN-ISSUES.md` K52–K59, `docs/HOST-FACTS.md`.
 
 ## What a deploy of this branch does
 
@@ -421,22 +421,23 @@ since Phase 60 was. The plugin goes back by re-importing the earlier build. A da
 
 Checked against the code at `361130c`; each is in `docs/KNOWN-ISSUES.md` where a user can meet it.
 - `held_keys`: `divergence` takes it, `notes.make` and `api.py` do not pass it (a TODO in `api.py`), so the
-  "diverged from the setting" part still reads every lorebook entry (B8).
+  "diverged from the setting" part still reads every lorebook entry (B8; K57).
 - Stored rows keep a stray `value` on value-less predicates (D4), so a new value-less negative does not match an old
-  valued positive in `facts.version_key`.
-- Carried secrets are not listed to the extractor as OPEN SECRETS; only an owner repair ends one (K53).
-- The C5 residual: a turn with two same-head valued secrets, one dropped by a re-extraction, still ends the survivor at
-  a score of 0.0 (ADR 0033 amendment 2 pins it).
+  valued positive in `facts.version_key` (K58).
+- Carried secrets are not listed to the extractor as OPEN SECRETS; only an owner repair ends one. The C5 residual: a
+  turn with two same-head valued secrets, one dropped by a re-extraction, still ends the survivor at a score of 0.0
+  (ADR 0033 amendment 2 pins it) (K53).
 - Identity: 크리스티나 / Christina and 에단 / Ethan still do not match; vowel-folded keys can over-match for the persona;
   a nickname two characters share, written reversed, now merges them (K52).
-- The reverse title lookup of `packet-v21` reads titles from the persona only; only supportive summaries yield; a
-  conditional-address label in a secret's head is compared as part of the object name (K54); the plugin's 10-minute
-  packet cache can still serve a non-empty packet after an extraction finished or an edit outside the panel.
+- `packet-v21`: the reverse title lookup reads titles from the persona only; only supportive summaries yield; claim
+  `because` clauses are not secret-gated (claims render through `claim_entry`); `tools/replay_sequence.py` builds
+  `recent` itself without collapsing rerolls, so a sequence replay rests differently from the live request
+  (`audit.replay` does not) (K54).
+- A conditional-address label in a secret's head is compared as part of the object name (K55).
+- The plugin's 10-minute packet cache can still serve a non-empty packet after an extraction finished or an edit
+  outside the panel (K59).
 - `claim`'s story-order barrier costs about 110 ms per claim at 25,000 active extract jobs (was about 50 ms; no
   index, which would need a migration).
-- `tools/replay_sequence.py` builds `recent` itself without collapsing rerolls, so a `packet-v21` sequence replay rests
-  differently from the live request (`audit.replay` does not).
-- Claim `because` clauses are not secret-gated under `packet-v21` (claims render through `claim_entry`).
 - A repair of a carried row is tied to its link id and orphans on relink; regression aliases are stored but only
   `continue` rows feed resolution; a persona with two or more nicknames in the target can read as ambiguous.
 - A fact repair on a carried fact: `repairs.match_fact` matches it (pure test); an end-to-end API repair on a carried

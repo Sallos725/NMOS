@@ -73,7 +73,7 @@ these behind a new policy so `packet-v20` and older replay as they were.
 - A `packet-v21` request can be longer in `<Cast>` and `<Private>` and shorter in `<Excerpt>`; its secret gates are
   instructions and fences, not isolation (K11; hard POV is not authorized).
 - `tools/replay_sequence.py` builds its own `recent` without collapsing rerolls, so a sequence replay under
-  `packet-v21` rests differently from the live request (K55).
+  `packet-v21` rests differently from the live request (K54).
 - Not gated: a claim's `because` clause (claims render through `claim_entry`). The title lookup reads titles from the
   persona only (the cast is not known when aliases are made, and the cast reads them). Only supportive summaries yield.
 - `CUT_RISK` (0.5) only forbids shortening an excerpt that would cross a secret's bar once cut; it drops nothing.
