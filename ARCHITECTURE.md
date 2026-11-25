@@ -503,7 +503,10 @@ part in secrets, threads or the scene. A story statement that replaces a canon `
 listed with the owner's choices (`identity` too until amendment 1: on real chats it listed the same identity in
 another language). `fact_lock`, an owner repair, keeps a canon fact or a correction
 current and holds off later statements, listed as conflicts. A canon fact whose text the prompt held is not sent again
-(D3), unless a lock holds it against the story. A request records the canon generation it read; its replay reads it.
+(D3), unless a lock holds it against the story. A request records the canon generation it read; its replay reads it. Amended 2026-11-25 (PHASE-65, ADR 0047
+amendment 3): a conditional block is judged on the text the model read (macros replaced); a persona or card text is read
+under the chat's names, never `plain`, except that an earlier `plain` read of such a text without name macros keeps
+serving.
 
 **D58 — NMOS off for one chat (ADR 0048; owner request outside the Phase 14 steps).** The plugin arg
 `disabled_chats` lists host chat ids NMOS is off for. Such a chat's requests pass through untouched after the chat is
@@ -931,6 +934,41 @@ not mark a superseded address form obsolete while another active conditional slo
 packet selection caps `situational` rows at 3 newest per direction (`SITUATIONAL_ADDRESS_MAX`). Active conditional rows
 format in `fact_text` and `secret_text` as `<subject> addresses <object> [<label>]: <value>` so the response model
 judges the situation while historical traces (all null) replay byte-identically under every packet policy.
+
+**D94 — `packet-v21` (ADR 0092; PHASE-65 S10).** Opt-in (`NMOS_PACKET_POLICY=packet-v21`; `packet-v19` stays the
+default). `packet-v20` plus what only it does, each addition gated on `V21_POLICIES`, so `packet-v20` and older compile
+and gather as before. Every excerpt and quote that repeats a secret kept from someone present is fenced in `<Private>`
+(normal mode) or withheld (strict, narrator); `<State>` / `<StateHistory>` values of 3 letters or more that repeat one
+are withheld; a public line drops a `because`, `disputed_by`, `before` or `first` clause that repeats one; a settled
+thread reads under its closing's marks; strict mode keeps an unspoken `feels_toward` readable in `<Private>`. `<Cast>`
+reads 4 turns and may hold peer feelings, forms of address (a pair's slots together or not at all) and a persona group,
+placed after every `packet-v20` line within 15 % of the budget. Feeling detail on `feels_toward` lines; titles the
+persona uses as aliases; the quote route only beside a question or recall cue outside the quotes; v21 keywords; the
+reranker on `sem_query` and the matched chunk, its order deciding the floor; gone read from presence rows only; rerolls
+counted once for rest and standing facts never resting (`audit.replay` alike); a replaced value drops only an excerpt
+that names its subject; `when_happened` scored on temporal questions; closed regression threads; a status question
+that names no one asks every window (D97). Not measured yet.
+
+**D95 — `resolve-v6`: direction, composite persona names, derived names (ADR 0095; PHASE-65 S3; amends D26, D34,
+D56).** An alias has a direction: a name that is the subject of every alias counted for it is one person; a shared
+target stays ambiguous; a `?` description never makes a name ambiguous. A host persona name is split on `/`, `|`, `·`
+and parentheses into primary names, the only ones folded into `{{user}}`; no name is folded by its last word. Derived
+persona names (given and first names, Hangul and Latin spellings, surname plus persona) join the persona as links the
+owner can split, unless the owner or another name says otherwise. A lorebook entry may join one person's names the
+story kept apart (never the persona's, never unrelated names); `secondkey` is not a key. `@name` reads vocatives,
+honorifics, up to three words and aliases. Entity ids change once; they are not stored.
+
+**D96 — The author's note in the chat's language (ADR 0093; PHASE-65 S8).** A note request's `language` is `"chat"`
+(the default, read from the scene summaries, else threads and facts) or `"en"` (the prompts as before). With `"en"` and
+secrets left out, a model-written part is also checked by meaning against the open secrets: the embedder (cosine ≥
+0.62), else one call of the note's model; a failing check counts as a leak. Every line goes through `tells`; open
+threads are capped (15, 25 %); before the first scene summary the chronicle is made from threads and NOW facts.
+
+**D97 — Status windows in more shapes, keys that stay (ADR 0094; PHASE-65 S9; amends D80).** Windows read as nested
+bars, 【】《》『』, multi-line blocks, Markdown tables and HTML cards, with what the earlier rules read read the same way.
+A window's keys are prefixed `<character>.<key>` only when one reply holds windows of two or more names sharing a
+non-scene key; scene keys never are; a bare pin or watch covers a key by its last part. The rules version is
+unchanged. Under `packet-v21` a status question that names no character asks that key of every window.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

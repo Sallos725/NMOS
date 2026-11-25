@@ -4,6 +4,7 @@
 import { canonicalJson, normalizeText } from './canonical';
 import { sha256Hex } from './hash';
 import { stripNoteBlocks } from './notes';
+import { isTextPart } from './placement';
 import type { HostChat, PromptMessage } from './types';
 
 /** A lorebook entry as `getCurrentLorebookEntries()` returns it (H19). */
@@ -61,8 +62,9 @@ export function loreKey(entry: HostLoreEntry): string {
   return `lore:f${fnv([entry.comment ?? '', entry.key ?? '', entry.secondkey ?? '', entry.mode ?? ''].join('\u0000'))}`;
 }
 
-function keysOf(entry: HostLoreEntry): string[] {
-  return `${entry.key ?? ''},${entry.secondkey ?? ''}`.split(/[,\n]/).map((k) => k.trim()).filter(Boolean);
+/** The words of a lorebook key field (comma- or line-separated). */
+function keysOf(field: string | undefined): string[] {
+  return (field ?? '').split(/[,\n]/).map((k) => k.trim()).filter(Boolean);
 }
 
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
@@ -104,8 +106,13 @@ export function canonTexts(card: HostCard | null, chat: HostChat, lore: HostLore
     if (n) key = `${key}~${n}`; // two entries alike in what names them: keep both, in host order
     const scope = local.some((e) => same(e, entry)) ? 'chat' : global.some((e) => same(e, entry)) ? 'character'
       : card ? 'module' : null;
+    // `keys` are what the entry is about (the sidecar reads them as its names); a selective entry's secondary keys
+    // (`secondkey`) only gate when it fires, so they go apart, and only when there are any (an entry without them
+    // keeps the metadata, and the manifest id, it had).
+    const triggers = keysOf(entry.secondkey);
     add(key, entry.content, { scope: scope ?? undefined, mode: entry.mode, always_active: !!entry.alwaysActive,
-      keys: keysOf(entry), comment: text(entry.comment) || undefined });
+      keys: keysOf(entry.key), trigger_keys: triggers.length ? triggers : undefined,
+      comment: text(entry.comment) || undefined });
   }
   return out;
 }
@@ -123,7 +130,11 @@ const HELD_SHARE = 0.8;
  * HELD_MIN_LINE characters and no other macro; a text needs two such lines).
  */
 export function heldKeys(canon: CanonText[], prompt: PromptMessage[]): string[] {
-  const all = normalizeText(prompt.map((m) => (typeof m?.content === 'string' ? m.content : '')).join('\n'));
+  // A multipart message's text parts count too (the same reading as `contentText`, kept here so the bundle's module
+  // order stays as it was).
+  const textOf = (content: unknown): string => (typeof content === 'string' ? content
+    : Array.isArray(content) ? content.filter(isTextPart).map((part) => part.text).join('\n') : '');
+  const all = normalizeText(prompt.map((m) => textOf(m?.content)).join('\n'));
   const character = canon.find((c) => c.key === 'card:name')?.text.trim();
   const persona = canon.find((c) => c.key === 'persona')?.metadata.name;
   const user = typeof persona === 'string' && persona.trim() ? persona.trim() : undefined;

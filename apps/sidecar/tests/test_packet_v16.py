@@ -17,7 +17,8 @@ from test_packet_ledger import extract
 
 
 def test_packet_v16_is_a_policy():
-    assert "packet-v16" in POLICIES and NAMED_POLICIES == {"packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20"}  # v17–v20 build on v16
+    assert "packet-v16" in POLICIES and NAMED_POLICIES == {"packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20",
+                                                        "packet-v21"}  # v17–v21 build on v16
 
 
 def client_for(url: str, policy: str):

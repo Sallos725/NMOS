@@ -12,21 +12,24 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import psycopg
 from xml.sax.saxutils import escape, quoteattr
 
-from .entities import USER_NAMES, Resolution, resolve
+from .entities import USER_NAMES, Resolution, names_persona, resolve
 from .packet import Line
 from .keywords import keywords
-from .predicates import (EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, address_label, address_slot, is_address_all,
-                         stored_knowledge, whereabouts)
+from .predicates import (EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, address_label,
+                         stored_knowledge, takes_value, whereabouts)
 from . import canon, canonfacts
-from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, exclusions, live, pins, quoted_turns,
-                      secret_events, splits_of, thread_events, unedited_quotes)
+from .repairs import (FACT_KINDS, IN_FORCE, READ_REGISTRY, REPAIR_COLUMNS, anchors_needed, apply_facts, apply_locks,
+                      apply_told, cardinality, conditional, epistemic, exclusions, fungible, is_v21, legacy_anchors,
+                      live, members_of, pins, quoted_turns, read_predicate, rebase, record_anchors, secret_events, slot,
+                      slotted, splits_of, thread_events, unedited_quotes, unifies)
+from .secrets import secret_text
 from .secrets import fold as fold_secrets
-from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
+from .threads import MATCH_MIN, PREDICATES as THREAD_PREDICATES, fold as fold_threads, similarity
 
 if TYPE_CHECKING:  # carry imports this module: never at run time
     from .carry import Carried
@@ -43,6 +46,7 @@ if TYPE_CHECKING:  # carry imports this module: never at run time
 ACTIVE_ASSERTIONS_TEMPLATE = """
 WITH m AS (
     SELECT am.position, am.turn, coalesce(am.turn, -1 - am.position) AS unit, am.source_revision_id AS rid,
+           sr.persona_name AS turn_persona,
            am.turn_hash, sr.lifecycle, sr.metadata, so.host_logical_id
     FROM active_membership am
     JOIN source_revision sr ON sr.id = am.source_revision_id
@@ -51,6 +55,7 @@ WITH m AS (
 ),
 live AS (
     SELECT e.id AS eid, e.extractor_key, e.compiler_version, m.position, m.turn, m.host_logical_id, m.turn_hash,
+           m.turn_persona,
            e.window_hash <> m.turn_hash AS is_check,
            CASE WHEN e.window_hash <> m.turn_hash THEN e.hints->>'checks' END AS checks,
            first_value(e.extractor_key) OVER w AS chosen, first_value(e.id) OVER w AS chosen_id,
@@ -70,8 +75,10 @@ SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
        a.participants::text AS participants, a.outcome, a.because, a.feeling::text AS feeling, a.when_happened,
        a.address_condition::text AS address_condition,
+       -- extract-v21's own marks (PHASE-66, migration 0041); null on every earlier generation's row
+       a.condition::text AS condition, a.guise, a.item_kind, a.knowledge_scope,
        -- a check's rows read as the extraction it checked
-       l.position, l.turn, l.host_logical_id, l.chosen AS generation, l.chosen_compiler AS compiler,
+       l.position, l.turn, l.host_logical_id, l.turn_persona, l.chosen AS generation, l.chosen_compiler AS compiler,
        -- the turn's hash: a secret's (ADR 0033 amendment 2) and an owner repair's target (ADR 0044); and the hash a
        -- reveal's listed turn had
        l.turn_hash,
@@ -104,16 +111,56 @@ ACTIVE_ASSERTIONS_AS_OF = ACTIVE_ASSERTIONS_TEMPLATE.format(
     upto=" AND am.position <= %(upto)s", known=_KNOWN.format(t="e"), known_r=_KNOWN.format(t="r"))
 
 
+def _with_open_turn(template: str) -> str:
+    """The same read also serving the open turn (PHASE-67 part 2, owner decision 2026-11-25): the head's last member,
+    when it is a provisional reply of a turn (its user has not answered) whose extraction by the active generation
+    exists and is not discarded. Its rows are marked `open_turn`. Only the author's note and carry read it; a request
+    never does (`memory_view(include_open_turn=...)`)."""
+    out = template
+    for old, new in (
+        ("am.turn_hash, sr.lifecycle, sr.metadata, so.host_logical_id",
+         "am.turn_hash, sr.lifecycle, sr.metadata, so.host_logical_id,\n"
+         "           (sr.lifecycle = 'provisional' AND am.turn IS NOT NULL AND am.position = (\n"
+         "                SELECT max(position) FROM active_membership WHERE commit_id = %(head)s)) AS is_open"),
+        ("e.source_revision_id AS rid, e.window_hash, e.created_at",
+         "e.source_revision_id AS rid, e.window_hash, e.created_at, m.is_open"),
+        ("AND m.lifecycle = 'accepted'", "AND (m.lifecycle = 'accepted' OR (m.is_open AND e.extractor_key = %(key)s))"),
+        ("       l.turn_hash,\n", "       l.turn_hash, l.is_open AS open_turn,\n"),
+    ):
+        assert out.count(old) == 1, old
+        out = out.replace(old, new)
+    return out
+
+
+ACTIVE_ASSERTIONS_OPEN = _with_open_turn(ACTIVE_ASSERTIONS)
+ACTIVE_ASSERTIONS_AS_OF_OPEN = _with_open_turn(ACTIVE_ASSERTIONS_AS_OF)
+# The open turn a read with `include_open_turn` served (provenance for the note and a carry snapshot).
+OPEN_TURN = """
+SELECT am.turn, am.position, am.source_revision_id AS revision, so.host_logical_id, sr.revision_hash
+FROM active_membership am
+JOIN source_revision sr ON sr.id = am.source_revision_id
+JOIN source_object so ON so.id = sr.source_object_id
+WHERE am.commit_id = %(head)s AND am.turn IS NOT NULL AND sr.lifecycle = 'provisional'
+  AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+  AND am.position = (SELECT max(position) FROM active_membership WHERE commit_id = %(head)s)
+  AND (%(upto)s::int IS NULL OR am.position <= %(upto)s::int)
+  AND EXISTS (SELECT 1 FROM extraction e WHERE e.source_revision_id = am.source_revision_id
+              AND e.window_hash = am.turn_hash AND e.extractor_key = %(key)s AND e.discarded_at IS NULL)
+"""
+
+
 def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, upto: int | None = None,
-                      known_at: datetime | None = None) -> list[dict[str, Any]]:
+                      known_at: datetime | None = None, open_turn: bool = False) -> list[dict[str, Any]]:
     """ACTIVE_ASSERTIONS with participants parsed. They are fetched as text and parsed only where present:
     decoding every jsonb value through the driver cost ≈10 ms per fact read at 10,000 messages
     (docs/perf/phase8-extraction.md). Knowledge marks stored as a {"name", …} repr read as the name
-    (stored_knowledge). With `upto` or `known_at`, the read as of an earlier request."""
+    (stored_knowledge). With `upto` or `known_at`, the read as of an earlier request. With `open_turn`, the open turn's
+    finished early extraction too (`_with_open_turn`), its rows marked `open_turn`."""
     if upto is None and known_at is None:
-        rows = conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
+        rows = conn.execute(ACTIVE_ASSERTIONS_OPEN if open_turn else ACTIVE_ASSERTIONS,
+                            {"head": head, "key": extractor_key}).fetchall()
     else:
-        rows = conn.execute(ACTIVE_ASSERTIONS_AS_OF, {
+        rows = conn.execute(ACTIVE_ASSERTIONS_AS_OF_OPEN if open_turn else ACTIVE_ASSERTIONS_AS_OF, {
             "head": head, "key": extractor_key, "upto": upto if upto is not None else 2**31 - 1,
             "known_at": known_at}).fetchall()
     for r in rows:
@@ -127,7 +174,22 @@ def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, 
             r["when_happened"] = when
         if (cond := r.pop("address_condition")) is not None:  # extract-v20 only (PHASE-64): other rows read as before
             r["address_condition"] = _parse_address_condition(cond)
+        ontology_marks(r)
+        if open_turn and r.pop("open_turn"):  # PHASE-67: only the open turn's rows keep the mark
+            r["open_turn"] = True
     return rows
+
+
+ONTOLOGY_MARKS = ("condition", "guise", "item_kind", "knowledge_scope")  # extract-v21's columns (PHASE-66, 0041)
+
+
+def ontology_marks(row: dict[str, Any]) -> dict[str, Any]:
+    """extract-v21's four marks of a stored row (PHASE-66), in place: each kept only when set, `condition` parsed from
+    its text, so a row of every earlier generation (all four null) has none of the keys and reads as before."""
+    for k in ONTOLOGY_MARKS:
+        if k in row and (value := row.pop(k)) is not None:
+            row[k] = _parse_address_condition(value) if k == "condition" and isinstance(value, str) else value
+    return row
 
 
 def told_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -183,15 +245,22 @@ def _item(a: dict[str, Any], r: Resolution | None) -> str:  # possesses: the obj
 
 
 def version_key(a: dict[str, Any], r: Resolution | None = None) -> tuple:
-    """Subject and object are entity ids where the resolver links them (ADR 0012), text otherwise."""
+    """Subject and object are entity ids where the resolver links them (ADR 0012), text otherwise.
+
+    extract-v21's own predicates (PHASE-66) take their registry entry (`READ_REGISTRY`): `vital_status`, `lives_in`,
+    `disguised_as` and `contained_in` one each per subject (apart from `has_status`, `located_in` and `identity`),
+    `holds_rank` one per (character, group), `cover_identity` beside `identity`. The key never depends on the row's
+    generation: a pair's roles and an item's holders keep one history across an extract-v20 → v21 switch, and the fold
+    (`_versions`) reads several roles or a fungible item's holders apart."""
     if a["predicate"] == "relationship":  # one history per pair, both directions (ADR 0038)
         return ("relationship",) + tuple(sorted((_subject(a, r), _object(a, r))))
     if whereabouts(a):  # one current holder per item (ADR 0011), one whereabouts with its place (PHASE-6)
         return ("whereabouts", _item(a, r))
-    pred = REGISTRY[a["predicate"]]
+    pred = READ_REGISTRY[a["predicate"]]
     if pred.cardinality == "single":
         return (a["predicate"], _subject(a, r)) + ((_object(a, r),) if pred.per_object else ())
-    return (a["predicate"], _subject(a, r), _object(a, r), _norm(a["value"]))
+    return (a["predicate"], _subject(a, r), _object(a, r),
+            _norm(a["value"]) if takes_value(a["predicate"], READ_REGISTRY) else "")
 
 
 def relation(a: dict[str, Any], r: Resolution | None = None) -> tuple:
@@ -204,22 +273,30 @@ def relation(a: dict[str, Any], r: Resolution | None = None) -> tuple:
         return (a["predicate"],)
     if whereabouts(a):
         return (a["predicate"], _object(a, r))
-    pred = REGISTRY[a["predicate"]]
+    pred = READ_REGISTRY[a["predicate"]]
     if pred.cardinality == "single":
-        return ((_norm(a["value"]),) if pred.per_object else (_object(a, r), _norm(a["value"])))
+        value = _norm(a["value"]) if takes_value(a["predicate"], READ_REGISTRY) else ""
+        return ((value,) if pred.per_object else (_object(a, r), value))
     return ()
 
 
 # Relationships that hold the same both ways (ADR 0038): the head noun of the value, in Korean last, possibly followed
 # by 관계/사이; in English any word of it, unless "of" makes it someone else's ("friend of her brother").
+# "적" (enemy) only as a word of its own ("적", "오랜 적") or in "숙적": as a suffix it makes adjectives of anything
+# ("일방적", "적대적", "의존적"), most of them one way.
 SYMMETRIC_KO = ("친구", "연인", "애인", "커플", "부부", "배우자", "형제", "자매", "남매", "쌍둥이", "동급생", "동기",
-                "동창", "동료", "라이벌", "경쟁자", "원수", "적", "파트너", "동반자", "룸메이트", "이웃", "약혼자", "사촌",
+                "동창", "동료", "라이벌", "경쟁자", "원수", "숙적", "파트너", "동반자", "룸메이트", "이웃", "약혼자", "사촌",
                 "동맹", "팀원", "짝꿍", "단짝", "소꿉친구", "동지")
+_ENEMY_KO = re.compile(r"(?:^|\s)적$")
 SYMMETRIC_EN = frozenset({"friend", "friends", "lover", "lovers", "couple", "spouse", "spouses", "married", "sibling",
                           "siblings", "twin", "twins", "classmate", "classmates", "colleague", "colleagues", "coworker",
                           "coworkers", "rival", "rivals", "enemy", "enemies", "partner", "partners", "roommate",
                           "roommates", "neighbor", "neighbors", "cousin", "cousins", "fiance", "fiancee", "engaged",
                           "allies", "ally", "teammate", "teammates"})
+# Words that make an English relationship one way or not (or no longer) what it says: "ex-girlfriend", "former partner",
+# "fake friend", "unrequited lover", "one-sided rival". A possessive ("friend's brother") is someone else's.
+ONE_WAY_EN = frozenset({"ex", "former", "fake", "unrequited", "sided"})
+_POSSESSIVE = re.compile(r"[a-z]['’]s\b")
 _ASIDE = re.compile(r"\([^)]*\)")
 
 
@@ -228,9 +305,10 @@ def symmetric(value: str | None) -> bool:
     text = _ASIDE.sub(" ", str(value or "")).strip().casefold()
     words = re.findall(r"[a-z]+", text)
     if words and not re.search(r"[가-힣]", text):
-        return "of" not in words and any(w in SYMMETRIC_EN for w in words)
+        return ("of" not in words and not _POSSESSIVE.search(text) and not ONE_WAY_EN.intersection(words)
+                and any(w in SYMMETRIC_EN for w in words))
     head = re.sub(r"\s*(관계|사이)$", "", text).strip()
-    return bool(head) and "의 " not in head and head.endswith(SYMMETRIC_KO)
+    return bool(head) and "의 " not in head and (head.endswith(SYMMETRIC_KO) or bool(_ENEMY_KO.search(head)))
 
 
 def _pair_versions(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
@@ -289,6 +367,9 @@ def _entry(h: dict[str, Any], outcome: dict[int, str], closer: dict[int, dict[st
         out["when_happened"] = h["when_happened"]
     if h.get("address_condition"):  # PHASE-64: the condition this address held under
         out["address_condition"] = h["address_condition"]
+    for k in ONTOLOGY_MARKS:  # PHASE-66: extract-v21's marks of the statement, only where it has them
+        if h.get(k):
+            out[k] = h[k]
     if h.get("canon"):
         out["canon"] = h["canon"]
     if h.get("carried"):  # ADR 0085: a statement an earlier chat made
@@ -350,7 +431,10 @@ def _different_source(earlier_row: dict[str, Any], later_row: dict[str, Any]) ->
 
 
 def _address_versions(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
-    """One direction's `addresses` assertions in position order with conditional slots (PHASE-64, ADR 0091).
+    """One direction's `addresses` assertions in position order with conditional slots (PHASE-64, ADR 0091); since
+    PHASE-66 also one version key's history of an extract-v21 conditioned predicate other than `relationship`
+    (`repairs.slot` and `repairs.unifies` read its `condition` as they read an address's `address_condition`, and are
+    `predicates.address_slot` and `is_address_all` for an address).
 
     Each condition slot (`default`, `public`, `private`, or `("situational", normalized_when)`) keeps its own current
     row and per-slot history so settling a private form does not supersede the public form or pollute its `before:`
@@ -373,8 +457,8 @@ def _address_versions(history: list[dict[str, Any]], r: Resolution | None = None
             outcome[id(row)] = how
             closer[id(row)] = by
 
-    def add_hist(slot: tuple[str, ...], items: list[dict[str, Any]]) -> None:
-        bucket = slot_history.setdefault(slot, [])
+    def add_hist(key: tuple[str, ...], items: list[dict[str, Any]]) -> None:
+        bucket = slot_history.setdefault(key, [])
         seen = {id(x) for x in bucket}
         for x in items:
             if id(x) not in seen:
@@ -382,39 +466,39 @@ def _address_versions(history: list[dict[str, Any]], r: Resolution | None = None
                 seen.add(id(x))
 
     for a in history:
-        slot = address_slot(a)
-        unifies = a["polarity"] == "positive" and is_address_all(a)
+        here = slot(a)
+        unifying = a["polarity"] == "positive" and unifies(a)
         rel = relation(a, r)
         if a["polarity"] == "negative":
-            current = slots.get(slot)
+            current = slots.get(here)
             if current is not None and relation(current, r) != rel:
-                negatives[(slot, rel)] = a
-                add_hist(slot, [a])
+                negatives[(here, rel)] = a
+                add_hist(here, [a])
                 continue
-            close(negatives.pop((slot, rel), None), "superseded", a)
+            close(negatives.pop((here, rel), None), "superseded", a)
             close(current, "ended", a)
-            slots[slot] = a
-            add_hist(slot, [a])
+            slots[here] = a
+            add_hist(here, [a])
             continue
-        close(negatives.pop((slot, rel), None), "superseded", a)
-        if unifies:
+        close(negatives.pop((here, rel), None), "superseded", a)
+        if unifying:
             for other, held in list(slots.items()):
-                if other != slot and held is not None and _different_source(held, a):
+                if other != here and held is not None and _different_source(held, a):
                     close(held, "superseded", a)
-                    add_hist(slot, slot_history.get(other, []))
+                    add_hist(here, slot_history.get(other, []))
                     slots[other] = None
             for nkey in [k for k, neg in negatives.items() if _different_source(neg, a)]:
                 neg = negatives.pop(nkey)
                 close(neg, "superseded", a)
-                add_hist(slot, [neg])
-            close(slots.get(slot), "superseded", a)
-            slots[slot] = a
-            add_hist(slot, [a])
+                add_hist(here, [neg])
+            close(slots.get(here), "superseded", a)
+            slots[here] = a
+            add_hist(here, [a])
             continue
-        close(slots.get(slot), "superseded", a)
-        slots[slot] = a
-        add_hist(slot, [a])
-        if slot in (("public",), ("private",)):
+        close(slots.get(here), "superseded", a)
+        slots[here] = a
+        add_hist(here, [a])
+        if here in (("public",), ("private",)):
             pub, priv, dflt = slots.get(("public",)), slots.get(("private",)), slots.get(("default",))
             if (pub is not None and pub["polarity"] == "positive"
                     and priv is not None and priv["polarity"] == "positive"
@@ -422,7 +506,7 @@ def _address_versions(history: list[dict[str, Any]], r: Resolution | None = None
                     and _different_source(dflt, a)):
                 close(dflt, "superseded", a)
                 slots[("default",)] = None
-                target = slot
+                target = here
                 if not _different_source(pub, a) and not _different_source(priv, a):
                     dv = _norm(dflt.get("value"))
                     if _norm(pub.get("value")) == dv:
@@ -437,10 +521,98 @@ def _address_versions(history: list[dict[str, Any]], r: Resolution | None = None
     for _, row in current_items:
         outcome[id(row)] = "current"
     out = []
-    for slot, row in current_items:
-        my_history = sorted(slot_history.get(slot, [row]), key=lambda x: order[id(x)])
+    for key, row in current_items:
+        my_history = sorted(slot_history.get(key, [row]), key=lambda x: order[id(x)])
         entries = [_entry(h, outcome, closer) for h in my_history]
         out.append({**row, "versions": len(entries), "history": entries, "claims": []})
+    return out
+
+
+def _ended_containers(facts: list[dict[str, Any]], r: Resolution | None) -> list[dict[str, Any]]:
+    """An item's current `contained_in` (extract-v21) ends with the item: a current end (`destroyed`, positive,
+    undisputed) of the same item stated after it closes it (its history entry `ended`, `closed_turn` the end's). A
+    fungible item's end is one of many (no container closed)."""
+    ended = {_subject(f, r): f for f in facts if f["predicate"] == "destroyed" and f.get("polarity") == "positive"
+             and not f.get("disputed_by") and f.get("item_kind") != "fungible"}
+    out = []
+    for f in facts:
+        end = ended.get(_subject(f, r)) if f["predicate"] == "contained_in" and f.get("polarity") == "positive" else None
+        if end is None or end["position"] < f["position"]:
+            out.append(f)
+            continue
+        for e in f.get("history") or ():
+            if e["position"] == f["position"] and e["outcome"] == "current":
+                e["outcome"] = "ended"
+                e["closed_turn"] = end.get("turn")
+    return out
+
+
+def _conditional_pairs(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
+    """One pair's relationships when some hold under a condition (extract-v21, PHASE-66), in position order.
+
+    Each condition slot (`repairs.slot`: default, public, private, or situational with its `when`) is folded as a pair
+    is (`_pair_versions`: each direction its latest, a symmetric tie both ways), so a private tie and the public one
+    coexist, each with its own history. Two cross-slot transitions, as for addresses (`_address_versions`, ADR 0091):
+    - unification: a positive `scope="all"` statement (in the default slot) closes every other slot's current tie from
+      an earlier turn or canon source, whose history joins its own;
+    - split cleanup: a positive default tie is retired, into the history of the slot that says the same (else the
+      later one), once a positive public and a positive private tie of its direction (or symmetric) stand after it from
+      another turn or source."""
+    order = {(a["id"], a["position"]): i for i, a in enumerate(history)}
+    groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    for a in history:
+        groups.setdefault(slot(a), []).append(a)
+    folded = {key: _pair_versions(rows, r) for key, rows in groups.items()}
+    unifiers = [a for a in history if a["polarity"] == "positive" and unifies(a)]
+    gone: dict[int, dict[str, Any]] = {}  # id() of an output closed across slots -> the statement that closed it
+    joins: dict[tuple, list[dict[str, Any]]] = {}  # (id, position) of a closing statement -> the entries it took in
+
+    def retire(f: dict[str, Any], by: dict[str, Any]) -> None:
+        for entry in f["history"]:
+            if entry["position"] == f["position"] and entry["outcome"] == "current":
+                entry["outcome"] = "superseded"
+                entry["closed_turn"] = by["turn"] if by.get("turn") is not None else (0 if by.get("canon") else None)
+        gone[id(f)] = by
+        joins.setdefault((by["id"], by["position"]), []).extend(f["history"])
+
+    for key, outs in folded.items():
+        if key == ("default",):
+            continue
+        for f in outs:
+            at = order[(f["id"], f["position"])]
+            closer = next((u for u in reversed(unifiers)
+                           if order[(u["id"], u["position"])] > at and _different_source(f, u)), None)
+            if closer is not None:
+                retire(f, closer)
+    pub = [f for f in folded.get(("public",), ()) if id(f) not in gone and f["polarity"] == "positive"]
+    priv = [f for f in folded.get(("private",), ()) if id(f) not in gone and f["polarity"] == "positive"]
+    for f in folded.get(("default",), ()):
+        if f["polarity"] != "positive" or unifies(f):
+            continue
+        d = _subject(f, r)
+        mine = lambda x: _subject(x, r) == d or symmetric(x.get("value"))  # noqa: E731
+        p = next((x for x in pub if mine(x) and x["position"] > f["position"]), None)
+        q = next((x for x in priv if mine(x) and x["position"] > f["position"]), None)
+        if p is None or q is None:
+            continue
+        later = p if p["position"] > q["position"] else q
+        if not _different_source(f, later):
+            continue
+        retire(f, next((x for x in (p, q) if _norm(x.get("value")) == _norm(f.get("value"))), later))
+    out = []
+    for key, outs in folded.items():
+        for f in outs:
+            if id(f) in gone:
+                continue
+            # the entries a closing statement took in join every output whose history holds it (as an address's slot
+            # history does), so they stay readable after that statement is itself replaced in its slot
+            held = {h["position"] for h in f["history"]}
+            extra = [e for (_, at), entries in joins.items() if at in held for e in entries]
+            if extra:
+                seen = {id(e) for e in f["history"]}
+                merged = sorted(f["history"] + [e for e in extra if id(e) not in seen], key=lambda e: e["position"])
+                f = {**f, "history": merged, "versions": len(merged)}
+            out.append(f)
     return out
 
 
@@ -463,9 +635,54 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     by a negation or an end) or `conflicting` (an end that later statements contradict).
     """
     if history and history[0]["predicate"] == "relationship":
+        if any(conditional(a) for a in history):  # extract-v21 (PHASE-66): a pair's ties by condition slot
+            return _conditional_pairs(history, r)
         return _pair_versions(history, r)
-    if history and history[0]["predicate"] == "addresses" and any(a.get("address_condition") for a in history):
-        return _address_versions(history, r)
+    if history and history[0]["predicate"] == "role_toward" and any(is_v21(a) for a in history):
+        # PHASE-66: once extract-v21 speaks of a pair's roles, each role is its own history (several roles toward one
+        # counterpart, each ended by its own denial), earlier generations' statements of the same role among them
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for a in history:
+            groups.setdefault(_norm(a.get("value")), []).append(a)
+        return [f for g in groups.values() for f in _one_slot(g, r)]
+    if history and whereabouts(history[0]) and any(fungible(a) for a in history):
+        # PHASE-66: an item one of many alike (any statement of it says so): each holder's possession its own history,
+        # never ending another's; its place and its end fold apart, and end no one's possession
+        holders: dict[str, list[dict[str, Any]]] = {}
+        rest = []
+        for a in history:
+            if a["predicate"] in HOLDER_PER_ITEM:
+                holders.setdefault(_subject(a, r), []).append(a)
+            else:
+                rest.append(a)
+        # an end of one of them (eaten, spent, broken) ends its holder's only: the holder its turn names (a typed
+        # participant, or who held it in that turn), else the one holder there is
+        ends = {}
+        for d in rest:
+            if d["predicate"] != "destroyed" or d.get("polarity") == "negative":
+                continue
+            named = ({r.key(p["type"], p["name"]) if r else _norm(p["name"]) for p in d.get("participants") or ()
+                      if p.get("type") in ("character", "group")}
+                     | {k for k, g in holders.items() if any(_unit(x) == _unit(d) for x in g)})
+            if not named and len(holders) == 1:
+                named = set(holders)
+            for k in named & holders.keys():
+                g = holders[k]
+                if not any(x["position"] > d["position"] and x.get("polarity") != "negative" for x in g):
+                    ends[k] = d  # a later possession of one is another one: no end then
+        out = []
+        for k, g in holders.items():
+            folded = _one_slot(sorted(g + [ends[k]], key=lambda x: x["position"]) if k in ends else g, r)
+            out += [f for f in folded if f["predicate"] in HOLDER_PER_ITEM]
+        return out + (_one_slot(rest, r) if rest else [])
+    return _one_slot(history, r)
+
+
+def _one_slot(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
+    """`_versions` of one history that holds one role or one holder (or any other key): conditional slots when a row
+    states a condition (PHASE-64, PHASE-66), else the plain fold below."""
+    if history and slotted(history[0]["predicate"]) and any(conditional(a) for a in history):
+        return _address_versions(history, r)  # PHASE-64 addresses; PHASE-66 the other conditioned predicates
     slots: dict[str, dict[str, Any] | None] = {}
     negatives: dict[tuple, dict[str, Any]] = {}
     disputed_by: dict[str, Any] | None = None
@@ -495,6 +712,8 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
         if slot and a["polarity"] == "positive":
             for other, held in list(slots.items()):
                 if other != slot and held is not None and _unit(held) != _unit(a):
+                    if other == "possesses" and slot == "located_in" and is_v21(a):
+                        continue  # PHASE-66: where a thing is kept is not who owns it (an extract-v21 statement)
                     close(held, "ended" if slot == "destroyed" else "superseded", a)
                     slots[other] = None
         close(current, "ended" if a["polarity"] == "negative" else "superseded", a)
@@ -521,6 +740,8 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     return out
 
 
+_GUISE_NS = UUID("6f1e4f4e-2f6b-5c39-9a51-6e3f2b7a9c10")  # the namespace of a guise alias's stable negative id
+
 LIVE: Any = object()  # `canon_facts` of a live read: decided from the manifest the request names (ADR 0047)
 
 
@@ -528,7 +749,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                 known_at: datetime | None = None, canon_manifest: str | None = None,
                 canon_exact: bool = False, canon_key: str | None = None,
                 canon_facts: Any = LIVE, what_if: dict[str, Any] | None = None,
-                told: bool = False, carried: Carried | None = None) -> dict[str, list[dict[str, Any]]]:
+                told: bool = False, carried: Carried | None = None,
+                include_open_turn: bool = False) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -568,22 +790,31 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     rows enter the resolution after the target's own rows (so the target's story names its entities) and fold as facts
     from before turn 0, after the canon facts: the
     story supersedes them, the owner's repairs and exclusions apply to them, a carried opening opens its thread (marked
-    `carried`) and the story can close it by text; they take no part in secrets and keep their stored marks. A
+    `carried`) and the story can close it by text; one kept from someone is a secret of the target, which the target's
+    story can reveal (Tier 1: kept out of secrets, it was neither revealable nor held by the secret gates). A
     `regression` link's rows are listed apart (`regression`), annotated with the target's resolution, and enter
     neither the resolution nor a fold; the owner's `memory` exclusions leave them out as they leave rows out and take
     the excluded from their rememberers (`_regression_kept`). Either way the view gains `carried` and `regression`;
     without it, neither.
+
+    With `include_open_turn` (PHASE-67, owner decision 2026-11-25: the author's note and carry only, never a request),
+    the open turn's finished early extraction is read as if its reply were accepted (`_with_open_turn`): the head's last
+    member, a provisional reply whose extraction by the active generation exists and is not discarded. Its rows fold
+    with every other turn's (secrets, threads, knowledge marks alike), marked `open_turn`, and the view gains
+    `open_turn` {turn, position, revision, host_logical_id, revision_hash}. A reply rerolled, swiped, edited or removed
+    is no head member, so it never counts. Without the option, or with no such extraction, nothing changes.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
                 "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "repairs": [],
                 "assertions": [], "resolution": None, **({"told": []} if told else {})}
-    served = served_assertions(conn, head, extractor_key, upto, known_at)
-    rows = [r for r in served if r["predicate"] in REGISTRY]
+    served = served_assertions(conn, head, extractor_key, upto, known_at, open_turn=include_open_turn)
+    # PHASE-66: extract-v21's own predicates on its own rows; its beliefs and forgettings as kinds of their own
+    rows = [r for r in served if read_predicate(r) or epistemic(r)]
     # The conversation, the owner's repairs as of the read (ADR 0044) and the read's last turn, in one query.
     found = conn.execute(
         "SELECT w.conversation_id, c.host_persona_name, c.canon_manifest_id, r.id, r.kind, r.target, r.value, r.note,"
-        " r.created_at,"
+        " r.created_at, r.anchor, r.anchored_at,"
         " (SELECT max(turn) FROM active_membership WHERE commit_id = %(head)s"
         "  AND (%(upto)s::int IS NULL OR position <= %(upto)s::int)) AS last_turn"
         " FROM worldline_commit w JOIN conversation c ON c.id = w.conversation_id"
@@ -594,8 +825,18 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if what_if:
         repairs = [x for x in repairs if str(x["id"]) not in what_if.get("drop_repairs", ())] + list(
             what_if.get("add_repairs", ()))
+    # PHASE-67 part 4 (D7): an anchored repair as made on this head (`rebase`: its message's turn now, or detached and
+    # reported); a live read records the anchor of a legacy repair that matches the head, once (`legacy_anchors`).
+    live_read = known_at is None and not what_if
+    if repairs:
+        need_messages, need_turns = anchors_needed(repairs, live_read)
+        if need_messages or need_turns:
+            members = members_of(conn, head, need_messages, need_turns)
+            repairs = rebase(repairs, members, known_at)
+            if live_read:
+                record_anchors(conn, legacy_anchors(repairs, members))
     last_turn = conv["last_turn"] if repairs else None
-    in_force = live(repairs, last_turn)
+    in_force = live([x for x in repairs if not x.get("detached")], last_turn)
     # Names from canon (PHASE-14 Q6): the request's own manifest, else the canon in force at the read.
     canon_names, canon_used = (canon.names(conn, conv["conversation_id"], known_at, canon_manifest, canon_exact)
                                if conv["canon_manifest_id"] or canon_manifest else ([], None))
@@ -603,15 +844,31 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if what_if:
         links = [x for x in links if str(x["id"]) not in what_if.get("drop_links", ())] + list(
             what_if.get("add_links", ()))
+    # Audit B4.3: per-turn persona attribution. On a live read (`upto is None`), `conv["host_persona_name"]` is active;
+    # on a historical replay (`upto is not None`), the latest recorded `turn_persona` up to `upto` is the persona that
+    # was active then (legacy NULL rows fall back to `conv["host_persona_name"]`, preserving replay identity).
+    active_persona = conv["host_persona_name"]
+    if upto is not None:
+        for s in reversed(served):
+            if s.get("turn_persona"):
+                active_persona = s["turn_persona"]
+                break
+    personas = attribute_persona(served, active_persona)
     # Carried rows (ADR 0085), copied: a read annotates and folds its rows in place, and the link's rows are reused. The
     # source's persona is this chat's (S6): its stored marker reads as the persona name the host reports here.
+    finale = None
     if carried is not None:
-        carried = carried.for_persona(conv["host_persona_name"])
+        carried = carried.for_persona(active_persona)
+        from .carry import finale_left  # carry imports this module: here, not at import time
+        carried, finale = finale_left(conn, carried)  # PHASE-67: a source finale replaced since serves nothing
     carried_all = [{**x, "known_by": list(x["known_by"]) if x.get("known_by") else None,
                     "hidden_from": list(x["hidden_from"]) if x.get("hidden_from") else None}
                    for x in carried.rows] if carried is not None and carried.mode == "continue" else []
-    r = resolve(conv["conversation_id"], rows + carried_all if carried_all else rows,
-                persona_of(conv["host_persona_name"]), links, splits_of(in_force), canon_names)
+    # PHASE-66 guise scoping (soft): a guise and the one wearing it are one entity, so recall still finds them and the
+    # response model plays them in disguise; what someone unaware holds toward the guise is kept apart below
+    guise_aliases = _guise_aliases(rows + carried_all if carried_all else rows)
+    r = resolve(conv["conversation_id"], (rows + carried_all if carried_all else rows) + guise_aliases,
+                personas, links, splits_of(in_force), canon_names)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
@@ -633,7 +890,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     for row in canon_rows:
         _annotate(row, r)
     # Carried rows (ADR 0085): after the canon, before every row of the story; their openings open threads first.
-    carried_rows = [x for x in carried_all if x["predicate"] in REGISTRY and x["predicate"] != "also_called"]
+    carried_rows = [x for x in carried_all if (read_predicate(x) or epistemic(x)) and x["predicate"] != "also_called"]
     for row in carried_rows:
         _annotate(row, r)
     carried_openings = [x for x in carried_rows if x["predicate"] in THREAD_PREDICATES]
@@ -653,12 +910,20 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         in_force = unedited_quotes(in_force, {x["turn"]: x["h"] for x in conn.execute(
             "SELECT turn, max(turn_hash) AS h FROM active_membership WHERE commit_id = %s AND turn = ANY(%s)"
             " GROUP BY turn", (head, quoting)).fetchall()})
-    restored_at = sorted({rep["target"].get("turn") for rep in in_force if rep["kind"] == "fact_restore"} - {None})
+    restored_at = sorted({rep["target"].get("turn") for rep in in_force if rep["kind"] in ("fact_restore", "fact_add")}
+                         - {None})  # PHASE-67 part 4: a statement the owner adds goes where a restore goes
     turn_info = {x["turn"]: (x["p"], x["h"]) for x in conn.execute(  # PHASE-22 Q7: where a restored fact goes
         "SELECT turn, max(position) AS p, max(turn_hash) AS h FROM active_membership WHERE commit_id = %s"
         " AND turn = ANY(%s) AND (%s::int IS NULL OR position <= %s::int) GROUP BY turn",
         (head, restored_at, upto, upto)).fetchall()} if restored_at else {}
     rows, retracted = apply_facts(rows, in_force, r, applied, _annotate, turn_positions, turn_info)
+    # PHASE-67 part 4: the told rows the owner took back, from every read (the repairs list reports them applied)
+    told_served = apply_told(told_rows(served), in_force, r, applied) if told or any(
+        rep["kind"] == "told_retract" for rep in in_force) else None
+    if any(rep["kind"] in FACT_KINDS for rep in in_force):
+        # The threads fold what the repairs left: a retracted opening opens nothing, a corrected one opens as corrected
+        # and a restored one opens (PHASE-22 Q7), in the rows' order (carried openings first, as above; never canon).
+        promises = [x for x in rows if x["predicate"] in THREAD_PREDICATES and not x.get("canon")]
     locks = apply_locks(rows, in_force, r, applied)  # PHASE-14 Q7
     # PHASE-47 S2: entities the owner left out. Out of memory, their own facts and the standing they are one end of
     # leave before the folds; a row that names them only as a participant, or as another's object, stays.
@@ -678,18 +943,32 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
     # and a narrator must count them as knowing it). `learned` is not a fact itself. Before the threads, which copy
     # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
-    secrets, unrevealed, reveals = fold_secrets([x for x in rows if not x.get("canon") and not x.get("carried")]
-                                                if canon_rows or carried_rows else rows, r,
-                                                secret_events(in_force, r, applied))
+    # A carried row (ADR 0085) is a secret too: what was kept from someone in the earlier chat still is until this story
+    # shows them finding it out, and the summary and excerpt gates keep it.
+    # PHASE-66: a belief or a forgetting is no secret (the fold reads both as `NOT_SECRETS`); a forgetting reaches it
+    # whole, so it reopens a secret revealed to its subject (and a later reveal ends it again)
+    believed = [x for x in rows if epistemic(x)]
+    secret_rows = [x for x in rows if not x.get("canon")] if canon_rows else rows
+    secrets, unrevealed, reveals = fold_secrets(secret_rows, r, secret_events(in_force, r, applied))
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     by_repair = {s["id"]: s["repair"] for s in secrets if s.get("repair")}
     for row in rows:
         if row["id"] in by_repair:
             row["repair"] = by_repair[row["id"]]
         if row["id"] in ended:
-            row["hidden_from"] = [n for n in row["hidden_from"] if n not in ended[row["id"]]] or None
+            # by entity: a reveal to "김하나" also ends the secret for "하나" written beside it
+            revealed_to = {r.key("character", n) for n in ended[row["id"]]}
+            row["hidden_from"] = [n for n in row.get("hidden_from") or () if r.key("character", n) not in revealed_to] or None
             row["known_by"] = list(row.get("known_by") or []) + sorted(ended[row["id"]] - set(row.get("known_by") or []))
             row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
+    disguises = _disguises(rows, r) if guise_aliases else []
+    if disguises:  # PHASE-66: after the reveals above, so a character who found out holds toward the one beneath
+        _hold_toward_guise(rows, disguises, r)
+
+    def vkey(a: dict[str, Any]) -> tuple:
+        """The version key, and a guise-held row's own slot (`toward_guise`): never folded into its wearer's."""
+        g = (a.get("toward_guise") or {}).get("guise")
+        return version_key(a, r) + (("guise", g),) if g else version_key(a, r)
     threads, unmatched, consumed = fold_threads(promises, r, thread_events(in_force, r, applied))
     if carried_openings:
         assert carried is not None
@@ -701,14 +980,20 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     for row in rows:
         if row["id"] in consumed:
             continue
+        if believed and epistemic(row):  # PHASE-66: told apart below (`_epistemic`), or another assertion
+            if (row.get("source") or "narration") != "narration" or (row.get("modality") or "actual") != "actual":
+                other.append(row)
+            continue
         if row["source"] == "character_claim" and row["modality"] in ("actual", "unknown"):
             # A claim's truth is unknown by nature; the model may say so (owner decision 2026-09-24).
-            slot = (address_slot(row),) if row["predicate"] == "addresses" else ()
-            claimed[version_key(row, r) + slot + (_norm(row["asserted_by"]),)] = row  # latest wins
+            # latest wins, per speaker as an entity: "백이안" and "이안" are one speaker; an address (and an extract-v21
+            # conditioned fact) per condition slot
+            where = (slot(row),) if slotted(row["predicate"]) else ()
+            claimed[vkey(row) + where + (r.key("character", row["asserted_by"]),)] = row
         elif row["modality"] != "actual":
             other.append(row)
         else:
-            narrated.setdefault(version_key(row, r), []).append(row)
+            narrated.setdefault(vkey(row), []).append(row)
     held: list[dict[str, Any]] = []
     if locks:
         for key, history in narrated.items():
@@ -722,20 +1007,25 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                     held.append({"kind": "locked", "fact": lock["id"], "turn": lock["turn"], "position": lock["position"],
                                  "text": fact_text(lock), "repair": lock["locked"], "against": _brief(a)})
     facts = [f for history in narrated.values() for f in _versions(history, r)]
+    if any(f["predicate"] == "contained_in" for f in facts):  # PHASE-66: what is inside a destroyed thing is not
+        facts = _ended_containers(facts, r)
+    if believed:  # PHASE-66: beliefs, and what a character forgot withdrawn from them
+        aside = {id(x) for x in other}
+        beliefs, forgotten, facts = _epistemic([x for x in believed if id(x) not in aside], rows, facts, r)
     by_key: dict[tuple, list[dict[str, Any]]] = {}
     for f in facts:
-        by_key.setdefault(version_key(f, r), []).append(f)
+        by_key.setdefault(vkey(f), []).append(f)
     claims = sorted(claimed.values(), key=lambda c: c["position"], reverse=True)
     for c in claims:
-        for f in by_key.get(version_key(c, r), []):
-            if c["predicate"] == "addresses" and address_slot(f) != address_slot(c):
+        for f in by_key.get(vkey(c), []):
+            if slotted(c["predicate"]) and slot(f) != slot(c):
                 continue
             f["claims"].append({"by": c["asserted_by"], "turn": c["turn"], "position": c["position"],
                                 "object": c["object"], "value": c["value"], "polarity": c["polarity"]})
     facts.sort(key=lambda f: f["position"], reverse=True)
     for rid, gone in retracted.items():  # the version a retraction made current again names it (ADR 0044, Q7)
         for f in by_key.get(version_key(gone, r), []):
-            if gone["predicate"] == "addresses" and address_slot(f) != address_slot(gone):
+            if slotted(gone["predicate"]) and slot(f) != slot(gone):
                 continue
             if not f.get("repair"):
                 f["repair"] = rid
@@ -762,15 +1052,210 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             "repairs": [_report(rep, applied, r, excluded, pinned) for rep in repairs], "assertions": rows,
             "resolution": r,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
+    if believed:
+        view["beliefs"], view["forgotten"] = beliefs, forgotten
+    if disguises:  # PHASE-66: each disguise with the facts held toward its guise (absent without one)
+        view["disguises"] = _disguise_view(disguises, facts)
+    if include_open_turn and (finale := conn.execute(OPEN_TURN, {"head": head, "key": extractor_key,
+                                                                  "upto": upto}).fetchone()) is not None:
+        view["open_turn"] = dict(finale)  # PHASE-67: the read took the provisional finale; absent otherwise
     if told:
-        view["told"] = told_view(told_rows(served), r, excluded)
+        view["told"] = told_view(told_served if told_served is not None else told_rows(served), r, excluded)
     if carried is not None:
         view["carried"] = {"link": carried.link, "source": carried.source, "mode": carried.mode,
                            "names": carried.names, "rows": len(carried_rows), "story": carried.story}
+        if finale is not None:  # PHASE-67: the snapshot took the source's provisional finale; stale once replaced
+            view["carried"]["finale"] = finale
         forgotten = {i for i, x in excluded.items() if x["scope"] == "memory"}  # as the rows above leave them out
         view["regression"] = [line for x in carried.regression
                               if (line := _regression_kept(_regression_line(x, r), r, forgotten)) is not None]
     return view
+
+
+# PHASE-66 guise scoping (soft; plan 3C): while a `disguised_as` (X passes as the guise G) holds, a form of address, a
+# feeling or a tie that a character who does not know (in its `hidden_from`, not yet revealed to) holds toward G, or a
+# row whose `condition.as_guise` is G, stays the guise's: its own slot, marked `toward_guise`. X's body (status, place,
+# belongings, life) is one with the guise: one entity. Nothing is hidden beyond the knowledge marks (AGENTS.md §2).
+GUISE_HELD = frozenset({"addresses", "feels_toward", "relationship"})
+
+
+def _is_disguise(x: Mapping[str, Any]) -> bool:
+    return (x.get("predicate") == "disguised_as" and bool(x.get("object")) and x.get("polarity") != "negative"
+            and (x.get("source") or "narration") == "narration" and (x.get("modality") or "actual") == "actual"
+            and read_predicate(x))
+
+
+def _guise_aliases(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """For each extract-v21 disguise, an `also_called` row joining the guise's name to its wearer for the resolution
+    only (never a fact, never stored; `guise_alias` marks it, its id negative): the owner's split still separates
+    them."""
+    out = []
+    for d in rows:
+        if _is_disguise(d):
+            out.append({"id": -(uuid5(_GUISE_NS, f"{d['id']}:{d['object']}").int % 2**61) - 2**61,
+                        "predicate": "also_called", "subject": d["subject"], "subject_type": d.get("subject_type"),
+                        "object": None, "object_type": None, "value": d["object"], "modality": "actual",
+                        "source": "narration", "polarity": "positive", "participants": None, "turn": d.get("turn"),
+                        "position": d["position"], "compiler": d.get("compiler"), "guise_alias": True})
+    return out
+
+
+def _disguises(rows: list[dict[str, Any]], r: Resolution) -> list[dict[str, Any]]:
+    """Each disguise's span: from its turn until its wearer's next `disguised_as` statement (a new guise, or the
+    disguise denied), oldest first."""
+    stated = [x for x in rows if x["predicate"] == "disguised_as"]
+    out = []
+    for d in stated:
+        if not _is_disguise(d):
+            continue
+        k = _subject(d, r)
+        nxt = next((x for x in stated if x["position"] > d["position"] and _subject(x, r) == k), None)
+        out.append({"row": d, "of": k, "guise": _norm(d["object"]), "start": _unit(d),
+                    "end": _unit(nxt) if nxt is not None else None})
+    return out
+
+
+def _unaware(d: Mapping[str, Any], who: str, turn: int, r: Resolution) -> bool:
+    """Whether `who` (an entity key) does not know the disguise at `turn`: kept from them, and not revealed to them by
+    then (a reveal's turn on, they know; `revealed` as the secret fold set it)."""
+    told = {r.key("character", x["to"]): x.get("turn") for x in d.get("revealed") or ()}
+    if who in told:
+        return told[who] is not None and turn < told[who]
+    return who in {r.key("character", n) for n in d.get("hidden_from") or ()}
+
+
+def _hold_toward_guise(rows: list[dict[str, Any]], disguises: list[dict[str, Any]], r: Resolution) -> None:
+    """Mark, in place, the rows held toward a guise (`toward_guise`: {guise, of, disguise})."""
+    for x in rows:
+        if x["predicate"] not in GUISE_HELD:
+            continue
+        as_guise = _norm((x.get("condition") or {}).get("as_guise")) if isinstance(x.get("condition"), Mapping) else ""
+        t = _unit(x)
+        for d in disguises:
+            explicit = as_guise == d["guise"]
+            if not explicit and _norm(x.get("object")) != d["guise"]:
+                continue
+            if t < d["start"] or (d["end"] is not None and t >= d["end"]):
+                continue
+            who = r.key("character", x["subject"])
+            if who == d["of"] or not (explicit or _unaware(d["row"], who, t, r)):
+                continue
+            x["toward_guise"] = {"guise": d["row"]["object"], "of": d["row"]["subject"], "disguise": d["row"]["id"]}
+            break
+
+
+def _disguise_view(disguises: list[dict[str, Any]], facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`view["disguises"]`: each disguise, newest first, with who it is kept from now, who found it out, whether it
+    still holds, and the current facts held toward its guise (`held`, their ids)."""
+    current = {f["id"] for f in facts if f["predicate"] == "disguised_as"}
+    out = []
+    for d in sorted(disguises, key=lambda x: x["row"]["position"], reverse=True):
+        row = d["row"]
+        out.append({"id": row["id"], "subject": row["subject"], "subject_entity": row.get("subject_entity"),
+                    "guise": row["object"], "turn": row.get("turn"), "position": row["position"],
+                    "kept_from": list(row.get("hidden_from") or []), "revealed": list(row.get("revealed") or []),
+                    "current": row["id"] in current,
+                    "held": [f["id"] for f in facts if (f.get("toward_guise") or {}).get("disguise") == row["id"]]})
+    return out
+
+
+_SINCE = re.compile(r"since\s+turn\s+(\d+)", re.IGNORECASE)
+_LISTED = re.compile(r"^\[turn -?\d+\]\s*")  # a reveal's value names its listed secret's turn (ADR 0033)
+FORGOT_ALL = frozenset({"all", "everything", "전부", "모두", "전부 다", "모든 것", "모든 기억"})
+
+
+def forgot_scope(value: str | None) -> tuple[str, int | None]:
+    """What a `forgot` value withdraws (extract-v21: "the memory, \"all\", or \"since turn N\""): ("all", None),
+    ("since", N), or ("matter", None) for a memory named by its text."""
+    text = " ".join(str(value or "").split())
+    if text.casefold() in FORGOT_ALL:
+        return "all", None
+    if m := _SINCE.search(text):
+        return "since", int(m.group(1))
+    return "matter", None
+
+
+def _about(value: str | None, f: Mapping[str, Any]) -> bool:
+    """Whether a named matter (a belief's, a forgetting's) is this row's: its value, or its line, at least MATCH_MIN
+    alike (the bar a thread's close or a reveal's text needs, ADR 0019)."""
+    matter = _LISTED.sub("", str(value or ""))
+    return bool(matter) and max(similarity(matter, _LISTED.sub("", str(f.get("value") or ""))),
+                                similarity(matter, secret_text(f))) >= MATCH_MIN
+
+
+def _epistemic(believed: list[dict[str, Any]], rows: list[dict[str, Any]], facts: list[dict[str, Any]],
+               r: Resolution) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """extract-v21's `believes` and `forgot` (PHASE-66), narrated and actual, oldest first: (beliefs, forgotten, facts).
+
+    A belief is what its subject takes to be true, which may be false. It is never a fact about the world: it folds
+    apart (the latest per character and matter, a denial current as "no longer believes"), opens no conflict and no
+    `disputed` mark against the fact it contradicts, and is `held` until the same character later knows or learns the
+    matter (a `knows` or `learned` row, `_about`) or forgets it; then `ended`, with `ended_by`.
+
+    A forgetting withdraws, from its turn on, its character's knowledge of the matter (`forgot_scope`: one named
+    matter, "all", or "since turn N"): a current `knows` fact of theirs stated at or before it leaves `facts`, and their
+    name leaves the `known_by` of a fact they knew by then (a reveal's turn, else the fact's). Nothing is added to
+    `hidden_from`: nothing is hidden beyond what the marks already did. Each forgetting lists what it `withdrew`; a
+    later `knows` (or reveal) after it stands."""
+    order = {id(x): i for i, x in enumerate(rows)}
+    learners = [x for x in rows if x["predicate"] in ("knows", "learned") and x.get("polarity") != "negative"
+                and (x.get("source") or "narration") == "narration" and (x.get("modality") or "actual") == "actual"]
+    forgets = [g for g in believed if g["predicate"] == "forgot" and g.get("polarity") != "negative"]
+    who = lambda x: r.key("character", x["subject"])  # noqa: E731
+
+    def forgets_it(g: dict[str, Any], start: int | None, f: Mapping[str, Any]) -> bool:
+        scope, since = forgot_scope(g.get("value"))
+        if start is not None and g.get("turn") is not None and start > g["turn"]:
+            return False  # learned after the forgetting
+        if scope == "all":
+            return True
+        if scope == "since":
+            return start is not None and since is not None and start >= since
+        return _about(g.get("value"), f)
+
+    latest: dict[tuple, dict[str, Any]] = {}
+    for b in believed:
+        if b["predicate"] == "believes":
+            latest[(who(b), _norm(b.get("value")))] = b
+    beliefs = []
+    for b in sorted(latest.values(), key=lambda x: x["position"], reverse=True):
+        out = {**b, "status": "held"}
+        ender = next((x for x in sorted(learners + forgets, key=lambda x: order.get(id(x), 0))
+                      if order.get(id(x), -1) > order.get(id(b), -1) and who(x) == who(b)
+                      and (forgets_it(x, b.get("turn"), b) if x["predicate"] == "forgot" else _about(b.get("value"), x))),
+                     None)
+        if ender is not None:
+            out["status"] = "ended"
+            out["ended_by"] = _brief(ender)
+        beliefs.append(out)
+    forgotten = []
+    kept_facts = facts
+    for g in forgets:
+        withdrew: list[dict[str, Any]] = []
+        name = g["subject"]
+        k = who(g)
+        next_facts = []
+        for f in kept_facts:
+            if f["predicate"] == "knows" and who(f) == k and f["position"] <= g["position"] \
+                    and forgets_it(g, f.get("turn"), f):
+                withdrew.append({"id": f["id"], "turn": f.get("turn"), "predicate": f["predicate"],
+                                 "text": fact_text(f), "how": "fact"})
+                continue
+            knew = [n for n in f.get("known_by") or () if r.key("character", n) == k]
+            if knew and f["position"] <= g["position"]:
+                start = next((x.get("turn") for x in f.get("revealed") or () if r.key("character", x["to"]) == k),
+                             f.get("turn"))
+                if forgets_it(g, start, f):
+                    f["known_by"] = [n for n in f["known_by"] if n not in knew] or None
+                    f["forgotten_by"] = list(f.get("forgotten_by") or []) + knew
+                    withdrew.append({"id": f["id"], "turn": f.get("turn"), "predicate": f["predicate"],
+                                     "text": fact_text(f), "how": "known_by"})
+            next_facts.append(f)
+        kept_facts = next_facts
+        scope, since = forgot_scope(g.get("value"))
+        forgotten.append({**g, "scope": scope, "since": since, "who": name, "withdrew": withdrew})
+    forgotten.sort(key=lambda x: x["position"], reverse=True)
+    return beliefs, forgotten, kept_facts
 
 
 TOLD_SHOWN = ("id", "turn", "position", "subject", "object", "value", "knowledge", "known_by", "hidden_from",
@@ -881,12 +1366,14 @@ def _canon_conflicts(facts: list[dict[str, Any]], canon_at: dict[int, dict[str, 
 def _changes(locked: dict[str, Any], a: dict[str, Any], r: Resolution | None) -> bool:
     """Whether a statement of the locked fact's version key would replace or end it: for a relationship, one of the same
     direction or a symmetric one (ADR 0038); for `addresses`, the same condition slot or a unifying `scope="all"`
-    (PHASE-64, ADR 0091); for every other key, any."""
+    (PHASE-64, ADR 0091), and so for an extract-v21 conditioned fact (PHASE-66: a relationship needs both); for every
+    other key, any."""
+    same_slot = (not (slotted(locked["predicate"]) and slotted(a["predicate"]))
+                 or unifies(a) or unifies(locked) or slot(a) == slot(locked))
     if locked["predicate"] == "relationship" and a["predicate"] == "relationship":
-        return _subject(a, r) == _subject(locked, r) or symmetric(a["value"]) or symmetric(locked["value"])
-    if locked["predicate"] == "addresses" and a["predicate"] == "addresses":
-        return is_address_all(a) or is_address_all(locked) or address_slot(a) == address_slot(locked)
-    return True
+        return same_slot and (_subject(a, r) == _subject(locked, r) or symmetric(a["value"])
+                              or symmetric(locked["value"]))
+    return same_slot
 
 
 def _restates(a: dict[str, Any], b: dict[str, Any], r: Resolution | None) -> bool:
@@ -896,7 +1383,7 @@ def _restates(a: dict[str, Any], b: dict[str, Any], r: Resolution | None) -> boo
     if a["predicate"] != b["predicate"] or a.get("polarity") != b.get("polarity") \
             or _norm(a.get("value")) != _norm(b.get("value")):
         return False
-    if a["predicate"] == "addresses" and address_slot(a) != address_slot(b):
+    if slotted(a["predicate"]) and slot(a) != slot(b):
         return False
     ends = lambda x: (_subject(x, r), _object(x, r) if x.get("object") else None)  # noqa: E731
     if ends(a) == ends(b):
@@ -967,6 +1454,67 @@ def persona_of(host_persona_name: str | None) -> list[str]:
     return [host_persona_name] if host_persona_name else []
 
 
+def _same_persona_name(a: str, b: str) -> bool:
+    """Whether two host persona names name the same person (exact match, or one is a piece/given/full-name variant of
+    the other via `entities.names_persona`: e.g. '카일' <-> '아오키 카일', '기현' <-> '윤기현',
+    'Ronan Voss' <-> 'Ronan Voss/ 윤기현'). Distinct names ('타쿠미' vs '레이') return False."""
+    na, nb = _norm(a), _norm(b)
+    if not na or not nb or na == nb:
+        return True
+    return names_persona("character", a, (b,)) or names_persona("character", b, (a,))
+
+
+def attribute_persona(rows: list[dict[str, Any]], current_persona: str | None) -> list[str]:
+    """Per-turn persona attribution (Tier 4, audit B4.3), applied in place on `rows`.
+
+    Returns the persona names for `entities.resolve(...)`: `current_persona` plus any earlier turn persona that is a
+    name variant/rename of it. Rows from turns synced under a distinct earlier persona have their `USER_NAMES`
+    references (`subject`, `object`, `asserted_by`, `also_called` value, `known_by`, `hidden_from`, `participants`)
+    rewritten to that turn's recorded `turn_persona`, preventing retroactive reassignment to the new persona while
+    keeping the earlier persona's `{{user}}` and named rows unified as one character. Legacy rows (`turn_persona` None)
+    and single-persona chats are untouched. Idempotent.
+    """
+    personas = persona_of(current_persona)
+    if not current_persona or not current_persona.strip():
+        return personas
+    seen_same: set[str] = {_norm(current_persona)}
+    for row in rows:
+        tp = row.get("turn_persona")
+        if not tp or not isinstance(tp, str):
+            continue
+        tp = tp.strip()
+        if not tp:
+            continue
+        ntp = _norm(tp)
+        if ntp in seen_same:
+            continue
+        if _same_persona_name(tp, current_persona):
+            seen_same.add(ntp)
+            personas.append(tp)
+            continue
+        if row.get("subject_type") == "character" and _norm(row.get("subject")) in USER_NAMES:
+            row["subject"] = tp
+        if row.get("object") and row.get("object_type") == "character" and _norm(row.get("object")) in USER_NAMES:
+            row["object"] = tp
+        if row.get("predicate") == "also_called" and row.get("subject_type") == "character" and _norm(row.get("value")) in USER_NAMES:
+            row["value"] = tp
+        if row.get("asserted_by") and _norm(row.get("asserted_by")) in USER_NAMES:
+            row["asserted_by"] = tp
+        if kb := row.get("known_by"):
+            if any(_norm(x) in USER_NAMES for x in kb):
+                row["known_by"] = [tp if _norm(x) in USER_NAMES else x for x in kb]
+        if hf := row.get("hidden_from"):
+            if any(_norm(x) in USER_NAMES for x in hf):
+                row["hidden_from"] = [tp if _norm(x) in USER_NAMES else x for x in hf]
+        if parts := row.get("participants"):
+            if any(p.get("type") == "character" and _norm(p.get("name")) in USER_NAMES for p in parts):
+                row["participants"] = tuple(
+                    {**p, "name": tp} if p.get("type") == "character" and _norm(p.get("name")) in USER_NAMES else p
+                    for p in parts
+                )
+    return personas
+
+
 def _annotate(row: dict[str, Any], r: Resolution) -> None:
     """Entity of subject and object, and every name they go by (recall matches any of them).
 
@@ -1019,8 +1567,11 @@ def fact_text(f: dict[str, Any]) -> str:
     if f.get("object"):
         parts.append(f["object"])
     text = " ".join(parts)
-    if label := address_label(f):
-        text = f"{text} [{label}]"
+    cond = f.get("condition")  # PHASE-66: only a conditioned predicate's own mark; a stray one is ignored, never raised on
+    if label := address_label(f) or (address_label({"predicate": "addresses", "address_condition": cond})
+                                     if isinstance(cond, Mapping) and slotted(f.get("predicate"))
+                                     and f.get("predicate") != "addresses" else None):
+        text = f"{text} [{label}]"  # PHASE-64; PHASE-66: a conditioned fact names its condition the same way
     return f"{text}: {f['value']}" if f.get("value") else text
 
 
@@ -1076,9 +1627,23 @@ def asked_nouns(query: str) -> tuple[str, ...]:
                                if len(w) == 1 and w not in FUNCTION_SYLLABLES))
 
 
-def asked_predicates(query: str) -> frozenset[str]:
-    """The predicates the question's own words ask for (ASKS)."""
-    return frozenset(p for pattern, preds in ASKS if pattern.search(query) for p in preds)
+def asked_predicates(query: str, ontology: bool = False) -> frozenset[str]:
+    """The predicates the question's own words ask for (ASKS); with `ontology` (packet-v21 over extract-v21's rows,
+    PHASE-66) ASKS_V21 too."""
+    return frozenset(p for pattern, preds in (ASKS + ASKS_V21 if ontology else ASKS) if pattern.search(query)
+                     for p in preds)
+
+
+# PHASE-66 (`relevant_facts(ontology=True)`, packet-v21 only): extract-v21's own predicates. How a character stands now
+# also holds a death or a life, a home, what an item is in and a rank; a question asks for them in its own words.
+NOW_V21 = frozenset({"vital_status", "lives_in", "contained_in", "holds_rank"})
+ASKS_V21: tuple[tuple[re.Pattern[str], frozenset[str]], ...] = (
+    (re.compile(r"살아\s?있|죽었|죽은|생사|행방|\balive\b|\bdead\b|\bmissing\b", re.IGNORECASE), frozenset({"vital_status"})),
+    (re.compile(r"어디\s?살|사는\s?곳|집이\s?어디|거처|\blives?\b|\bhome\b", re.IGNORECASE), frozenset({"lives_in"})),
+    (re.compile(r"직위|계급|직책|지위|\brank\b|\btitle\b", re.IGNORECASE), frozenset({"holds_rank"})),
+    (re.compile(r"정체|위장|신분|\bcover\b|\bwho is\b", re.IGNORECASE), frozenset({"cover_identity"})),
+    (re.compile(r"안에|어디에\s?(넣|두)|\binside\b|\bin which\b", re.IGNORECASE), frozenset({"contained_in"})),
+)
 # Added to the score of a mentioned fact (ADR 0026). Below the gap between a mention in the user's message
 # and one in the previous reply (1.0), so they order facts of equal mention only.
 PRIOR_STANDING = 0.5
@@ -1175,7 +1740,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    persona_query_names: frozenset[str] | None = None,
                    persona_added: set[str] | None = None,
                    pinned: frozenset[str] = frozenset(), pin_named: set[str] | None = None,
-                   _question_facts: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+                   _question_facts: frozenset[str] = frozenset(), ontology: bool = False) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -1233,7 +1798,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     first_person = bool(FIRST_PERSON.search(query))
     why = causes and bool(WHY.search(query))
     oldest = first_cue and bool(FIRST_CUE.search(query))
-    asked = asked_predicates(query) if named_by_words else frozenset()
+    asked = asked_predicates(query, ontology) if named_by_words else frozenset()
+    now = NOW | NOW_V21 if ontology else NOW  # PHASE-66: off, every other policy and chat reads as before
     nouns = asked_nouns(query) if named_by_words else ()
     user = USER_NAMES | persona
     matches: list[dict[str, Any]] = []
@@ -1261,7 +1827,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                                      events_limit, persona=persona, present=present, causes=causes,
                                      first_cue=first_cue, window_start=window_start, marks=marks, aliases=aliases,
                                      named=named, named_by_words=named_by_words, risky=risky, keep=keep,
-                                     _question_facts=frozenset(str(f["id"]) for f in matches))
+                                     _question_facts=frozenset(str(f["id"]) for f in matches), ontology=ontology)
             _question_facts = frozenset(str(f["id"]) for f in targets)
     scored = []
     for f in facts:
@@ -1273,7 +1839,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
         if _question_facts and str(f["id"]) in _question_facts:
             mention = max(mention, 1.5)
-        pin = (bool(pinned) and f["predicate"] in NOW | STANDING and not f.get("carried")  # another chat's: never
+        pin = (bool(pinned) and f["predicate"] in now | STANDING and not f.get("carried")  # another chat's: never
                and any(n in pinned for n in names))
         if pin:  # a pinned character's now and standing facts, as a name in the message brings them
             mention = max(mention, 2.0)
@@ -1281,7 +1847,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
         if named is not None and any(n in q for n in names + hidden) and (  # the question names it (PHASE-34 Q1)
-                not named_by_words or f["predicate"] in NOW | STANDING | asked or f.get("known_by")
+                not named_by_words or f["predicate"] in now | STANDING | asked or f.get("known_by")
                 or f.get("hidden_from") or lexical >= LEXICAL_BAR or any(n in fact_text(f) for n in nouns)):
             named.add(str(f["id"]))
         elif pin and named is not None:
@@ -1327,9 +1893,11 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
             break
         if f["predicate"] == "event" and kept_events is not None and id(f) not in kept_events:
             continue
-        if f["predicate"] == "addresses" and (f.get("address_condition") or {}).get("scope") == "situational":
+        if slotted(f["predicate"]) and slot(f)[0] == "situational":  # PHASE-64; PHASE-66 every conditioned predicate
             pair = ((f.get("subject_entity") or {}).get("id") or _norm(f["subject"]),
                     (f.get("object_entity") or {}).get("id") or _norm(f.get("object")))
+            if f["predicate"] != "addresses":
+                pair = (f["predicate"],) + pair  # addresses keep their PHASE-64 key
             if sit_seen.get(pair, 0) >= SITUATIONAL_ADDRESS_MAX:
                 continue
             sit_seen[pair] = sit_seen.get(pair, 0) + 1

@@ -108,7 +108,7 @@ def test_packet_v2_counts_non_ascii_at_1_2_tokens_a_character():
                          "packet-v5": 1.2, "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2,
                          "packet-v10": 1.2, "packet-v11": 1.2, "packet-v12": 1.2, "packet-v13": 1.2, "packet-v14": 1.2,
                          "packet-v15": 1.2, "packet-v16": 1.2, "packet-v17": 1.2, "packet-v18": 1.2, "packet-v19": 1.2,
-                         "packet-v20": 1.2}
+                         "packet-v20": 1.2, "packet-v21": 1.2}
     assert estimate_tokens("가" * 100) == 150 and estimate_tokens("가" * 100, 1.2) == 120
     assert estimate_tokens("a" * 35, 1.2) == estimate_tokens("a" * 35) == 10  # ASCII unchanged
 

@@ -3,7 +3,8 @@
 A `conversation_carry` link is owner input: archived, kept by rebuilds, deleted with either chat. At link time the
 source chat is read once as of its head and a cutoff position, and the carried rows are stored with the link as a
 frozen plain-JSON `snapshot` with each row's provenance (ids only, no verbatim message text). Nothing is re-read
-from the source later.
+from the source later. A source that itself continues an earlier chat is read with what its own link carries (its
+frozen snapshot, never the earlier chat again), so a story told over three chats keeps its first chat's memory.
 """
 
 from __future__ import annotations
@@ -22,11 +23,12 @@ from psycopg.types.json import Jsonb
 
 from . import canonfacts, summaries
 from .ids import uuid7
-from .entities import PERSONA, Resolution
+from .entities import PERSONA, Resolution, names_persona, norm
 from .facts import fact_text, memory_view
+from .threads import relevant_threads
 
 SHAPE = 3
-MAX_ROWS = 2000
+MAX_ROWS = 5000
 MAX_NAMES = 8
 FIRST_LINES = 8
 MODES: tuple[str, ...] = ("continue", "regression")
@@ -40,6 +42,8 @@ FACT_KEYS: tuple[str, ...] = (
     "epistemic", "confidence", "knowledge", "known_by", "hidden_from",
     "polarity", "modality", "source", "asserted_by", "salience", "participants",
     "outcome", "because", "feeling", "when_happened", "address_condition", "turn", "position", "compiler",
+    "condition", "guise", "item_kind", "knowledge_scope",  # extract-v21's (PHASE-66): only on rows that have them
+    "open_turn",  # PHASE-67: a row of the source's provisional finale (`facts.memory_view(include_open_turn=True)`)
 )
 THREAD_KEYS: tuple[str, ...] = (
     "kind", "by", "to", "text", "status", "horizon", "turn", "position",
@@ -118,6 +122,16 @@ def _is_persona(r: Resolution | None, entity_type: str | None, name: str | None)
     return r.is_persona(entity_type, name) or r.node(entity_type, name) == ("character", PERSONA)
 
 
+def _is_persona_spelling(r: Resolution | None, entity_type: str | None, name: str | None) -> bool:
+    """Whether `name` itself spells the source's persona (a host persona name, a full/derived name spelling it, or a
+    `USER_NAMES` placeholder), not merely a nickname the story joined to it: an alias entry keeps its nicknames."""
+    if not name or r is None:
+        return False
+    return r.node(entity_type, name) == ("character", PERSONA) or (
+        r.is_persona(entity_type, name) and names_persona(entity_type, name, r.persona)
+    )
+
+
 def _map_char_name(name: str, r: Resolution | None) -> str:
     return PERSONA if _is_persona(r, "character", name) else name
 
@@ -155,9 +169,12 @@ def persona_mapped(row: Mapping[str, Any], r: Resolution | None) -> dict[str, An
             out["to"] = PERSONA
         if "names" in out and out["names"] is not None:
             out["names"] = _map_name_list(out["names"], r)
-    # Alias row field (`name` only, never `alias`)
-    if "alias" in out and out.get("name") and _is_persona(r, out.get("entity_type"), out["name"]):
-        out["name"] = PERSONA
+    # Alias row fields: a side is the marker only when its own spelling is the persona's (`_is_persona_spelling`); a
+    # nickname the story joined to the persona stays as written, so the target joins it to its own persona.
+    if "alias" in out:
+        for field in ("name", "alias"):
+            if _is_persona_spelling(r, out.get("entity_type"), out.get(field)):
+                out[field] = PERSONA
     return out
 
 
@@ -208,13 +225,12 @@ def rememberers(
     *,
     is_thread: bool | None = None,
 ) -> list[str]:
-    """Named characters (in the order of `names`) who remember `row` under regression's epistemic rules.
-
-    A row is a candidate only when it involves at least one named character. For candidates:
-      (a) knowledge == 'public': all named;
-      (b) knowledge == 'limited' with non-empty known_by: named in known_by;
+    """Named characters (in the order of `names`, as spelled there) who remember `row` under regression's epistemic
+    rules, whether or not they are its subject, object, participant, maker or recipient:
+      (a) knowledge == 'public': all named (a world fact, an item's whereabouts, another's public event);
+      (b) knowledge == 'limited' with non-empty known_by: named in known_by (a third party's secret they were told);
       (c) otherwise (unknown, missing, or limited with empty known_by): only named involved in the row;
-    always minus any named in hidden_from.
+    always minus any named in hidden_from. The persona is a named character like any other.
     """
     thread_row = ("by" in row and "predicate" not in row) if is_thread is None else is_thread
     named = _resolve_named(names, r)
@@ -222,8 +238,6 @@ def rememberers(
         return []
     named_ids = {eid for eid, _ in named}
     involved = _involved_ids(row, r, is_thread=thread_row)
-    if not (involved & named_ids):
-        return []
 
     raw_known = row.get("known_by") or ()
     known_ids = {eid for n in raw_known if (eid := _char_entity_id(r, n)) is not None}
@@ -250,16 +264,24 @@ def _memory_excluded_ids(view: Mapping[str, Any]) -> set[str]:
     return out
 
 
-def _characters(view: Mapping[str, Any]) -> list[str]:
+def _character_entities(view: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """The source's characters a regression may name, most mentioned first: the persona among them (the protagonist
+    may be the one who goes back), the ones the owner left out of memory not."""
     r: Resolution | None = view.get("resolution")
     ents = view.get("entities") if view.get("entities") is not None else (r.entities() if r is not None else [])
     gone = _memory_excluded_ids(view)
     ordered = sorted(ents, key=lambda e: -int(e.get("mentions") or 0))
-    return [
-        str(e["name"])
-        for e in ordered
-        if e.get("type") == "character" and not e.get("persona") and str(e["id"]) not in gone
-    ]
+    return [e for e in ordered if e.get("type") == "character" and str(e["id"]) not in gone]
+
+
+def _characters(view: Mapping[str, Any]) -> list[str]:
+    """Each character's display spelling (a name `_validate_mode_and_names` takes as it is)."""
+    return [str(e["name"]) for e in _character_entities(view)]
+
+
+def _persona_character(view: Mapping[str, Any]) -> str | None:
+    """Which of `_characters` is the source's persona (its display spelling), or None: the panel marks it."""
+    return next((str(e["name"]) for e in _character_entities(view) if e.get("persona")), None)
 
 
 def _validate_mode_and_names(
@@ -280,13 +302,9 @@ def _validate_mode_and_names(
     seen: set[str] = set()
     kept: list[str] = []
     for name in raw:
+        # The persona is a character of the source too ({{user}} or any spelling of it): its regression is allowed.
         ent = r.entity("character", name) if (name and r is not None) else None
-        if (
-            ent is None
-            or ent.get("persona")
-            or (r is not None and r.is_persona("character", name))
-            or str(ent["id"]) in mem_excluded
-        ):
+        if ent is None or str(ent["id"]) in mem_excluded:
             raise CarryError(f"{name} is no character of the source")
         eid = str(ent["id"])
         if eid not in seen:
@@ -317,6 +335,15 @@ def _provenance(
         "repair": str(repair) if repair is not None else None,
         "turn": src_turn,
     }
+
+
+def _from(source_id: UUID | str, row: Mapping[str, Any], revisions: Mapping[int, UUID | str], **kw: Any) -> dict[str, Any]:
+    """A snapshot row's provenance: a row the source itself carries from an earlier chat keeps that chat's (its
+    `carried_from`), so a row read through two links still names the chat and assertion it was first said in."""
+    carried_from = row.get("carried_from")
+    if row.get("carried") and isinstance(carried_from, Mapping):
+        return _plain(dict(carried_from))
+    return _provenance(source_id, row, revisions, **kw)
 
 
 def _apply_regression_marks(mapped: dict[str, Any], rems: list[str]) -> dict[str, Any]:
@@ -351,15 +378,23 @@ def snapshot_of(
     source_id: UUID | str,
     revisions: Mapping[int, UUID | str] | None = None,
 ) -> dict[str, Any]:
-    """Build the frozen plain-JSON `snapshot` from a source memory view and optional summary info."""
+    """Build the frozen plain-JSON `snapshot` from a source memory view and optional summary info.
+
+    Rows the source itself carries from an earlier chat (`carried`, a source read with its own `continue` link) are
+    taken like its own, each keeping its first chat's provenance (`_from`). Regression rememberers and `names` store
+    the source's persona as the marker {{user}}: the source's persona is the target's (S6)."""
     r: Resolution | None = view.get("resolution")
     mem_excluded = _memory_excluded_ids(view)
     resolved_names = _validate_mode_and_names(mode, names, r, mem_excluded)
     rev_map: Mapping[int, UUID | str] = revisions or {}
 
-    # Facts: newest first (source position descending), canon rows left out.
+    # Facts: newest first (source position descending), canon rows left out. A belief the source still holds
+    # (extract-v21, PHASE-66) is carried as its row: a continue target reads it as a belief (`facts.memory_view`, an
+    # epistemic row), a regression keeps it apart from the facts (`target_rows`: line "belief"). A forgetting is not
+    # carried: what it withdrew is already out of the facts and their marks. A view without beliefs is as before.
     source_facts = sorted(
-        (f for f in (view.get("facts") or ()) if not f.get("canon")),
+        (f for f in [*(view.get("facts") or ()), *(b for b in view.get("beliefs") or () if b.get("status") == "held")]
+         if not f.get("canon")),
         key=lambda f: f.get("position") or 0,
         reverse=True,
     )
@@ -375,26 +410,11 @@ def snapshot_of(
         trimmed = {k: row[k] for k in FACT_KEYS if k in row}
         mapped = persona_mapped(trimmed, r)
         if mode == "regression":
-            _apply_regression_marks(mapped, rems)
-        mapped["from"] = _provenance(source_id, row, rev_map)
+            _apply_regression_marks(mapped, _map_name_list(rems, r))
+        mapped["from"] = _from(source_id, row, rev_map)
         fact_rows.append(mapped)
 
-    # Aliases (continue only): stored assertion rows only, canon aliases left out.
-    alias_rows: list[dict[str, Any]] = []
-    if mode == "continue" and r is not None:
-        for _, _, row in r.alias_rows:
-            if row.get("canon") or _positive_int(row.get("id")) is None:
-                continue
-            entry = {
-                "entity_type": row.get("subject_type"),
-                "name": row.get("subject"),
-                "alias": row.get("value"),
-                "turn": row.get("turn"),
-                "compiler": row.get("compiler"),  # a part edge holds in the target too (entities.PART_EDGES)
-            }
-            mapped = persona_mapped(entry, r)
-            mapped["from"] = _provenance(source_id, row, rev_map)
-            alias_rows.append(mapped)
+    alias_rows = _alias_entries(r, mode, resolved_names, source_id, rev_map)
 
     # Threads: open only for continue; any status (filtered by rememberers) for regression.
     assertions_by_id: dict[Any, Mapping[str, Any]] = {
@@ -406,7 +426,7 @@ def snapshot_of(
             continue
         if mode == "regression":
             assert r is not None
-            rems = rememberers(t, resolved_names, r, is_thread=True)
+            rems = _map_name_list(rememberers(t, resolved_names, r, is_thread=True), r)
             if not rems:
                 continue
         else:
@@ -428,7 +448,7 @@ def snapshot_of(
         mapped["opening"] = opening_row
         gen = opening.get("generation") if opening is not None else t.get("generation")
         src_turn = opening.get("turn") if opening is not None else t.get("turn")
-        mapped["from"] = _provenance(source_id, t, rev_map, generation=gen, turn=src_turn)
+        mapped["from"] = _from(source_id, t, rev_map, generation=gen, turn=src_turn)
         thread_rows.append(mapped)
 
     # Story (continue only): held if it repeats or omits a kept secret.
@@ -452,17 +472,70 @@ def snapshot_of(
                     },
                 })
 
-    return _plain({
+    out = {
         "shape": SHAPE,
         "mode": mode,
-        "names": resolved_names,
+        "names": _map_name_list(resolved_names, r),
         "facts": fact_rows,
         "aliases": alias_rows,
         "threads": thread_rows,
         "story": story_row,
         "story_left_out": story_left_out,
         "characters": _characters(view),
-    })
+        "persona_character": _persona_character(view),
+    }
+    if view.get("open_turn"):  # PHASE-67: the reading took the source's provisional finale (its rows say `open_turn`)
+        out["open_turn"] = {k: view["open_turn"][k] for k in ("turn", "revision", "host_logical_id")}
+    return _plain(out)
+
+
+def _alias_entries(
+    r: Resolution | None,
+    mode: str,
+    named: Sequence[str],
+    source_id: UUID | str,
+    revisions: Mapping[int, UUID | str],
+) -> list[dict[str, Any]]:
+    """The source's names for one entity, as alias entries: its story's `also_called` rows (its own, and those it
+    carries from an earlier chat) and the owner's joins (`entity_link`, provenance `link`), so names joined in the
+    source stay one entity in the target. Canon aliases left out (the target reads its own canon). `continue`: every
+    entity's; `regression`: only the named characters' (their other spellings of the previous timeline). An entry
+    whose two sides spell the same name after the persona mapping says nothing and is left out."""
+    if r is None:
+        return []
+    keep: set[str] | None = None
+    if mode == "regression":
+        keep = {eid for eid, _ in _resolve_named(named, r)}
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[Any, str, str]] = set()
+
+    def add(entry: dict[str, Any], provenance: dict[str, Any]) -> None:
+        if keep is not None and _resolved_id(r, entry.get("entity_type"), entry.get("name")) not in keep:
+            return
+        mapped = persona_mapped(entry, r)
+        key = (mapped.get("entity_type"), norm(mapped.get("name")), norm(mapped.get("alias")))
+        if not key[1] or not key[2] or key[1] == key[2] or key in seen:
+            return
+        seen.add(key)
+        mapped["from"] = provenance
+        out.append(mapped)
+
+    for _, _, row in r.alias_rows:
+        if row.get("canon") or (_positive_int(row.get("id")) is None and not row.get("carried")):
+            continue
+        add({
+            "entity_type": row.get("subject_type"),
+            "name": row.get("subject"),
+            "alias": row.get("value"),
+            "turn": row.get("turn") if not row.get("carried") else None,
+            "compiler": row.get("compiler"),  # a part edge holds in the target too (entities.PART_EDGES)
+        }, _from(source_id, row, revisions))
+    for _, _, link in r.links:
+        add({"entity_type": link.get("entity_type"), "name": link.get("name"), "alias": link.get("same_as"),
+             "turn": None, "compiler": None},
+            {"conversation": str(source_id), "assertion": None, "revision": None, "generation": None,
+             "repair": None, "turn": None, "link": str(link["id"])})
+    return out
 
 
 def fingerprint(reading: Mapping[str, Any]) -> str:
@@ -519,8 +592,11 @@ def preview_of(
         },
         "first_lines": lines,
         "characters": list(snap["characters"]),
+        "persona_character": snap.get("persona_character"),
         "fingerprint": reading["fingerprint"],
         "replaces": str(replaces) if replaces is not None else None,
+        # PHASE-67: the reading took the source's provisional finale (only then is the key there)
+        **({"open_turn": snap["open_turn"]} if snap.get("open_turn") else {}),
     })
 
 
@@ -538,13 +614,15 @@ class Carried:
 
     def for_persona(self, name: str | None) -> Carried:
         """These rows as a target whose persona the host names `name` (`conversation.host_persona_name`) reads them:
-        the stored marker {{user}} in a character name field is spelled `name`, so a carried line names the target's
-        persona as the host does (S6: the source's persona is the target's persona). The target's resolution reads
-        `name` as its persona (ADR 0023), so every row keeps its entity; without a name the rows are as stored. Pure:
-        the link's rows and its stored snapshot are left unchanged."""
+        the stored marker {{user}} in a character name field (and in a regression's `names`, a persona who regresses)
+        is spelled `name`, so a carried line names the target's persona as the host does (S6: the source's persona is
+        the target's persona). The target's resolution reads `name` as its persona (ADR 0023), so every row keeps its
+        entity; without a name the rows are as stored. Pure: the link's rows and its stored snapshot are left
+        unchanged."""
         if not name or name == PERSONA:
             return self
-        return replace(self, rows=tuple(_persona_named(x, name) for x in self.rows),
+        return replace(self, names=tuple(dict.fromkeys(name if n == PERSONA else n for n in self.names)),
+                       rows=tuple(_persona_named(x, name) for x in self.rows),
                        regression=tuple(_persona_named(x, name) for x in self.regression))
 
 
@@ -612,7 +690,9 @@ def target_rows(link: Mapping[str, Any]) -> Carried:
     mode = str(link.get("mode") or snap.get("mode"))
     names = tuple(str(n) for n in (snap.get("names") or link.get("entity_names") or ()))
     if mode == "regression":
-        kept = [{**_plain(dict(f)), "line": "fact"} for f in snap.get("facts") or ()]
+        # a carried belief (PHASE-66) is a line of its own: a reader of regression lines takes "fact" and "thread"
+        kept = [{**_plain(dict(f)), "line": "belief" if f.get("predicate") == "believes" else "fact"}
+                for f in snap.get("facts") or ()]
         kept += [{**_plain(dict(t)), "line": "thread"} for t in snap.get("threads") or ()]
         for i, row in enumerate(kept):
             row["carried"], row["carried_from"] = link_id, row.get("from")
@@ -633,6 +713,37 @@ def target_rows(link: Mapping[str, Any]) -> Carried:
         rows.append(_carried_row(alias, link_id, "alias", i, CARRY_BASE + len(rows), a.get("from")))
     story = snap.get("story")
     return Carried(link_id, source, mode, names, tuple(rows), (), _plain(dict(story)) if story else None)
+
+
+def _finale_revision(row: Mapping[str, Any]) -> str | None:
+    """The source revision of a carried row (or a regression thread's opening) from the source's provisional finale."""
+    for x in (row, row.get("opening") if isinstance(row.get("opening"), Mapping) else None):
+        if x is not None and x.get("open_turn"):
+            rev = (x.get("carried_from") or x.get("from") or row.get("carried_from") or row.get("from") or {})
+            return str(rev.get("revision")) if rev.get("revision") else None
+    return None
+
+
+def finale_left(conn: psycopg.Connection, carried: Carried) -> tuple[Carried, dict[str, Any] | None]:
+    """A link's rows without those of a source finale that is gone (PHASE-67): a snapshot taken while the source's last
+    reply was provisional keeps its rows only while that reply is still a member of the source's head (accepted since,
+    or still open). Rerolled, swiped, edited or removed, its rows no longer serve; the rest of the snapshot does. The
+    snapshot itself is never retaken (a link is frozen, ADR 0085): the owner links again for a fresh one. Returns the
+    rows kept and {"revisions", "stale"} for the view, or None when the snapshot took no finale (rows unchanged)."""
+    revs = {rev for x in (*carried.rows, *carried.regression) if (rev := _finale_revision(x))}
+    if not revs:
+        return carried, None
+    alive = {r["id"] for r in conn.execute(
+        "SELECT sr.id::text AS id FROM conversation c"
+        " JOIN active_membership am ON am.commit_id = c.head_commit_id"
+        " JOIN source_revision sr ON sr.id = am.source_revision_id"
+        " WHERE c.id = %s AND sr.id::text = ANY(%s) AND sr.lifecycle IN ('provisional', 'accepted')",
+        (_as_uuid(carried.source), sorted(revs))).fetchall()}
+    stale = revs - alive
+    if stale:
+        carried = replace(carried, rows=tuple(x for x in carried.rows if _finale_revision(x) not in stale),
+                          regression=tuple(x for x in carried.regression if _finale_revision(x) not in stale))
+    return carried, {"revisions": sorted(revs), "stale": sorted(stale)}
 
 
 def _resolved_id(r: Resolution | None, entity_type: str | None, name: str | None) -> str | None:
@@ -663,13 +774,36 @@ def _panel_line(row: Mapping[str, Any], opening: Mapping[str, Any] | None, *, th
         line.update(kind="thread", predicate=(opening or {}).get("predicate") or row.get("kind"),
                     subject=row.get("by"), object=row.get("to"), value=row.get("text"))
     else:
-        line["kind"] = "fact"
+        line["kind"] = "belief" if row.get("predicate") == "believes" else "fact"  # PHASE-66: never a fact line
     for key in ("knowledge", "known_by", "hidden_from", "carried", "carried_from"):
         line.setdefault(key, None)
     line.pop("when_happened", None)
     if when:
         line["when_happened"] = _plain(when)
     return line
+
+
+def regression_threads(
+    threads: Sequence[dict[str, Any]],
+    query: str,
+    previous_ai: str,
+    in_context: set[str],
+    limit: int,
+    persona: frozenset[str] = frozenset(),
+    about: bool = False,
+    aliases: Mapping[str, frozenset[str]] | None = None,
+    named: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """A regression link's threads (`view["regression"]` lines with `line == "thread"`) the message brings up, scored as
+    `threads.relevant_threads` scores open threads (a mention in the user's message, then in the previous reply; with
+    `about`, the promise's words), but whatever their status: in the previous timeline a promise kept, broken or
+    dropped is still what its rememberers remember, so a closed one is ranked too. Each thread comes back as given
+    (its `status` unchanged), at most `limit`, in that ranking. Pure."""
+    shadows = [{**t, "status": "open"} for t in threads]
+    by_shadow = {id(s): t for s, t in zip(shadows, threads)}
+    picked = relevant_threads(shadows, query, previous_ai, in_context, limit, persona, about=about, aliases=aliases,
+                              named=named)
+    return [by_shadow[id(s)] for s in picked]
 
 
 def panel_lines(view: Mapping[str, Any], entity_id: str | None = None) -> list[dict[str, Any]]:
@@ -690,6 +824,7 @@ def panel_lines(view: Mapping[str, Any], entity_id: str | None = None) -> list[d
         rows = [(x, x.get("line") == "thread") for x in view.get("regression") or ()]
     else:
         rows = [(f, False) for f in view.get("facts") or () if f.get("carried")]
+        rows += [(b, False) for b in view.get("beliefs") or () if b.get("carried")]  # PHASE-66: kind "belief"
         rows += [(t, True) for t in view.get("threads") or () if t.get("status") == "open" and t.get("carried")]
     openings = {a["id"]: a for a in view.get("assertions") or () if a.get("carried")}
     out: list[dict[str, Any]] = []
@@ -764,11 +899,11 @@ def cutoff_of(
 def _fetch_revisions(conn: psycopg.Connection, view: Mapping[str, Any], mode: str) -> dict[int, UUID]:
     """Fetch source_revision_id for every stored assertion referenced by the reading, in one query."""
     ids: set[int] = set()
-    for row in view.get("facts") or ():
+    for row in [*(view.get("facts") or ()), *(view.get("beliefs") or ())]:  # a held belief is carried too (PHASE-66)
         if not row.get("canon") and (aid := _positive_int(row.get("id"))) is not None:
             ids.add(aid)
     r: Resolution | None = view.get("resolution")
-    if mode == "continue" and r is not None:
+    if r is not None:  # regression keeps its named characters' aliases too
         for _, _, row in r.alias_rows:
             if not row.get("canon") and (aid := _positive_int(row.get("id"))) is not None:
                 ids.add(aid)
@@ -793,8 +928,13 @@ def take_reading(
     names: Sequence[str] | None,
     keys: Keys,
     cutoff_turn: int | None = None,
+    target_id: UUID | str | None = None,
 ) -> dict[str, Any]:
-    """Read the source chat once as of its head and cutoff_turn and return the frozen reading. Writes nothing."""
+    """Read the source chat once as of its head and cutoff_turn and return the frozen reading. Writes nothing.
+
+    A source that continues an earlier chat (its own `continue` link in force) is read with that link's frozen rows,
+    as its own requests read it, so they come along (Arc 1 -> Arc 2 -> Arc 3) where its story has not replaced them;
+    never the earlier chat itself, and never a link whose source is `target_id` (the target's own memory back)."""
     if mode not in MODES:
         raise CarryError(f"mode must be one of: {', '.join(MODES)}")
     raw_names = [str(n).strip() for n in (names or ())]
@@ -805,10 +945,19 @@ def take_reading(
 
     src = _as_uuid(source_id)
     head, position, turn = cutoff_of(conn, src, cutoff_turn)
-    view = memory_view(conn, head, keys.extractor, upto=position, canon_key=keys.canon)
+    own = in_force(conn, src)
+    chained = (target_rows(own) if own is not None and own["mode"] == "continue"
+               and (target_id is None or _as_uuid(own["source_conversation_id"]) != _as_uuid(target_id)) else None)
+    # PHASE-67 (owner decision 2026-11-25): a reading takes the source's finished early extraction of its open turn,
+    # marked in the snapshot; a target's read leaves its rows out once the source's reply is replaced (`finale_left`)
+    view = memory_view(conn, head, keys.extractor, upto=position, canon_key=keys.canon, carried=chained,
+                       include_open_turn=True)
     revisions = _fetch_revisions(conn, view, mode)
+    # A story that repeats an open secret even in other words (LEAK_NEAR) is not frozen into the link: the target
+    # reads it in every scene, with whoever the secret is kept from.
+    everyone = frozenset(norm(n) for s in view["secrets"] for n in s.get("open") or ())
     story_info = (
-        summaries.current(conn, src, head, keys.summarize, view["secrets"], upto=position)
+        summaries.current(conn, src, head, keys.summarize, view["secrets"], upto=position, present=everyone)
         if mode == "continue" and keys.summarize
         else None
     )
@@ -847,7 +996,7 @@ def preview(
     """Validate target/source and return a preview of what linking would carry. Writes nothing."""
     tgt, src = _as_uuid(target_id), _as_uuid(source_id)
     labels = _validate_pair(conn, tgt, src, lock=False)
-    reading = take_reading(conn, src, mode, names, keys, cutoff_turn=cutoff_turn)
+    reading = take_reading(conn, src, mode, names, keys, cutoff_turn=cutoff_turn, target_id=tgt)
     current = conn.execute(
         "SELECT id FROM conversation_carry WHERE target_conversation_id = %s AND removed_at IS NULL",
         (tgt,),
@@ -859,8 +1008,8 @@ def preview(
 
 # --- the link store ---------------------------------------------------------------------------------------------
 # A link is owner input. A stored link is never changed except for `removed_at`; at most one link per target is in
-# force (removed_at IS NULL, the partial unique index). Nothing here reads the source again after the link is made,
-# and nothing reads the source's own link: a reading never follows a chain.
+# force (removed_at IS NULL, the partial unique index). Nothing here reads the source again after the link is made.
+# A reading takes the source's own `continue` link's frozen rows (`take_reading`), never the chat that link reads.
 
 LINK_COLUMNS: tuple[str, ...] = (
     "id", "target_conversation_id", "source_conversation_id", "mode", "entity_names",
@@ -890,7 +1039,7 @@ def link(
     tgt, src = _as_uuid(target_id), _as_uuid(source_id)
     with conn.transaction():
         labels = _validate_pair(conn, tgt, src, lock=True)
-        reading = take_reading(conn, src, mode, names, keys, cutoff_turn=cutoff_turn)
+        reading = take_reading(conn, src, mode, names, keys, cutoff_turn=cutoff_turn, target_id=tgt)
         current = conn.execute(
             "SELECT id FROM conversation_carry WHERE target_conversation_id = %s AND removed_at IS NULL",
             (tgt,),

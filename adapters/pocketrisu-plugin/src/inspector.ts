@@ -54,15 +54,15 @@ export interface EntityRow {
 /** A repair the inspector marks for the panel (ADR 0044): what to do, to which item, and a character or field. */
 export interface RepairAction { kind: string; item: string; extra: string | null }
 
-const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|undo_batch|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|undo_batch|alias_join|branch_inherit|told_retract|fact_hidden|attention_dismiss|fact_add):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
 
 /** A request a bulk action sends for one row (PHASE-57 B1): a repair, or a repair taken back. */
-export type BulkRequest = { kind: string; item: string; outcome?: string } | { undo: string };
+export type BulkRequest = { kind: string; item: string; outcome?: string; attention?: 'role_held' | 'alias_held' } | { undo: string };
 /** A row of "Needs attention" the panel can select (PHASE-57 B1): its kind, the kind's label, what Apply and Retract
  * send for it. */
 export interface BulkMark { g: string; l: string; apply?: BulkRequest; retract?: BulkRequest }
 
-const BULK_KINDS = new Set(['thread_close', 'fact_retract', 'fact_lock', 'fact_restore', 'state_dismiss']);
+const BULK_KINDS = new Set(['thread_close', 'fact_retract', 'fact_lock', 'fact_restore', 'state_dismiss', 'attention_dismiss']);
 const ID = /^-?[0-9a-f-]{1,64}$/;
 
 function bulkRequest(raw: unknown): BulkRequest | undefined | null {
@@ -72,7 +72,12 @@ function bulkRequest(raw: unknown): BulkRequest | undefined | null {
   if ('undo' in r) return typeof r.undo === 'string' && ID.test(r.undo) && Object.keys(r).length === 1 ? { undo: r.undo } : null;
   if (typeof r.kind !== 'string' || !BULK_KINDS.has(r.kind) || typeof r.item !== 'string' || !ID.test(r.item)) return null;
   if (r.outcome !== undefined && (typeof r.outcome !== 'string' || !/^[a-z_]{1,32}$/.test(r.outcome))) return null;
-  return { kind: r.kind, item: r.item, ...(typeof r.outcome === 'string' ? { outcome: r.outcome } : {}) };
+  if (r.attention !== undefined && r.attention !== 'role_held' && r.attention !== 'alias_held') return null;
+  return {
+    kind: r.kind, item: r.item,
+    ...(typeof r.outcome === 'string' ? { outcome: r.outcome } : {}),
+    ...(r.attention === 'role_held' || r.attention === 'alias_held' ? { attention: r.attention } : {}),
+  };
 }
 
 /** Parse a `data-bulk` value (JSON the sidecar writes); null for anything else. Data only: request bodies and a label. */

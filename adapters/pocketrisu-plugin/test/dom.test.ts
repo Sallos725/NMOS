@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // DOM code (audit follow-up, 2026-09-27 review): the inspector sanitizer's tree walk and the settings panel.
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StatusInfo } from '../src/core';
 import { createChatSwitch } from '../src/chatoff';
 import { markDetail, placeMarks, safeFragment } from '../src/inspector';
@@ -352,7 +352,11 @@ describe('panel', () => {
   });
 
   describe('trimming on the status card (PHASE-60 S1 "Shown")', () => {
-    const last = { at: Date.now(), ms: 900, packetChars: 10, packet: 'x', outcome: 'injected' as const, deadlineMs: 3000 };
+    // The clock stands still: the "ago" line of two renders compared must not cross a second (it did, now and then).
+    const NOW = Date.now();
+    beforeEach(() => { vi.spyOn(Date, 'now').mockReturnValue(NOW); });
+    afterEach(() => { vi.mocked(Date.now).mockRestore(); });
+    const last = { at: NOW, ms: 900, packetChars: 10, packet: 'x', outcome: 'injected' as const, deadlineMs: 3000 };
     const lastCard = (title: string) => [...document.querySelectorAll<HTMLElement>('#nmos-panel .card')]
       .find((c) => c.querySelector('h2')?.textContent === title)!;
     const lineOf = (card: HTMLElement, text: string) => [...card.querySelectorAll<HTMLElement>('div')]
@@ -481,12 +485,12 @@ describe('panel', () => {
       }
     });
 
-    it('loads the stored args, and is off with 20 turns when they are unset', async () => {
+    it('loads the stored args, and is off with 16 turns when they are unset', async () => {
       const stored = await open('en', { trim_old_turns: '1', keep_recent_turns: '40' });
       expect([stored.box.checked, stored.keep.value, stored.save.disabled]).toEqual([true, '40', true]);
       stored.panel.remove();
       const unset = await open('en');
-      expect([unset.box.checked, unset.keep.value, unset.save.disabled]).toEqual([false, '20', true]);
+      expect([unset.box.checked, unset.keep.value, unset.save.disabled]).toEqual([false, '16', true]);
     });
 
     it('saves the two plugin args alone, with no sidecar request', async () => {
@@ -1191,6 +1195,115 @@ describe('panel', () => {
     });
   });
 
+  describe('embedding chunks per message (ADR 0062, Tier 4 E8)', () => {
+    const open = async (reported?: number) => {
+      const h = deps();
+      if (reported !== undefined) (config.embeddings as Record<string, unknown>).max_chunks = reported;
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      const label = [...panel.querySelectorAll('label')].find((l) => l.textContent === 'Embedding chunks per message')!;
+      const input = label.nextElementSibling as HTMLInputElement;
+      return { ...h, panel, input, hint: input.closest('.row')!.nextElementSibling as HTMLElement,
+        save: panel.querySelector<HTMLButtonElement>('.bar button.primary')! };
+    };
+    const puts = (calls: [string, string, unknown][]) => calls.filter(([method]) => method === 'PUT').map(([, , body]) => body);
+    afterEach(() => { delete (config.embeddings as Record<string, unknown>).max_chunks; });
+
+    it('shows the reported cap in the tuning card with the characters it covers, and saves a change', async () => {
+      const { input, hint, save, calls } = await open(8);
+      expect(input.closest('.card')!.querySelector('h2')!.textContent).toBe('Recall tuning');
+      expect([input.value, input.disabled, input.min, input.max]).toEqual(['8', false, '1', '64']);
+      expect(hint.textContent).toContain('8 chunks = 5,600 characters');
+      input.value = '16';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(hint.textContent).toContain('16 chunks = 11,200 characters');
+      expect(hint.textContent).toContain('embeds every chat again');
+      input.value = '65';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(hint.textContent).toBe('Enter a whole number from 1 to 64.');
+      input.value = '16';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).toMatchObject({ embed_max_chunks: 16 });
+    });
+
+    it('is not sent with another tuning change while it is unchanged', async () => {
+      const { panel, save, calls } = await open(8);
+      const topK = [...panel.querySelectorAll<HTMLInputElement>('input[type="number"][max="20"]')][0]!;
+      topK.value = '3';
+      topK.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).toMatchObject({ recall_top_k: 3 });
+      expect(puts(calls)[0]).not.toHaveProperty('embed_max_chunks');
+    });
+
+    it('is disabled and never sent on a sidecar that does not report it', async () => {
+      const { panel, input, hint, save, calls } = await open();
+      expect([input.value, input.disabled]).toEqual(['', true]);
+      expect(hint.textContent).toContain('NMOS_EMBED_MAX_CHUNKS');
+      const topK = [...panel.querySelectorAll<HTMLInputElement>('input[type="number"][max="20"]')][0]!;
+      topK.value = '3';
+      topK.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).not.toHaveProperty('embed_max_chunks');
+    });
+  });
+
+  describe('extract right after a reply (PHASE-67)', () => {
+    const open = async (reported?: boolean) => {
+      const h = deps();
+      if (reported !== undefined) (config.extraction as Record<string, unknown>).on_output = reported;
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      const check = [...panel.querySelectorAll('.check')].find((c) => c.textContent === 'Extract right after a reply')!;
+      return { ...h, panel, box: check.querySelector('input') as HTMLInputElement,
+        hint: check.nextElementSibling as HTMLElement, save: panel.querySelector<HTMLButtonElement>('.bar button.primary')! };
+    };
+    const puts = (calls: [string, string, unknown][]) => calls.filter(([method]) => method === 'PUT').map(([, , body]) => body);
+    afterEach(() => { delete (config.extraction as Record<string, unknown>).on_output; });
+
+    it('shows the reported switch in the tuning card, says what it costs, and saves a change', async () => {
+      const { box, hint, save, calls } = await open(false);
+      expect(box.closest('.card')!.querySelector('h2')!.textContent).toBe('Recall tuning');
+      expect([box.checked, box.disabled]).toEqual([false, false]);
+      expect(hint.textContent).toContain('about 20 seconds after it finishes instead of when you answer it');
+      expect(hint.textContent).toContain('the last reply of a session is not lost');
+      expect(hint.textContent).toContain('pays for one extraction that is thrown away');
+      box.checked = true;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).toMatchObject({ extract_on_output: true });
+    });
+
+    it('is not sent with another tuning change while it is unchanged', async () => {
+      const { panel, box, save, calls } = await open(true);
+      expect(box.checked).toBe(true);
+      const topK = [...panel.querySelectorAll<HTMLInputElement>('input[type="number"][max="20"]')][0]!;
+      topK.value = '3';
+      topK.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).not.toHaveProperty('extract_on_output');
+    });
+
+    it('is disabled and never sent on a sidecar that does not report it', async () => {
+      const { panel, box, save, calls } = await open();
+      expect([box.checked, box.disabled]).toEqual([false, true]);
+      const topK = [...panel.querySelectorAll<HTMLInputElement>('input[type="number"][max="20"]')][0]!;
+      topK.value = '3';
+      topK.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).not.toHaveProperty('extract_on_output');
+    });
+  });
+
   it('turns canon facts off from the settings (ADR 0047)', async () => {
     const { d, calls } = deps();
     await openPanel(d, 'settings');
@@ -1341,6 +1454,24 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect(button('Copy')).toBeTruthy();
   });
 
+  it("asks for the note's parts in the chat's language or in English (Tier 4 C2)", async () => {
+    const { d, calls } = deps();
+    await openChat(d);
+    button("For the author's note").click();
+    const language = panel().querySelector<HTMLSelectElement>('select[aria-label="Note language"]')!;
+    expect([...language.options].map((o) => [o.value, o.textContent])).toEqual([['chat', "The chat's language"],
+      ['en', 'English']]);
+    expect(language.value).toBe('chat');
+    button('Make').click();
+    await settle();
+    // The default is not sent (review nit 12): the body an older sidecar was sent before the setting existed.
+    expect(posts(calls).at(-1)![2]).not.toHaveProperty('language');
+    language.value = 'en';
+    button('Make').click();
+    await settle();
+    expect(posts(calls).at(-1)![2]).toMatchObject({ sections: ['diverged'], language: 'en' });
+  });
+
   it('writes a custom part from the saved prompt and saves an edited one (PHASE-56)', async () => {
     const { d, calls, state } = deps();
     await openChat(d);
@@ -1358,7 +1489,8 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     await settle();
     expect(calls.filter(([m]) => m === 'PUT')).toEqual([]); // unchanged: not saved again
     expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
-      { sections: ['custom'], chars: 3000, secrets: false, custom_prompt: 'List outfits.', custom_setting: false }]);
+      { sections: ['custom'], chars: 3000, secrets: false, custom_prompt: 'List outfits.',
+        custom_setting: false }]);
     prompt.value = '  Who owes whom?  ';
     const setting = [...panel().querySelectorAll<HTMLInputElement>('input[type=checkbox]:not([value])')]
       .find((b) => b.nextElementSibling?.textContent === 'Include the setting (card, lorebook)')!;

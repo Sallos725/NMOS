@@ -41,8 +41,12 @@ def a_conversation(conn: psycopg.Connection) -> object:
                         (uuid7(), f"chat-{uuid7()}")).fetchone()[0]
 
 
+# PHASE-67 part 4: migration 0043 widened the check again, additively (the owner's new repairs).
+KINDS_0043 = {"fact_add", "told_retract", "fact_hidden", "attention_dismiss"}
+
+
 def test_an_entity_pin_inserts_and_an_unknown_kind_is_still_refused(migrated):
-    assert kinds_of(migrated) == KINDS
+    assert kinds_of(migrated) == KINDS | KINDS_0043 == set(repairs.KINDS)
     with psycopg.connect(migrated) as conn:
         cid = a_conversation(conn)
         conn.execute("INSERT INTO owner_repair (id, conversation_id, kind, target, value) VALUES (%s, %s, 'entity_pin',"

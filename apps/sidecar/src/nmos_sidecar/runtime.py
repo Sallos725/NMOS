@@ -20,10 +20,11 @@ from urllib.parse import urlsplit
 import psycopg
 from psycopg.types.json import Jsonb
 
-from .config import RERANK_TIMEOUT_MS, Settings, extra_body_error
+from .config import EMBED_MAX_CHUNKS, RERANK_TIMEOUT_MS, Settings, extra_body_error
 from . import rerank, vertex
 from .llm import ChatModel, Embedder, LLMError, Observer, chat_headers
 from .parsers import RuleSet, compile_rules, load_rules
+from . import state
 
 EDITABLE: dict[str, type] = {
     "llm_url": str, "llm_model": str, "llm_api_key": str, "llm_json_mode": bool,
@@ -31,10 +32,13 @@ EDITABLE: dict[str, type] = {
     "llm_extra_body": dict, "llm_no_temperature": bool,
     "embed_url": str, "embed_model": str, "embed_api_key": str, "embed_query_instruction": str,
     "embed_timeout_ms": int,  # a slow or remote embedder needs more than the 300 ms default (K34)
+    # Tier 2 E8 (K13): chunks embedded per message; a change is a new embedding projection, re-embedded with no model call
+    "embed_max_chunks": int,
     "recall_threshold": float, "vector_min_sim": float, "recall_top_k": int, "facts_limit": int,
     "events_limit": int, "threads_limit": int,
     "extract_backfill": int, "summaries": bool, "canon_facts": bool,
     "pin_at_mentions": bool,  # PHASE-60 S8: `@name` pins a character for the request
+    "extract_on_output": bool,  # PHASE-67: an output sync extracts the newest reply's turn early
     # PHASE-60 S5 (ADR 0084): the optional reranker; its key is a credential like the other two
     "rerank_url": str, "rerank_model": str, "rerank_api_key": str, "rerank_timeout_ms": int, "rerank_format": str,
 }
@@ -43,7 +47,8 @@ SECRET = {"llm_api_key", "embed_api_key", "rerank_api_key"}
 KEY_HOSTS = {"llm_api_key": "llm_url", "embed_api_key": "embed_url", "rerank_api_key": "rerank_url"}
 RANGES = {"recall_threshold": (0.05, 1.0), "vector_min_sim": (0.0, 1.0), "recall_top_k": (0, 20),
           "facts_limit": (0, 30), "events_limit": (0, 30), "threads_limit": (0, 10), "extract_backfill": (0, 5000),
-          "embed_timeout_ms": (100, 5000), "rerank_timeout_ms": RERANK_TIMEOUT_MS}
+          "embed_timeout_ms": (100, 5000), "rerank_timeout_ms": RERANK_TIMEOUT_MS,
+          "embed_max_chunks": EMBED_MAX_CHUNKS}
 CHOICES = {"rerank_format": rerank.FORMATS}  # a value outside these would refuse the next startup (`Settings`)
 RERANK_NOTE = ("When a URL and a model are set, each request sends the user's message and the text of up to "
                f"{rerank.MAX_CANDIDATES} recalled candidates to this endpoint, as the embedder is sent chat text."
@@ -52,10 +57,12 @@ RERANK_NOTE = ("When a URL and a model are set, each request sends the user's me
 # Saved settings `Settings` checks at startup (PHASE-60 S5): a saved value it would refuse (a restored row, a downgrade)
 # is ignored, so the environment's value applies and the sidecar still starts. The panel refuses such a value (422).
 # PHASE-61 S3: the extra request body and the temperature switch too.
-STARTUP_CHECKED = ("rerank_format", "rerank_timeout_ms", "llm_extra_body", "llm_no_temperature")
+# Tier 2 E8: the embedding chunk cap too.
+STARTUP_CHECKED = ("rerank_format", "rerank_timeout_ms", "llm_extra_body", "llm_no_temperature", "embed_max_chunks")
 PARSERS_KEY = "parsers"
 PRESETS_KEY = "parser_presets"
 STATUS_PINS_KEY = "status_pins"  # PHASE-43: {card: [status keys told every time]}
+CARD_BINDINGS_KEY = state.CARD_BINDINGS_KEY  # G7.2: {card ref: the card its rules and pins are under}; not editable
 NOTES_PROMPT_KEY = "notes_custom_prompt"  # PHASE-56: the custom part's prompt, one for every chat
 PINS_MAX = 40
 PARSER_MAX_BYTES = 256_000
@@ -152,7 +159,8 @@ def effective(base: Settings, overrides: dict[str, Any]) -> Settings:
                 log.warning("saved setting %s would be refused at startup and is ignored; the environment's value"
                             " applies", key)
             continue
-        changes[key] = value
+        typed = _typed(EDITABLE[key], value)  # a saved 52.0 reads as the 52 it was checked as (review F12)
+        changes[key] = value if typed is None else typed
     return dataclasses.replace(base, **changes)
 
 
@@ -320,7 +328,8 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
                 "no_temperature": settings.llm_no_temperature},
         "embeddings": {"url": settings.embed_url, "model": settings.embed_model,
                        "api_key_set": bool(settings.embed_api_key),
-                       "query_instruction": settings.embed_query_instruction},
+                       "query_instruction": settings.embed_query_instruction,
+                       "max_chunks": settings.embed_max_chunks},
         "recall": {"threshold": settings.recall_threshold, "vector_min_sim": settings.vector_min_sim,
                    "embed_timeout_ms": settings.embed_timeout_ms,
                    "top_k": settings.recall_top_k, "facts_limit": settings.facts_limit,
@@ -331,7 +340,10 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
                    "key_set": bool(settings.rerank_api_key), "configured": reranker(settings) is not None,
                    "note": RERANK_NOTE},
         "extraction": {"backfill": settings.extract_backfill, "summaries": settings.summaries,
-                       "canon_facts": settings.canon_facts},
+                       "canon_facts": settings.canon_facts,
+                       "normalizer": settings.normalizer,  # NMOS_NORMALIZER, read at startup only (PHASE-66 part 3)
+                       # PHASE-67: a plain boolean; the plugin syncs after a reply only when this is true
+                       "on_output": settings.extract_on_output},
         "parsers": {"rules": overrides.get(PARSERS_KEY) if PARSERS_KEY in overrides else None,
                     "spec": parser_spec(settings, overrides), "presets": overrides.get(PRESETS_KEY, []),
                     "source": "ui" if PARSERS_KEY in overrides else ("file" if settings.parsers_file else "none"),

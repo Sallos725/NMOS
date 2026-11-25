@@ -61,7 +61,7 @@ def picked(view, r, query="", options=AT, recorded=None) -> list[tuple[str, str]
 
 
 def test_packet_v20_only():
-    assert PIN_POLICIES == frozenset({"packet-v20"}) and PIN_EXTRA == 3
+    assert PIN_POLICIES == frozenset({"packet-v20", "packet-v21"}) and PIN_EXTRA == 3
     r, _ = chat()
     for policy in ("packet-v19", "packet-v16", "packet-v8"):
         assert picked(view_of(r, ["세라"]), r, "@카이토", RecallOptions(policy=policy, pin_at_mentions=True)) == []

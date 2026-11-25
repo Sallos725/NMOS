@@ -128,8 +128,11 @@ def test_one_quote_restates_only_the_fact_the_new_extraction_states():
     # The object worded otherwise, the same quote: stated again (level 3).
     assert set(restated([row("Ren", "possesses", "old sword", quote=pair)],
                         [row("Ren", "possesses", "sword", quote=pair)], None)) == {0}
-    # An accumulating fact with a new value: still the same predicate, subject and object (level 2).
-    assert set(restated([row("Ren", "has_trait", value="brave")], [row("Ren", "has_trait", value="bold")], None)) == {0}
+    # An accumulating fact with a similar value: still the same predicate, subject and object (level 2). Tier 1: a value
+    # unlike it ("brave", "bold") is another trait, not the same one restated; it used to count (any two traits did).
+    assert set(restated([row("Ren", "has_trait", value="brave")], [row("Ren", "has_trait", value="very brave")],
+                        None)) == {0}
+    assert restated([row("Ren", "has_trait", value="brave")], [row("Ren", "has_trait", value="bold")], None) == {}
 
 
 def claimed(system: str, user: str) -> tuple[dict, str]:

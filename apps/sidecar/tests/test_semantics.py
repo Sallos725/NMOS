@@ -22,7 +22,9 @@ from test_sidecar_integration import sync
 
 def test_polarity_is_negative_only_when_stated():
     assert semantics({"polarity": "negative"})[0] == "negative"
-    assert [semantics(i)[0] for i in ({}, {"polarity": "NEG"}, {"polarity": None})] == ["positive"] * 3
+    assert [semantics(i)[0] for i in ({}, {"polarity": None})] == ["positive"] * 2
+    # Tier 1 D2: "NEG" was read as positive, the opposite of what it says (test_tier1_extraction_bugs.py).
+    assert semantics({"polarity": "NEG"})[0] == "negative"
 
 
 def test_modality_outside_the_coarse_set_is_unknown():

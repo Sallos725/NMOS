@@ -33,3 +33,10 @@ schema, normalizer, extraction generation, provider or plugin change.
 This does not implement calendar arithmetic, date normalization, source recovery
 when retrieval missed, facts-only clock enrichment, or a guarantee of final
 answer correctness. Unknown dates remain unknown.
+
+## Amendment (2026-11-25, PHASE-65 S4, audit G2)
+
+A clock key is matched by its last part (`Status.Date` is a date key), in SQL (`source_time.BASE_SQL`) and in Python
+(`base()`). `now`, `datetime`, `day`, `weekday` and `season` keys are categories of their own, so date and time read as
+before. More temporal cues start the read (일차, 무슨 요일, 어느 날, 무슨 계절, 얼마나 지났, 며칠째). The extractor's
+`story_clock` (ADR 0086 item 3) strips the prefix too and never joins fields from two turns.

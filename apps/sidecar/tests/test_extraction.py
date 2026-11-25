@@ -11,7 +11,7 @@ from psycopg.rows import dict_row
 
 from conftest import active_generation, make_client
 from nmos_sidecar import reveals
-from nmos_sidecar.extraction import claim, process_extract
+from nmos_sidecar.extraction import claim, finish, process_extract
 from nmos_sidecar.worker import run_once
 from simchat import SimChat
 from test_sidecar_integration import recall, sync
@@ -204,26 +204,30 @@ def test_backfill_limit_on_first_sight(migrated, db):
 
 
 def test_skip_locked_claims_are_exclusive(llm_client, migrated):
-    chat = SimChat()
-    filler(chat, 10)
-    chat.user("last")
-    sync(llm_client, chat)
+    chats = [SimChat() for _ in range(3)]
+    for chat in chats:
+        filler(chat, 4)
+        chat.user("last")
+        sync(llm_client, chat)
     claimed: list[int] = []
     lock = threading.Lock()
 
     def worker():
+        # Each claim is finished before the next: a chat's next turn waits while its earlier one runs (Tier 1 D5), so
+        # claiming without finishing would stop at one turn per chat.
         with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
             handled = {"extract": active_generation(conn, "extract").key}
             while (job := claim(conn, handled)) is not None:
                 with lock:
                     claimed.append(job["id"])
+                finish(conn, job["id"], "done", job["locked_at"])
 
     threads = [threading.Thread(target=worker) for _ in range(4)]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
-    assert len(claimed) == len(set(claimed)) == chat.complete_turns()
+    assert len(claimed) == len(set(claimed)) == sum(chat.complete_turns() for chat in chats)
 
 
 def test_prune_keeps_recent_and_unfinished(llm_client, migrated, db):

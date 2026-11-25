@@ -12,8 +12,21 @@ import psycopg
 
 from .packet import Compiled, Excerpt, NON_ASCII, PACKET_CLOSE, SOURCE_CLOCK_POLICIES, estimate_tokens
 
-CUE = re.compile(r"언제|날짜|시각|시간|며칠|몇\s*(?:년|월|일|시)|\b(?:when|date|time|day)\b", re.I)
-KEYS = {"date": "date", "날짜": "date", "time": "time", "시간": "time", "시각": "time"}
+# "일차" only after a number or "몇" ("일차적으로" is "primarily"); "어느 날" only as a question ("어느 날이었지?", not
+# the narration "어느 날 갑자기").
+CUE = re.compile(r"언제|날짜|시각|시간|며칠째|며칠|몇\s*(?:년|월|일|시)|(?:\d+|몇)\s*일차|무슨\s*요일"
+                 r"|어느\s*날(?:이었|이야|이지|이더|인가|일까|에\s*있었)|무슨\s*계절|얼마나\s*지났"
+                 r"|\b(?:when|date|time|day)\b", re.I)
+# A clock key, as `statechange.scene_key` reads it (its last part under an entity: `Status.Date`, `World.시간`), and its
+# category. Phase 42's `date` and `time` keep their keys; the other clock keys an RP status window uses have
+# categories of their own, so a window that also has one of them keeps the date and time it gave before (a category
+# with more than one key in a window is ambiguous and left out). `extraction.story_clock` reads `date` and `time` only.
+KEYS = {"date": "date", "날짜": "date", "time": "time", "시간": "time", "시각": "time",
+        "현재 시간": "now", "현재 시각": "now", "날짜/시간": "datetime", "일시": "datetime",
+        "일차": "day", "day": "day", "요일": "weekday", "계절": "season"}
+CATEGORIES = ("date", "time", "now", "datetime", "day", "weekday", "season")
+# The same last part in SQL (parameter-free: no `%`): lower-cased and trimmed, everything to the last dot dropped.
+BASE_SQL = r"btrim(regexp_replace(lower(btrim(st.key)), '^.*\.', ''))"
 MAX_SOURCES = 2
 MAX_VALUE = 160
 TIMEOUT_MS = 25
@@ -36,6 +49,11 @@ class Clock:
         return f'  <SourceTime turn="{self.turn}" source_revision={quoteattr(self.revision)}>{fields}</SourceTime>'
 
 
+def base(key: str) -> str:
+    """A status key's last part, lower-cased and trimmed (`Status.Date` → `date`), as BASE_SQL."""
+    return key.strip().lower().rsplit(".", 1)[-1].strip()
+
+
 def read(conn: psycopg.Connection, head: UUID, rules_version: str, revisions: list[str],
          upto: int | None, cut: int) -> dict[str, Clock]:
     if not revisions:
@@ -54,7 +72,7 @@ def read(conn: psycopg.Connection, head: UUID, rules_version: str, revisions: li
                 " AND am.position > %s AND am.position <= %s AND am.turn IS NOT NULL"
                 " AND sr.lifecycle = 'accepted' AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')"
                 " AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'"
-                " AND lower(btrim(st.key)) = ANY(%s) ORDER BY am.position, st.key, st.rule_id",
+                " AND " + BASE_SQL + " = ANY(%s) ORDER BY am.position, st.key, st.rule_id",
                 (head, revisions, rules_version, cut, 2**31 - 1 if upto is None else upto, list(KEYS)),
             ).fetchall()
             conn.execute("SELECT set_config('statement_timeout', %s, true)", (str(previous),))
@@ -68,8 +86,11 @@ def read(conn: psycopg.Connection, head: UUID, rules_version: str, revisions: li
     out = {}
     for revision, entries in grouped.items():
         fields = []
-        for category in ('date', 'time'):
-            candidates = [r for r in entries if KEYS[r['key'].strip().lower()] == category]
+        for category in CATEGORIES:
+            candidates = [r for r in entries if KEYS.get(base(r['key'])) == category]
+            # The bare key first: a window with `Date` and `Quest.Date` gives the date Phase 42 gave from `Date`.
+            bare = [r for r in candidates if '.' not in r['key']]
+            candidates = bare if len(bare) == 1 else candidates
             # Multiple stored aliases are ambiguous here. The parser already resolved repeated exact keys
             # using its established last-match-wins rule; do not reinterpret that stored observation.
             if len(candidates) != 1:

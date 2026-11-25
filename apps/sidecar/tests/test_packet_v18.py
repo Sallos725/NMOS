@@ -30,15 +30,17 @@ def test_v18_inherits_v17_and_is_the_owner_selected_default():
     assert (new.text, new.tokens, new.ledger) == (old.text, old.tokens, old.ledger)
 
 
-@pytest.mark.parametrize("other,kind", [(None, "character"), ("김서윤", "character"),
-                                       ("서윤", "character"), ("서윤", "place")])
-def test_question_only_given_name_abstains_on_another_owner(other, kind):
+# resolve-v6 (Tier 1 B4, owner decision): a character mentioned only as 서윤 is the persona 한서윤 by its given name
+# (splittable by the owner), so it no longer owns 서윤 apart from the persona.
+@pytest.mark.parametrize("other,kind,own", [(None, "character", True), ("김서윤", "character", False),
+                                           ("서윤", "character", True), ("서윤", "place", False)])
+def test_question_only_given_name_abstains_on_another_owner(other, kind, own):
     rows = [row(1, "한서윤", "identity", None, "astronomer", subject_type="character")]
     if other:
         rows.append(row(2, other, "has_trait", None, "quiet", subject_type=kind))
     resolution = resolve(uuid.uuid4(), rows, persona=["한서윤"])
     original = resolution.persona_names
-    assert ("서윤" in persona_question_names(resolution)) is (other is None)
+    assert ("서윤" in persona_question_names(resolution)) is own
     assert resolution.persona_names == original  # no ordinary mention or stored alias expansion
 
 

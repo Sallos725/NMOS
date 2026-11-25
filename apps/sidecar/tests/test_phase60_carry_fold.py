@@ -308,8 +308,11 @@ def test_continue_folds_carried_rows_before_the_story_and_the_story_supersedes_t
         assert [(h["value"], h["turn"], h["outcome"]) for h in sleepy["history"]] == [
             ("지침", -1, "superseded"), ("졸림", 1, "current")]
 
-        # Knowledge marks: a carried row takes no part in the secret fold and keeps its stored marks.
-        assert not [s for s in view["secrets"] if s["id"] < 0]
+        # Knowledge marks: a carried row keeps its stored marks. Tier 1: a carried row kept from someone is a secret of
+        # the target, still kept from them (it used to take no part in the secret fold, so nothing could reveal it and
+        # no secret gate held it).
+        (kept,) = [s for s in view["secrets"] if s["id"] < 0]
+        assert kept["text"] == f"세라 knows: {SECRET}" and kept["turn"] == -1 and kept["open"] == ["카이토"]
         knows = next(f for f in facts if f["predicate"] == "knows")
         assert knows["knowledge"] == "limited" and knows["known_by"] == ["세라"] and knows["hidden_from"] == ["카이토"]
 

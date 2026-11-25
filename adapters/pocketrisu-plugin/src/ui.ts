@@ -7,7 +7,8 @@ import { budgetAdvice } from './budget';
 import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
-import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_RESERVED_TOKENS, dirtySections, embedWaitTooLong,
+import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_EMBED_MAX_CHUNKS, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_RESERVED_TOKENS,
+  dirtySections, EMBED_CHUNK_CHARS, embedChunkChars, embedWaitTooLong, MAX_EMBED_MAX_CHUNKS, MIN_EMBED_MAX_CHUNKS,
   endpointForKey, fillProject, isVertexEndpoint, MAX_DEADLINE_MS, MAX_KEEP_RECENT_TURNS, MAX_RERANK_TIMEOUT_MS,
   MIN_KEEP_RECENT_TURNS, MIN_RERANK_TIMEOUT_MS, modelChange, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl,
   serviceAccountProject, trimArgs, VERTEX_URL, type FormValues, type Section } from './form';
@@ -74,12 +75,14 @@ interface ServerConfig {
   /** `extra_body` and `no_temperature` from PHASE-61 on (ADR 0088). */
   llm: { url: string; model: string; api_key_set: boolean; json_mode: boolean; extra_body?: Record<string, unknown>;
     no_temperature?: boolean };
-  embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string };
+  /** `max_chunks` (ADR 0062) only from a sidecar that lets the panel change it. */
+  embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string; max_chunks?: number };
   rerank?: { url: string; model: string; timeout_ms: number; format: string; key_set: boolean; configured: boolean;
     note?: string };
   recall: { threshold: number; vector_min_sim: number; embed_timeout_ms?: number; top_k: number; facts_limit: number;
     pin_at_mentions?: boolean };
-  extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean };
+  /** `on_output` (PHASE-67) only from a sidecar that has the switch. */
+  extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean; on_output?: boolean };
   parsers: { rules: unknown; source: string; active_rules: number; errors: string[];
     spec?: unknown; presets?: ParserPreset[] };
   queued_jobs?: number;
@@ -96,6 +99,7 @@ interface Preset { label: string | StringKey; url: string; model?: string; minSi
 /** `GET /v1/conversations/<id>/status/candidates` (PHASE-43 S2): status windows found by their shape in the chat. */
 interface StatusCandidates {
   card: string | null;
+  card_name?: string | null;
   candidates: { keys: string[]; count: number; values: Record<string, string>; tracked: boolean; rule_id: string | null }[];
   pins: string[];
 }
@@ -710,6 +714,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   // runs none of a page's scripts.
   const notesButton = el('button', { text: L('notes.open') });
   const notesCard = el('div', { class: 'card', style: 'display:none' });
+  const factAddButton = el('button', { text: L('rp.fact_add') });
+  const factAddCard = el('div', { class: 'card', style: 'display:none' });
   let notesFor: string | null = null; // the chat the note form is for: a page's, or the hub's
   let hubConversation: string | null = null; // the chat the hub is about (PHASE-52), from its answer
   let viewsOn = false; // the sidecar has the new screens (PHASE-52): hub first, settings in groups
@@ -717,7 +723,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   let graphOn = false; // and its drawing as data, drawn here (PHASE-55 step 6)
   const actionMsg = el('div', { class: 'msg' });
   const actions = el('div', {}, el('div', { class: 'btns' }, retryButton, historyButton, cutButton, cutSummariesLabel, rebuildButton,
-    exportButton, notesButton, deleteButton),
+    exportButton, notesButton, factAddButton, deleteButton),
     el('details', { class: 'sub help' }, el('summary', { text: L('act.help') }), el('p', { text: L('act.sub') })));
   // The message sits outside the actions so a result stays visible after a delete returns to the list.
   // Back and Refresh stay in reach while reading far down a page.
@@ -748,7 +754,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const inspbar = el('div', { class: 'btns inspbar' }, inspectorBack, inspectorRefresh);
   const homeQuickBar = el('div', { class: 'home-quick', style: 'display:none' });
   const memSubBar = el('div', { class: 'mem-subbar', style: 'display:none' });
-  inspectorView.append(inspbar, homeQuickBar, memSubBar, actions, actionMsg, notesCard,
+  inspectorView.append(inspbar, homeQuickBar, memSubBar, actions, actionMsg, notesCard, factAddCard,
     bulkBar, modeCard, statusCard, pinCard, linkCard, inspectorBody, inspectorAddress);
   function updateBulk(): void {
     bulkBar.style.display = picked.size || bulkGroups.size ? '' : 'none';
@@ -819,6 +825,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const spot = el('div');
     button.addEventListener('click', () => {
       if (action.kind === 'fact_correct') correctForm(action, button);
+      else if (action.kind === 'fact_hidden') hiddenForm(action, button);
+      else if (action.kind === 'branch_inherit') void branchInherit(action, button, spot);
       else if (action.kind === 'undo' && (action.extra === 'name_split' || action.extra === 'entity_exclude')) {
         void undoSplit(action, button, spot); // previewed: a split's and an exclusion's undo (PHASE-20 Q2, PHASE-47)
       } else if (action.kind === 'entity_exclude') void notACharacter(action, button, spot);
@@ -902,6 +910,69 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     spot.replaceChildren(el('span', { class: 'rpform' }, text, turn, save, cancel));
     text.focus();
   }
+  /** Inline form for `fact_hidden`: add or remove a character from a story fact's `hidden_from`. */
+  function hiddenForm(action: RepairAction, button: HTMLButtonElement): void {
+    const spot = button.parentElement;
+    if (!spot) return;
+    const who = el('input', { type: 'text', placeholder: L('fh.char'), 'aria-label': L('fh.char') });
+    const mode = el('select', { class: 'mini' },
+      el('option', { value: '1', text: L('fh.hide') }),
+      el('option', { value: '0', text: L('fh.unhide') }));
+    const save = el('button', { class: 'mini', text: L('save') });
+    const cancel = el('button', { class: 'mini', text: L('cancel') });
+    cancel.addEventListener('click', () => spot.replaceChildren(...repairControls(action)));
+    save.addEventListener('click', () => {
+      const name = who.value.trim();
+      if (!name) return void who.focus();
+      void repairNow(action, save, { character: name, hidden: mode.value === '1' });
+    });
+    spot.replaceChildren(el('span', { class: 'rpform' }, who, mode, save, cancel));
+    who.focus();
+  }
+  /** Branch back-fill: dry-run preview first, then confirm to copy origin memory for the shared prefix. */
+  async function branchInherit(action: RepairAction, button: HTMLButtonElement, spot: HTMLElement): Promise<void> {
+    const conversation = inspectorConversation(inspectorPath) ?? action.item;
+    if (!conversation) return;
+    interface InheritResult { status?: string; prefix?: number; copied?: Record<string, number> }
+    const path = `/v1/conversations/${conversation}/branch-inherit`;
+    button.disabled = true;
+    let preview: InheritResult;
+    try {
+      preview = await deps.api<InheritResult>('POST', path, { dry_run: true }, 30_000);
+    } catch (error) {
+      say(actionMsg, errorText(lang, error), 'err');
+      button.disabled = false;
+      return;
+    }
+    const c = preview.copied ?? {};
+    const total = Object.values(c).reduce((a, b) => a + (Number(b) || 0), 0);
+    if (preview.status !== 'done' || total === 0) {
+      say(actionMsg, L('bi.empty', { s: preview.status ?? 'empty' }), 'ok');
+      spot.replaceChildren();
+      button.disabled = false;
+      return;
+    }
+    const ok = el('button', { class: 'mini', text: L('bi.confirm') });
+    const cancel = el('button', { class: 'mini', text: L('cancel') });
+    cancel.addEventListener('click', () => { spot.replaceChildren(); button.disabled = false; });
+    ok.addEventListener('click', async () => {
+      ok.disabled = true;
+      try {
+        const res = await deps.api<InheritResult>('POST', path, { dry_run: false }, 60_000);
+        const rc = res.copied ?? {};
+        spot.replaceChildren();
+        say(actionMsg, L('bi.done', { x: rc.extractions ?? 0, s: rc.summaries ?? 0, r: rc.repairs ?? 0 }), 'ok');
+        await showInspector();
+      } catch (error) {
+        say(actionMsg, errorText(lang, error), 'err');
+        ok.disabled = false;
+      }
+    });
+    spot.replaceChildren(el('div', { class: 'preview' }, el('b', { text: L('bi.title') }),
+      el('div', { text: L('bi.preview', { p: preview.prefix ?? 0, x: c.extractions ?? 0, s: c.summaries ?? 0,
+        e: c.embeddings ?? 0, r: c.repairs ?? 0, l: c.links ?? 0 }) }),
+      el('div', { class: 'btns' }, ok, cancel)));
+  }
   /** A held alias linked by the owner (PHASE-29 Q5): the join's preview and link, naming the held row. */
   async function aliasJoin(action: RepairAction, button: HTMLButtonElement, spot: HTMLElement): Promise<void> {
     const conversation = inspectorConversation(inspectorPath);
@@ -980,6 +1051,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       body = {};
     } else if (action.kind === 'secret_found_out' || action.kind === 'secret_keep') {
       body.character = action.extra;
+    } else if (action.kind === 'attention_dismiss' && action.extra) {
+      body.attention = action.extra;
     }
     button.disabled = true;
     try {
@@ -1062,7 +1135,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     for (const spot of Array.from(page.querySelectorAll('span.rp[data-repair]'))) {
       const action = repairAction(spot.getAttribute('data-repair'));
-      if (action) spot.replaceChildren(...repairControls(action));
+      if (!action) continue;
+      spot.replaceChildren(...repairControls(action));
+      if (action.kind === 'fact_retract' && spot.closest('#s-facts') && !spot.closest('details.fold')) {
+        const hid = el('span', { class: 'rp' });
+        hid.replaceChildren(...repairControls({ kind: 'fact_hidden', item: action.item, extra: null }));
+        spot.after(hid);
+      }
     }
     for (const item of Array.from(picked)) if (!closers.has(item)) picked.delete(item); // closed or gone since
     bulkGroups = new Map();
@@ -1183,6 +1262,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       actionConversation = conversation;
       notesCard.replaceChildren(); // another chat's sections never stay on screen
       notesCard.style.display = 'none';
+      factAddCard.replaceChildren();
+      factAddCard.style.display = 'none';
       notesFor = null;
       say(actionMsg, '');
       disarm();
@@ -1336,6 +1417,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (!found || !Array.isArray(found.candidates)) { statusCard.style.display = 'none'; return; }
     const msg = el('div', { class: 'msg', role: 'status' });
     const card = found.card;
+    const cardLabel = found.card_name || card || '';
     const act = async (button: HTMLButtonElement, method: Method, path: string, body: unknown, done: string) => {
       button.disabled = true;
       try {
@@ -1353,8 +1435,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (!card) return box;
       if (!c.tracked) {
         const track = el('button', { class: 'primary', text: L('sw.track') });
-        track.addEventListener('click', () => void act(track, 'POST', '/v1/parsers/card/track', { card, keys: c.keys },
-          L('sw.tracked_now', { card })));
+        track.addEventListener('click', () => void act(track, 'POST', '/v1/parsers/card/track',
+          { card, conversation_id: conversation, keys: c.keys }, L('sw.tracked_now', { card: cardLabel })));
         box.append(el('div', { class: 'btns' }, track));
         return box;
       }
@@ -1365,13 +1447,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       });
       const savePins = el('button', { text: L('sw.save_pins') });
       savePins.addEventListener('click', () => void act(savePins, 'PUT', '/v1/parsers/card/pins', {
-        card, keys: pins.map((p) => p.querySelector('input') as HTMLInputElement).filter((i) => i.checked).map((i) => i.value),
+        card, conversation_id: conversation,
+        keys: pins.map((p) => p.querySelector('input') as HTMLInputElement).filter((i) => i.checked).map((i) => i.value),
       }, L('sw.pins_saved')));
       const buttons = el('div', { class: 'btns' }, savePins);
       if (c.rule_id) {
         const untrack = el('button', { text: L('sw.untrack') });
         untrack.addEventListener('click', () => void act(untrack, 'POST', '/v1/parsers/card/untrack',
-          { card, rule_id: c.rule_id }, L('sw.untracked')));
+          { card, conversation_id: conversation, rule_id: c.rule_id }, L('sw.untracked')));
         buttons.append(untrack);
       } else {
         box.append(el('p', { class: 'sub', text: L('sw.by_rule') }));
@@ -1380,7 +1463,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       return box;
     });
     statusCard.replaceChildren(el('h2', { text: L('sw.title') }),
-      el('p', { class: 'sub', text: card ? L('sw.sub', { card }) : L('sw.no_card') }),
+      el('p', { class: 'sub', text: card ? L('sw.sub', { card: cardLabel }) : L('sw.no_card') }),
       ...(rows.length ? rows : [el('p', { class: 'muted', text: L('sw.none') })]), msg);
     statusCard.style.display = '';
   }
@@ -1766,6 +1849,78 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (!notesCard.childElementCount) buildNotes(conversation);
     notesCard.style.display = '';
   });
+  factAddButton.addEventListener('click', () => {
+    const conversation = actionConversation;
+    if (!conversation) return;
+    if (factAddCard.style.display !== 'none') return void (factAddCard.style.display = 'none');
+    factAddCard.style.display = '';
+    void buildFactAdd(conversation);
+  });
+  /** Inline form for `fact_add`: pick a recent message, enter predicate/subject/object/value, and submit. */
+  async function buildFactAdd(conversation: string): Promise<void> {
+    interface MsgRow { host_logical_id: string; turn: number; position: number; role: string; name: string | null; preview: string }
+    factAddCard.replaceChildren(el('b', { text: L('fa.title') }), el('p', { class: 'sub', text: L('act.working') }));
+    let msgs: MsgRow[];
+    try {
+      msgs = await deps.api<MsgRow[]>('GET', `/v1/conversations/${conversation}/messages?limit=40`, undefined, 15_000);
+    } catch (error) {
+      factAddCard.replaceChildren(el('b', { text: L('fa.title') }), el('p', { class: 'msg err', text: errorText(lang, error) }));
+      return;
+    }
+    if (!msgs.length) {
+      factAddCard.replaceChildren(el('b', { text: L('fa.title') }), el('p', { class: 'sub', text: L('fa.no_msgs') }));
+      return;
+    }
+    const preds: [string, string, string | null][] = [
+      ['has_status', 'character', null], ['located_in', 'character', 'place'], ['identity', 'character', null],
+      ['has_trait', 'character', null], ['relationship', 'character', 'character'], ['role_toward', 'character', 'character'],
+      ['feels_toward', 'character', 'character'], ['addresses', 'character', 'character'], ['possesses', 'character', 'item'],
+      ['member_of', 'character', 'group'], ['knows', 'character', null], ['goal', 'character', null],
+      ['promised', 'character', 'character'], ['event', 'character', null], ['world_fact', 'concept', null],
+    ];
+    const msgSel = el('select', { 'aria-label': L('fa.msg') }, ...msgs.map((m) =>
+      el('option', { value: m.host_logical_id, text: `t${m.turn} #${m.position} (${m.name || m.role}) ${m.preview.slice(0, 48)}` })));
+    const predSel = el('select', { 'aria-label': L('fa.pred') }, ...preds.map(([p]) => el('option', { value: p, text: p })));
+    const subj = el('input', { type: 'text', placeholder: L('fa.subj'), 'aria-label': L('fa.subj') });
+    const obj = el('input', { type: 'text', placeholder: L('fa.obj'), 'aria-label': L('fa.obj') });
+    const val = el('input', { type: 'text', placeholder: L('fa.val'), 'aria-label': L('fa.val') });
+    const hid = el('input', { type: 'text', placeholder: L('fa.hidden'), 'aria-label': L('fa.hidden') });
+    const save = el('button', { class: 'primary', text: L('save') });
+    const cancel = el('button', { text: L('cancel') });
+    const formMsg = el('div', { class: 'msg' });
+    cancel.addEventListener('click', () => { factAddCard.style.display = 'none'; });
+    save.addEventListener('click', async () => {
+      const s = subj.value.trim();
+      if (!s) return void say(formMsg, L('fa.need_subj'), 'err');
+      const spec = preds.find(([p]) => p === predSel.value) ?? preds[0]!;
+      const o = obj.value.trim() || null;
+      const v = val.value.trim() || null;
+      const hidden = hid.value.split(',').map((x) => x.trim()).filter(Boolean);
+      const fact: Record<string, unknown> = {
+        predicate: spec[0], subject: s, subject_type: spec[1],
+        ...(o ? { object: o, object_type: spec[2] ?? 'character' } : {}),
+        ...(v ? { value: v } : {}),
+        ...(hidden.length ? { hidden_from: hidden } : {}),
+      };
+      save.disabled = true;
+      say(formMsg, L('act.working'));
+      try {
+        await deps.api('POST', `/v1/conversations/${conversation}/repairs`,
+          { kind: 'fact_add', item: msgSel.value, fact }, 15_000);
+        factAddCard.replaceChildren();
+        factAddCard.style.display = 'none';
+        say(actionMsg, L('rp.done'), 'ok');
+        await showInspector();
+      } catch (error) {
+        say(formMsg, errorText(lang, error), 'err');
+        save.disabled = false;
+      }
+    });
+    factAddCard.replaceChildren(el('b', { text: L('fa.title') }),
+      el('div', { class: 'row' }, msgSel), el('div', { class: 'row' }, predSel),
+      el('div', { class: 'row' }, subj, obj), el('div', { class: 'row' }, val, hid),
+      el('div', { class: 'btns' }, save, cancel), formMsg);
+  }
   /** The form: which sections, the chronicle's length, whether secrets go in (PHASE-50 S1, PHASE-59 Studio). */
   function buildNotes(conversation: string, target: HTMLElement = notesCard, studio = false): void {
     notesFor = conversation;
@@ -1826,6 +1981,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }).catch(() => {}); // an older sidecar has no prompt: the box starts empty
     const length = el('select', { 'aria-label': L('notes.length') },
       el('option', { value: '3000', text: L('notes.short') }), el('option', { value: '6000', text: L('notes.long') }));
+    // What a model writes the note's parts in (`notes.LANGUAGES`): the chat's own language, or English.
+    const language = el('select', { 'aria-label': L('notes.language') },
+      el('option', { value: 'chat', text: L('notes.lang_chat') }), el('option', { value: 'en', text: L('notes.lang_en') }));
     const secrets = el('input', { type: 'checkbox' });
     const warn = el('p', { class: 'sub warn', text: L('notes.secrets_warn'), style: 'display:none' });
     secrets.addEventListener('change', () => { warn.style.display = secrets.checked ? '' : 'none'; });
@@ -1847,7 +2005,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
           saved = text;
         } catch { unsaved = true; } // the note is still made from the box (C2)
       }
-      const body: Record<string, unknown> = { sections, chars: Number(length.value), secrets: secrets.checked };
+      // `language` only when not the sidecar's default (`chat`): the body is then the one an older sidecar was sent.
+      // Whether a sidecar reads it is not reported (no `/v1/health` feature): an older one writes in the chat's language.
+      const body: Record<string, unknown> = { sections, chars: Number(length.value), secrets: secrets.checked,
+        ...(language.value !== 'chat' ? { language: language.value } : {}) };
       if (custom.checked) Object.assign(body, { custom_prompt: text, custom_setting: setting.checked });
       try {
         const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,
@@ -1860,7 +2021,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     });
     if (!studio) {
       target.replaceChildren(el('h2', { text: L('notes.title') }), el('p', { class: 'sub', text: L('notes.sub') }),
-        ...kinds.map((k) => k.row), customArea, el('div', { class: 'row' }, field(L('notes.length'), length)),
+        ...kinds.map((k) => k.row), customArea,
+        el('div', { class: 'row' }, field(L('notes.length'), length), field(L('notes.language'), language)),
         el('div', { class: 'check' }, secrets, el('span', { text: L('notes.secrets') })), warn,
         el('div', { class: 'btns' }, make), msg, results);
       return;
@@ -1868,7 +2030,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const leftCol = el('div', { class: 'studio-col' },
       el('h3', { text: L('notes.config_head') }),
       ...kinds.map((k) => k.row), customArea,
-      el('div', { class: 'row' }, field(L('notes.length'), length)),
+      el('div', { class: 'row' }, field(L('notes.length'), length), field(L('notes.language'), language)),
       el('div', { class: 'check' }, secrets, el('span', { text: L('notes.secrets') })), warn,
       estBar, el('div', { class: 'btns' }, make), msg);
     const rightCol = el('div', { class: 'studio-col' },
@@ -2157,16 +2319,36 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const canonFacts = el('input', { type: 'checkbox' });  // facts read from the canon (ADR 0047)
   const pinAt = el('input', { type: 'checkbox', disabled: true });  // @name in a message pins a character for that reply (ADR 0087)
   let pinAtKnown = false;  // the sidecar reported the setting: an older one refuses the key
+  // Extract a reply about 20 s after it instead of when it is answered (PHASE-67): the plugin syncs after a reply only then.
+  const extractOnOutput = el('input', { type: 'checkbox', disabled: true });
+  let extractOnOutputKnown = false;  // likewise
+  // Chunks embedded per message (ADR 0062): how much of a long message semantic search reaches, beside extraction's cap.
+  const embedChunks = el('input', { type: 'number', min: MIN_EMBED_MAX_CHUNKS, max: MAX_EMBED_MAX_CHUNKS, step: 1,
+    disabled: true });
+  let embedChunksKnown = false;  // likewise: a sidecar that does not report it keeps it in NMOS_EMBED_MAX_CHUNKS
+  const embedChunksHint = el('p', { class: 'sub' });
+  const showEmbedChunks = (): void => {
+    const chars = embedChunkChars(embedChunks.value);
+    embedChunksHint.textContent = !embedChunksKnown ? L('tune.embed_chunks_fixed')
+      : chars === null ? L('tune.embed_chunks_range', { min: MIN_EMBED_MAX_CHUNKS, max: MAX_EMBED_MAX_CHUNKS })
+        : L('tune.embed_chunks_hint', { n: embedChunks.value.trim(), chars: chars.toLocaleString('en-US'),
+          d: DEFAULT_EMBED_MAX_CHUNKS, dchars: (DEFAULT_EMBED_MAX_CHUNKS * EMBED_CHUNK_CHARS).toLocaleString('en-US') });
+  };
+  embedChunks.addEventListener('input', showEmbedChunks);
+  showEmbedChunks();
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('tune.title') }), el('p', { class: 'sub', text: L('tune.sub') }),
     el('div', { class: 'row' }, field(L('tune.threshold'), threshold), field(L('tune.min_sim'), minSim),
       field(L('tune.embed_wait'), embedWait)),
     el('p', { class: 'sub', text: L('tune.embed_wait_hint') }),
+    el('div', { class: 'row' }, field(L('tune.embed_chunks'), embedChunks)), embedChunksHint,
     el('div', { class: 'row' }, field(L('tune.top_k'), topK), field(L('tune.facts'), factsLimit), field(L('tune.backfill'), backfill)),
     el('div', { class: 'check' }, summaries, el('span', { text: L('tune.summaries') })),
     el('p', { class: 'sub', text: L('tune.summaries_hint') }),
     el('div', { class: 'check' }, canonFacts, el('span', { text: L('tune.canon_facts') })),
     el('p', { class: 'sub', text: L('tune.canon_facts_hint') }),
+    el('div', { class: 'check' }, extractOnOutput, el('span', { text: L('tune.extract_on_output') })),
+    el('p', { class: 'sub', text: L('tune.extract_on_output_hint') }),
     el('div', { class: 'check' }, pinAt, el('span', { text: L('tune.pin_at') })),
     el('p', { class: 'sub', text: L('tune.pin_at_hint') })));
 
@@ -2427,7 +2609,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       llm: { ...llm.values(), ...extraValues() }, emb: emb.values(), rerank: rerank.values(),
       tune: { threshold: threshold.value, minSim: minSim.value, embedWait: embedWait.value, topK: topK.value,
         facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked,
-        pinAt: pinAt.checked },
+        pinAt: pinAt.checked, embedChunks: embedChunks.value, extractOnOutput: extractOnOutput.checked },
       trim: { on: trimOn.checked, keep: trimKeep.value },
     };
   }
@@ -2458,7 +2640,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     hudBox.checked = Number(await deps.getArg('hud')) === 1;
   }
 
-  /** The trimming args as `host.ts` reads them: on only at 1, the recent turns kept within 4..200 (20 when unset). */
+  /** The trimming args as `host.ts` reads them: on only at 1, the recent turns kept within 4..200 (16 when unset). */
   async function loadTrim(): Promise<void> {
     const stored = trimArgs({ on: Number(await deps.getArg('trim_old_turns')) === 1,
       keep: String((await deps.getArg('keep_recent_turns')) ?? '') });
@@ -2484,6 +2666,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     pinAtKnown = typeof cfg.recall.pin_at_mentions === 'boolean';
     pinAt.checked = cfg.recall.pin_at_mentions === true;
     pinAt.disabled = !pinAtKnown;  // a sidecar older than the setting: nothing to show, nothing sent
+    embedChunksKnown = typeof cfg.embeddings.max_chunks === 'number';
+    embedChunks.value = embedChunksKnown ? String(cfg.embeddings.max_chunks) : '';
+    embedChunks.disabled = !embedChunksKnown;  // likewise
+    extractOnOutputKnown = typeof cfg.extraction.on_output === 'boolean';
+    extractOnOutput.checked = cfg.extraction.on_output === true;
+    extractOnOutput.disabled = !extractOnOutputKnown;  // likewise
+    showEmbedChunks();
     fillParsers(cfg);
   }
 
@@ -2571,7 +2760,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         deadline.value = String(args.deadline_ms);
         baseline = { ...baseline, conn: values().conn };
       }
-      const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown }, baseline);
+      const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown, embedChunks: embedChunksKnown,
+        extractOnOutput: extractOnOutputKnown }, baseline);
       // Said with any save that touches either value; the save itself goes ahead (audit F20).
       const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
         ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
@@ -2612,9 +2802,19 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   // --- closing, language, tabs ------------------------------------------------------------------
   let onDocClick: ((e: MouseEvent) => void) | null = null;
   let onDocKey: ((e: KeyboardEvent) => void) | null = null;
-  function shut(): void {
+  function cleanupPanel(): void {
+    window.clearTimeout(armTimer);
     if (onDocClick) document.removeEventListener('click', onDocClick);
     if (onDocKey) document.removeEventListener('keydown', onDocKey);
+    closers.clear();
+    bulkGroups.clear();
+    picked.clear();
+    bulkPicked.clear();
+    knownChats = [];
+    lastMeta = null;
+  }
+  function shut(): void {
+    cleanupPanel();
     root.remove();
     current = null;
     void deps.hide();
@@ -2648,8 +2848,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     const next = langOf(language.value);
     await deps.setArg('language', next);
-    if (onDocClick) document.removeEventListener('click', onDocClick);
-    if (onDocKey) document.removeEventListener('keydown', onDocKey);
+    cleanupPanel();
     root.remove();
     current = await render(deps, next, shown);
   });

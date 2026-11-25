@@ -13,10 +13,10 @@ import hashlib
 import re
 import threading
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Any
 
-from .canonfacts import named
+from .canonfacts import conditional_spans, named
 from .entities import norm
 from .inspector import fact_line_text
 from .llm import LLMError, metered
@@ -27,6 +27,10 @@ STORY_CHARS = 20_000  # the story's side (S2); facts take at most half
 CANON_CHARS = 60_000  # the setting's side (S3; amendment 1: 30,000 held 7–8 of 51–52 candidates on long chats)
 ENTRY_CHARS = 4_000  # of one canon text
 QUOTE_MIN = 12  # characters of a quote, normalized
+# A quote in Hangul says as much in fewer characters: a short structured field ("직업: 기사단장", "상태: 생존") is
+# QUOTE_MIN_KO or more, normalized as QUOTE_MIN (spaces kept, runs folded to one).
+QUOTE_MIN_KO = 6
+HANGUL = re.compile(r"[가-힣]")
 NAME_MIN = 2  # a shorter name picks too many entries
 ALWAYS = ("card:desc", "card:personality", "card:scenario", "card:greeting", "persona", "note")
 KINDS = ("life", "position", "relationship", "world", "other")
@@ -118,22 +122,38 @@ def _named_in(name: str, hay: str, words: str) -> bool:
     return w != "  " and w in words
 
 
+def unconditional(text: str) -> str:
+    """A canon text without its conditional blocks (`canonfacts.conditional_spans`): a branch the host may never show
+    is not the setting the story is compared with."""
+    spans = sorted(conditional_spans(text))
+    out, at = [], 0
+    for a, b in spans:  # nested spans lie inside their outer one
+        if b <= at:
+            continue
+        out.append(text[at:max(a, at)])
+        at = b
+    return "".join(out) + text[at:]
+
+
 def canon_input(entries: list[dict[str, Any]], entities: list[dict[str, Any]], facts: list[dict[str, Any]],
-                story_text: str, excluded: frozenset[str] = frozenset()) -> tuple[list[dict[str, Any]], int]:
+                story_text: str, excluded: frozenset[str] = frozenset(),
+                held_keys: Collection[str] | None = None) -> tuple[list[dict[str, Any]], int]:
     """The setting's side (S3) from the manifest in force (`canon.manifest`): the card's story fields, the persona and
     the note without NMOS's block always; then the lorebook entries whose keys or text name an entity of the story's
     side (one with a story fact, or named in the scenes given), ranked by how many with a story fact they name, then how
     many in all, then how late the story stated a fact of one, then key. Each text has its name macros filled in (as
     the host fills them), at most ENTRY_CHARS of it, at most CANON_CHARS in all. Returns the texts given
     (`{key, label, text}`) and how many candidate entries did not fit. The persona and the entities the owner left out
-    (PHASE-47) pick no entry."""
+    (PHASE-47) pick no entry. A text's conditional blocks are left out. With `held_keys` (the lorebook keys a request's
+    prompt held), a lorebook entry is a candidate only when it is always active or was held: one the host never
+    activated may be a spoiler the story has not reached."""
     by_key = {e["key"]: e for e in entries if e.get("content")}
     character = ((by_key.get("card:name") or {}).get("content") or "").strip() or None
     user = ((by_key.get("persona") or {}).get("metadata") or {}).get("name") or None
 
     def text_of(e: dict[str, Any]) -> str:
         text = strip_blocks(e["content"])[0] if e["key"] == "note" else e["content"]
-        return named(text, character, user).strip()
+        return named(unconditional(text), character, user).strip()
 
     latest: dict[str, int] = {}  # entity id -> the newest turn of a story fact about it
     for f in facts:
@@ -160,7 +180,11 @@ def canon_input(entries: list[dict[str, Any]], entities: list[dict[str, Any]], f
     for e in entries:
         if not e["key"].startswith("lore:") or not e.get("content"):
             continue
+        if held_keys is not None and not (e.get("metadata") or {}).get("always_active") and e["key"] not in held_keys:
+            continue
         text = text_of(e)
+        if not text:
+            continue
         hay, keys = norm(text), {norm(k) for k in (e.get("metadata") or {}).get("keys") or []}
         words = _words(hay)
         hit = [i for i, ns in names.items() if any(n in keys or _named_in(n, hay, words) for n in ns)]
@@ -197,8 +221,9 @@ def _key(raw: Any, keys: dict[str, Any]) -> str:
 
 def check(items: Any, given: list[dict[str, Any]], spans: list[tuple[int, int]],
           last_turn: int | None) -> list[dict[str, Any]]:
-    """The items of a reply that hold (S4): a key given, a quote of at least QUOTE_MIN characters found in that text
-    (whitespace and case aside), a "now", and turns each at most the head's and inside a span the story's side cited.
+    """The items of a reply that hold (S4): a key given, a quote of at least QUOTE_MIN characters (QUOTE_MIN_KO with
+    Hangul in it) found in that text (whitespace and case aside), a "now", and turns each at most the head's and
+    inside a span the story's side cited.
     The same key and quote twice is one item, the newer turns. Anything else is dropped."""
     texts = {g["key"]: _flat(g["text"]) for g in given}
     labels = {g["key"]: g["label"] for g in given}
@@ -210,7 +235,8 @@ def check(items: Any, given: list[dict[str, Any]], spans: list[tuple[int, int]],
         key = _key(it.get("key"), texts)
         quote, now = str(it.get("quote") or "").strip(), str(it.get("now") or "").strip()
         q = _flat(quote)
-        if key not in texts or len(q) < QUOTE_MIN or q not in texts[key] or not now:
+        least = QUOTE_MIN_KO if HANGUL.search(q) else QUOTE_MIN
+        if key not in texts or len(q) < least or q not in texts[key] or not now:
             continue
         raw = it.get("turns") if isinstance(it.get("turns"), list) else [it.get("turns")]
         turns = sorted({int(m) for x in raw for m in TURN.findall(str(x))})
@@ -281,13 +307,15 @@ def _user(given: list[dict[str, Any]], story: str, open_secrets: list[dict[str, 
 def diverged(entries: list[dict[str, Any]], entities: list[dict[str, Any]], facts: list[dict[str, Any]],
              told: dict[str, Any] | None, open_secrets: list[dict[str, Any]], last_turn: int | None,
              model: Callable[..., tuple[Any, ...]] | None, told_secrets: bool, fallback: list[str],
-             excluded: frozenset[str] = frozenset()) -> dict[str, Any]:
+             excluded: frozenset[str] = frozenset(), held_keys: Collection[str] | None = None,
+             finale: str | None = None) -> dict[str, Any]:
     """The part's Markdown and how it was made (S4–S6). `facts` are already filtered for secrets by the caller, and
-    `fallback` is Phase 50's `changed` lines. One call, asked again once when its reply is not JSON with a list, when
+    `fallback` is Phase 50's `changed` lines; `held_keys` as `canon_input`. One call, asked again once when its reply
+    is not JSON with a list, when
     no item it named holds, or (secrets off) when its lines tell a kept secret at LEAK_NEAR; then the fallback. A model
     answer, an empty one included, is cached by its whole input; a fallback is not, so a failed call is tried again."""
     story, spans, held = story_input(facts, told, open_secrets, told_secrets)
-    given, left = canon_input(entries, entities, facts, story, excluded)
+    given, left = canon_input(entries, entities, facts, story, excluded, held_keys)
     base = {"turns": str(last_turn or 0), "held": held, "entries": sum(g["key"].startswith("lore:") for g in given),
             "left_out": left, "cached": False, "dropped": 0}
 
@@ -300,7 +328,8 @@ def diverged(entries: list[dict[str, Any]], entities: list[dict[str, Any]], fact
     system = PROMPT.format(secrets=SECRETS_TOLD if told_secrets else (SECRETS_KEPT if open_secrets else ""))
     user = _user(given, story, open_secrets, told_secrets)
     which = getattr(getattr(model, "__self__", None), "model", "")
-    key = hashlib.sha256(f"{told_secrets}|{which}|{system}|{user}".encode()).hexdigest()
+    key = hashlib.sha256(
+        f"{told_secrets}|{which}|{system}|{user}{'|finale:' + finale if finale else ''}".encode()).hexdigest()
     with _CACHE_LOCK:
         hit = _CACHE.get(key)
         if hit is not None:

@@ -18,10 +18,12 @@ from psycopg.rows import dict_row
 from nmos_sidecar import entities, extraction as X, generations, predicates as P, secrets as S
 from nmos_sidecar.config import Settings
 from nmos_sidecar.facts import served_assertions
+from base_rules import base_rules  # noqa: F401 -- autouse: the base's keys, without the revision marker (PHASE-66 part 5)
 from conftest import active_generation, make_client
 from test_extract_v18 import FEELING, USED, WARM, chat_of, feels
 from test_extraction import drain
 from test_generations import LLM, conv_id
+from test_secrets import NEWEST_FIRST
 from test_phase60_pins import BASE, PINNED_EXTRACT_SPEC_FIELDS
 from test_sidecar_integration import sync
 
@@ -44,8 +46,10 @@ def _told_item(**extra):
 
 def test_told_extension_keeps_registry_and_default_prompt_unchanged():
     assert "told" not in P.REGISTRY
-    assert P.EXTENSIONS == {"extract-v19": {"told": P.TOLD}, "extract-v20": {"told": P.TOLD}}
-    assert P.EXTENSION_PARTICIPANTS == {"extract-v19": frozenset({"told"}), "extract-v20": frozenset({"told"})}
+    earlier = {k: v for k, v in P.EXTENSIONS.items() if k != "extract-v21"}  # extract-v21: PHASE-66's ontology
+    assert earlier == {"extract-v19": {"told": P.TOLD}, "extract-v20": {"told": P.TOLD}}
+    assert {k: v for k, v in P.EXTENSION_PARTICIPANTS.items() if k != "extract-v21"} == {
+        "extract-v19": frozenset({"told"}), "extract-v20": frozenset({"told"})}
     assert P.registry_for(None) is P.REGISTRY
     assert P.registry_for("extract-v18") is P.REGISTRY
     assert "told" in P.registry_for("extract-v19")
@@ -72,7 +76,7 @@ def test_validate_and_participants_accept_told_only_with_extension():
 
 def test_v19_prompt_extends_v18_and_joins_only_v18_compiler_sets():
     assert X.DEFAULT_COMPILER == "extract-v16" and "extract-v19" in X.COMPILERS
-    assert X.HAPPENED == {"extract-v19", "extract-v20"}
+    assert X.HAPPENED - X.ONTOLOGY == {"extract-v19", "extract-v20"}  # extract-v21 (PHASE-66) carries it on
     assert X.HAPPENED_MAX == 80 and X.CLOCK_MAX == 80
     assert X.CLOCK_LINE == "STORY CLOCK at the TARGET turn (the chat's status window): {clock}"
     v18, v19 = X.prompt_of("extract-v18"), X.prompt_of("extract-v19")
@@ -305,7 +309,7 @@ def reveal_checks(url: str, predicate: str) -> tuple[int, int, list[dict], list[
     with make_client(url, **LLM, extract_compiler="extract-v19") as c:
         sync(c, chat)
         with psycopg.connect(url, autocommit=True) as conn:
-            conn.execute("UPDATE job SET priority = 200 WHERE kind = 'extract' AND priority = %s", (X.FIRST_PRIORITY,))
+            conn.execute(NEWEST_FIRST, (X.FIRST_PRIORITY,))  # as `test_secrets.first_import` (Tier 1 D5)
         drain(url, stub(predicate))
         conv = conv_id(c, chat)
         queued = c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["reveal"]
@@ -367,7 +371,9 @@ def test_story_clock_reads_the_latest_unambiguous_field_as_of_the_target(migrate
         observe(conn, head, 5, "날짜", "4월 13일")
         assert X.story_clock(conn, at(head, 1)) == "날짜: 4월 12일; 시간: 오후 3시"
         assert X.story_clock(conn, at(head, 3)) == "날짜: 4월 12일; 시간: 오후 3시"
-        assert X.story_clock(conn, at(head, 5)) == "날짜: 4월 13일; 시간: 오후 3시"  # each field its own latest
+        # each field its own latest, but never one of a turn long before (Tier 1 G2: turn 2's date and turn 0's time
+        # were one clock)
+        assert X.story_clock(conn, at(head, 5)) == "날짜: 4월 13일"
         observe(conn, head, 5, "date", "April 13")  # two date keys at the latest position: ambiguous
         assert X.story_clock(conn, at(head, 5)) == "시간: 오후 3시"
         assert X.story_clock(conn, at(head, 3)) == "날짜: 4월 12일; 시간: 오후 3시"
@@ -523,4 +529,4 @@ def test_the_clock_is_not_part_of_validity(migrated, clock_rules):
 def test_settings_accept_v19_and_refuse_a_later_name():
     assert Settings(database_url="", extract_compiler="extract-v19").extract_compiler == "extract-v19"
     with pytest.raises(ValueError, match="extract-v19"):
-        Settings(database_url="", extract_compiler="extract-v21")
+        Settings(database_url="", extract_compiler="extract-v22")

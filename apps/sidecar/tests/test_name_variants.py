@@ -38,7 +38,8 @@ def entity(name, *names, kind="character", persona=False):
 # --- the rules (pure) ------------------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize(("name", "given"), [("백이안", "이안"), ("이서윤", "서윤"), ("추오월", "오월"),
-                                             ("마리아", None), ("이안", None), ("남궁민수", None), ("ryu ha-jin", None)])
+                                             ("마리아", None), ("이안", None), ("남궁민수", "민수"), ("ryu ha-jin", None),
+                                             ("백 이안", "이안"), ("마 리아", None), ("남궁 세연", "세연")])
 def test_the_given_name(name, given):
     assert variants.given(name) == given
 

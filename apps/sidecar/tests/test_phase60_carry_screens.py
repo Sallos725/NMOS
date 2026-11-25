@@ -1,9 +1,10 @@
 """PHASE-60 S6 (ADR 0085): a chat's carry link in force reaches only the screens that show carried memory.
 
 `api.view_of` reads the link only with `carried=True`: the read-only lists (`/facts`, `/entities`, `/threads`,
-`/secrets`), the panel's memory screen and a person's sheet. Previews, repairs, the author's note, the Inspector's pages,
-the hub, the map and every other reader keep the chat's own memory, so a link never moves a preview's fingerprint or
-reaches the note. Stub extractor, summarizer and note model only; synthetic names 세라, 카이토, 하나, 유나, 도현, 유찬."""
+`/secrets`), the panel's memory screen and a person's sheet, and since Tier 1 (owner-agreed, C5/F2) the join, split and
+exclusion previews, repairs (`/repairs` among the lists) and the author's note, so a carried row can be pinned, left
+out, joined and noted, and since Tier 2 (owner-agreed, C/15) the memory map, which draws what the memory screen lists.
+The Inspector's pages, the hub and every other reader keep the chat's own memory. Stub extractor, summarizer and note model only; synthetic names 세라, 카이토, 하나, 유나, 도현, 유찬."""
 
 from __future__ import annotations
 
@@ -127,17 +128,14 @@ def _plain_routes(tgt: str, people: list[str]) -> list[str]:
         f"/v1/views/hub?conversation={tgt}", f"/v1/views/hub?conversation={tgt}&map=true",
         f"/views/hub?conversation={tgt}",
         f"/v1/views/c/{tgt}/working", f"/views/c/{tgt}/working",
-        f"/v1/views/c/{tgt}/map", f"/v1/views/c/{tgt}/map/graph", f"/v1/views/c/{tgt}/map/graph?all=true",
-        f"/views/c/{tgt}/map", f"/views/c/{tgt}/map?all=true",
         f"/v1/conversations/{tgt}/memory-mode", f"/v1/conversations/{tgt}/replies-only",
-        f"/v1/conversations/{tgt}/dropped", f"/v1/conversations/{tgt}/repairs",
+        f"/v1/conversations/{tgt}/dropped",
         f"/v1/conversations/{tgt}/coverage", f"/v1/conversations/{tgt}/state", f"/v1/conversations/{tgt}/traces",
         f"/v1/conversations/{tgt}/carry", f"/v1/conversations/{tgt}/carry?snapshot=true",
     ]
     for eid in people:
         out += [f"/inspector/c/{tgt}/e/{eid}", f"/v1/inspector/c/{tgt}/e/{eid}",
-                f"/v1/inspector/c/{tgt}/e/{eid}?timeline=lazy", f"/v1/inspector/c/{tgt}/e/{eid}?part=timeline",
-                f"/v1/views/c/{tgt}/map?focus={eid}", f"/v1/views/c/{tgt}/map/graph?focus={eid}"]
+                f"/v1/inspector/c/{tgt}/e/{eid}?timeline=lazy", f"/v1/inspector/c/{tgt}/e/{eid}?part=timeline"]
     return out
 
 
@@ -146,9 +144,14 @@ def _carried_routes(tgt: str, people: list[str]) -> list[str]:
     out = [f"/v1/conversations/{tgt}/facts", f"/v1/conversations/{tgt}/facts?history=true",
            f"/v1/conversations/{tgt}/entities", f"/v1/conversations/{tgt}/threads",
            f"/v1/conversations/{tgt}/secrets",
-           f"/v1/views/c/{tgt}/memory", f"/v1/views/c/{tgt}/memory?map=true", f"/views/c/{tgt}/memory"]
+           f"/v1/conversations/{tgt}/repairs",  # Tier 1: a repair of a carried row applies to it
+           f"/v1/views/c/{tgt}/memory", f"/v1/views/c/{tgt}/memory?map=true", f"/views/c/{tgt}/memory",
+           # Changed in Tier 2 (C/15, owner-agreed): the map was among `_plain_routes`; it now reads the link in force
+           f"/v1/views/c/{tgt}/map", f"/v1/views/c/{tgt}/map/graph", f"/v1/views/c/{tgt}/map/graph?all=true",
+           f"/views/c/{tgt}/map", f"/views/c/{tgt}/map?all=true"]
     for eid in people:
-        out += [f"/v1/views/c/{tgt}/person/{eid}", f"/views/c/{tgt}/person/{eid}"]
+        out += [f"/v1/views/c/{tgt}/person/{eid}", f"/views/c/{tgt}/person/{eid}",
+                f"/v1/views/c/{tgt}/map?focus={eid}", f"/v1/views/c/{tgt}/map/graph?focus={eid}"]
     return out
 
 
@@ -191,31 +194,40 @@ def _previews(c, tgt: str) -> tuple[dict[str, Any], dict[str, Any]]:
     return join.json(), exclude.json()
 
 
-def test_a_link_moves_no_preview_and_lists_no_carried_row_as_a_change(
+def test_a_preview_reads_the_link_on_both_sides_and_a_regression_link_changes_no_line(
     migrated: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Changed in Tier 1 (C5, owner-agreed): this test was `test_a_link_moves_no_preview_and_lists_no_carried_row_as_a_
+    change` and asserted that a preview kept the chat's own memory. A preview now reads the link in force on both
+    sides (now and as it would be), so a carried row is no change of its own, and the link is part of the
+    fingerprint's state (a link made or replaced since the preview makes its action answer 409). A regression link
+    folds nothing into the chat: its previews list exactly the lines an unlinked chat's do."""
     calls = Calls(monkeypatch)
     with make_client(migrated, **ON) as c:
         src, tgt = _setup(c, migrated)
         join0, exclude0 = _previews(c, tgt)
+        seen: set[str] = {join0["fingerprint"]}
         for mode in ("continue", "regression"):
             _link(c, tgt, src, mode)
             assert any(f.get("carried") for f in c.get(f"/v1/conversations/{tgt}/facts").json()) \
                 == (mode == "continue")  # the link is in force: the list shows its rows
             calls.carried.clear()
             join, exclude = _previews(c, tgt)
-            assert calls.carried and not any(calls.carried), mode
-            assert join["fingerprint"] == join0["fingerprint"], mode
-            assert exclude["fingerprint"] == exclude0["fingerprint"], mode
-            assert join == join0 and exclude == exclude0, mode
-            for p in (join, exclude):
-                text = json.dumps(p, ensure_ascii=False)
-                assert '"carried"' not in text and not any(w in text for w in CARRIED_WORDS), (mode, text[:500])
+            assert calls.carried and all(calls.carried), mode  # both sides of both previews
+            assert join["fingerprint"] not in seen, mode
+            seen.add(join["fingerprint"])
+            if mode == "regression":
+                drop = lambda p: {k: v for k, v in p.items() if k != "fingerprint"}  # noqa: E731
+                assert drop(join) == drop(join0) and drop(exclude) == drop(exclude0), mode
 
 
-def test_the_authors_note_is_the_same_with_a_link_and_its_model_never_reads_a_carried_row(
+def test_the_authors_note_reads_a_continue_link_and_is_the_same_with_a_regression_link(
     migrated: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Changed in Tier 1 (F2, owner-agreed): this test asserted the note was the same with either link and that its
+    model never read a carried row. The note now reads the link in force: a `continue` link's carried facts and open
+    threads go in (what is kept from someone still stays out, by its marks); a regression link folds nothing into the
+    chat, so its note is the same as an unlinked chat's."""
     asked: list[str] = []
 
     class Fake:
@@ -249,11 +261,15 @@ def test_the_authors_note_is_the_same_with_a_link_and_its_model_never_reads_a_ca
                            for t in c.get(f"/v1/conversations/{tgt}/threads").json() if t["status"] == "open")
             asked.clear()
             calls.carried.clear()
-            assert note(ASSEMBLED) == assembled0, mode
-            assert note(CUSTOM) == custom0, mode
-            assert calls.carried and not any(calls.carried), mode
-            assert asked == [prompt0], mode  # the model is handed the very same prompt
-            assert not any(w in prompt0 for w in CARRIED_WORDS)
+            assembled, custom = note(ASSEMBLED), note(CUSTOM)
+            assert calls.carried and all(calls.carried), mode
+            assert len(asked) == 1, mode
+            if mode == "regression":
+                assert assembled == assembled0 and custom == custom0, mode
+                assert asked == [prompt0], mode  # the model is handed the very same prompt
+            else:
+                assert any(w in asked[0] for w in CARRIED_WORDS), asked[0][:800]
+        assert not any(w in prompt0 for w in CARRIED_WORDS)
 
 
 def test_the_memory_screens_attention_count_is_the_chats_own(
@@ -406,9 +422,13 @@ def test_the_renderer_reads_what_the_routes_send_and_unlinking_restores_every_fr
         assert after == before  # byte for byte, in both languages
 
 
-def test_a_carried_open_thread_is_listed_without_the_close_that_would_be_refused(
+def test_a_carried_open_thread_is_listed_without_a_close_button_and_its_close_applies(
     migrated: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Changed in Tier 1 (C5, owner-agreed): this test was `..._without_the_close_that_would_be_refused` and asserted
+    that closing a carried thread answered 422, as repairs were planned against the chat's own memory. A repair is
+    planned with the link in force now, so the close is made and applies to the carried thread. The panel still
+    renders no close button for it (a renderer change, outside this fix)."""
     seen = Seen(monkeypatch)
     with make_client(migrated, **ON) as c:
         src, tgt = _setup(c, migrated)
@@ -427,7 +447,10 @@ def test_a_carried_open_thread_is_listed_without_the_close_that_would_be_refused
         for th in carried:  # what the button would have sent (the plugin sends the id as a string)
             res = c.post(f"/v1/conversations/{tgt}/repairs",
                          json={"kind": "thread_close", "item": str(th["id"]), "outcome": "kept"})
-            assert res.status_code == 422, res.text
+            assert res.status_code == 200, res.text
+            assert res.json()["applied"] == str(th["id"]), res.text
+        closed = {str(t["id"]): t["status"] for t in c.get(f"/v1/conversations/{tgt}/threads").json()}
+        assert all(closed[str(th["id"])] != "open" for th in carried)
 
 
 def test_a_carried_line_with_when_it_happened_shows_it_without_a_turn_of_this_chat(

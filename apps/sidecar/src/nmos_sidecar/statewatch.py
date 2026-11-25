@@ -28,6 +28,7 @@ import psycopg
 
 from .parsers import RuleSet, prose, watched
 from .state import history
+from .statechange import covered, entity_prefixes
 
 SPLIT = re.compile(r"\s*[/,·、]\s*")
 COUNT = re.compile(r"\s*(?:[×xX*]\s*\d+|\(\s*\d+\s*\)|\d+\s*개)\s*$")  # "물약 ×2", "(3)", "3개"
@@ -189,14 +190,32 @@ def flag_id(flag: Mapping[str, Any]) -> str:
     return hashlib.sha256(said.encode()).hexdigest()[:16]
 
 
+def _between(runs: list[dict[str, Any]], key: str, after: int, before: int) -> bool:
+    """Whether a window of the same rule stands between two positions without `key`: another key's entry starts or
+    ends there (the history read names each run's first and last window)."""
+    return any(after < p < before for k, x in runs if k != key for p in (x["position"], x["last_position"]))
+
+
 def detect(hist: Mapping[str, list[dict[str, Any]]], watch: Mapping[str, frozenset[str]],
-           prose_of: Mapping[Any, str]) -> list[dict[str, Any]]:
-    """The flags of the watched keys' histories, oldest first. `prose_of` maps a revision id to its reply's prose."""
+           prose_of: Mapping[Any, str], declared: frozenset[str] = frozenset(),
+           declared_prefixes: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+    """The flags of the watched keys' histories, oldest first. `prose_of` maps a revision id to its reply's prose.
+    A watch covers a character's key (`covered`) only under a prefix the parser added for a character, among the keys
+    read (`entity_prefixes`; `declared` and `declared_prefixes`: what the rule set itself names). Two values are
+    compared only when no window of the rule stands between them without the key (a bar that went bare, then
+    prefixed, then bare again is no change from the first to the third)."""
     out: list[dict[str, Any]] = []
+    prefixes = entity_prefixes(hist, declared, declared_prefixes)
+    by_rule: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for key, entries in hist.items():
+        for x in entries:
+            by_rule.setdefault(x["rule_id"], []).append((key, x))
     for key, entries in hist.items():
         for k in range(1, len(entries)):
             e, before = entries[k], entries[k - 1]
-            if key not in watch.get(e["rule_id"], ()):
+            if not covered(key, watch.get(e["rule_id"], ()), prefixes):  # a watch on `HP` covers `서연.HP` too
+                continue
+            if _between(by_rule.get(e["rule_id"], []), key, before["last_position"], e["position"]):
                 continue
             base = {"key": key, "rule_id": e["rule_id"], "old": before["value"], "new": e["value"], "turn": e["turn"],
                     "position": e["position"], "revision_id": e["revision_id"]}
@@ -221,15 +240,25 @@ def flags_of(conn: psycopg.Connection, head: UUID, ruleset: RuleSet, card: str |
     watch = watched(ruleset)
     if not watch:
         return []
-    keys = sorted(set().union(*watch.values()))
-    hist = history(conn, head, ruleset.version, upto, keys=keys, redone=True)
+    names = sorted({k.strip().lower() for w in watch.values() for k in w})
+    # A watch covers the keys a reply with two characters' windows prefixes (`서연.HP`), which only the chat's own
+    # history names: the keys that are a watched name or end in "." and one are found in SQL, then read.
+    keys = [r["key"] for r in conn.execute(
+        "SELECT DISTINCT st.key FROM state_observation st CROSS JOIN unnest(%s::text[]) n(name)"
+        " WHERE st.conversation_id = (SELECT conversation_id FROM worldline_commit WHERE id = %s)"
+        " AND st.rules_version = %s AND (lower(btrim(st.key)) = n.name"
+        " OR right(lower(btrim(st.key)), length(n.name) + 1) = '.' || n.name)",
+        (names, head, ruleset.version)).fetchall()]
+    hist = history(conn, head, ruleset.version, upto, keys=keys, redone=True) if keys else {}
+    declared = frozenset(k for r in ruleset.rules for k in (*r.keys, *r.watch, *((r.key,) if r.key else ())) if "." in k)
+    declared_prefixes = frozenset(r.prefix for r in ruleset.rules if r.prefix)
     revisions = sorted({e["revision_id"] for es in hist.values() for e in es[1:]}, key=str)
     if not revisions:
         return []
     rows = conn.execute("SELECT id, content, metadata FROM source_revision WHERE id = ANY(%s)", (revisions,)).fetchall()
     stories = {r["id"]: prose(ruleset, r["content"], (r["metadata"] or {}).get("role"),
                               (r["metadata"] or {}).get("saying"), card) for r in rows}
-    return detect(hist, watch, stories)
+    return detect(hist, watch, stories, declared, declared_prefixes)
 
 
 def dismissed(repairs: list[dict[str, Any]]) -> set[str]:
