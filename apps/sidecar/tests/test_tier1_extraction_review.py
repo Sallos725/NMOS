@@ -180,3 +180,51 @@ def test_a_job_stuck_running_dies_after_its_last_attempt_and_lets_the_chat_go_on
         assert later is not None and later["id"] > stuck["id"]  # the chat goes on
         dead = conn.execute("SELECT status, last_error FROM job WHERE id = %s", (stuck["id"],)).fetchone()
         assert dead["status"] == "dead" and dead["last_error"].startswith(X.LOST)
+
+
+# --- F3: the reveal check lists what only extract-v21 writes ---------------------------------------------------------
+
+GUISE = "하나는 카이토 몰래 유이라는 가명으로 지낸다."
+SEEN_THROUGH = "카이토는 유이가 사실 하나라는 걸 알아챘다."
+
+
+def _v21_stub(system: str, user: str) -> tuple[dict, str]:
+    """A cover identity kept from 카이토 in its turn; the reveal check reports it found out when it lists it."""
+    target = user.split("TARGET", 1)[-1]
+    if system == reveals.PROMPT:
+        listed = [line for line in user.split("TARGET", 1)[0].splitlines() if line.startswith("S1. ")]
+        found = listed and "유이" in listed[0] and SEEN_THROUGH in target
+        return {"secrets": [{"secret": "S1", "found_out_by": ["카이토"], "evidence": SEEN_THROUGH}] if found else []}, "{}"
+    items = [{"subject": "하나", "subject_type": "character", "predicate": "cover_identity", "value": "유이",
+              "modality": "actual", "source": "narration", "evidence": GUISE, "knowledge": "limited",
+              "known_by": ["하나"], "hidden_from": ["카이토"]}] if GUISE in target else []
+    return {"assertions": items, "secrets": []}, "{}"  # the turn's own extraction reports nothing found out
+
+
+def test_the_reveal_check_lists_a_secret_only_extract_v21_writes(migrated):
+    from simchat import SimChat
+    chat = SimChat()
+    for text in (GUISE, SEEN_THROUGH):
+        chat.user("턴.")
+        chat.reply(text)
+    chat.user("계속.")
+    with make_client(migrated, **{**V20, "extract_compiler": "extract-v21"}) as c:
+        sync(c, chat)
+        drain(migrated, _v21_stub)
+        with _connect(migrated) as conn:
+            conv = conn.execute("SELECT id FROM conversation").fetchone()["id"]
+            assert _learned(conn, conv) == []
+            rv = active_generation(conn, "reveal")
+            x = conn.execute(
+                "SELECT x.id, x.source_revision_id AS rid, x.window_hash FROM extraction x"
+                " JOIN active_membership am ON am.source_revision_id = x.source_revision_id"
+                " AND am.turn_hash = x.window_hash WHERE am.turn = 1").fetchone()
+            conn.execute("INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority)"
+                         " VALUES ('reveal', %s, %s, %s, %s)",
+                         (f"reveal:{x['id']}:{rv.key}", conv, Jsonb({"extraction_id": str(x["id"]),
+                          "revision_id": str(x["rid"]), "window_hash": x["window_hash"], "generation": rv.key}),
+                          X.HISTORY_PRIORITY))
+        drain(migrated, _v21_stub)
+        with _connect(migrated) as conn:
+            (row,) = _learned(conn, conv)
+            assert row["subject"] == "카이토" and "유이" in row["value"] and row["window_hash"].startswith(reveals.WINDOW)

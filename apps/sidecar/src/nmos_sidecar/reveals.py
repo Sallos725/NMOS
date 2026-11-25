@@ -28,12 +28,13 @@ from psycopg.types.json import Jsonb
 from . import generations, normtext
 from .config import Settings
 from .entities import norm
-from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY, _with_carried,
-                         assertion_values, build_prompt, coverage_of, earlier_assertions, load_context, normalize,
+from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY, ONTOLOGY,
+                         _with_carried, assertion_values, build_prompt, coverage_of, earlier_assertions, load_context, normalize,
                          revealed, secret_hints, shown_target, with_cap)
 from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
+from .predicates import registry_for
 from .secrets import NOT_SECRETS
 from .secrets import _hits as reveal_hits
 
@@ -253,10 +254,16 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
     # The earlier turns as a read serves them now: the active extractor's first (Tier 2 C5). The checked extraction
     # may be an earlier generation's that still serves its turn; preferring its key would list the secrets of
     # earlier turns that generation extracted, not the ones served.
-    earlier = earlier_assertions(conn, ctx, generations.active(conn, "extract") or base["extractor_key"])
+    key = generations.active(conn, "extract") or base["extractor_key"]
+    # Listed as the serving extractor's worker lists them (review F3): its compiler's registry, so a guise kept from
+    # someone (extract-v21) is a secret here too, and for a compiler of ONTOLOGY its solo secrets, ranked by the TARGET.
+    spec = conn.execute("SELECT spec FROM projection_generation WHERE key = %s", (key,)).fetchone()
+    compiler = (spec["spec"] or {}).get("compiler") if spec else None
+    earlier = earlier_assertions(conn, ctx, key, registry_for(compiler))
     carried = ctx["target"].get("carried") or None  # a carried secret is checked as the worker lists it (F7)
-    secrets = secret_hints(ctx, earlier, carried=carried)
     shown = shown_target(ctx)  # the TARGET as the model is shown it: the evidence check reads this (Tier 1 D2)
+    onto = {"turn_text": shown, "include_solo": True} if compiler in ONTOLOGY else {}
+    secrets = secret_hints(ctx, earlier, carried=carried, **onto)
     resolution = _with_carried(ctx, earlier, carried)[1] if secrets else None  # who a reveal names (Tier 1 C4)
     if not secrets:
         parsed, raw, usage = {"secrets": []}, "", NO_CALL  # nothing open before the turn: checked without a call
