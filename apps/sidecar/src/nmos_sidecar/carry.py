@@ -388,9 +388,13 @@ def snapshot_of(
     resolved_names = _validate_mode_and_names(mode, names, r, mem_excluded)
     rev_map: Mapping[int, UUID | str] = revisions or {}
 
-    # Facts: newest first (source position descending), canon rows left out.
+    # Facts: newest first (source position descending), canon rows left out. A belief the source still holds
+    # (extract-v21, PHASE-66) is carried as its row: a continue target reads it as a belief (`facts.memory_view`, an
+    # epistemic row), a regression keeps it apart from the facts (`target_rows`: line "belief"). A forgetting is not
+    # carried: what it withdrew is already out of the facts and their marks. A view without beliefs is as before.
     source_facts = sorted(
-        (f for f in (view.get("facts") or ()) if not f.get("canon")),
+        (f for f in [*(view.get("facts") or ()), *(b for b in view.get("beliefs") or () if b.get("status") == "held")]
+         if not f.get("canon")),
         key=lambda f: f.get("position") or 0,
         reverse=True,
     )
@@ -686,7 +690,9 @@ def target_rows(link: Mapping[str, Any]) -> Carried:
     mode = str(link.get("mode") or snap.get("mode"))
     names = tuple(str(n) for n in (snap.get("names") or link.get("entity_names") or ()))
     if mode == "regression":
-        kept = [{**_plain(dict(f)), "line": "fact"} for f in snap.get("facts") or ()]
+        # a carried belief (PHASE-66) is a line of its own: a reader of regression lines takes "fact" and "thread"
+        kept = [{**_plain(dict(f)), "line": "belief" if f.get("predicate") == "believes" else "fact"}
+                for f in snap.get("facts") or ()]
         kept += [{**_plain(dict(t)), "line": "thread"} for t in snap.get("threads") or ()]
         for i, row in enumerate(kept):
             row["carried"], row["carried_from"] = link_id, row.get("from")
@@ -768,7 +774,7 @@ def _panel_line(row: Mapping[str, Any], opening: Mapping[str, Any] | None, *, th
         line.update(kind="thread", predicate=(opening or {}).get("predicate") or row.get("kind"),
                     subject=row.get("by"), object=row.get("to"), value=row.get("text"))
     else:
-        line["kind"] = "fact"
+        line["kind"] = "belief" if row.get("predicate") == "believes" else "fact"  # PHASE-66: never a fact line
     for key in ("knowledge", "known_by", "hidden_from", "carried", "carried_from"):
         line.setdefault(key, None)
     line.pop("when_happened", None)
@@ -818,6 +824,7 @@ def panel_lines(view: Mapping[str, Any], entity_id: str | None = None) -> list[d
         rows = [(x, x.get("line") == "thread") for x in view.get("regression") or ()]
     else:
         rows = [(f, False) for f in view.get("facts") or () if f.get("carried")]
+        rows += [(b, False) for b in view.get("beliefs") or () if b.get("carried")]  # PHASE-66: kind "belief"
         rows += [(t, True) for t in view.get("threads") or () if t.get("status") == "open" and t.get("carried")]
     openings = {a["id"]: a for a in view.get("assertions") or () if a.get("carried")}
     out: list[dict[str, Any]] = []
@@ -892,7 +899,7 @@ def cutoff_of(
 def _fetch_revisions(conn: psycopg.Connection, view: Mapping[str, Any], mode: str) -> dict[int, UUID]:
     """Fetch source_revision_id for every stored assertion referenced by the reading, in one query."""
     ids: set[int] = set()
-    for row in view.get("facts") or ():
+    for row in [*(view.get("facts") or ()), *(view.get("beliefs") or ())]:  # a held belief is carried too (PHASE-66)
         if not row.get("canon") and (aid := _positive_int(row.get("id"))) is not None:
             ids.add(aid)
     r: Resolution | None = view.get("resolution")

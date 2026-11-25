@@ -578,7 +578,7 @@ def test_a_carried_death_is_a_current_carried_fact_and_the_marks_survive_every_l
     from nmos_sidecar import retrieval
     src = Chat(migrated, {"t0": [a("루카", "vital_status", None, "사망"),
                                  a("하나", "feels_toward", "도윤", "그리움", condition=PRIV),
-                                 a("하나", "believes", None, "루카이 살아 있다")]}, name="w3-carry-src")
+                                 a("하나", "believes", None, "루카가 살아 있다")]}, name="w3-carry-src")
     with src.client() as c:
         src.run(c)
         src.view()
@@ -604,7 +604,7 @@ def test_a_carried_death_is_a_current_carried_fact_and_the_marks_survive_every_l
             assert death["carried"] == links[n].link and death["value"] == "사망" and death["knowledge_scope"]
             assert retrieval.says_gone(death)  # the gone rule's word list reads it (the gone pin: report)
             assert current(view, "feels_toward")[0]["condition"] == PRIV
-            assert "beliefs" not in view  # a belief is not carried (left for the next wave: report)
+            assert {b["value"] for b in view["beliefs"]} == {"루카가 살아 있다"} and view["beliefs"][0]["carried"]
         lines = {x.get("predicate"): x for x in links["reg"].regression if x["line"] == "fact"}
         assert lines["feels_toward"]["condition"] == PRIV and lines["feels_toward"]["knowledge_scope"] == "public"
 
@@ -736,3 +736,59 @@ def test_a_chat_without_a_disguise_has_no_disguises_key(migrated: str):
     with plain.client() as c:
         plain.run(c)
         assert "disguises" not in plain.view()
+
+
+# --- part 3: beliefs across a link, the item edges, the situational cap ------------------------------------------
+
+def test_a_carried_belief_is_a_belief_in_the_target_and_apart_from_the_facts_of_a_regression(migrated: str):
+    src = Chat(migrated, {"t0": [a("하나", "believes", None, "도윤이 범인이다"), a("하나", "located_in", "항구", None, ot="place")]},
+               name="w3-belief-src")
+    with src.client() as c:
+        src.run(c)
+        src.view()
+        cont, reg = Chat(migrated, {"d0": []}, name="w3-belief-cont"), Chat(migrated, {"r0": []}, name="w3-belief-reg")
+        cont.run(c)
+        reg.run(c)
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            keys = carry.Keys(extractor=src.key)
+            carry.link(conn, cont.cid, src.cid, "continue", None, keys)
+            carry.link(conn, reg.cid, src.cid, "regression", ["하나"], keys)
+            conn.commit()
+            links = {n: carry.target_rows(carry.in_force(conn, x.cid)) for n, x in (("cont", cont), ("reg", reg))}
+        view = cont.view(carried=links["cont"])
+        assert not current(view, "believes")  # never a fact
+        belief = view["beliefs"][0]
+        assert (belief["value"], belief["status"], belief["carried"]) == ("도윤이 범인이다", "held", links["cont"].link)
+        assert belief["carried_from"]["revision"]
+        lines = {x["line"] for x in reg.view(carried=links["reg"])["regression"]}
+        assert lines == {"fact", "belief"}  # a reader of regression lines takes "fact" and "thread" only
+        assert [x["kind"] for x in carry.panel_lines(view) if x["predicate"] == "believes"] == ["belief"]
+
+
+def test_an_end_of_a_fungible_item_ends_its_holders_only():
+    potion = dict(obj="물약", object_type="item", item_kind="fungible")
+    rows = [row(0, "possesses", None, turn=0, **potion), row(1, "possesses", None, subject="도윤", turn=1, **potion),
+            row(2, "destroyed", "마심", subject="물약", obj=None, turn=2, subject_type="item", item_kind="fungible",
+                participants=({"name": "하나", "type": "character"},))]
+    out = fold(rows)
+    assert {(f["predicate"], f["subject"]) for f in out} == {("possesses", "도윤"), ("destroyed", "물약")}
+    # a later potion of hers is another one: her possession then stands
+    again = fold(rows + [row(3, "possesses", None, turn=3, **potion)])
+    assert ("possesses", "하나") in {(f["predicate"], f["subject"]) for f in again}
+
+
+def test_an_end_closes_what_the_item_was_in():
+    box = [row(0, "contained_in", None, subject="편지", subject_type="item", obj="상자", object_type="item", turn=0),
+           row(1, "destroyed", "불탐", subject="편지", subject_type="item", obj=None, turn=1)]
+    out = facts._ended_containers(fold(box), None)
+    assert [f["predicate"] for f in out] == ["destroyed"]
+    kept = facts._ended_containers(fold(box[:1]), None)
+    assert [f["predicate"] for f in kept] == ["contained_in"]
+
+
+def test_a_conditioned_facts_situational_slots_are_capped_per_pair_as_an_addresss_are():
+    rows = [row(i, "feels_toward", f"감정 {i}", {"scope": "situational", "when": f"상황 {i}"}) for i in range(5)]
+    rows.append(row(5, "feels_toward", "기본"))
+    picked = facts.relevant_facts(fold(rows), "하나가 도윤을 본다.", "", set(), limit=12)
+    sit = [f for f in picked if repairs.slot(f)[0] == "situational"]
+    assert len(sit) == facts.SITUATIONAL_ADDRESS_MAX and "기본" in {f["value"] for f in picked}

@@ -523,6 +523,25 @@ def _address_versions(history: list[dict[str, Any]], r: Resolution | None = None
     return out
 
 
+def _ended_containers(facts: list[dict[str, Any]], r: Resolution | None) -> list[dict[str, Any]]:
+    """An item's current `contained_in` (extract-v21) ends with the item: a current end (`destroyed`, positive,
+    undisputed) of the same item stated after it closes it (its history entry `ended`, `closed_turn` the end's). A
+    fungible item's end is one of many (no container closed)."""
+    ended = {_subject(f, r): f for f in facts if f["predicate"] == "destroyed" and f.get("polarity") == "positive"
+             and not f.get("disputed_by") and f.get("item_kind") != "fungible"}
+    out = []
+    for f in facts:
+        end = ended.get(_subject(f, r)) if f["predicate"] == "contained_in" and f.get("polarity") == "positive" else None
+        if end is None or end["position"] < f["position"]:
+            out.append(f)
+            continue
+        for e in f.get("history") or ():
+            if e["position"] == f["position"] and e["outcome"] == "current":
+                e["outcome"] = "ended"
+                e["closed_turn"] = end.get("turn")
+    return out
+
+
 def _conditional_pairs(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
     """One pair's relationships when some hold under a condition (extract-v21, PHASE-66), in position order.
 
@@ -631,7 +650,26 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
                 holders.setdefault(_subject(a, r), []).append(a)
             else:
                 rest.append(a)
-        return [f for g in [*holders.values(), *([rest] if rest else [])] for f in _one_slot(g, r)]
+        # an end of one of them (eaten, spent, broken) ends its holder's only: the holder its turn names (a typed
+        # participant, or who held it in that turn), else the one holder there is
+        ends = {}
+        for d in rest:
+            if d["predicate"] != "destroyed" or d.get("polarity") == "negative":
+                continue
+            named = ({r.key(p["type"], p["name"]) if r else _norm(p["name"]) for p in d.get("participants") or ()
+                      if p.get("type") in ("character", "group")}
+                     | {k for k, g in holders.items() if any(_unit(x) == _unit(d) for x in g)})
+            if not named and len(holders) == 1:
+                named = set(holders)
+            for k in named & holders.keys():
+                g = holders[k]
+                if not any(x["position"] > d["position"] and x.get("polarity") != "negative" for x in g):
+                    ends[k] = d  # a later possession of one is another one: no end then
+        out = []
+        for k, g in holders.items():
+            folded = _one_slot(sorted(g + [ends[k]], key=lambda x: x["position"]) if k in ends else g, r)
+            out += [f for f in folded if f["predicate"] in HOLDER_PER_ITEM]
+        return out + (_one_slot(rest, r) if rest else [])
     return _one_slot(history, r)
 
 
@@ -940,6 +978,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                     held.append({"kind": "locked", "fact": lock["id"], "turn": lock["turn"], "position": lock["position"],
                                  "text": fact_text(lock), "repair": lock["locked"], "against": _brief(a)})
     facts = [f for history in narrated.values() for f in _versions(history, r)]
+    if any(f["predicate"] == "contained_in" for f in facts):  # PHASE-66: what is inside a destroyed thing is not
+        facts = _ended_containers(facts, r)
     if believed:  # PHASE-66: beliefs, and what a character forgot withdrawn from them
         aside = {id(x) for x in other}
         beliefs, forgotten, facts = _epistemic([x for x in believed if id(x) not in aside], rows, facts, r)
@@ -1746,9 +1786,11 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
             break
         if f["predicate"] == "event" and kept_events is not None and id(f) not in kept_events:
             continue
-        if f["predicate"] == "addresses" and (f.get("address_condition") or {}).get("scope") == "situational":
+        if slotted(f["predicate"]) and slot(f)[0] == "situational":  # PHASE-64; PHASE-66 every conditioned predicate
             pair = ((f.get("subject_entity") or {}).get("id") or _norm(f["subject"]),
                     (f.get("object_entity") or {}).get("id") or _norm(f.get("object")))
+            if f["predicate"] != "addresses":
+                pair = (f["predicate"],) + pair  # addresses keep their PHASE-64 key
             if sit_seen.get(pair, 0) >= SITUATIONAL_ADDRESS_MAX:
                 continue
             sit_seen[pair] = sit_seen.get(pair, 0) + 1
