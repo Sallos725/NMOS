@@ -792,3 +792,30 @@ def test_a_conditioned_facts_situational_slots_are_capped_per_pair_as_an_address
     picked = facts.relevant_facts(fold(rows), "하나가 도윤을 본다.", "", set(), limit=12)
     sit = [f for f in picked if repairs.slot(f)[0] == "situational"]
     assert len(sit) == facts.SITUATIONAL_ADDRESS_MAX and "기본" in {f["value"] for f in picked}
+
+
+# --- a forgetting reaches the secret fold (w4 secret engine) -------------------------------------------------------
+
+def test_a_forgetting_keeps_a_revealed_secret_from_its_subject_again_until_they_learn_it_again(migrated: str):
+    v21 = Chat(migrated, {"t0": [a("하나", "knows", None, "금고의 암호", knowledge="limited", known_by=["하나"],
+                                   hidden_from=["도윤"])],
+                          "t1": [],
+                          "t2": [a("도윤", "forgot", None, "all")],
+                          "t3": []})
+    with v21.client() as c:
+        v21.run(c)
+        sid = str(next(s["id"] for s in v21.view()["secrets"] if s["text"].endswith("금고의 암호")))
+
+        def state() -> tuple[list[str], list[str] | None]:
+            view = v21.view()
+            s = next(x for x in view["secrets"] if str(x["id"]) == sid)
+            fact = next(f for f in view["facts"] if str(f["id"]) == sid) if any(
+                str(f["id"]) == sid for f in view["facts"]) else None
+            return s["open"], (fact or {}).get("hidden_from")
+
+        assert state() == (["도윤"], ["도윤"])
+        post(c, v21.cid, kind="secret_found_out", item=sid, character="도윤", turn=1)  # he finds out at turn 1 ...
+        opened, hidden = state()
+        assert opened == ["도윤"] and hidden == ["도윤"]  # ... and forgets everything at turn 2: kept from him again
+        post(c, v21.cid, kind="secret_found_out", item=sid, character="도윤", turn=3)  # he learns it again
+        assert state() == ([], None)

@@ -916,11 +916,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
     # A carried row (ADR 0085) is a secret too: what was kept from someone in the earlier chat still is until this story
     # shows them finding it out, and the summary and excerpt gates keep it.
-    # PHASE-66: a belief or a forgetting is no fact, so no secret either (its knowledge marks stay on its own row)
+    # PHASE-66: a belief or a forgetting is no secret (the fold reads both as `NOT_SECRETS`); a forgetting reaches it
+    # whole, so it reopens a secret revealed to its subject (and a later reveal ends it again)
     believed = [x for x in rows if epistemic(x)]
     secret_rows = [x for x in rows if not x.get("canon")] if canon_rows else rows
-    secrets, unrevealed, reveals = fold_secrets([x for x in secret_rows if not epistemic(x)] if believed else secret_rows,
-                                                r, secret_events(in_force, r, applied))
+    secrets, unrevealed, reveals = fold_secrets(secret_rows, r, secret_events(in_force, r, applied))
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     by_repair = {s["id"]: s["repair"] for s in secrets if s.get("repair")}
     for row in rows:
@@ -929,7 +929,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         if row["id"] in ended:
             # by entity: a reveal to "김하나" also ends the secret for "하나" written beside it
             revealed_to = {r.key("character", n) for n in ended[row["id"]]}
-            row["hidden_from"] = [n for n in row["hidden_from"] if r.key("character", n) not in revealed_to] or None
+            row["hidden_from"] = [n for n in row.get("hidden_from") or () if r.key("character", n) not in revealed_to] or None
             row["known_by"] = list(row.get("known_by") or []) + sorted(ended[row["id"]] - set(row.get("known_by") or []))
             row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
     disguises = _disguises(rows, r) if guise_aliases else []
