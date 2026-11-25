@@ -224,14 +224,17 @@ def test_public_except_is_known_to_all_but_the_listed_and_not_gated_as_limited()
     f = v21row(4, "하나", "has_status", None, "임신함", **C, knowledge="limited", knowledge_scope="public_except",
                hidden_from=["도윤"])
     r = res([f, row(9, "도윤", "event", None, "x", **C), row(8, "카이토", "event", None, "x", **C)])
+    # the scene layer reads public_except for every policy (`scene.private`): such rows exist only in chats an
+    # extract-v21 read, so no older recorded request changes
     assert not retrieval._private(f, scene_of(r, "하나", "카이토"), r, True)
-    assert retrieval._private(f, scene_of(r, "하나", "카이토"), r, False)  # v20 gates it as limited
+    assert not retrieval._private(f, scene_of(r, "하나", "카이토"), r, False)
     assert retrieval._private(f, scene_of(r, "하나", "도윤"), r, True)
     line = retrieval.entry_v21(f, False, False, False, False, Shown())
     assert 'knowledge="public_except" hidden_from="도윤"' in line.xml
     assert PUBLIC_EXCEPT_NOTE in compile_lines([], 2000, facts=[line], policy="packet-v21").text
-    assert retrieval.missing_v21(f, scene_of(r, "하나", "도윤"), r) == (["하나"], ["도윤"])
-    assert retrieval.narrator_knows_v21(f, "카이토", r) and not retrieval.narrator_knows_v21(f, "도윤", r)
+    from nmos_sidecar import scene
+    assert scene.missing(f, scene_of(r, "하나", "도윤"), r) == (["하나"], ["도윤"])
+    assert scene.narrator_knows(f, "카이토", r) and not scene.narrator_knows(f, "도윤", r)
 
 
 # --- 7. a claim's cause -----------------------------------------------------------------------------------------------

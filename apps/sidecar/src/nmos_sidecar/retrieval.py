@@ -1936,7 +1936,7 @@ def belief_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous
     for b in ranked:
         if len(picked) >= BELIEFS_MAX:
             break
-        if present_leaks(b.get("value"), view.get("secrets") or [], present):
+        if not _private(b, g.cast, r, True) and present_leaks(b.get("value"), view.get("secrets") or [], present):
             if options.policy in LABEL_POLICIES:
                 g.hidden_entries.append(hidden_entry("belief", {"assertion": b["id"]}, b.get("turn"), "secret_gate"))
             continue
@@ -1973,11 +1973,6 @@ def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptio
             text = w.get("text") or ""
             if not text:
                 continue
-            if present_leaks(text, view.get("secrets") or [], present):
-                if options.policy in LABEL_POLICIES:
-                    g.hidden_entries.append(hidden_entry("forgot", {"assertion": e["id"], "withdrew": w.get("id")},
-                                                         e.get("turn"), "secret_gate"))
-                continue
             turn = e["turn"] if e.get("turn") is not None else e.get("position")
             # the line says what was known: it is as private as that fact was (its marks as stored, before the
             # forgetting took the forgetter out of known_by), or as the forgetting is when the fact was not limited
@@ -1988,6 +1983,13 @@ def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptio
                 gone_from = {scene.key(r, n) for n in (who, *(src.get("forgotten_by") or ()))}
                 marked = {**marked, "known_by": [n for n in marked["known_by"]
                                                  if scene.key(r, n) not in gone_from] or None}
+            # a line every present character may read must not say a secret kept from one of them (a private one is
+            # isolated by its marks, as the fact it withdrew was)
+            if not _private(marked, g.cast, r, True) and present_leaks(text, view.get("secrets") or [], present):
+                if options.policy in LABEL_POLICIES:
+                    g.hidden_entries.append(hidden_entry("forgot", {"assertion": e["id"], "withdrew": w.get("id")},
+                                                         e.get("turn"), "secret_gate"))
+                continue
             xml = (f"    <Forgot by={quoteattr(who)} turn=\"{turn}\"{_knowledge_attrs(marked)}>"
                    f"{xml_escape(who + ' does not remember: ' + text)}</Forgot>")
             ref = {**assertion_ref(e), "withdrew": w.get("id")}
@@ -2000,32 +2002,17 @@ def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptio
     return _moded(out, rows, g, r, options)
 
 
-def public_except(f: Mapping[str, Any]) -> bool:
+def public_except(f: Mapping[str, Any], r: Any = None) -> bool:
     """An extract-v21 row everyone knows but the characters in `hidden_from` (`knowledge_scope = public_except`; stored
-    as `limited`, PHASE-66)."""
-    return f.get("knowledge_scope") == "public_except" and bool(f.get("hidden_from"))
+    as `limited`, PHASE-66), as the scene reads it (`scene._except`: a group named there reads as limited)."""
+    return f.get("knowledge_scope") == "public_except" and bool(f.get("hidden_from")) and (
+        r is None or scene._except(dict(f), r) is not None)
 
 
 def _private(f: dict[str, Any], cast: dict[str, str], r: Any, v21: bool) -> bool:
-    """`scene.private`, but under packet-v21 a public-except row is private only when someone it is kept from is in
-    the scene: everyone else knows it, so it is never gated as `limited` (who knows it is not only `known_by`)."""
-    if v21 and public_except(f):
-        return r is not None and any(scene.key(r, n) in cast for n in f["hidden_from"])
+    """`scene.private`. A public-except row (extract-v21) is read there for every policy: private only when someone it
+    is kept from is in the scene (`scene._except`); `v21` is kept for the call sites only."""
     return scene.private(f, cast, r)
-
-
-def narrator_knows_v21(f: Mapping[str, Any], narrator: str, r: Any) -> bool:
-    """packet-v21: a first-person narrator knows a public-except row unless they are one it is kept from."""
-    if r is None:
-        return norm(narrator) not in {norm(n) for n in f.get("hidden_from") or ()}
-    return scene.key(r, narrator) not in {scene.key(r, n) for n in f.get("hidden_from") or ()}
-
-
-def missing_v21(f: Mapping[str, Any], cast: dict[str, str], r: Any) -> tuple[list[str], list[str]]:
-    """packet-v21's (holders, not knowing) of a public-except row in this scene: everyone present but those it is kept
-    from, and those of them present."""
-    hidden = {scene.key(r, n) for n in f.get("hidden_from") or ()}
-    return [name for k, name in cast.items() if k not in hidden], [name for k, name in cast.items() if k in hidden]
 
 
 PUBLIC_EXCEPT_MARK = 'knowledge="public_except"'
@@ -2216,8 +2203,6 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
             return False
         if row.get("carried"):  # an earlier chat's (ADR 0085): not where a character stands in this one's scene
             return False
-        if v21 and public_except(row):
-            return not options.narrator or narrator_knows_v21(row, options.narrator, r)
         return not options.narrator or scene.narrator_knows(row, options.narrator, r)
 
     mine: dict[str, list[dict[str, Any]]] = {}
@@ -2817,9 +2802,7 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
         if row is None:
             out.append(line)
             continue
-        if options.narrator and not (narrator_knows_v21(row, options.narrator, r)
-                                     if options.policy in V21_POLICIES and public_except(row)
-                                     else scene.narrator_knows(row, options.narrator, r)):
+        if options.narrator and not scene.narrator_knows(row, options.narrator, r):
             g.withheld += 1
             g.withheld_lines.append(line)
             if options.policy in LABEL_POLICIES:
@@ -2830,8 +2813,7 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
             out.append(line)  # packet-v21: an unspoken feeling is not a plotted secret; its <Private> line stays
             continue
         if options.strict and line.private and r is not None:
-            holders, absent = (missing_v21(row, g.cast, r) if options.policy in V21_POLICIES and public_except(row)
-                               else scene.missing(row, g.cast, r))
+            holders, absent = scene.missing(row, g.cast, r)
             g.withheld += 1
             g.withheld_lines.append(line)
             if options.policy in LABEL_POLICIES:
