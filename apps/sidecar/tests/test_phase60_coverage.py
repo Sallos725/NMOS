@@ -207,7 +207,7 @@ def test_retrieve_always_returns_coverage(migrated):
 def test_coverage_note_pure():
     from nmos_sidecar import packet
 
-    assert packet.COVERAGE_POLICIES == frozenset({"packet-v20"})
+    assert packet.COVERAGE_POLICIES == frozenset({"packet-v20", "packet-v21"})
     assert packet.coverage_note(None, None) == ""
     assert packet.coverage_note(0, None) == ""
     assert packet.coverage_note(None, 0) == " Memory has not recorded this chat yet; the chat is right."

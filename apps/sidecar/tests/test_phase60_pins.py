@@ -192,13 +192,13 @@ def test_v20_is_in_every_set_v19_is_in():
 
 
 def test_v19_and_older_are_untouched():
-    """PERMANENT: members of every *_POLICIES set other than packet-v20 stay exactly as at 1b16ef6."""
+    """PERMANENT: members of every *_POLICIES set other than packet-v20 and packet-v21 stay exactly as at 1b16ef6."""
     for name in PINNED_PRE_V20_POLICIES:
         assert hasattr(packet, name), name
     for name, policies in vars(packet).items():
         if name.endswith("_POLICIES"):
             expected = PINNED_PRE_V20_POLICIES.get(name, frozenset())
-            assert (policies - {"packet-v20"}) == expected, name
+            assert (policies - {"packet-v20", "packet-v21"}) == expected, name
 
 
 def test_v20_compiles_like_v19(migrated):

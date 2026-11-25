@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from typing import Any, Callable
 from xml.sax.saxutils import escape, quoteattr
@@ -113,22 +113,24 @@ _SPACES = re.compile(r"[ \t\u00a0]+")
 _BLANK_LINES = re.compile(r"\n\s*\n+")
 
 
-def _drop_blocks(content: str) -> str:
+def _drop_blocks(content: str, drop_open: re.Pattern[str] | None = None,
+                 drop_close: re.Pattern[str] | None = None) -> str:
     """The original non-greedy block substitution without rescanning an unclosed suffix.
 
     Pair each opening tag with its first matching close after the opening's first `>`; nested tags retain
     the regex's original behavior. Both scans and each close cursor only move forward. Backreferences use
     simple lowercase equality: dotted capital I lowers to i, while dotless i and long s stay distinct.
     """
+    drop_open, drop_close = drop_open or _DROP_OPEN, drop_close or _DROP_CLOSE
     closes: dict[str, list[tuple[int, int]]] = {}
-    for match in _DROP_CLOSE.finditer(content):
+    for match in drop_close.finditer(content):
         name = match.group(1).replace("İ", "i").lower()
         closes.setdefault(name, []).append((match.start(), match.end()))
     cursors = dict.fromkeys(closes, 0)
     out: list[str] = []
     consumed = 0
     opening_end = -1
-    for match in _DROP_OPEN.finditer(content):
+    for match in drop_open.finditer(content):
         if match.start() < consumed:
             continue
         if opening_end < match.end():
@@ -159,6 +161,57 @@ def clean_text(content: str) -> str:
     text = _MEDIA_TOKEN.sub("", text)
     text = _BLOCK_TAG.sub("\n", text)
     text = _TAG.sub("", _HTML_TAG.sub("", text))
+    text = _MD_IMAGE.sub("", _DATA_URI.sub("", text))
+    text = html.unescape(text)
+    text = _SPACES.sub(" ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    return _BLANK_LINES.sub("\n", text).strip()
+
+
+# clean-v4 (`clean_text_v4`, for the next normalizer generation; nothing calls it yet). clean_text above is clean-v3
+# and stays exactly as it is: a change to it would rewrite every stored projection (D20, D21).
+# More reasoning and out-of-character blocks than clean-v3 drops.
+_DROP_NAMES_V4 = ("style", "script", "thoughts", "think", "thinking", "reasoning", "scratchpad", "cot", "ooc")
+_DROP_OPEN_V4 = re.compile(r"<(" + "|".join(_DROP_NAMES_V4) + r")\b", re.IGNORECASE)
+_DROP_CLOSE_V4 = re.compile(r"</(" + "|".join(_DROP_NAMES_V4) + r")\s*>", re.IGNORECASE)
+# A reasoning block a model opened at the very start of its reply and never closed (`_unclosed_reasoning`).
+_LEADING_REASONING = re.compile(r"\s*<(think|thinking|reasoning)\b[^<>\n]*>", re.IGNORECASE)
+_BLANK_LINE = re.compile(r"\n[ \t\u00a0]*\n")
+# NMOS's own markup as the packet writes it, clean-v3's set plus the leaf lines packet-v8 and later write (<Summary>,
+# <Secret>, <Quote>) and the containers whose children are tags (<StateHistory>, <Regression>), dropped whole.
+_MEMORY_MARKUP_V4 = re.compile(r"<NarrativeMemory\b[^>]*>.*?</NarrativeMemory\s*>"
+                               r"|<(StateHistory|Regression)\b[^<>]*>.*?</\1\s*>"
+                               r"|<(Fact|Claim|Thread|Excerpt|Summary|Secret|Quote)\b[^<>]*>[^<]*</\2\s*>"
+                               r"|<Item\s[^<>]*\bkey=[^<>]*>[^<]*</Item\s*>", re.DOTALL)
+# A table cell is a word boundary: `<th>위치</th><td>북부 성채</td>` reads "위치 북부 성채", never "위치북부 성채".
+_CELL_TAG = re.compile(rf"</?(?:td|th)\b{_ATTRS}>", re.IGNORECASE)
+# Any other tag only when its name is ASCII (an HTML or XML element, a comment, a doctype): angle brackets around
+# Korean or other prose (`<마검 발뭉>`, `<시스템: 카일 사망>`, `<속삭임: 도망쳐>`) are story text and stay.
+_TAG_V4 = re.compile(r"</?[A-Za-z][A-Za-z0-9:_-]*(?:\s+[^<>\n]{0,400})?/?>|<!--[\s\S]*?-->|<![A-Za-z][^<>\n]{0,400}>")
+
+
+def _unclosed_reasoning(content: str) -> str:
+    """clean-v4: a <think>, <thinking> or <reasoning> tag that opens the message (only whitespace before it) and whose
+    closing tag the message never has. Its text up to the first blank line is the model's reasoning and is dropped,
+    the story after the blank line stays; without a blank line only the tag itself goes, since the text cannot be told
+    apart from the reply. A tag anywhere else, or one that is closed, is left to the block rule."""
+    m = _LEADING_REASONING.match(content)
+    if m is None or re.search(rf"</{m.group(1)}\s*>", content, re.IGNORECASE):
+        return content
+    blank = _BLANK_LINE.search(content, m.end())
+    return content[blank.end():] if blank else content[m.end():]
+
+
+def clean_text_v4(content: str) -> str:
+    """clean-v4 (PHASE-65 D3): `clean_text` with Unicode angle-bracket prose kept (`_TAG_V4`), table cells kept apart,
+    more reasoning blocks dropped (`_DROP_NAMES_V4`, and an unclosed leading one, `_unclosed_reasoning`) and more of
+    NMOS's own markup dropped (`_MEMORY_MARKUP_V4`). Raw evidence is untouched."""
+    text = _drop_blocks(_unclosed_reasoning(content), _DROP_OPEN_V4, _DROP_CLOSE_V4)
+    text = _MEMORY_MARKUP_V4.sub(" ", text)
+    text = _MEDIA_TOKEN.sub("", text)
+    text = _CELL_TAG.sub(" ", text)
+    text = _BLOCK_TAG.sub("\n", text)
+    text = _TAG_V4.sub("", _HTML_TAG.sub("", text))
     text = _MD_IMAGE.sub("", _DATA_URI.sub("", text))
     text = html.unescape(text)
     text = _SPACES.sub(" ", text)
@@ -310,15 +363,15 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # that holds packet-v20 only.
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
             "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14",
-            "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20")
+            "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21")
 DEFAULT_POLICY = "packet-v19"  # the owner, 2026-10-13; PHASE-46 (packet-v18 2026-10-09, PHASE-40/41)
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
              "packet-v11": 1.2, "packet-v12": 1.2, "packet-v13": 1.2, "packet-v14": 1.2,
              "packet-v15": 1.2, "packet-v16": 1.2, "packet-v17": 1.2, "packet-v18": 1.2,
-             "packet-v19": 1.2, "packet-v20": 1.2}  # estimated tokens per non-ASCII char
+             "packet-v19": 1.2, "packet-v20": 1.2, "packet-v21": 1.2}  # estimated tokens per non-ASCII char
 _V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15",
-       "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20")  # packet-v8 and what builds on it
+       "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21")  # packet-v8 and what builds on it
 PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})  # promises the message is about first (ADR 0019 am. 1)
@@ -327,32 +380,35 @@ CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", *_V8})  # facts and claims
 TURN_POLICIES = frozenset({"packet-v7", *_V8})  # excerpts and state carry their message's turn index (ADR 0041)
 STORY_POLICIES = frozenset(_V8)  # summaries in a <Story> section (ADR 0043)
 CAST_POLICIES = frozenset(_V8)  # each scene character's state in a <Cast> section (ADR 0043)
-FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20"})  # recall grows with the budget (ADR 0049)
-GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20"})  # an excerpt grows to its length from its best sentence (ADR 0053)
-SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
-CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
-QUOTE_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
-UNEXTRACTED_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
-LABEL_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20"})  # PHASE-34 Q1's four labels
-REST_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20"})  # an overused supportive line rests; supportive excerpts meet a bar (Q2–Q4)
-ANCHOR_POLICIES = frozenset({"packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20"})  # an excerpt anchors on what the question asks, not when (PHASE-35)
-NAMED_POLICIES = frozenset({"packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20"})  # a name alone makes only a now or standing fact required (PHASE-36)
-STATE_HISTORY_POLICIES = frozenset({"packet-v17", "packet-v18", "packet-v19", "packet-v20"})  # a status key's last changes for a question about them (PHASE-39 Q3b)
-PERSONA_QUESTION_POLICIES = frozenset({"packet-v18", "packet-v19", "packet-v20"})  # explicit persona questions (PHASE-40)
-STATUS_CHANGE_POLICIES = frozenset({"packet-v18", "packet-v19", "packet-v20"})  # the status as core values and changes (PHASE-43 S4)
-SOURCE_CLOCK_POLICIES = frozenset({"packet-v18", "packet-v19", "packet-v20"})  # a recalled excerpt's status-window clock (PHASE-42)
-KEYWORD_PARTICLE_POLICIES = frozenset({"packet-v18", "packet-v19", "packet-v20"})  # exact Korean particle hits (PHASE-41)
-RELATED_FILL_POLICIES = frozenset({"packet-v19", "packet-v20"})  # the budget fills facts and claims only for a related message (PHASE-46)
-COVERAGE_POLICIES = frozenset({"packet-v20"})  # Note states how far extraction has recorded when a replied turn is newer (PHASE-60 S2.1, ADR 0082 item 6)
-GONE_POLICIES = frozenset({"packet-v20"})  # a character who is gone: their status line pinned, marked (PHASE-60 S3, ADR 0082 items 2–3)
+FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # recall grows with the budget (ADR 0049)
+GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # an excerpt grows to its length from its best sentence (ADR 0053)
+SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
+CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
+QUOTE_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
+UNEXTRACTED_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
+LABEL_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # PHASE-34 Q1's four labels
+REST_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # an overused supportive line rests; supportive excerpts meet a bar (Q2–Q4)
+ANCHOR_POLICIES = frozenset({"packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # an excerpt anchors on what the question asks, not when (PHASE-35)
+NAMED_POLICIES = frozenset({"packet-v16", "packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # a name alone makes only a now or standing fact required (PHASE-36)
+STATE_HISTORY_POLICIES = frozenset({"packet-v17", "packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # a status key's last changes for a question about them (PHASE-39 Q3b)
+PERSONA_QUESTION_POLICIES = frozenset({"packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # explicit persona questions (PHASE-40)
+STATUS_CHANGE_POLICIES = frozenset({"packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # the status as core values and changes (PHASE-43 S4)
+SOURCE_CLOCK_POLICIES = frozenset({"packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # a recalled excerpt's status-window clock (PHASE-42)
+KEYWORD_PARTICLE_POLICIES = frozenset({"packet-v18", "packet-v19", "packet-v20", "packet-v21"})  # exact Korean particle hits (PHASE-41)
+RELATED_FILL_POLICIES = frozenset({"packet-v19", "packet-v20", "packet-v21"})  # the budget fills facts and claims only for a related message (PHASE-46)
+COVERAGE_POLICIES = frozenset({"packet-v20", "packet-v21"})  # Note states how far extraction has recorded when a replied turn is newer (PHASE-60 S2.1, ADR 0082 item 6)
+GONE_POLICIES = frozenset({"packet-v20", "packet-v21"})  # a character who is gone: their status line pinned, marked (PHASE-60 S3, ADR 0082 items 2–3)
 GONE_SHARE = 0.1  # packet-v20: gone lines together may take at most this share of the budget inside the frame
-RETURN_GAP_POLICIES = frozenset({"packet-v20"})  # a <Cast> character back after a long absence is marked (PHASE-60 S4, ADR 0082 item 4)
-SETTLED_POLICIES = frozenset({"packet-v20"})  # threads closed lately, after the open ones (PHASE-60 S4, ADR 0082 item 5)
-PIN_POLICIES = frozenset({"packet-v20"})  # a character the owner or an `@name` pins is present (PHASE-60 S8, ADR 0087)
-SEM_QUERY_POLICIES = frozenset({"packet-v20"})  # a short message embeds with the previous reply's tail (PHASE-60 S5, ADR 0084)
-HAPPENED_POLICIES = frozenset({"packet-v20"})  # when it happened, beside the turn that told it (PHASE-60 S7, ADR 0086)
-TOLD_POLICIES = frozenset({"packet-v20"})  # at most two lines of who told whom (PHASE-60 S8, ADR 0086)
-CARRY_POLICIES = frozenset({"packet-v20"})  # a request reads the chat's carry link and records it (PHASE-60 S6, ADR 0085)
+RETURN_GAP_POLICIES = frozenset({"packet-v20", "packet-v21"})  # a <Cast> character back after a long absence is marked (PHASE-60 S4, ADR 0082 item 4)
+SETTLED_POLICIES = frozenset({"packet-v20", "packet-v21"})  # threads closed lately, after the open ones (PHASE-60 S4, ADR 0082 item 5)
+PIN_POLICIES = frozenset({"packet-v20", "packet-v21"})  # a character the owner or an `@name` pins is present (PHASE-60 S8, ADR 0087)
+SEM_QUERY_POLICIES = frozenset({"packet-v20", "packet-v21"})  # a short message embeds with the previous reply's tail (PHASE-60 S5, ADR 0084)
+HAPPENED_POLICIES = frozenset({"packet-v20", "packet-v21"})  # when it happened, beside the turn that told it (PHASE-60 S7, ADR 0086)
+TOLD_POLICIES = frozenset({"packet-v20", "packet-v21"})  # at most two lines of who told whom (PHASE-60 S8, ADR 0086)
+CARRY_POLICIES = frozenset({"packet-v20", "packet-v21"})  # a request reads the chat's carry link and records it (PHASE-60 S6, ADR 0085)
+# packet-v21 (PHASE-65): packet-v20 plus what only it does; every addition is gated on this set, so packet-v20
+# and every earlier policy compile exactly as they did (ADR 0027). Not the default until a replay measures it.
+V21_POLICIES = frozenset({"packet-v21"})
 # The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
 _V20_MARKS = {GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES,
               HAPPENED_MARK: HAPPENED_POLICIES, TOLD_MARK: TOLD_POLICIES, CARRIED_MARK: CARRY_POLICIES,
@@ -393,6 +449,10 @@ class Excerpt:
     unextracted: bool = False  # its turn has no extraction yet: no fact of it to restate (PHASE-33 Q5)
     resting: bool = False  # overused and unused (PHASE-34 Q3): placed only if it holds the reserved first place
     below_floor: bool = False  # under the activation threshold (PHASE-34 Q4): likewise
+    # packet-v21: raw text that repeats a secret kept from someone in the scene (`summaries.leaks`), fenced in <Private>
+    # with its holders and those it is kept from; empty for every other excerpt and under every other policy
+    known_by: tuple[str, ...] = ()
+    hidden_from: tuple[str, ...] = ()
 
 
 def _turn(name: str, turn: int | None) -> str:
@@ -400,11 +460,20 @@ def _turn(name: str, turn: int | None) -> str:
     return "" if turn is None else f' {name}="{turn}"'
 
 
+def _excerpt_marks(item: Excerpt) -> str:
+    """packet-v21: a fenced excerpt's knowledge marks, as a <Private> fact carries them; nothing for any other."""
+    if not item.hidden_from:
+        return ""
+    known = f" known_by={quoteattr(', '.join(item.known_by))}" if item.known_by else ""
+    return known + f" hidden_from={quoteattr(', '.join(item.hidden_from))}"
+
+
 def excerpt_line(item: Excerpt, text: str | None = None) -> str:
     if item.quote:  # a speaker only when the narration names one; none rather than a guess (PHASE-33 Q2)
         who = f" speaker={quoteattr(item.speaker)}" if item.speaker else ""
-        return f"  <Quote{_turn('turn', item.turn)}{who}>{escape(item.text if text is None else text)}</Quote>"
-    return (f"  <Excerpt{_turn('turn', item.turn)} speaker={quoteattr(item.speaker)}>"
+        return (f"  <Quote{_turn('turn', item.turn)}{who}{_excerpt_marks(item)}>"
+                f"{escape(item.text if text is None else text)}</Quote>")
+    return (f"  <Excerpt{_turn('turn', item.turn)} speaker={quoteattr(item.speaker)}{_excerpt_marks(item)}>"
             f"{escape(item.text if text is None else text)}</Excerpt>")
 
 
@@ -617,6 +686,119 @@ def secret_line(holders: list[str], missing: list[str], turn: int | None) -> str
             + (f' turn="{turn}"' if turn is not None else "") + f">{escape(secret_text(holders, missing))}</Secret>")
 
 
+def _priority_cost(lead: list[Line], rest: list[Line], skip: int, folded: dict[int, Line], privacy: bool,
+                   est: Callable[[str], int]) -> int:
+    """packet-v21: what the lines a supportive summary yields to would cost placed: every lead line, and the threads,
+    settled threads, facts and claims that go to <Private> or are a strict Secret line, with their section headers and
+    the Private rule; a line that restates an earlier one (`folded`, indexed past `skip` gone lines) is never placed."""
+    cost = 0
+    facts_open = private_open = False
+    for n, line in enumerate(lead + rest):
+        if skip + n in folded:
+            continue
+        hidden = privacy and line.private
+        if n >= len(lead) and not hidden and line.kind != "secret":
+            continue
+        if hidden:
+            xml = line.private_xml or line.xml
+            if not private_open:
+                cost += est("  <Private>\n  </Private>\n") + est(PRIVATE_NOTE)
+                private_open = True
+        else:
+            xml = line.xml
+            if not facts_open:  # a Secret line in <Threads> costs the same header
+                cost += est("  <Facts>\n  </Facts>\n")
+                facts_open = True
+        cost += est(xml + "\n")
+    return cost
+
+
+CAST_EXTRA_SHARE = 0.15  # packet-v21: <Cast>'s extra lines may take at most this share of the budget inside the frame
+CAST_EXTRA = "cast_extra"  # packet-v21: the mark (`Line.marks`) of a <Cast> line packet-v20 never had
+
+
+def _cast_v21(cast: list[tuple[str, list[Line]]], ledger: list[dict[str, Any]], offset: int, used: int, limit: int,
+              held_back: int, inner: int, cast_marks: dict[str, str], pinned: list[Any], admitted: set[int],
+              needed_notes: Callable[[str], list[str]], extras: list[str],
+              est: Callable[[str], int], in_cast: set[Any]) -> tuple[list[str], int, int]:
+    """packet-v21's <Cast>: first every line packet-v20 would hold (marked lines aside), across all groups, as the
+    budget allows; then the extra lines (`marks[CAST_EXTRA]`: feelings toward and forms of address for other scene
+    characters, the persona's own group), within CAST_EXTRA_SHARE of the budget counted from where the first pass ended,
+    and never into the room held back for lead and Private lines (`held_back`). So the wider <Cast> yields first, and it yields its extras before any group
+    loses a line v20 had. Extra lines that share a mark value other than True (one pair's forms of address, one per
+    condition slot) are placed together or not at all, so one slot never shows without the others. A placed extra's
+    assertion goes to `in_cast`: the same line offered to lead or facts is not said again; one left out here is still
+    offered there. Groups and their lines are emitted in the order given. Returns (the <Cast> body, the ledger offset
+    after it, the tokens used)."""
+    items = []
+    for gi, (_, lines) in enumerate(cast):
+        for li, line in enumerate(lines):
+            items.append((gi, li, line, offset))
+            offset += 1
+    openings = [f"    <Character name={quoteattr(name)}"
+                + (f" back_after={quoteattr(cast_marks[name])}" if name in cast_marks else "") + ">"
+                for name, _ in cast]
+    placed: dict[int, list[tuple[int, str]]] = {}
+    def cost_of(gi: int, line: Line, opened: bool, any_placed: bool) -> tuple[int, list[str]]:
+        xml = "  " + line.xml
+        needed = needed_notes(xml + openings[gi])
+        return (est(xml + "\n") + (0 if opened else est(openings[gi] + "\n    </Character>\n"))
+                + (0 if any_placed else est("  <Cast>\n  </Cast>\n")) + sum(est(t) for t in needed)), needed
+
+    for gi, li, line, n in items:  # first pass: what packet-v20's groups hold
+        if line.marks.get(CAST_EXTRA):
+            continue
+        entry = ledger[n]
+        cost, needed = cost_of(gi, line, gi in placed, bool(placed))
+        entry["tok"], entry["section"] = cost, "cast"
+        if pinned and line.marks.get("gone") and id(line) not in admitted:
+            entry["why"] = "gone_cap"
+            continue
+        if used + cost <= limit:
+            placed.setdefault(gi, []).append((li, "  " + line.xml))
+            extras.extend(needed)
+            used += cost
+            entry["placed"], entry["why"] = True, "placed"
+    bound = min(limit - held_back, used + int(inner * CAST_EXTRA_SHARE))  # the share counts from after the core
+    bundles: list[list[tuple[int, int, Line, int]]] = []  # second pass: the extras, a pair's slots as one bundle
+    for item in items:
+        mark = item[2].marks.get(CAST_EXTRA)
+        if not mark:
+            continue
+        if mark is not True and bundles and bundles[-1][0][0] == item[0] and bundles[-1][0][2].marks.get(CAST_EXTRA) == mark:
+            bundles[-1].append(item)
+        else:
+            bundles.append([item])
+    for bundle in bundles:
+        gi = bundle[0][0]
+        total, notes_needed, costs = 0, [], []
+        opened = gi in placed
+        for _, _, line, _ in bundle:
+            cost, needed = cost_of(gi, line, opened, bool(placed) or bool(costs))
+            opened = True
+            costs.append(cost)
+            total += cost
+            notes_needed += [t for t in needed if t not in notes_needed]
+        fits = used + total <= bound
+        for (_, li, line, n), cost in zip(bundle, costs):
+            entry = ledger[n]
+            entry["tok"], entry["section"] = cost, "cast"
+            if fits:
+                placed.setdefault(gi, []).append((li, "  " + line.xml))
+                in_cast.add(line.ref.get("assertion"))
+                entry["placed"], entry["why"] = True, "placed"
+            else:  # never "budget": its line may still be placed in lead, and the panel's fit counts only cut memory
+                entry["why"] = "cast_cap"
+        if fits:
+            extras.extend(t for t in notes_needed if t not in extras)
+            used += total
+    body: list[str] = []
+    for gi in range(len(cast)):
+        if gi in placed:
+            body += [openings[gi], *(x for _, x in sorted(placed[gi])), "    </Character>"]
+    return body, offset, used
+
+
 def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateItem] | None = None,
                   threads: list[Line] | None = None, facts: list[Line] | None = None,
                   policy: str = DEFAULT_POLICY, lead: list[Line] | None = None, note: str = "",
@@ -668,6 +850,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     if policy not in POLICIES:
         raise ValueError(f"unknown packet policy: {policy}")
     est = partial(estimate_tokens, non_ascii=NON_ASCII[policy])
+    if policy not in V21_POLICIES and any(e.hidden_from or e.known_by for e in ranked):
+        ranked = [replace(e, known_by=(), hidden_from=()) for e in ranked]  # packet-v21's fence only
     reserving = policy != "packet-v0"  # packet-v1 and later
     state, threads, facts, lead, story, cast = state or [], threads or [], facts or [], lead or [], story or [], cast or []
     gone = (gone or []) if policy in GONE_POLICIES else []
@@ -699,6 +883,15 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     first = next((n for n in range(len(ranked))
                   if n not in repeats and not ranked[n].resting and not ranked[n].below_floor),
                  next((n for n in range(len(ranked)) if n not in repeats), None))
+    v21 = policy in V21_POLICIES
+    if v21 and first is not None and ranked[first].quote and used < budget_tokens:
+        # packet-v21: a <Quote> is never cut, so one longer than the reserved share kept no room at all and the best
+        # excerpt went with it. The reserved, required place then goes to the first excerpt that fits the share.
+        share = int((budget_tokens - used) * EXCERPT_SHARE)
+        if _fit_excerpt(ranked[first], share, est) is None:
+            first = next((n for n in range(len(ranked))
+                          if n not in repeats and not ranked[n].quote and not ranked[n].resting
+                          and not ranked[n].below_floor and _fit_excerpt(ranked[n], share, est) is not None), first)
     if policy in LABEL_POLICIES:
         _label(ledger, state, story, cast_lines, lead + threads + settled + facts + regression, ranked, first, named, risky,
                gone)
@@ -743,6 +936,12 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     def needed_notes(xml: str) -> list[str]:
         return [text for mark, text in notes if mark in xml and text not in extras]
 
+    privacy = policy in PRIVATE_POLICIES
+    folded = restated(gone + lead + threads + settled + facts) if policy in FOLD_POLICIES else {}
+    # packet-v21: a supportive summary (a scene's, an earlier chat's) yields to how the cast stand (lead) and to what
+    # only some of the scene know (Private, a strict Secret line): their cost is held back from it, so <Story> never
+    # starves them. The story so far keeps its place (required continuity). Placement and output order are unchanged.
+    held_back = _priority_cost(lead, threads + settled + facts, len(gone), folded, privacy, est) if v21 else 0
     kept_story: list[str] = []
     story_cap = used + int(inner * STORY_SHARE)
     for line in story:
@@ -751,8 +950,9 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         needed = needed_notes(line.xml)
         cost = est(line.xml + "\n") + (0 if kept_story else est("  <Story>\n  </Story>\n")) + sum(est(t) for t in needed)
         entry["tok"] = cost
-        if used + cost > min(limit, story_cap):
-            entry["why"] = "story_cap" if used + cost <= limit else "budget"
+        yields = held_back if '<Summary kind="story"' not in line.xml else 0
+        if used + cost > min(limit - yields, story_cap):
+            entry["why"] = "story_cap" if used + cost <= limit - yields else "budget"
             continue
         if line.ref.get("carried"):  # packet-v20: an earlier chat's story so far comes first (PHASE-60 S6)
             kept_story.insert(0, line.xml)
@@ -762,6 +962,11 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         used += cost
         entry["placed"], entry["why"] = True, "placed"
     kept_cast: list[str] = []
+    in_cast: set[Any] = set()  # packet-v21: the assertions of <Cast>'s placed extra lines
+    if v21:  # packet-v21: the wider <Cast> is placed in two passes, its extra lines inside a bound
+        kept_cast, offset, used = _cast_v21(cast, ledger, offset, used, limit, held_back, inner, cast_marks, pinned,
+                                            admitted, needed_notes, extras, est, in_cast)
+        cast = []  # placed: the loop below has nothing left
     for name, lines in cast:
         group: list[str] = []
         back = f" back_after={quoteattr(cast_marks[name])}" if name in cast_marks else ""
@@ -785,9 +990,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         if group:
             kept_cast += [opening, *group, "    </Character>"]
     base = offset  # where lead, threads and facts start in the ledger
-    privacy = policy in PRIVATE_POLICIES
     kept_private: list[str] = []
-    folded = restated(gone + lead + threads + settled + facts) if policy in FOLD_POLICIES else {}
 
     def section(lines: list[Line], tag: str, opened: bool = False, capped: bool = False) -> list[str]:
         nonlocal used, offset
@@ -800,6 +1003,9 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
                 continue
             if capped and id(line) not in admitted:  # beyond GONE_SHARE (packet-v20)
                 entry["why"] = "gone_cap"
+                continue
+            if in_cast and line.ref.get("assertion") in in_cast:  # packet-v21: <Cast> already placed it
+                entry["why"] = "in_cast"
                 continue
             hidden = privacy and line.private
             if hidden:
@@ -842,9 +1048,19 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
             used += cost
             entry["placed"], entry["why"] = True, "placed"
     chosen: list[tuple[Excerpt, str]] = []
+    fenced_open = bool(kept_private)  # packet-v21: a fenced excerpt opens <Private> when no line did
     for n, item in enumerate(ranked):
         entry = ledger[offset + n]
         room = budget_tokens - used
+        if v21 and reserved and first is not None and n < first:
+            room -= reserve  # packet-v21: a quote before the reserved excerpt never takes the room kept for it
+        fenced = v21 and privacy and bool(item.hidden_from)
+        overhead = 0
+        if fenced:
+            entry["private"] = True
+            overhead = ((0 if fenced_open else est("  <Private>\n  </Private>\n"))
+                        + (0 if PRIVATE_NOTE in extras else est(PRIVATE_NOTE)))
+            room -= overhead
         if n in repeats:
             entry["why"], entry["repeats"] = "repeats", repeats[n].ref
             continue
@@ -863,13 +1079,17 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
             form, text = fitted
         else:
             form, text = "full", item.text
-        cost = est(excerpt_line(item, text) + "\n")
+        cost = est(("  " if fenced else "") + excerpt_line(item, text) + "\n") + overhead
         entry["tok"] = cost
         if used + cost > budget_tokens:
             continue
         chosen.append((item, text))
         used += cost
         entry["placed"], entry["why"] = True, "placed"
+        if fenced:
+            fenced_open = True
+            if PRIVATE_NOTE not in extras:
+                extras.append(PRIVATE_NOTE)
         if form != "full":
             entry["form"], entry["text"] = form, text[:400]
     if not chosen and not kept_state and not kept_facts and not kept_threads and not kept_private and not kept_story \
@@ -884,14 +1104,15 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         body += ["  <Threads>", *kept_threads, "  </Threads>"]
     if kept_facts:
         body += ["  <Facts>", *kept_facts, "  </Facts>"]
-    if kept_private:
-        body += ["  <Private>", *kept_private, "  </Private>"]
+    private_excerpts = ["  " + excerpt_line(e, t) for e, t in chosen if v21 and privacy and e.hidden_from]
+    if kept_private or private_excerpts:
+        body += ["  <Private>", *kept_private, *private_excerpts, "  </Private>"]
     if kept_regression:
         held = {n for line in kept_regression for n in line.marks.get("remembered_by") or ()}
         names = [n for n in regression_names if n in held] + sorted(held - set(regression_names))
         body += [f"  <Regression remembered_by={quoteattr(', '.join(names))}>", *(line.xml for line in kept_regression),
                  "  </Regression>"]
-    body += [excerpt_line(e, t) for e, t in chosen]
+    body += [excerpt_line(e, t) for e, t in chosen if not (v21 and privacy and e.hidden_from)]
     full_note = PACKET_NOTE.removesuffix("</Note>") + note + "".join(extras) + "</Note>"
     text = "\n".join([PACKET_OPEN, full_note, *body, PACKET_CLOSE])
     return Compiled(text, est(text), [e for e, _ in chosen], ledger)
