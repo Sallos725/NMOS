@@ -1249,6 +1249,57 @@ describe('panel', () => {
     });
   });
 
+  describe('extract right after a reply (PHASE-67)', () => {
+    const open = async (reported?: boolean) => {
+      const h = deps();
+      if (reported !== undefined) (config.extraction as Record<string, unknown>).on_output = reported;
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      const check = [...panel.querySelectorAll('.check')].find((c) => c.textContent === 'Extract right after a reply')!;
+      return { ...h, panel, box: check.querySelector('input') as HTMLInputElement,
+        hint: check.nextElementSibling as HTMLElement, save: panel.querySelector<HTMLButtonElement>('.bar button.primary')! };
+    };
+    const puts = (calls: [string, string, unknown][]) => calls.filter(([method]) => method === 'PUT').map(([, , body]) => body);
+    afterEach(() => { delete (config.extraction as Record<string, unknown>).on_output; });
+
+    it('shows the reported switch in the tuning card, says what it costs, and saves a change', async () => {
+      const { box, hint, save, calls } = await open(false);
+      expect(box.closest('.card')!.querySelector('h2')!.textContent).toBe('Recall tuning');
+      expect([box.checked, box.disabled]).toEqual([false, false]);
+      expect(hint.textContent).toContain('about 20 seconds after it finishes instead of when you answer it');
+      expect(hint.textContent).toContain('the last reply of a session is not lost');
+      expect(hint.textContent).toContain('pays for one extraction that is thrown away');
+      box.checked = true;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).toMatchObject({ extract_on_output: true });
+    });
+
+    it('is not sent with another tuning change while it is unchanged', async () => {
+      const { panel, box, save, calls } = await open(true);
+      expect(box.checked).toBe(true);
+      const topK = [...panel.querySelectorAll<HTMLInputElement>('input[type="number"][max="20"]')][0]!;
+      topK.value = '3';
+      topK.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).not.toHaveProperty('extract_on_output');
+    });
+
+    it('is disabled and never sent on a sidecar that does not report it', async () => {
+      const { panel, box, save, calls } = await open();
+      expect([box.checked, box.disabled]).toEqual([false, true]);
+      const topK = [...panel.querySelectorAll<HTMLInputElement>('input[type="number"][max="20"]')][0]!;
+      topK.value = '3';
+      topK.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).not.toHaveProperty('extract_on_output');
+    });
+  });
+
   it('turns canon facts off from the settings (ADR 0047)', async () => {
     const { d, calls } = deps();
     await openPanel(d, 'settings');
