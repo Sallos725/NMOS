@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 import unicodedata
 from collections.abc import Mapping
@@ -86,9 +87,52 @@ TOLD = Predicate(
     "the subject passed on to the object something that matters later, which the object did not have: a secret,"
     " news of an event, a fact about someone, a warning or a rumour (value: what was passed on)",
 )
-EXTENSIONS: dict[str, dict[str, Predicate]] = {"extract-v19": {"told": TOLD}}
+# extract-v20 (PHASE-64 part 1): the full typed ontology, all of it in its own extension, so REGISTRY (hashed into every
+# extractor key) and extract-v19's extension stay as they were. Dedicated slots for what `has_status`, `located_in`
+# and `identity` used to carry together (a death, a home, a cover), a guise, a rank in a group, what is inside what,
+# and the epistemic pair `believes` (not factive, unlike `knows`) and `forgot`. Two REGISTRY predicates are widened
+# here for extract-v20 only, by an entry of the same name: `role_toward` and `promised` between groups too.
+V20_ONTOLOGY: tuple[Predicate, ...] = (
+    Predicate("vital_status", ("character",), None, True, "single",
+              "whether the subject is alive, dead, missing, exiled, sealed or petrified (value: that state); its own"
+              " slot, apart from has_status"),
+    Predicate("lives_in", ("character", "group"), ("place",), False, "single",
+              "the subject's home, residence or headquarters, where they live or are based (located_in is where"
+              " they are now)"),
+    Predicate("cover_identity", ("character",), None, True, "multi",
+              "a cover job, role or false identity the subject presents to others (identity stays the true one)"),
+    Predicate("disguised_as", ("character",), ("character",), False, "single",
+              "the subject is passing as the object, a guise or false persona (object: the guise name; value: an"
+              " optional note)"),
+    Predicate("holds_rank", ("character",), ("group",), True, "single",
+              "the subject's rank, title or position within the group (value: the rank)", per_object=True),
+    Predicate("contained_in", ("item", "place"), ("item", "place"), False, "single",
+              "the subject is inside the object: an item in a container, a room within a building or a place within"
+              " a larger place"),
+    Predicate("believes", ("character",), None, True, "multi",
+              "what the subject believes, thinks or suspects is true, which may be false (a misconception, a lie"
+              " they were told); knows is only for what is true"),
+    Predicate("forgot", ("character",), None, True, "multi",
+              "what the subject has lost from memory (value: the memory, \"all\", or \"since turn N\")"),
+)
+_V20_WIDENED = (
+    Predicate("role_toward", ("character", "group"), ("character", "group"), True, "single",
+              REGISTRY["role_toward"].description, per_object=True),
+    Predicate("promised", ("character", "group"), ("character", "group"), True, "multi",
+              REGISTRY["promised"].description),
+)
+V20_PREDICATES = frozenset(p.name for p in V20_ONTOLOGY)  # the predicates extract-v20 adds
+EXTENSIONS: dict[str, dict[str, Predicate]] = {
+    "extract-v19": {"told": TOLD},
+    "extract-v20": {"told": TOLD, **{p.name: p for p in _V20_WIDENED}, **{p.name: p for p in V20_ONTOLOGY}},
+}
+ONTOLOGY_PREDICATES = frozenset(EXTENSIONS["extract-v20"])  # extract-v20's extension: its own and the widened ones
 # Predicates of a compiler extension that also keep `with` (PHASE-60 S8).
-EXTENSION_PARTICIPANTS: dict[str, frozenset[str]] = {"extract-v19": frozenset({"told"})}
+EXTENSION_PARTICIPANTS: dict[str, frozenset[str]] = {"extract-v19": frozenset({"told"}),
+                                                     "extract-v20": frozenset({"told"})}
+# Predicates whose row keeps a `value` although the registry does not ask for one (`takes_value`): extract-v20's
+# optional note on a guise. Not a REGISTRY predicate, so no earlier generation's rows change.
+OPTIONAL_VALUE = frozenset({"disguised_as"})
 
 
 def registry_for(compiler: str | None) -> dict[str, Predicate]:
@@ -294,7 +338,7 @@ def takes_value(predicate: Any, registry: Mapping[str, Predicate] | None = None)
     false: located_in, possesses, member_of), where a stray phrase ("정예 단원" on member_of) would only split the
     version key from the same relation stated without it. An unknown predicate keeps it (the row is pending)."""
     pred = (REGISTRY if registry is None else registry).get(str(predicate or ""))
-    return pred is None or pred.needs_value
+    return pred is None or pred.needs_value or pred.name in OPTIONAL_VALUE
 
 
 # Predicates whose value can involve other people (PHASE-8 Q3: the measured set). Kept outside REGISTRY
@@ -346,9 +390,17 @@ def outcome(item: dict[str, Any]) -> str | None:
     return value if value in OUTCOMES else None
 
 
-def because(item: dict[str, Any]) -> str | None:
-    """The cause the model quoted, on CAUSED predicates only, at most 200 characters; never inferred here."""
-    if item.get("predicate") not in CAUSED:
+# extract-v20 (PHASE-64 part 1): a cause, and a time apart from the turn's, on the state and business predicates too.
+V20_TIMED = frozenset({"addresses", "role_toward", "lives_in", "located_in", "promised", "destroyed", "vital_status",
+                       "threat", "goal", "owes", "told"})
+CAUSED_V20 = CAUSED | V20_TIMED
+V20 = "extract-v20"
+
+
+def because(item: dict[str, Any], compiler: str | None = None) -> str | None:
+    """The cause the model quoted, on CAUSED predicates only (CAUSED_V20 for extract-v20), at most 200 characters;
+    never inferred here."""
+    if item.get("predicate") not in (CAUSED_V20 if compiler == V20 else CAUSED):
         return None
     value = str(item.get("because") or "").strip()
     return value[:200] if value and value.casefold() not in ("null", "none", "-") else None
@@ -388,14 +440,16 @@ def feeling(item: dict[str, Any]) -> dict[str, Any] | None:
 
 # extract-v19 (PHASE-60 S7, ADR 0086): when the turn places an event or a promise at another time than the turn.
 HAPPENED_PREDICATES = frozenset({"event", "promised"})
+HAPPENED_V20 = HAPPENED_PREDICATES | V20_TIMED
 
 
-def when_happened(item: dict[str, Any], limit: int) -> str | None:
-    """The `when_happened` of an `event` or a `promised` (PHASE-60 S7): the phrase as given, trimmed, at most `limit`
-    characters, or None. A phrase, not a timestamp (ADR 0086 item 2): NMOS computes no date from it and orders nothing
-    by it. None for any other predicate, for a value that is not text, and for an empty or `null`/`none`/`-` one."""
+def when_happened(item: dict[str, Any], limit: int, compiler: str | None = None) -> str | None:
+    """The `when_happened` of an `event` or a `promised` (PHASE-60 S7; HAPPENED_V20 for extract-v20): the phrase as
+    given, trimmed, at most `limit` characters, or None. A phrase, not a timestamp (ADR 0086 item 2): NMOS computes no
+    date from it and orders nothing by it. None for any other predicate, for a value that is not text, and for an empty
+    or `null`/`none`/`-` one."""
     raw = item.get("when_happened")
-    if item.get("predicate") not in HAPPENED_PREDICATES or not isinstance(raw, str):
+    if item.get("predicate") not in (HAPPENED_V20 if compiler == V20 else HAPPENED_PREDICATES) or not isinstance(raw, str):
         return None
     value = raw.strip()
     if not value or value.casefold() in ("null", "none", "-"):
@@ -471,6 +525,117 @@ def knowledge(item: dict[str, Any]) -> tuple[str, list[str] | None, list[str] | 
     else:
         scope = "unknown"  # includes "limited" with nobody named
     return scope, known or None, hidden or None, note
+
+
+# extract-v20 (PHASE-64 part 1): `knowledge_scope` with `public_except`, everyone but `hidden_from`. The `knowledge`
+# column keeps public|limited|unknown (its CHECK, migration 0009): a public-except fact is stored there as limited, as
+# every earlier generation stores it, so no earlier reader meets a word it does not know.
+KNOWLEDGE_SCOPES_V20 = ("public", "public_except", "limited", "unknown")
+
+
+def knowledge_scope(item: dict[str, Any],
+                    marks: tuple[str, list[str] | None, list[str] | None, str | None] | None = None) -> str | None:
+    """The four-way scope of one raw assertion (extract-v20), from its sanitized marks (`knowledge`, or `marks` when
+    already read) so the two columns never contradict: "public_except" when the model calls it public (or public
+    except) and someone is still in `hidden_from` after the contradiction check; otherwise the `knowledge` scope
+    itself (a public-except fact with nobody left in `hidden_from` reads as `knowledge` reads it: unknown, or limited
+    with `known_by`)."""
+    if not isinstance(item, dict):
+        return None
+    scope, _, hidden, _ = marks or knowledge(item)
+    word = str(item.get("knowledge_scope") or item.get("knowledge") or "").strip().lower()
+    return "public_except" if hidden and word in ("public", "public_except") else scope
+
+
+# extract-v20 (PHASE-64 part 1): when a fact holds. A form of address, a tie, a role, a feeling, an identity, a cover, a
+# condition or a promise can hold only in public or in private, before some people, under a guise or in a situation
+# ("존댓말, '과장님'" at work, "반말, '오빠'" alone). Only these keys, each bounded, and the whole at most
+# CONDITION_MAX_BYTES of compact JSON (it is stored, and later shown back to the model).
+CONDITIONED_PREDICATES = frozenset({"addresses", "relationship", "role_toward", "feels_toward", "identity",
+                                    "cover_identity", "has_status", "promised"})
+CONDITION_KEYS = ("in_public", "audience", "as_guise", "when")
+CONDITION_MAX_BYTES = 512
+AUDIENCE_MAX, AUDIENCE_CHARS, GUISE_CHARS, WHEN_CHARS = 8, 80, 80, 120
+_NULLISH = ("null", "none", "-")
+
+
+def _phrase(raw: Any, limit: int) -> str | None:
+    """A short text field: trimmed, at most `limit` characters; None for a non-text value or an empty or
+    `null`/`none`/`-` one."""
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    if not value or value.casefold() in _NULLISH:
+        return None
+    return value[:limit].strip() or None
+
+
+def _json_size(value: dict[str, Any]) -> int:
+    return len(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode())
+
+
+def condition(item: dict[str, Any]) -> dict[str, Any] | None:
+    """The `condition` of a conditioned predicate (CONDITIONED_PREDICATES), or None.
+
+    Kept: `in_public` (a JSON boolean only), `audience` (names or {"name"} objects, each at most AUDIENCE_CHARS, no
+    repeat, at most AUDIENCE_MAX), `as_guise` (at most GUISE_CHARS) and `when` (at most WHEN_CHARS). Anything else is
+    dropped, and so is an empty value; with nothing left there is no condition, so an ordinary fact stores none. Over
+    CONDITION_MAX_BYTES, the audience loses its last names, then `when` and `as_guise` their last characters, until it
+    fits. Never inferred from the value text."""
+    raw = item.get("condition") if isinstance(item, dict) else None
+    if not isinstance(raw, dict) or item.get("predicate") not in CONDITIONED_PREDICATES:
+        return None
+    out: dict[str, Any] = {}
+    if isinstance(raw.get("in_public"), bool):
+        out["in_public"] = raw["in_public"]
+    if isinstance(raw.get("audience"), list):
+        names: list[str] = []
+        for entry in raw["audience"]:
+            name = _phrase(entry.get("name") if isinstance(entry, dict) else entry, AUDIENCE_CHARS)
+            if name and name.casefold() not in {n.casefold() for n in names}:
+                names.append(name)
+            if len(names) == AUDIENCE_MAX:
+                break
+        if names:
+            out["audience"] = names
+    for key, limit in (("as_guise", GUISE_CHARS), ("when", WHEN_CHARS)):
+        if value := _phrase(raw.get(key), limit):
+            out[key] = value
+    while _json_size(out) > CONDITION_MAX_BYTES:
+        if len(out.get("audience", ())) > 1:
+            out["audience"].pop()
+        elif field := next((k for k in ("when", "as_guise") if len(out.get(k) or "") > 1), None):
+            out[field] = out[field][:-1].rstrip() or out[field][:1]
+        else:  # unreachable with the caps above; never store an oversized condition
+            return None
+    return out or None
+
+
+def guise(item: dict[str, Any]) -> str | None:
+    """The guise name a fact is held under or toward (extract-v20): the item's `guise`, else its condition's
+    `as_guise`; at most GUISE_CHARS, or None."""
+    if not isinstance(item, dict):
+        return None
+    raw = item.get("condition")
+    return _phrase(item.get("guise"), GUISE_CHARS) or (
+        _phrase(raw.get("as_guise"), GUISE_CHARS) if isinstance(raw, dict) else None)
+
+
+ITEM_KINDS = ("unique", "fungible")
+
+
+def item_kind(item: dict[str, Any]) -> str | None:
+    """Whether the item of a `possesses` (its object), a `destroyed`, or a `located_in` or `contained_in` of an item
+    (its subject) is one of a kind ("unique") or one of many alike ("fungible": potions, coins, arrows, letters), as the
+    model gave it (extract-v20); None for any other row, and when missing or invalid."""
+    if not isinstance(item, dict):
+        return None
+    predicate = item.get("predicate")
+    if not (predicate in ("possesses", "destroyed")
+            or (predicate in ("located_in", "contained_in") and item.get("subject_type") == "item")):
+        return None
+    value = str(item.get("item_kind") or "").strip().lower()
+    return value if value in ITEM_KINDS else None
 
 
 # How a {"name": …} entry was stored before mark_name() read the name out of it: str() of the dict, e.g.

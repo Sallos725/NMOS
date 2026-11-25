@@ -61,7 +61,7 @@ def feelings_of(url: str, client, chat) -> list[dict]:
 
 
 def test_v16_is_untouched_and_v18_adds_the_feeling_only():
-    assert X.DEFAULT_COMPILER == "extract-v16" and "extract-v18" in X.COMPILERS and X.FEELINGS == {"extract-v18", "extract-v19"}
+    assert X.DEFAULT_COMPILER == "extract-v16" and "extract-v18" in X.COMPILERS and X.FEELINGS - X.ONTOLOGY == {"extract-v18", "extract-v19"}
     v16, v18 = X.prompt_of("extract-v16"), X.prompt_of("extract-v18")
     assert X.FEELING_RULE not in v16 and '"feeling"' not in v16
     assert v18 == X._v18(v16) and X.FEELING_RULE in v18 and '"feeling": {{"intensity": "faint|clear|strong"' in v18
