@@ -29,7 +29,7 @@ from . import generations, normtext
 from .config import Settings
 from .entities import norm
 from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY, ONTOLOGY,
-                         _with_carried, assertion_values, build_prompt, coverage_of, earlier_assertions, load_context, normalize,
+                         _with_carried, assertion_values, no_nul, build_prompt, coverage_of, earlier_assertions, load_context, normalize,
                          revealed, secret_hints, shown_target, with_cap)
 from .generations import Generation
 from .ids import uuid7
@@ -337,7 +337,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         conn.execute(
             "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
             " coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (check_id, revision_id, window, VERSION, gen.key, gen.model, Jsonb({"reply": raw[:20000]}),
+            (check_id, revision_id, window, VERSION, gen.key, gen.model, Jsonb({"reply": no_nul(raw[:20000])}),
              Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
              Jsonb({"checks": str(checked), "secrets": secrets, "read_at": read_at.isoformat()}),
              Jsonb(usage) if usage is not None else None))

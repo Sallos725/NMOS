@@ -286,3 +286,47 @@ def test_a_saved_whole_number_written_as_a_float_is_read_as_the_number():
     assert got.embed_max_chunks == 52 and isinstance(got.embed_max_chunks, int)
     if "extract_target_chars" in saved:
         assert got.extract_target_chars == 36000 and isinstance(got.extract_target_chars, int)
+
+
+# --- pre-existing: NUL characters and a predicate that is not a name; the clock's date-time keys --------------------
+
+def test_a_nul_in_model_text_is_stored_without_it_and_an_odd_predicate_is_no_row(migrated):
+    from simchat import SimChat
+
+    def nul(system: str, user: str) -> tuple[dict, str]:
+        if "Akari" not in user.split("TARGET", 1)[-1]:
+            return {"assertions": []}, "{}"
+        return {"assertions": [
+            {"subject": "Ak\x00ari", "subject_type": "character", "predicate": "located_in", "object": "cha\x00pel",
+             "object_type": "place", "modality": "actual", "evidence": "Akari\x00 is in the chapel",
+             "with": [{"name": "Mi\x00na", "type": "character"}]},
+            {"subject": "Akari", "subject_type": "character", "predicate": ["located_in"], "object": "x"},
+            {"subject": "Akari", "subject_type": "character", "predicate": {"p": 1}, "object": "x"}]}, "{\x00}"
+
+    assert X.own_items([{"predicate": ["a"]}, {"predicate": {"b": 1}}, {"predicate": None}]) == [{"predicate": None}]
+    assert X.normalize([{"predicate": ["a"], "subject": "x"}], "x") == []
+    chat = SimChat()
+    chat.user("Akari is in the chapel.")
+    chat.reply("Noted.")
+    chat.user("next")
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        assert drain(migrated, nul) >= 1
+    with _connect(migrated) as conn:
+        assert conn.execute("SELECT count(*) AS n FROM job WHERE status <> 'done' AND kind = 'extract'").fetchone()["n"] == 0
+        (row,) = conn.execute("SELECT subject, object, evidence FROM assertion").fetchall()
+        assert (row["subject"], row["object"], row["evidence"]) == ("Akari", "chapel", "Akari is in the chapel")
+        assert conn.execute("SELECT raw->>'reply' AS r FROM extraction WHERE raw->>'reply' <> ''").fetchone()["r"] == "{}"
+
+
+def test_the_clock_shows_a_date_and_time_written_in_one_field(migrated):
+    from test_extract_v19 import at, chat_of, head_of, observe
+    chat = chat_of("세라는 문을 열었다.", "카이토는 창가에 앉았다.", "하나는 차를 끓였다.")
+    with make_client(migrated) as c:
+        sync(c, chat)
+    with _connect(migrated) as conn:
+        head = head_of(conn, chat)
+        observe(conn, head, 5, "상태.일시", "4월 13일 오후 3시")
+        assert X.story_clock(conn, at(head, 5)) == "상태.일시: 4월 13일 오후 3시"
+        observe(conn, head, 5, "날짜/시간", "4월 13일 15:00")  # two date-time fields at once: ambiguous, left out
+        assert X.story_clock(conn, at(head, 5)) is None

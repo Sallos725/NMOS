@@ -964,7 +964,7 @@ def _repairs_before(conn: psycopg.Connection, target: dict[str, Any],
 # date and a weekday keeps both. Matched after any `<prefix>.` ("상태.날짜").
 CLOCK_KEYS = {**KEYS, "현재 시간": "time", "현재 시각": "time", "일차": "day", "day": "day", "요일": "weekday",
               "계절": "season"}
-CLOCK_ORDER = ("date", "day", "weekday", "season", "time")
+CLOCK_ORDER = ("date", "datetime", "day", "weekday", "season", "time")  # datetime: 날짜/시간, 일시 (source_time.KEYS)
 CLOCK_TURNS = 1  # a field from more than this many turns before the newest one is stale: not shown beside it
 
 
@@ -2097,14 +2097,32 @@ MARKERS = ("listed", "listed_pair", "held", "doubt")
 
 def own_items(items: list[Any]) -> list[Any]:
     """The model's own assertions as the worker reads them: no DERIVED predicate (the worker fills those), no marker
-    of a derived row (a model's "listed_pair" would skip the alias confirmation), at most MAX_ASSERTIONS."""
+    of a derived row (a model's "listed_pair" would skip the alias confirmation), no item whose predicate is not a
+    name (a list or an object: rejected, it raised before), at most MAX_ASSERTIONS."""
     return [{k: v for k, v in a.items() if k not in MARKERS} if isinstance(a, dict) else a for a in items
-            if not (isinstance(a, dict) and a.get("predicate") in DERIVED)][:MAX_ASSERTIONS]
+            if not (isinstance(a, dict) and (_odd(a) or a.get("predicate") in DERIVED))][:MAX_ASSERTIONS]
+
+
+def _odd(item: dict[str, Any]) -> bool:
+    """A predicate that is neither a name nor missing: no registry entry could be it."""
+    return item.get("predicate") is not None and not isinstance(item.get("predicate"), str)
+
+
+def no_nul(value: Any) -> Any:
+    """A model's value without NUL characters, which PostgreSQL text and jsonb refuse: strings, and the strings in
+    lists and objects (keys included)."""
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, list):
+        return [no_nul(v) for v in value]
+    if isinstance(value, dict):
+        return {no_nul(k) if isinstance(k, str) else k: no_nul(v) for k, v in value.items()}
+    return value
 
 
 def _derived(item: Any) -> bool:
-    return isinstance(item, dict) and (item.get("predicate") in DERIVED or item.get("listed") is not None
-                                       or bool(item.get("listed_pair")))
+    return isinstance(item, dict) and not _odd(item) and (
+        item.get("predicate") in DERIVED or item.get("listed") is not None or bool(item.get("listed_pair")))
 
 
 def capped(items: list[Any]) -> list[Any]:
@@ -2141,8 +2159,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
     out = []
     also = EXTENSION_PARTICIPANTS.get(compiler or "", frozenset())
     registry = registry_for(compiler)
-    for item, inferred in fill_types(capped(items), hints):
-        if not isinstance(item, dict):
+    for item, inferred in fill_types([no_nul(a) for a in capped(items)], hints):
+        if not isinstance(item, dict) or _odd(item):  # a list or an object as the predicate: no row (it raised)
             continue
         status, reason = validate(item, registry)
 
@@ -2289,13 +2307,13 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
             " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " ON CONFLICT DO NOTHING RETURNING id",
             (extraction_id, revision_id, window_hash, compiler, gen.key, gen.model,
-             Jsonb({"reply": raw[:20000], **({"confirmations": confirmations} if confirmations else {}),
-                    **({"alias_confirmations": alias_confirmations} if alias_confirmations else {})}),
+             Jsonb(no_nul({"reply": raw[:20000], **({"confirmations": confirmations} if confirmations else {}),
+                           **({"alias_confirmations": alias_confirmations} if alias_confirmations else {})})),
              Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
              None if hints is None and not promises and not secrets and not threads and not roles
              else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets, "threads": threads,
                          **({"roles": roles} if roles else {}), **({"names": pairs} if pairs else {})}),
-             Jsonb(usage) if usage is not None else None, Jsonb(spoken) if spoken else None, clock),
+             Jsonb(usage) if usage is not None else None, Jsonb(no_nul(spoken)) if spoken else None, clock),
         ).fetchone()
         if inserted is None:
             return "done"
