@@ -241,7 +241,9 @@ def test_a_replay_from_before_an_anchor_was_recorded_reads_the_legacy_target(mig
         before = recall(c, chat, ask, budget=2000)
         as_written_before(migrated, cid)
         middle = recall(c, chat, ask, budget=2000)  # legacy then; this read records the anchors
-        listed(c, cid)
+        assert all(r["anchor"] for r in rows(migrated, cid))  # the plugin's own request path wrote them
+        as_written_before(migrated, cid)
+        listed(c, cid)  # and so does the repairs list, later than `middle`
         for trace in (before, middle):
             replayed = c.get(f"/v1/trace/{trace['trace_id']}/replay").json()
             assert replayed["status"] == "ok" and replayed["reproduced"] is True
@@ -295,6 +297,13 @@ def test_a_correction_keeps_its_message_and_inherits_no_feeling_or_cause(migrate
         repair(c, cid, kind="fact_correct", item=str(kaito["id"]), new_object="porch", new_because="the rain")
         k = next(f for f in view_of(migrated, cid)["facts"] if f["subject"] == "Kaito")
         assert k["because"] == "the rain" and k["host_logical_id"] == chat.messages[3]["chatId"]
+        # The in-context rule (D3) leaves a fact line out while its message is in the prompt; a scene character's
+        # current place still reaches <Cast>, which that rule does not touch (the owner decision is in the report).
+        ask = "Kaito, where are you now?"
+        assert "porch" in recall(c, chat, ask, budget=2000)["packet"]["text"]
+        held = [m["chatId"] for m in chat.messages]
+        text = recall(c, chat, ask, in_context=held, budget=2000)["packet"]["text"]
+        assert "porch" in text.split("<Cast>", 1)[1] and "porch" not in text.split("<Cast>", 1)[0]
         moved = repair(c, cid, kind="fact_correct", item=str(fact(c, chat, "Mina", "identity")["id"]), new_value="spy",
                        turn=3)
         later = next(f for f in view_of(migrated, cid)["facts"] if f.get("repair") == moved["repair"]["id"])
@@ -439,6 +448,22 @@ def test_the_new_kinds_go_through_a_batch_and_its_undo(migrated):
         assert fact(c, chat, "Hana")["hidden_from"] is None and fact(c, chat, "Kaito", "has_status") is None
 
 
+def test_a_statement_added_on_the_open_turn_survives_its_reply_and_the_next_turn(migrated):
+    chat = anchor_chat()  # turn 6 is "Go on." alone, the reply not written yet
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        rid = repair(c, cid, kind="fact_add", item=chat.messages[12]["chatId"],
+                     fact={"predicate": "has_status", "subject": "Mina", "value": "restless"})["repair"]["id"]
+        chat.reply("Noted.")  # the turn grows: its reply, then the next turn
+        chat.user("And then?")
+        resync(c, migrated, chat)
+        assert fact(c, chat, "Mina", "has_status")["value"] == "restless"
+        assert "detached" not in listed(c, cid)[rid]
+        chat.edit(12, "Go on, please.")  # an edit of the message it names detaches it
+        resync(c, migrated, chat)
+        assert listed(c, cid)[rid]["detached"] == "edited" and fact(c, chat, "Mina", "has_status") is None
+
+
 # --- export / restore: the anchor round-trips; an archive from before migration 0044 restores ----------------------
 
 def test_an_anchor_round_trips_through_an_archive_and_an_older_archive_restores(migrated, database_url_factory,
@@ -451,7 +476,10 @@ def test_an_anchor_round_trips_through_an_archive_and_an_older_archive_restores(
     path = tmp_path / f"new{archive.SUFFIX}"
     archive.export_file(migrated, str(path))
     target = database_url_factory()
-    archive.restore_file(target, str(path))
+    with make_client(target, **LLM, extract_backfill=100) as c:  # an install with a chat of its own: ids move
+        setup(c, target, anchor_chat())
+    done = archive.restore_file(target, str(path))
+    assert "assertion" in done.renumbered
     assert [(r["id"], r["anchor"], r["anchored_at"]) for r in rows(target, cid)] == \
         [(r["id"], r["anchor"], r["anchored_at"]) for r in rows(migrated, cid)]
     with make_client(target, **LLM) as c:

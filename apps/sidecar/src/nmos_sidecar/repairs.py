@@ -18,7 +18,13 @@ again opens a new thread, and a later reveal ends a secret the owner kept. A rea
 not apply it, and a read as of an earlier time (ADR 0027 replay) does not see it. Repairs of one turn apply in the order
 they were made.
 
-Pure: no database here, except `repairs_of`.
+Since PHASE-67 part 4 (audit D7, migration 0044) a repair is also anchored to the messages it was made on (`anchor`):
+a read maps it onto the head's numbering first (`rebase`), so the turn and hash above are the head's own; deleting an
+earlier message or editing another turn keeps it, an edit of its own turn detaches it, and one made on a continuation
+the chat abandoned does not fire on a new one. A repair from before 0044 keeps the turn rule until a live read records
+its anchor. See "The anchor" below.
+
+Pure: no database here, except `repairs_of`, `members_of`, `anchor_now` and `record_anchors`.
 """
 
 from __future__ import annotations
@@ -159,11 +165,12 @@ class Members:
         return {"message": at["host_logical_id"], "revision": str(at["rid"]), "turn_revisions": self.own(turn)}
 
     def message_anchor(self, message: str) -> dict[str, Any] | None:
-        """The anchor of an item the owner states on this message (`fact_add`)."""
+        """The anchor of an item the owner states on this message (`fact_add`): that message and its revision only, so
+        a reply added to its turn, or an edit of another message of it, keeps it (an edit of the message detaches it)."""
         hit = self.messages.get(message)
         if hit is None or hit[1] is None:
             return None
-        return {"message": message, "revision": hit[2], "turn_revisions": self.own(hit[1])}
+        return {"message": message, "revision": hit[2]}
 
     def apply_anchor(self, turn: int | None) -> dict[str, Any] | None:
         rows = self.turns.get(turn) if isinstance(turn, int) else None
