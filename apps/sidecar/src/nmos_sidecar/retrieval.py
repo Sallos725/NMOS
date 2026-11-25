@@ -1212,7 +1212,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 picked += persona_threads(view["threads"], r, query, in_context, picked, claimed)
             picked = (_rested(picked, "thread", rest, g, v21=True) if v21
                       else _rested(picked, "thread", rest, g))[:options.threads_limit]
-            g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r), options.policy in HAPPENED_POLICIES)
+            g.threads = _moded([_scoped(thread_entry(t, _private(t, g.cast, r, v21), options.policy in HAPPENED_POLICIES), t, v21)
                                 for t in picked],
                                view["threads"], g, r, options)
         if options.facts_limit > 0:
@@ -1290,12 +1290,12 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             before, cause = options.policy in BEFORE_POLICIES, causes
             marks = options.history_marks
             happened = options.policy in HAPPENED_POLICIES  # packet-v20 (PHASE-60 S7)
-            g.lead = _moded([entry_v21(f, scene.private(f, g.cast, r), before, cause, marks, shown21, happened=happened)
+            g.lead = _moded([entry_v21(f, _private(f, g.cast, r, v21), before, cause, marks, shown21, happened=happened)
                              for f in facts if f["predicate"] in STANDING],
                             facts, g, r, options)
-            g.facts = _moded([entry_v21(f, scene.private(f, g.cast, r), before, cause, marks, shown21, happened=happened)
+            g.facts = _moded([entry_v21(f, _private(f, g.cast, r, v21), before, cause, marks, shown21, happened=happened)
                               for f in facts if f["predicate"] not in STANDING]
-                             + [claim_entry(c, scene.private(c, g.cast, r), cause) for c in claims], facts + claims, g, r,
+                             + [claim_v21(c, _private(c, g.cast, r, v21), cause, shown21) for c in claims], facts + claims, g, r,
                              options)
             # packet-v20 (PHASE-60 S8): who told whom, after the ordinary facts and claims; chosen after them, so it
             # changes neither their selection nor the fill decision
@@ -1800,6 +1800,63 @@ def present_leaks(text: str | None, secrets: list[dict[str, Any]] | None,
     return [s for s in summaries.leaks(text, secrets, present) if any(norm(n) in present for n in s.get("open") or ())]
 
 
+def public_except(f: Mapping[str, Any]) -> bool:
+    """An extract-v21 row everyone knows but the characters in `hidden_from` (`knowledge_scope = public_except`; stored
+    as `limited`, PHASE-66)."""
+    return f.get("knowledge_scope") == "public_except" and bool(f.get("hidden_from"))
+
+
+def _private(f: dict[str, Any], cast: dict[str, str], r: Any, v21: bool) -> bool:
+    """`scene.private`, but under packet-v21 a public-except row is private only when someone it is kept from is in
+    the scene: everyone else knows it, so it is never gated as `limited` (who knows it is not only `known_by`)."""
+    if v21 and public_except(f):
+        return r is not None and any(scene.key(r, n) in cast for n in f["hidden_from"])
+    return scene.private(f, cast, r)
+
+
+def narrator_knows_v21(f: Mapping[str, Any], narrator: str, r: Any) -> bool:
+    """packet-v21: a first-person narrator knows a public-except row unless they are one it is kept from."""
+    if r is None:
+        return norm(narrator) not in {norm(n) for n in f.get("hidden_from") or ()}
+    return scene.key(r, narrator) not in {scene.key(r, n) for n in f.get("hidden_from") or ()}
+
+
+def missing_v21(f: Mapping[str, Any], cast: dict[str, str], r: Any) -> tuple[list[str], list[str]]:
+    """packet-v21's (holders, not knowing) of a public-except row in this scene: everyone present but those it is kept
+    from, and those of them present."""
+    hidden = {scene.key(r, n) for n in f.get("hidden_from") or ()}
+    return [name for k, name in cast.items() if k not in hidden], [name for k, name in cast.items() if k in hidden]
+
+
+PUBLIC_EXCEPT_MARK = 'knowledge="public_except"'
+
+
+def _scoped(line: Line, f: Mapping[str, Any], v21: bool) -> Line:
+    """packet-v21: a public-except row's line says so (`knowledge="public_except"` before its `hidden_from`), in its
+    opening tag only, so the Note can say everyone else knows it; any other line as it is."""
+    if not v21 or not public_except(f):
+        return line
+
+    def marked(xml: str) -> str:
+        if not xml or PUBLIC_EXCEPT_MARK in xml:
+            return xml
+        tag, sep, rest = xml.partition(">")  # quoteattr escapes ">" in a value: the first one ends the tag
+        tag = re.sub(r" known_by=\"[^\"]*\"", "", tag)  # known by everyone but hidden_from, not only by known_by
+        return tag.replace(" hidden_from=", f" {PUBLIC_EXCEPT_MARK} hidden_from=", 1) + sep + rest
+
+    return dataclasses.replace(line, xml=marked(line.xml), private_xml=marked(line.private_xml))
+
+
+def claim_v21(c: dict[str, Any], private: bool, cause: bool, shown: Shown | None) -> Line:
+    """`claim_entry`; under packet-v21 (`shown` set) a claim every present character may read leaves out its stated
+    cause when that cause repeats a secret kept from someone present (`present_leaks`)."""
+    if shown is None:
+        return claim_entry(c, private, cause)
+    if not private and cause and c.get("because") and present_leaks(c["because"], shown.secrets, shown.present):
+        cause = False
+    return _scoped(claim_entry(c, private, cause), c, True)
+
+
 @dataclass(frozen=True)
 class Shown:
     """packet-v21's way of writing a fact line (`entry_v21`): the open secrets and who is in the scene, so a public
@@ -1834,7 +1891,7 @@ def entry_v21(f: dict[str, Any], private: bool, before: bool, cause: bool, marks
     if inline := feeling_inline(f):
         line = dataclasses.replace(line, xml=fact_line(row, before, cause, marks, gone, happened,
                                                        body=fact_text(row) + inline))
-    return line
+    return _scoped(line, f, True)
 
 
 CAST_PEERS = 2  # packet-v21: feelings toward and forms of address for other scene characters, per <Cast> group
@@ -1943,7 +2000,7 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
     happened = options.policy in HAPPENED_POLICIES  # packet-v20 (PHASE-60 S7)
 
     def shown(row: dict[str, Any]) -> bool:
-        if scene.private(row, cast, r) or (row.get("canon") and row["host_logical_id"] in in_context
+        if _private(row, cast, r, v21) or (row.get("canon") and row["host_logical_id"] in in_context
                                            and not row.get("held_off")):
             return False
         if row.get("carried"):  # an earlier chat's (ADR 0085): not where a character stands in this one's scene
@@ -2016,6 +2073,8 @@ def _gone_status(f: dict[str, Any], v21: bool = False) -> bool:
     if (f.get("canon") or (f.get("carried") and not v21) or f.get("polarity") != "positive" or f.get("disputed_by")
             or f.get("subject_type") != "character" or f.get("turn") is None):
         return False
+    if f["predicate"] == "vital_status":  # extract-v21 (PHASE-66): whether they live, its own slot
+        return v21 and is_gone_vital(f.get("value"))
     if f["predicate"] == "has_status":
         return is_gone_status(f.get("value"), v21=True) if v21 else is_gone_status(f.get("value"))
     return f["predicate"] == "located_in" and (is_gone_place(f.get("object"), v21=True) if v21
@@ -2057,11 +2116,22 @@ def gone_rows(view: dict[str, Any], r: Any, now: int | None, *, v21: bool = Fals
 
     `v21` (packet-v21): `_gone_status(v21=True)`, and only a row that shows the character present (`presence_rows`: a
     mourner's feeling toward them, a dream, a rumour or a flashback does not) brings them back, at any turn after the
-    gone fact's up to the one before `now`: a resurrection told more than CAST_TURNS turns ago still holds."""
+    gone fact's up to the one before `now`: a resurrection told more than CAST_TURNS turns ago still holds. A current
+    `vital_status` (extract-v21) is the first-class source: a character it says lives is never gone by a `has_status`
+    or a place, one it says is dead is gone by it whatever a later `has_status` says (asleep, disguised), and only a
+    later `vital_status` brings them back (it replaces the dead one in the view)."""
     if r is None:
         return []
     persona = scene.key(r, scene.PERSONA)
     left_out = frozenset(view.get("excluded") or ())
+    vital: dict[str, dict[str, Any]] = {}  # packet-v21: each character's current vital_status
+    if v21:
+        for f in view["facts"]:
+            if (f["predicate"] == "vital_status" and f.get("polarity") == "positive" and not f.get("canon")
+                    and f.get("subject_type") == "character" and f.get("turn") is not None):
+                k = scene.key(r, f["subject"])
+                if k not in vital or (f["turn"], f["position"]) > (vital[k]["turn"], vital[k]["position"]):
+                    vital[k] = f
     newest: dict[str, dict[str, Any]] = {}
     gone_ids: set[int] = set()
     for f in view["facts"]:
@@ -2071,6 +2141,8 @@ def gone_rows(view: dict[str, Any], r: Any, now: int | None, *, v21: bool = Fals
         k = scene.key(r, f["subject"])
         if scene.is_persona(r, f["subject"]) or k == persona or str(k) in left_out:
             continue
+        if k in vital and f["predicate"] != "vital_status":
+            continue  # packet-v21: whether they live is vital_status's to say
         if k not in newest or (f["turn"], f["position"]) > (newest[k]["turn"], newest[k]["position"]):
             newest[k] = f
     if not newest:
@@ -2085,7 +2157,8 @@ def gone_rows(view: dict[str, Any], r: Any, now: int | None, *, v21: bool = Fals
             if id(x) in gone_ids or (x.get("id"), x["turn"]) in gone_keys or x["turn"] > until:
                 continue
             k = scene.key(r, x["subject"])
-            if k in newest and x["turn"] > newest[k]["turn"] and not says_gone(x):
+            if (k in newest and newest[k]["predicate"] != "vital_status" and x["turn"] > newest[k]["turn"]
+                    and not says_gone(x)):
                 back.add(k)
         kept = [f for k, f in newest.items() if k not in back]
         kept.sort(key=lambda f: (f["turn"], f["position"]), reverse=True)
@@ -2119,7 +2192,7 @@ def gone_lines(view: dict[str, Any], r: Any, cast: dict[str, str], now: int | No
     v21 = options.policy in V21_POLICIES
     if v21:  # packet-v21: a public gone line drops a clause that would say a secret (`entry_v21`)
         shown = Shown(view.get("secrets") or [], scene.names(cast, r))
-        return [entry_v21(f, scene.private(f, cast, r), before, cause, options.history_marks, shown, gone=True,
+        return [entry_v21(f, _private(f, cast, r, True), before, cause, options.history_marks, shown, gone=True,
                           happened=options.policy in HAPPENED_POLICIES) for f in gone_rows(view, r, now, v21=True)]
     return [fact_entry(f, scene.private(f, cast, r), before, cause, options.history_marks, gone=True,
                        happened=options.policy in HAPPENED_POLICIES) for f in gone_rows(view, r, now)]
@@ -2242,7 +2315,7 @@ def settled_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, now: in
         _rested([t], "thread", rest, g, v21=True, settled=True) if v21 else _rested([t], "thread", rest, g)))
     if v21:  # packet-v21: a thread ended in secret is as private as its ending
         picked = [closing_marks(t) for t in picked]
-        return _moded([settled_entry(t, scene.private(t, g.cast, r), options.policy in HAPPENED_POLICIES)
+        return _moded([_scoped(settled_entry(t, _private(t, g.cast, r, True), options.policy in HAPPENED_POLICIES), t, True)
                        for t in picked], picked, g, r, options)
     return _moded([settled_entry(t, scene.private(t, g.cast, r), options.policy in HAPPENED_POLICIES) for t in picked],
                   view["threads"], g, r, options)
@@ -2319,7 +2392,8 @@ def told_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_a
             continue
         picked.append(t)
     happened = options.policy in HAPPENED_POLICIES
-    return _moded([told_entry(t, scene.private(t, g.cast, r), happened) for t in picked], picked, g, r, options)
+    return _moded([_scoped(told_entry(t, _private(t, g.cast, r, v21), happened), t, v21) for t in picked], picked, g, r,
+                  options)
 
 
 def regression_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_ai: str, in_context: set[str],
@@ -2522,7 +2596,9 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
         if row is None:
             out.append(line)
             continue
-        if options.narrator and not scene.narrator_knows(row, options.narrator, r):
+        if options.narrator and not (narrator_knows_v21(row, options.narrator, r)
+                                     if options.policy in V21_POLICIES and public_except(row)
+                                     else scene.narrator_knows(row, options.narrator, r)):
             g.withheld += 1
             g.withheld_lines.append(line)
             if options.policy in LABEL_POLICIES:
@@ -2533,7 +2609,8 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
             out.append(line)  # packet-v21: an unspoken feeling is not a plotted secret; its <Private> line stays
             continue
         if options.strict and line.private and r is not None:
-            holders, absent = scene.missing(row, g.cast, r)
+            holders, absent = (missing_v21(row, g.cast, r) if options.policy in V21_POLICIES and public_except(row)
+                               else scene.missing(row, g.cast, r))
             g.withheld += 1
             g.withheld_lines.append(line)
             if options.policy in LABEL_POLICIES:
