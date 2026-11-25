@@ -324,11 +324,11 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   let outputSwitch: { url: string; on: boolean | null } | null = null;
   const setRefreshTimer = options.setRefreshTimer ?? defaultSetTimer;
   let refreshing = false;
-  // Config answers in order (review nit 9): each read or save is numbered when it starts. A read that started before
-  // a save answered may carry the value from before it, and an answer older than one already noted is not news.
   // Unloaded (or re-imported): no timer is set again, and the waiting ones are cleared (`dispose`).
   let disposed = false;
   let refreshHandle: unknown = null;
+  // Config answers in order (review nit 9): each read or save is numbered when it starts. A read that started before
+  // a save answered may carry the value from before it, and an answer older than one already noted is not news.
   let configStarted = 0;
   let configFence = 0;
   let configNoted = 0;
