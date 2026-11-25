@@ -95,9 +95,17 @@ export function userTurnIndex(prompt: PromptMessage[], hostMessages: HostMessage
   };
   let found = search(floor);
   if (found < 0 && floor >= 0) found = search(-1);
+  if (found < 0) return -1;
   // An auxiliary call (a script's own model call) can hold a short word with none of the chat around it: a chat with
-  // earlier messages long enough to match has at least one of them in the main generation's prompt.
-  if (found < 0 || (matches.size === 0 && hasAnchorableHistory(hostMessages, latest))) return -1;
+  // earlier messages long enough to match has at least one of them in the main generation's prompt. Unless nothing of
+  // the chat could match (its user messages short, every reply reshaped on the way): a prompt with dialogue in it whose
+  // newest user message is exactly the turn is the main generation's.
+  if (matches.size === 0 && hasAnchorableHistory(hostMessages, latest)) {
+    let newestUser = -1;
+    for (let i = prompt.length - 1; i >= 0 && newestUser < 0; i -= 1) if (prompt[i]?.role === 'user') newestUser = i;
+    const dialogue = prompt.some((m, i) => i < newestUser && m?.role === 'assistant');
+    return dialogue && texts[newestUser] === anchor ? newestUser : -1;
+  }
   return found;
 }
 
@@ -105,13 +113,31 @@ export function userTurnIndex(prompt: PromptMessage[], hostMessages: HostMessage
 const SHORT_TURN = 6;
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 
-/** Whether `text` holds `word` not as part of a longer word (a letter or digit right before or after it). */
-function holdsWord(text: string, word: string): boolean {
-  const edgeStart = WORD_CHAR.test(word.charAt(0));
-  const edgeEnd = WORD_CHAR.test(word.charAt(word.length - 1));
+/** The character (code point, not UTF-16 unit) that ends right before `at`, or ''. */
+function charBefore(text: string, at: number): string {
+  if (at <= 0) return '';
+  const low = text.charCodeAt(at - 1);
+  if (low >= 0xdc00 && low <= 0xdfff && at >= 2) {
+    const high = text.charCodeAt(at - 2);
+    if (high >= 0xd800 && high <= 0xdbff) return text.slice(at - 2, at);
+  }
+  return text.charAt(at - 1);
+}
+
+/** The character (code point) that starts at `at`, or ''. */
+function charAt(text: string, at: number): string {
+  const point = text.codePointAt(at);
+  return point === undefined ? '' : String.fromCodePoint(point);
+}
+
+/** Whether `text` holds `word` not as part of a longer word (a letter or digit right before or after it, by code
+ *  point: a letter outside the Basic Multilingual Plane counts). */
+export function holdsWord(text: string, word: string): boolean {
+  const edgeStart = WORD_CHAR.test(charAt(word, 0));
+  const edgeEnd = WORD_CHAR.test(charBefore(word, word.length));
   for (let at = text.indexOf(word); at >= 0; at = text.indexOf(word, at + 1)) {
-    const before = text.charAt(at - 1);
-    const after = text.charAt(at + word.length);
+    const before = charBefore(text, at);
+    const after = charAt(text, at + word.length);
     if ((!edgeStart || !before || !WORD_CHAR.test(before)) && (!edgeEnd || !after || !WORD_CHAR.test(after))) return true;
   }
   return false;
@@ -135,8 +161,9 @@ const PACKET_END = '</NarrativeMemory>';
 
 /**
  * Whether the prompt already holds our packet (a retry, H2). A system message with the tag is one. With the chat's
- * messages, so is a user message (a preset's `[NMOS.memory]` in a user block) holding a whole packet, the tag to its
- * end, that is not text of the chat: a reply or user message quoting the tag, or pasting a packet, must not stop memory.
+ * messages, so is any other message (a preset's `[NMOS.memory]` in a user or assistant block) holding a whole packet,
+ * the tag to its end, that is not text of the chat: a reply or user message quoting the tag, or pasting a packet, must
+ * not stop memory.
  */
 export function hasPacket(prompt: PromptMessage[], hostMessages?: HostMessage[]): boolean {
   if (!Array.isArray(prompt)) return false;
@@ -153,7 +180,7 @@ export function hasPacket(prompt: PromptMessage[], hostMessages?: HostMessage[])
     return chat.some((h) => h.raw.includes(block) || (clean.length >= 2 * MIN_ANCHOR && h.clean.includes(clean)));
   };
   return prompt.some((m) => {
-    if (m?.role !== 'user') return false;
+    if (!m || m.role === 'system') return false;
     const text = contentText(m.content);
     for (let at = text.indexOf(PACKET_TAG); at >= 0; at = text.indexOf(PACKET_TAG, at + 1)) {
       const end = text.indexOf(PACKET_END, at);
@@ -207,13 +234,14 @@ export function matchPromptToHost(
     if (text.length < minAnchor) continue;
     const anchor = anchorOf(text);
     // The newest prompt message of a fitting role wins; one of the other role (a user message sent as the model's,
-    // or a reply inside a user block: a preset that wraps the chat) only when no fitting one holds the text.
+    // or a reply inside a user block: a preset that wraps the chat) only when no fitting one holds the text. A system
+    // block never wins over a newer holder of the other role: an older one quoting the text (a recap) is not the chat.
     let found = -1;
     let other = -1;
     for (let k = pointer; k >= 0; k -= 1) {
       if (!(texts[k] as string).includes(anchor)) continue;
       if (rolesFit(m.role, prompt[k]?.role)) {
-        found = k;
+        if (!(other >= 0 && prompt[k]?.role === 'system')) found = k;
         break;
       }
       if (other < 0) other = k;

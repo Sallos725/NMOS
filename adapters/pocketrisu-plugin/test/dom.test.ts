@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // DOM code (audit follow-up, 2026-09-27 review): the inspector sanitizer's tree walk and the settings panel.
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StatusInfo } from '../src/core';
 import { createChatSwitch } from '../src/chatoff';
 import { markDetail, placeMarks, safeFragment } from '../src/inspector';
@@ -352,7 +352,11 @@ describe('panel', () => {
   });
 
   describe('trimming on the status card (PHASE-60 S1 "Shown")', () => {
-    const last = { at: Date.now(), ms: 900, packetChars: 10, packet: 'x', outcome: 'injected' as const, deadlineMs: 3000 };
+    // The clock stands still: the "ago" line of two renders compared must not cross a second (it did, now and then).
+    const NOW = Date.now();
+    beforeEach(() => { vi.spyOn(Date, 'now').mockReturnValue(NOW); });
+    afterEach(() => { vi.mocked(Date.now).mockRestore(); });
+    const last = { at: NOW, ms: 900, packetChars: 10, packet: 'x', outcome: 'injected' as const, deadlineMs: 3000 };
     const lastCard = (title: string) => [...document.querySelectorAll<HTMLElement>('#nmos-panel .card')]
       .find((c) => c.querySelector('h2')?.textContent === title)!;
     const lineOf = (card: HTMLElement, text: string) => [...card.querySelectorAll<HTMLElement>('div')]
@@ -1439,7 +1443,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     button('Make').click();
     await settle();
     expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
-      { sections: ['diverged', 'address'], chars: 3000, secrets: false, language: 'chat' }]);
+      { sections: ['diverged', 'address'], chars: 3000, secrets: false }]);
     const shown = [...panel().querySelectorAll<HTMLTextAreaElement>('textarea[readonly]')];
     expect(shown.map((b) => b.value)).toEqual(['[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]']);
     expect(panel().textContent).toContain('chronicle: no scene summary yet');
@@ -1458,6 +1462,10 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect([...language.options].map((o) => [o.value, o.textContent])).toEqual([['chat', "The chat's language"],
       ['en', 'English']]);
     expect(language.value).toBe('chat');
+    button('Make').click();
+    await settle();
+    // The default is not sent (review nit 12): the body an older sidecar was sent before the setting existed.
+    expect(posts(calls).at(-1)![2]).not.toHaveProperty('language');
     language.value = 'en';
     button('Make').click();
     await settle();
@@ -1481,7 +1489,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     await settle();
     expect(calls.filter(([m]) => m === 'PUT')).toEqual([]); // unchanged: not saved again
     expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
-      { sections: ['custom'], chars: 3000, secrets: false, language: 'chat', custom_prompt: 'List outfits.',
+      { sections: ['custom'], chars: 3000, secrets: false, custom_prompt: 'List outfits.',
         custom_setting: false }]);
     prompt.value = '  Who owes whom?  ';
     const setting = [...panel().querySelectorAll<HTMLInputElement>('input[type=checkbox]:not([value])')]

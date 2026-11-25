@@ -20,6 +20,8 @@ export interface HostChat {
   /** Id of the persona bound to this chat, if any (the host then uses it instead of the selected one). */
   bindedPersona?: string;
   message: HostMessage[];
+  /** True while the host streams a reply into this chat (v1.17.0 source: set before streaming, cleared after). */
+  isStreaming?: boolean;
   /** The author's note, the chat's own lorebook, and which greeting it started from (-1: the first; H19). */
   note?: string;
   localLore?: import('./canon').HostLoreEntry[];

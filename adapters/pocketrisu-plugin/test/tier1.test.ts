@@ -338,10 +338,26 @@ describe('request path (core)', () => {
     const image = asPrompt(held.message);
     image[3] = { ...image[3]!, multimodals: [{ type: 'image' }] };
     const out = await adapter.beforeRequest(image, 'model');
-    expect(bodies.map((b) => !!b.trim)).toEqual([true, true, false]);
+    // No boundary is asked for again in that request (review nit 10: it was [true, true, false]).
+    expect(bodies.map((b) => !!b.trim)).toEqual([true, false]);
     expect(JSON.stringify(out)).not.toContain('built without');
     expect(out).toHaveLength(image.length + 1);
     expect((await adapter.status()).last?.trim?.reason).toBe('format');
+    // The packet without a cut is kept under the key the next request has: served from the cache.
+    await adapter.beforeRequest(structuredClone(image), 'model');
+    expect(bodies).toHaveLength(2);
+  });
+
+  it('a non-fresh answer is not remembered as an empty packet (review nit 11)', async () => {
+    const held: HostChat = { id: 'chat-st', message: chatOf() };
+    const { host, bodies } = makeHost(held, (_body, n) => (n === 1
+      ? { status: 200, json: { freshness: 'stale', packet: { text: '' } } } : fresh(PACKET)));
+    const adapter = createAdapter(host);
+    const prompt = asPrompt(held.message);
+    expect(await adapter.beforeRequest(prompt, 'model')).toEqual(prompt);
+    const out = await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(bodies).toHaveLength(2);
+    expect(JSON.stringify(out)).toContain('lantern');
   });
 
   it('asks for no boundary when the prompt holds no dialogue a cut could drop', async () => {
