@@ -1,7 +1,7 @@
 // Tier 4, plugin side: the background sync after a reply (G6) and recall's query on a Continue (G7).
 
 import { describe, expect, it, vi } from 'vitest';
-import { CONFIG_REFRESH_MS, createAdapter, OUTPUT_SYNC_MS, outputSwitchOf, type AdapterOptions, type HostPort, type HttpResult,
+import { CONFIG_REFRESH_MS, createAdapter, memoryMark, OUTPUT_SYNC_MS, outputSwitchOf, type AdapterOptions, type HostPort, type HttpResult,
   type Settings } from '../src/core';
 import { BURST_MESSAGES, CONTINUE_QUERY_TAIL, hasPacket, queryTexts } from '../src/prompt';
 import type { HostChat, HostMessage, PromptMessage } from '../src/types';
@@ -81,7 +81,7 @@ function harness(overrides: Partial<Settings> = {}, handler?: (path: string, bod
     calls.length = 0;
     return adapter;
   };
-  return { host, calls, timers, refreshTimers, pending, fire, debug, options, start,
+  return { host, calls, timers, refreshTimers, pending, fire, debug, options, start, answer,
     setSwitch: (a: SwitchAnswer) => { switchAnswer = a; },
     setChat: (c: HostChat | null) => { current = c; }, paths: () => calls.map((c) => c.path) };
 }
@@ -349,6 +349,97 @@ describe("the background sync only while the sidecar extracts a reply right afte
     for (const c of [{ extraction: { on_output: false } }, { extraction: { on_output: 'true' } }, { extraction: {} }, {}, null, 1]) {
       expect(outputSwitchOf(c)).toBe(false);
     }
+  });
+});
+
+describe('a cached packet is not reused once the memory moved (4.3.2)', () => {
+  const cov = (compiled: number, extra: Record<string, unknown> = {}) => ({
+    extraction: { generation: { key: 'x' }, eligible: 3, compiled, pending: 3 - compiled, failed: 0 },
+    embeddings: { generation: { key: 'e' }, eligible: 4, embedded: 4, pending: 0, failed: 0 },
+    produced: { facts: compiled * 2, summaries: 0 }, ...extra });
+  /** The switch off (the default): the gap is the same whatever it says. */
+  const setup = () => {
+    let coverage: unknown = cov(1);
+    const h = harness({}, (path, body) => (path.includes('/coverage') ? { status: 200, json: coverage } : h.answer(path, body)),
+      false);
+    h.setChat(structuredClone(baseChat));
+    return { h, setCoverage: (c: unknown) => { coverage = c; } };
+  };
+  const retrieves = (h: ReturnType<typeof harness>) => h.paths().filter((p) => p === '/v1/retrieve').length;
+
+  it('a coverage answer that says more is held drops the chat\'s packets; the same answer again does not', async () => {
+    const { h, setCoverage } = setup();
+    const adapter = await h.start();
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    await adapter.beforeRequest(structuredClone(prompt), 'model');  // a reroll of the unchanged chat: from the cache
+    expect(retrieves(h)).toBe(1);
+    await adapter.api('GET', '/v1/conversations/conv-1/coverage', undefined, 5000);  // first seen: nothing to compare
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(retrieves(h)).toBe(2);
+    await adapter.api('GET', '/v1/conversations/conv-1/coverage', undefined, 5000);  // the same: the packet stays
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(retrieves(h)).toBe(2);
+    setCoverage(cov(2));  // an extraction finished
+    await adapter.api('GET', '/v1/conversations/conv-1/coverage?usage=1', undefined, 5000);  // the panel's read counts too
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(retrieves(h)).toBe(3);
+    setCoverage(cov(2, { canon: { generation: { key: 'c' }, wanted: 2, read: 1, pending: 1 } }));  // a canon text read
+    await adapter.api('GET', '/v1/conversations/conv-1/coverage', undefined, 5000);
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(retrieves(h)).toBe(4);
+  });
+
+  it("another conversation's coverage, or an answer that says nothing of memory, leaves it", async () => {
+    const { h, setCoverage } = setup();
+    const adapter = await h.start();
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    await adapter.api('GET', '/v1/conversations/conv-2/coverage', undefined, 5000);
+    setCoverage({ extraction: { generation: null }, embeddings: { generation: null } });
+    await adapter.api('GET', '/v1/conversations/conv-1/coverage', undefined, 5000);
+    await adapter.api('GET', '/v1/conversations/conv-1/entities', undefined, 5000).catch(() => {});  // not coverage
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(retrieves(h)).toBe(1);
+  });
+
+  it('a request running when the memory moved does not remember its packet', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let coverage: unknown = cov(1);
+    let held = false;
+    const h = harness({ deadlineMs: 5000 }, async (path, body) => {
+      if (path.includes('/coverage')) return { status: 200, json: coverage };
+      if (path === '/v1/retrieve' && held) { held = false; await gate; }
+      return h.answer(path, body);
+    }, false);
+    h.setChat(structuredClone(baseChat));
+    const adapter = await h.start();
+    await adapter.api('GET', '/v1/conversations/conv-1/coverage', undefined, 5000);  // seen before: a baseline
+    await adapter.beforeRequest(structuredClone(prompt), 'model');  // knows conv-1 for chat-1 now
+    await adapter.api('POST', '/v1/noop').catch(() => {});  // a panel change: nothing cached
+    held = true;
+    const running = adapter.beforeRequest(structuredClone(prompt), 'model');
+    await settle();
+    coverage = cov(2);
+    await adapter.api('GET', '/v1/conversations/conv-1/coverage', undefined, 5000);  // while its recall runs
+    release();
+    expect(hasPacket(await running)).toBe(true);  // it still goes in
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(retrieves(h)).toBe(3);  // but the next request asks again
+  });
+
+  it('without a coverage read (HUD off, panel closed) a reroll still reuses the packet: the gap left open', async () => {
+    const { h } = setup();
+    const adapter = await h.start();
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(retrieves(h)).toBe(1);
+  });
+
+  it('reads what a coverage answer says memory holds', () => {
+    expect(memoryMark(cov(1))).toBe(JSON.stringify([1, 4, null, 2, 0]));
+    expect(memoryMark({})).toBeNull();
+    expect(memoryMark(null)).toBeNull();
+    expect(memoryMark({ extraction: { compiled: '3' } })).toBeNull();
   });
 });
 

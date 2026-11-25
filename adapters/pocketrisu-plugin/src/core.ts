@@ -269,6 +269,18 @@ export function outputSwitchOf(config: unknown): boolean {
   return on === true;
 }
 
+/** `GET /v1/conversations/{id}/coverage` (with or without a query): the conversation id. */
+const COVERAGE_PATH = /^\/v1\/conversations\/([^/?]+)\/coverage(?:\?.*)?$/;
+
+/** What a coverage answer says the conversation's memory holds: the turns its extractor compiled, the messages
+ *  embedded, the canon texts read, the facts and summaries made. `null` when it says none of these. */
+export function memoryMark(answer: unknown): string | null {
+  const a = (answer ?? {}) as Record<string, Record<string, unknown> | undefined>;
+  const parts = [a.extraction?.compiled, a.embeddings?.embedded, a.canon?.read, a.produced?.facts, a.produced?.summaries]
+    .map((v) => (typeof v === 'number' ? v : null));
+  return parts.every((v) => v === null) ? null : JSON.stringify(parts);
+}
+
 /** The sidecar address as the switch is remembered for it. */
 function sidecarKey(settings: Settings): string {
   return settings.sidecarUrl.replace(/\/+$/, '');
@@ -312,6 +324,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   let outputSwitch: { url: string; on: boolean | null } | null = null;
   const setRefreshTimer = options.setRefreshTimer ?? defaultSetTimer;
   let refreshing = false;
+  // A chat's cached packets are dropped when its memory may have moved (4.3.2): `dropSeq` counts the drops and
+  // `droppedAt` holds a chat's last one, so a request that was already running then does not remember its packet.
+  let dropSeq = 0;
+  const droppedAt = new Map<string, number>();
+  // What a conversation's coverage (`GET /v1/conversations/{id}/coverage`, the HUD's polls and the panel's reads) last
+  // said its memory holds: a change means an extraction, embedding or canon read finished since.
+  const coverageMarks = new Map<string, string>();
 
   /** Drops every cached packet, and every packet still being fetched. */
   function invalidate(): void {
@@ -742,6 +761,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // past the commit recall is asked for. It is given a moment to end first, within the deadline.
       if (outputRunning?.chatId === chat.id) await settleWithin(outputRunning.done,
         Math.min(OUTPUT_SYNC_WAIT_MS, (deadline - host.now()) / 2));
+      // A drop of this chat's packets from here on (its memory moved) means this packet may be from before it.
+      const dropsBefore = dropSeq;
       const t1 = host.now();
       const synced = await sync(settings, request, bodies, deadline);
       const syncMs = host.now() - t1;
@@ -795,8 +816,10 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         done = finishPrompt(got.packet, got.decision);
       }
       const { packet, memory, vectors, decision, coverage } = got;
-      remember(key, packet, packet ? SUCCESS_TTL_MS : EMPTY_TTL_MS, false, memory, vectors, canonKey, decision, coverage,
-        chat.id);
+      if ((droppedAt.get(chat.id) ?? 0) <= dropsBefore) {
+        remember(key, packet, packet ? SUCCESS_TTL_MS : EMPTY_TTL_MS, false, memory, vectors, canonKey, decision,
+          coverage, chat.id);
+      }
       host.debug('[NMOS] request done', { ms: Math.round(host.now() - started), manifestMs: Math.round(manifestMs),
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
       const outcome = packet ? 'injected' : 'nothing-relevant';
@@ -906,6 +929,21 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
   function dropChatPackets(chatId: string): void {
     for (const [k, entry] of cache) if (entry.chatId === chatId) cache.delete(k);
+    droppedAt.delete(chatId);
+    droppedAt.set(chatId, ++dropSeq);
+    while (droppedAt.size > CACHE_LIMIT) droppedAt.delete(droppedAt.keys().next().value as string);
+  }
+
+  /** A coverage answer for conversation `conversationId`: once what its memory holds is not what it was (or first
+   *  seen, with nothing to compare), the packets cached for its chats are dropped. A reroll of an unchanged chat then
+   *  asks again instead of reusing a packet built before an extraction finished. */
+  function noteCoverage(conversationId: string, answer: unknown): void {
+    const mark = memoryMark(answer);
+    if (mark === null || coverageMarks.get(conversationId) === mark) return;
+    coverageMarks.delete(conversationId);
+    coverageMarks.set(conversationId, mark);
+    while (coverageMarks.size > CACHE_LIMIT) coverageMarks.delete(coverageMarks.keys().next().value as string);
+    for (const [chatId, id] of conversations) if (id === conversationId) dropChatPackets(chatId);
   }
 
   /** Whether the sidecar now set extracts a reply right after it, as last read from it. */
@@ -1028,10 +1066,12 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     // The panel's reads and saves of the sidecar's settings carry the switch for the background sync (G6): a save
     // is in force at once. One that failed may or may not have been applied: not known until the next read.
     const config = path === '/v1/config' && (method === 'GET' || method === 'PUT');
+    const covered = method === 'GET' ? COVERAGE_PATH.exec(path)?.[1] : undefined;
     if (change) invalidate();
     try {
       const out = await call<T>(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : undefined);
       if (config) noteConfig(settings, out);
+      if (covered) noteCoverage(decodeURIComponent(covered), out);
       return out;
     } catch (error) {
       if (config) noteConfig(settings, null);

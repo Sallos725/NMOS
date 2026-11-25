@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:2de714cb0720".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:ae274536fc3f".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2211,6 +2211,12 @@ ${GUARD_LINE}` : "";
     const on = config?.extraction?.on_output;
     return on === true;
   }
+  var COVERAGE_PATH = /^\/v1\/conversations\/([^/?]+)\/coverage(?:\?.*)?$/;
+  function memoryMark(answer) {
+    const a = answer ?? {};
+    const parts = [a.extraction?.compiled, a.embeddings?.embedded, a.canon?.read, a.produced?.facts, a.produced?.summaries].map((v) => typeof v === "number" ? v : null);
+    return parts.every((v) => v === null) ? null : JSON.stringify(parts);
+  }
   function sidecarKey(settings) {
     return settings.sidecarUrl.replace(/\/+$/, "");
   }
@@ -2243,6 +2249,9 @@ ${GUARD_LINE}` : "";
     let outputSwitch = null;
     const setRefreshTimer = options.setRefreshTimer ?? defaultSetTimer;
     let refreshing = false;
+    let dropSeq = 0;
+    const droppedAt = /* @__PURE__ */ new Map();
+    const coverageMarks = /* @__PURE__ */ new Map();
     function invalidate() {
       epoch++;
       cache.clear();
@@ -2644,6 +2653,7 @@ ${GUARD_LINE}` : "";
           outputRunning.done,
           Math.min(OUTPUT_SYNC_WAIT_MS, (deadline - host.now()) / 2)
         );
+        const dropsBefore = dropSeq;
         const t1 = host.now();
         const synced = await sync(settings, request, bodies, deadline);
         const syncMs = host.now() - t1;
@@ -2695,18 +2705,20 @@ ${GUARD_LINE}` : "";
           done = finishPrompt(got.packet, got.decision);
         }
         const { packet, memory, vectors, decision, coverage } = got;
-        remember(
-          key,
-          packet,
-          packet ? SUCCESS_TTL_MS : EMPTY_TTL_MS,
-          false,
-          memory,
-          vectors,
-          canonKey,
-          decision,
-          coverage,
-          chat.id
-        );
+        if ((droppedAt.get(chat.id) ?? 0) <= dropsBefore) {
+          remember(
+            key,
+            packet,
+            packet ? SUCCESS_TTL_MS : EMPTY_TTL_MS,
+            false,
+            memory,
+            vectors,
+            canonKey,
+            decision,
+            coverage,
+            chat.id
+          );
+        }
         host.debug("[NMOS] request done", {
           ms: Math.round(host.now() - started),
           manifestMs: Math.round(manifestMs),
@@ -2840,6 +2852,17 @@ ${GUARD_LINE}` : "";
     }
     function dropChatPackets(chatId) {
       for (const [k, entry] of cache) if (entry.chatId === chatId) cache.delete(k);
+      droppedAt.delete(chatId);
+      droppedAt.set(chatId, ++dropSeq);
+      while (droppedAt.size > CACHE_LIMIT) droppedAt.delete(droppedAt.keys().next().value);
+    }
+    function noteCoverage(conversationId, answer) {
+      const mark = memoryMark(answer);
+      if (mark === null || coverageMarks.get(conversationId) === mark) return;
+      coverageMarks.delete(conversationId);
+      coverageMarks.set(conversationId, mark);
+      while (coverageMarks.size > CACHE_LIMIT) coverageMarks.delete(coverageMarks.keys().next().value);
+      for (const [chatId, id] of conversations) if (id === conversationId) dropChatPackets(chatId);
     }
     function outputOn(settings) {
       return outputSwitch?.url === sidecarKey(settings) && outputSwitch.on === true;
@@ -2939,10 +2962,12 @@ ${GUARD_LINE}` : "";
       const settings = await host.settings();
       const change = method !== "GET";
       const config = path === "/v1/config" && (method === "GET" || method === "PUT");
+      const covered = method === "GET" ? COVERAGE_PATH.exec(path)?.[1] : void 0;
       if (change) invalidate();
       try {
         const out = await call(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : void 0);
         if (config) noteConfig(settings, out);
+        if (covered) noteCoverage(decodeURIComponent(covered), out);
         return out;
       } catch (error) {
         if (config) noteConfig(settings, null);
