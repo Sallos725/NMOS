@@ -18,6 +18,7 @@ from psycopg.rows import dict_row
 from nmos_sidecar import entities, extraction as X, generations, predicates as P, secrets as S
 from nmos_sidecar.config import Settings
 from nmos_sidecar.facts import served_assertions
+from base_rules import base_rules  # noqa: F401 -- autouse: the base's keys, without the revision marker (PHASE-66 part 5)
 from conftest import active_generation, make_client
 from test_extract_v18 import FEELING, USED, WARM, chat_of, feels
 from test_extraction import drain
