@@ -843,8 +843,10 @@ def fail(conn: psycopg.Connection, job: dict[str, Any], error: str) -> None:
 def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, turns: int,
                  extractor_key: str, compiler: str | None = None) -> dict[str, Any] | None:
     """Target turn (anchored at `revision_id`) + the previous `turns` turns of the head, or None if the
-    head no longer shows this turn with this context. For a compiler of ONTOLOGY, also what the chat's carry link in
-    force brings (`carried_rows`), which its hint lists read."""
+    head no longer shows this turn with this context. Also what the chat's carry link in force brings
+    (`carried_rows`): every compiler's OPEN SECRETS list a carried secret, which the read side folds as a secret for
+    every compiler (F7: under extract-v15..v20 it could never be found out); the other hint lists read the carried rows
+    for a compiler of ONTOLOGY only. `compiler` is kept for the callers that name it."""
     with conn.transaction():
         target = conn.execute(
             """
@@ -865,8 +867,7 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, tu
         target["splits"] = splits_of(repairs)  # and the owner's splits (ADR 0044)
         target["repairs"], target["repair_turns"] = _repairs_before(conn, target, repairs)  # and the rest (Tier 1 C5)
         target["canon"] = canon.names(conn, target["conversation_id"])[0]  # and canon's names (PHASE-14 Q6)
-        if compiler in ONTOLOGY:  # and what another chat carries into this one (ADR 0085, PHASE-66)
-            target["carried"] = carried_rows(conn, target)
+        target["carried"] = carried_rows(conn, target)  # and what another chat carries into this one (ADR 0085)
         rows = conn.execute(
             """
             SELECT am.position, am.turn, sr.id, sr.metadata FROM active_membership am
@@ -2205,9 +2206,11 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         hints = (entity_hints(conn, ctx, gen.key, limit, earlier, carried=onto.get("carried"))
                  if limit > 0 else None)
         promises = promise_hints(ctx, earlier, **onto)
-        secrets = secret_hints(ctx, earlier, **onto, **({"include_solo": True} if onto else {}))
-        if secrets:  # who a reveal names, as the earlier turns resolve them (Tier 1 C4)
-            resolution = _with_carried(ctx, earlier, onto.get("carried"))[1]
+        carried = ctx["target"].get("carried") or None  # a carried secret is listed under every compiler (F7)
+        secrets = secret_hints(ctx, earlier, **{**onto, "carried": carried},
+                               **({"include_solo": True} if onto else {}))
+        if secrets:  # who a reveal names, as the earlier turns resolve them (Tier 1 C4), the carried rows' too
+            resolution = _with_carried(ctx, earlier, carried)[1]
         threads = thread_hints(ctx, earlier, carried=onto.get("carried"))
         roles = role_hints(ctx, earlier, **onto) if compiler in ROLES else []
         if compiler in PARTS_APART:

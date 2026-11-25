@@ -28,7 +28,7 @@ from psycopg.types.json import Jsonb
 from . import generations, normtext
 from .config import Settings
 from .entities import norm
-from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY, _resolution,
+from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY, _with_carried,
                          assertion_values, build_prompt, coverage_of, earlier_assertions, load_context, normalize,
                          revealed, secret_hints, shown_target, with_cap)
 from .generations import Generation
@@ -254,9 +254,10 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
     # may be an earlier generation's that still serves its turn; preferring its key would list the secrets of
     # earlier turns that generation extracted, not the ones served.
     earlier = earlier_assertions(conn, ctx, generations.active(conn, "extract") or base["extractor_key"])
-    secrets = secret_hints(ctx, earlier)
+    carried = ctx["target"].get("carried") or None  # a carried secret is checked as the worker lists it (F7)
+    secrets = secret_hints(ctx, earlier, carried=carried)
     shown = shown_target(ctx)  # the TARGET as the model is shown it: the evidence check reads this (Tier 1 D2)
-    resolution = _resolution(ctx, earlier) if secrets else None  # who a reveal names (Tier 1 C4)
+    resolution = _with_carried(ctx, earlier, carried)[1] if secrets else None  # who a reveal names (Tier 1 C4)
     if not secrets:
         parsed, raw, usage = {"secrets": []}, "", NO_CALL  # nothing open before the turn: checked without a call
     else:
