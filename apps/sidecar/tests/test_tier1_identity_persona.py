@@ -474,6 +474,9 @@ def test_review_6_the_scene_never_contradicts_the_resolution():
     assert r.status("character", "기현") == "ambiguous" and not scene.is_persona(r, "기현")
     r = resolve(CONV, [fact("윤기현")], persona=["윤기현"])
     assert scene.is_persona(r, "기현") and scene.is_persona(r, "아오키 윤기현")  # a mark-only name
+    # self-review: a full name the owner split from the persona stays apart when only a mark names it
+    r = resolve(CONV, [fact("윤기현")], persona=["윤기현"], splits=[split("아오키 윤기현", "윤기현")])
+    assert not scene.is_persona(r, "아오키 윤기현")
 
 
 @pytest.mark.parametrize("text", ["'@하람'이 누구야?", "‘@하람’은", "@하람's", "@Haram's sword", "@Haram’s sword"])

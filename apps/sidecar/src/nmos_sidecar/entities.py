@@ -429,7 +429,7 @@ class Resolution:
             pairs = [(x, y) for j, x in enumerate(mentioned) for y in mentioned[j + 1:]
                      if self._root[x] != self._root[y] and _canon_related(x[1], y[1])]
             # one person's names only: every entity the entry names reaches the others by a name relation
-            reach = {roots and next(iter(roots))}
+            reach = {min(roots)}
             grow = True
             while grow:
                 grow = False
@@ -559,6 +559,8 @@ class Resolution:
             return False
         if n in self._root:
             return self._persona_root is not None and self._root[n] == self._persona_root
+        if n[1] in self._detached:  # the owner split it from the persona
+            return False
         words = n[1].split()
         return n[1] in self.persona_names or (
             len(words) >= 2 and words[-1] in self.persona_names - USER_NAMES)
