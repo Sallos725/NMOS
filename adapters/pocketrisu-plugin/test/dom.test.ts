@@ -481,12 +481,12 @@ describe('panel', () => {
       }
     });
 
-    it('loads the stored args, and is off with 20 turns when they are unset', async () => {
+    it('loads the stored args, and is off with 16 turns when they are unset', async () => {
       const stored = await open('en', { trim_old_turns: '1', keep_recent_turns: '40' });
       expect([stored.box.checked, stored.keep.value, stored.save.disabled]).toEqual([true, '40', true]);
       stored.panel.remove();
       const unset = await open('en');
-      expect([unset.box.checked, unset.keep.value, unset.save.disabled]).toEqual([false, '20', true]);
+      expect([unset.box.checked, unset.keep.value, unset.save.disabled]).toEqual([false, '16', true]);
     });
 
     it('saves the two plugin args alone, with no sidecar request', async () => {

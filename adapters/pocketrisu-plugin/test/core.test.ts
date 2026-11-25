@@ -1194,19 +1194,19 @@ describe('[NMOS.memory] (PHASE-60 S2.3)', () => {
       expect(out2).toBe(out1);
       expect(settingsReads).toBe(1);
 
-      // Past 120s: memo entry expired -> reaches settings and /v1/retrieve again (no marker left, so budget=600 misses
-      // the 560 cache key), and holdsText prevents placing a second packet on the fresh path.
+      // Past 120s: memo entry expired -> reaches settings again. Tier 1: the packet the marker put in the user block is
+      // now seen by the retry guard (`hasPacket` with the chat), so recall is not reached again (it was before, and
+      // holdsText kept the packet single); no second packet either way.
       now += 2;
       const out3 = await adapter.beforeRequest(out1, 'model');
       expect(settingsReads).toBe(2);
-      expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(2);
+      expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(1);
       expect(out3).toEqual(out1);
       expect(hasPacket(out3)).toBe(false); // no extra system packet injected
 
-      // A further call with out1 hits the 600-budget packet cache (not memoised because holdsText returned early);
-      // holdsText prevents placing a second packet on the cached path too.
+      // A further call with out1 is the same retry: no call, no second packet.
       const out4 = await adapter.beforeRequest(out1, 'model');
-      expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(2);
+      expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(1);
       expect(out4).toEqual(out1);
       expect(hasPacket(out4)).toBe(false);
     }
@@ -1236,7 +1236,9 @@ describe('[NMOS.memory] (PHASE-60 S2.3)', () => {
     const out2 = await adapter.beforeRequest(out1, 'model');
     now += 200_000; // past the 120 s retry memo
     const out3 = await adapter.beforeRequest(out2, 'model');
-    expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(2); // the third call reached recall again
+    // Tier 1: the packet a placeholder put in the user block is seen by the retry guard (`hasPacket` with the chat),
+    // so the third call no longer reaches recall (it did before, and only the holdsText fallback kept it single).
+    expect(calls.filter((p) => p === '/v1/retrieve')).toHaveLength(1);
     expect(count(out2)).toBe(1);
     expect(count(out3)).toBe(1);
     expect(out3).toEqual(out1);
@@ -1283,7 +1285,10 @@ describe('trimming old dialogue (PHASE-60 S1)', () => {
   /** The sidecar's rule with every turn covered: the first message of turn `cut` is the first one kept. */
   const cutOf = (turns: number, k: number) => Math.floor((turns - k) / k) * k;
   const quantized = (turns: number, extra: Record<string, unknown> = {}) => (body: any): HttpResult => {
-    const k = body.trim.keep_recent_turns;
+    const k = body.trim?.keep_recent_turns;
+    // A request without `trim` (Tier 1: the packet fetched again for a prompt that refused the boundary).
+    if (!k) return { status: 200, json: { freshness: 'fresh', packet: { text: PACKET },
+      coverage: { recorded_through_turn: turns - 1, covered_through_turn: turns - 1 }, ...extra } };
     const cut = cutOf(turns, k);
     return { status: 200, json: { freshness: 'fresh', packet: { text: PACKET },
       trim: cut > 0 ? { keep_from_id: `u${cut}`, keep_from_turn: cut, reason: null }
@@ -1344,19 +1349,30 @@ describe('trimming old dialogue (PHASE-60 S1)', () => {
     expect(held).toEqual(snapshot);
   });
 
+  // Tier 1: `trim` is asked for only when the prompt holds dialogue a cut could drop, so these two tests send the
+  // chat's earlier messages too (the default prompt holds only the latest user turn).
+  const historyPrompt: PromptMessage[] = [
+    { role: 'system', content: 'narrator' },
+    { role: 'user', content: 'The lantern is hidden in the old archive.' },
+    { role: 'assistant', content: 'Noted.' },
+    { role: 'user', content: 'Where did we hide the lantern?' },
+  ];
+  const historyRecall = (bodies: any[]) => (path: string, body: any): HttpResult => {
+    if (path !== '/v1/retrieve') return happy(path, body);
+    bodies.push(body);
+    return { status: 200, json: { freshness: 'fresh', packet: { text: PACKET } } };
+  };
+
   it('A14: on, with an answer that has no trim (an older sidecar), drops nothing and says unsupported', async () => {
     const held = structuredClone(chat);
     const snapshot = structuredClone(held);
     const bodies: any[] = [];
-    const { host } = fakeHost((path, body) => {
-      if (path === '/v1/retrieve') bodies.push(body);
-      return happy(path, body);
-    }, { trimOldTurns: true, keepRecentTurns: 7 });
+    const { host } = fakeHost(historyRecall(bodies), { trimOldTurns: true, keepRecentTurns: 7 });
     host.currentChat = async () => held;
     const events: ActivityEvent[] = [];
     const adapter = createAdapter(host, (e) => events.push(e));
-    const out = await adapter.beforeRequest(prompt, 'model');
-    expect(out).toEqual(withPacket(prompt));
+    const out = await adapter.beforeRequest(historyPrompt, 'model');
+    expect(out).toEqual(withPacket(historyPrompt));
     expect(bodies[0].trim).toEqual({ keep_recent_turns: 7, step: 7 });
     expect((await adapter.status()).last?.trim).toEqual({ dropped: 0, savedTokens: 0, reason: 'unsupported',
       keepFromTurn: null });
@@ -1364,14 +1380,11 @@ describe('trimming old dialogue (PHASE-60 S1)', () => {
     expect(held).toEqual(snapshot);
   });
 
-  it('keeps keepRecentTurns within 4..200 in the request, and a missing one is 20', async () => {
-    for (const [value, expected] of [[2, 4], [999, 200], [undefined, 20], [Number.NaN, 20]] as const) {
+  it('keeps keepRecentTurns within 4..200 in the request, and a missing one is 16', async () => {
+    for (const [value, expected] of [[2, 4], [999, 200], [undefined, 16], [Number.NaN, 16]] as const) {
       const bodies: any[] = [];
-      const { host } = fakeHost((path, body) => {
-        if (path === '/v1/retrieve') bodies.push(body);
-        return happy(path, body);
-      }, { trimOldTurns: true, keepRecentTurns: value });
-      await createAdapter(host).beforeRequest(structuredClone(prompt), 'model');
+      const { host } = fakeHost(historyRecall(bodies), { trimOldTurns: true, keepRecentTurns: value });
+      await createAdapter(host).beforeRequest(structuredClone(historyPrompt), 'model');
       expect(bodies[0].trim, String(value)).toEqual({ keep_recent_turns: expected, step: expected });
     }
   });

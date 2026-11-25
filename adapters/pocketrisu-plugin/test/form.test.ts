@@ -169,12 +169,12 @@ describe('extra request values in the save (PHASE-61 S4)', () => {
 });
 
 describe('leaving out old dialogue (PHASE-60 S1)', () => {
-  it('stores the switch as 1 or 0 and keeps the recent turns within 4..200, 20 by default', () => {
+  it('stores the switch as 1 or 0 and keeps the recent turns within 4..200, 16 by default', () => {
     const keep = (value: string) => trimArgs({ on: true, keep: value }).keep_recent_turns;
     expect([keep(''), keep('abc'), keep('0'), keep('-5'), keep('0.5'), keep('3'), keep('4'), keep('30.9'), keep(' 40 '),
-      keep('200'), keep('500')]).toEqual([20, 20, 20, 20, 20, 4, 4, 30, 40, 200, 200]);
+      keep('200'), keep('500')]).toEqual([16, 16, 16, 16, 16, 4, 4, 30, 40, 200, 200]);
     expect(trimArgs({ on: true, keep: '30' })).toEqual({ trim_old_turns: 1, keep_recent_turns: 30 });
-    expect(trimArgs({ on: false, keep: '' })).toEqual({ trim_old_turns: 0, keep_recent_turns: 20 });
+    expect(trimArgs({ on: false, keep: '' })).toEqual({ trim_old_turns: 0, keep_recent_turns: 16 });
   });
 
   it('is a section of its own that sends nothing to the sidecar', () => {

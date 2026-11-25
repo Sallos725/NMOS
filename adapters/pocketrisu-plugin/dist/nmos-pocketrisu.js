@@ -11,7 +11,7 @@
 //@arg deadline_ms int Hard request-path deadline in ms (0 = 3000)
 //@arg inject_position string before_last_user (default) or end
 //@arg trim_old_turns int 1 = leave old dialogue out in steps once memory and summaries cover it (needs summaries on)
-//@arg keep_recent_turns int Recent turns always sent when trimming; the cut moves in steps of this many (0 = 20, 4-200)
+//@arg keep_recent_turns int Recent turns always sent when trimming; the cut moves in steps of this many (0 = 16, 4-200)
 //@arg route string auto (default) / direct / server — how to reach the sidecar
 //@arg language string Panel language: ko (default) or en
 //@arg hud int 1 = progress display on the chat screen (turn it on from the NMOS panel)
@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:45708bcc7cb1".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:8b20ac1acd21".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -71,6 +71,97 @@
     }
   }
 
+  // src/placement.ts
+  var MEMORY_MARKER = "[NMOS.memory]";
+  function isTextPart(part) {
+    return typeof part === "object" && part !== null && !Array.isArray(part) && part.type === "text" && typeof part.text === "string";
+  }
+  var NONE = /* @__PURE__ */ new Set();
+  function findMarker(prompt, skip = NONE) {
+    if (!Array.isArray(prompt)) return null;
+    for (let i = 0; i < prompt.length; i += 1) {
+      if (skip.has(i)) continue;
+      const m = prompt[i];
+      if (!m || typeof m !== "object") continue;
+      const content = m.content;
+      if (typeof content === "string") {
+        const offset = content.indexOf(MEMORY_MARKER);
+        if (offset >= 0) return { message: i, part: null, offset };
+      } else if (Array.isArray(content)) {
+        for (let j = 0; j < content.length; j += 1) {
+          const part = content[j];
+          if (!isTextPart(part)) continue;
+          const offset = part.text.indexOf(MEMORY_MARKER);
+          if (offset >= 0) return { message: i, part: j, offset };
+        }
+      }
+    }
+    return null;
+  }
+  function replaceInString(text2, packet, placed) {
+    if (!text2.includes(MEMORY_MARKER)) return { text: text2, changed: false, placed };
+    const parts = text2.split(MEMORY_MARKER);
+    if (placed) return { text: parts.join(""), changed: true, placed: true };
+    return { text: `${parts[0] ?? ""}${packet}${parts.slice(1).join("")}`, changed: true, placed: true };
+  }
+  function resolvePlaceholders(prompt, packet, skip = NONE) {
+    if (!Array.isArray(prompt)) return prompt;
+    const cleanPacket = typeof packet === "string" ? packet.split(MEMORY_MARKER).join("") : "";
+    let out = null;
+    let placed = false;
+    for (let i = 0; i < prompt.length; i += 1) {
+      if (skip.has(i)) continue;
+      const m = prompt[i];
+      if (!m || typeof m !== "object") continue;
+      const content = m.content;
+      if (typeof content === "string") {
+        const res = replaceInString(content, cleanPacket, placed);
+        placed = res.placed;
+        if (res.changed) {
+          if (out === null) out = prompt.slice();
+          out[i] = { ...m, content: res.text };
+        }
+      } else if (Array.isArray(content)) {
+        let newParts = null;
+        for (let j = 0; j < content.length; j += 1) {
+          const part = content[j];
+          if (!isTextPart(part)) continue;
+          const res = replaceInString(part.text, cleanPacket, placed);
+          placed = res.placed;
+          if (res.changed) {
+            if (newParts === null) newParts = content.slice();
+            newParts[j] = { ...part, text: res.text };
+          }
+        }
+        if (newParts !== null) {
+          if (out === null) out = prompt.slice();
+          out[i] = { ...m, content: newParts };
+        }
+      }
+    }
+    return out ?? prompt;
+  }
+  function stripMarkers(prompt) {
+    return resolvePlaceholders(prompt, "");
+  }
+  function holdsText(prompt, text2) {
+    if (!text2 || typeof text2 !== "string" || !Array.isArray(prompt)) return false;
+    for (let i = 0; i < prompt.length; i += 1) {
+      const m = prompt[i];
+      if (!m || typeof m !== "object") continue;
+      const content = m.content;
+      if (typeof content === "string") {
+        if (content.includes(text2)) return true;
+      } else if (Array.isArray(content)) {
+        for (let j = 0; j < content.length; j += 1) {
+          const part = content[j];
+          if (isTextPart(part) && part.text.includes(text2)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // src/canon.ts
   var ID = /^[A-Za-z0-9_.:-]{1,110}$/;
   var MAX_CANON_CHARS = 19e5;
@@ -86,8 +177,8 @@
     if (typeof entry.id === "string" && ID.test(entry.id)) return `lore:${entry.id}`;
     return `lore:f${fnv([entry.comment ?? "", entry.key ?? "", entry.secondkey ?? "", entry.mode ?? ""].join("\0"))}`;
   }
-  function keysOf(entry) {
-    return `${entry.key ?? ""},${entry.secondkey ?? ""}`.split(/[,\n]/).map((k) => k.trim()).filter(Boolean);
+  function keysOf(field2) {
+    return (field2 ?? "").split(/[,\n]/).map((k) => k.trim()).filter(Boolean);
   }
   var text = (value) => typeof value === "string" ? value.trim() : "";
   function same(a, b) {
@@ -118,11 +209,13 @@
       seen.set(key, n + 1);
       if (n) key = `${key}~${n}`;
       const scope = local.some((e) => same(e, entry)) ? "chat" : global.some((e) => same(e, entry)) ? "character" : card ? "module" : null;
+      const triggers = keysOf(entry.secondkey);
       add(key, entry.content, {
         scope: scope ?? void 0,
         mode: entry.mode,
         always_active: !!entry.alwaysActive,
-        keys: keysOf(entry),
+        keys: keysOf(entry.key),
+        trigger_keys: triggers.length ? triggers : void 0,
         comment: text(entry.comment) || void 0
       });
     }
@@ -132,7 +225,8 @@
   var HELD_MIN_LINE = 12;
   var HELD_SHARE = 0.8;
   function heldKeys(canon, prompt) {
-    const all = normalizeText(prompt.map((m) => typeof m?.content === "string" ? m.content : "").join("\n"));
+    const textOf = (content) => typeof content === "string" ? content : Array.isArray(content) ? content.filter(isTextPart).map((part) => part.text).join("\n") : "";
+    const all = normalizeText(prompt.map((m) => textOf(m?.content)).join("\n"));
     const character = canon.find((c) => c.key === "card:name")?.text.trim();
     const persona = canon.find((c) => c.key === "persona")?.metadata.name;
     const user = typeof persona === "string" && persona.trim() ? persona.trim() : void 0;
@@ -207,7 +301,7 @@
   var DEFAULT_RESERVED_TOKENS = 4e3;
   var MAX_RESERVED_TOKENS = 2e4;
   var PANEL_MAX_RESERVED_TOKENS = 8e3;
-  var DEFAULT_KEEP_RECENT_TURNS = 20;
+  var DEFAULT_KEEP_RECENT_TURNS = 16;
   var MIN_KEEP_RECENT_TURNS = 4;
   var MAX_KEEP_RECENT_TURNS = 200;
   var MIN_RERANK_TIMEOUT_MS = 50;
@@ -1543,109 +1637,29 @@ ${revisionHash}`;
     };
   }
 
-  // src/placement.ts
-  var MEMORY_MARKER = "[NMOS.memory]";
-  function isTextPart(part) {
-    return typeof part === "object" && part !== null && !Array.isArray(part) && part.type === "text" && typeof part.text === "string";
-  }
-  function findMarker(prompt) {
-    if (!Array.isArray(prompt)) return null;
-    for (let i = 0; i < prompt.length; i += 1) {
-      const m = prompt[i];
-      if (!m || typeof m !== "object") continue;
-      const content = m.content;
-      if (typeof content === "string") {
-        const offset = content.indexOf(MEMORY_MARKER);
-        if (offset >= 0) return { message: i, part: null, offset };
-      } else if (Array.isArray(content)) {
-        for (let j = 0; j < content.length; j += 1) {
-          const part = content[j];
-          if (!isTextPart(part)) continue;
-          const offset = part.text.indexOf(MEMORY_MARKER);
-          if (offset >= 0) return { message: i, part: j, offset };
-        }
-      }
-    }
-    return null;
-  }
-  function replaceInString(text2, packet, placed) {
-    if (!text2.includes(MEMORY_MARKER)) return { text: text2, changed: false, placed };
-    const parts = text2.split(MEMORY_MARKER);
-    if (placed) return { text: parts.join(""), changed: true, placed: true };
-    return { text: `${parts[0] ?? ""}${packet}${parts.slice(1).join("")}`, changed: true, placed: true };
-  }
-  function resolvePlaceholders(prompt, packet) {
-    if (!Array.isArray(prompt)) return prompt;
-    const cleanPacket = typeof packet === "string" ? packet.split(MEMORY_MARKER).join("") : "";
-    let out = null;
-    let placed = false;
-    for (let i = 0; i < prompt.length; i += 1) {
-      const m = prompt[i];
-      if (!m || typeof m !== "object") continue;
-      const content = m.content;
-      if (typeof content === "string") {
-        const res = replaceInString(content, cleanPacket, placed);
-        placed = res.placed;
-        if (res.changed) {
-          if (out === null) out = prompt.slice();
-          out[i] = { ...m, content: res.text };
-        }
-      } else if (Array.isArray(content)) {
-        let newParts = null;
-        for (let j = 0; j < content.length; j += 1) {
-          const part = content[j];
-          if (!isTextPart(part)) continue;
-          const res = replaceInString(part.text, cleanPacket, placed);
-          placed = res.placed;
-          if (res.changed) {
-            if (newParts === null) newParts = content.slice();
-            newParts[j] = { ...part, text: res.text };
-          }
-        }
-        if (newParts !== null) {
-          if (out === null) out = prompt.slice();
-          out[i] = { ...m, content: newParts };
-        }
-      }
-    }
-    return out ?? prompt;
-  }
-  function stripMarkers(prompt) {
-    return resolvePlaceholders(prompt, "");
-  }
-  function holdsText(prompt, text2) {
-    if (!text2 || typeof text2 !== "string" || !Array.isArray(prompt)) return false;
-    for (let i = 0; i < prompt.length; i += 1) {
-      const m = prompt[i];
-      if (!m || typeof m !== "object") continue;
-      const content = m.content;
-      if (typeof content === "string") {
-        if (content.includes(text2)) return true;
-      } else if (Array.isArray(content)) {
-        for (let j = 0; j < content.length; j += 1) {
-          const part = content[j];
-          if (isTextPart(part) && part.text.includes(text2)) return true;
-        }
-      }
-    }
-    return false;
-  }
-
   // src/prompt.ts
   var PACKET_TAG = '<NarrativeMemory version="0" source="nmos">';
   var GUARD_LINE = "(The user's most recent message comes before this memory and has already happened; where the two differ, that message wins.)";
   var GUARD_RESERVE_TOKENS = 40;
   function contentText(content) {
     if (typeof content === "string") return content;
-    if (content == null) return "";
-    return JSON.stringify(content);
+    if (Array.isArray(content)) return content.filter(isTextPart).map((part) => part.text).join("\n");
+    return "";
   }
   function isActive(message) {
-    return message != null && message.disabled !== true && !message.isComment;
+    return message != null && message.disabled !== true && message.disabled !== "allBefore" && !message.isComment;
+  }
+  function activeStartIndex(messages) {
+    if (!Array.isArray(messages)) return 0;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]?.disabled === "allBefore") return i + 1;
+    }
+    return 0;
   }
   function latestUserIndex(messages) {
     if (!Array.isArray(messages)) return -1;
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const start = activeStartIndex(messages);
+    for (let i = messages.length - 1; i >= start; i -= 1) {
       const m = messages[i];
       if (m && m.role === "user" && isActive(m)) return i;
     }
@@ -1662,43 +1676,110 @@ ${revisionHash}`;
     if (!Array.isArray(prompt)) return -1;
     const anchor = userTurnAnchor(hostMessages);
     if (!anchor) return -1;
-    for (let i = prompt.length - 1; i >= 0; i -= 1) {
-      if (prompt[i]?.role === "assistant") continue;
-      const sent = cleanText(contentText(prompt[i]?.content));
-      if (sent.includes(anchor)) return i;
+    if (anchor.length >= SHORT_TURN) {
+      for (let i = prompt.length - 1; i >= 0; i -= 1) {
+        if (prompt[i]?.role === "assistant") continue;
+        const sent = cleanText(contentText(prompt[i]?.content));
+        if (sent.includes(anchor)) return i;
+      }
+      return -1;
     }
-    return -1;
+    const texts = prompt.map((m) => cleanText(contentText(m?.content)));
+    const latest = latestUserIndex(hostMessages);
+    const matches = matchPromptToHost(prompt, hostMessages);
+    let floor = -1;
+    for (const [hostIdx, promptIdx] of matches) if (hostIdx < latest && promptIdx > floor) floor = promptIdx;
+    const search = (from) => {
+      const newest = (ok) => {
+        for (let i = prompt.length - 1; i > from; i -= 1) if (prompt[i]?.role !== "assistant" && ok(i)) return i;
+        return -1;
+      };
+      let at = newest((i) => texts[i] === anchor);
+      if (at < 0) at = newest((i) => prompt[i]?.role === "user" && holdsWord(texts[i], anchor));
+      if (at < 0) at = newest((i) => holdsWord(texts[i], anchor));
+      return at;
+    };
+    let found = search(floor);
+    if (found < 0 && floor >= 0) found = search(-1);
+    if (found < 0 || matches.size === 0 && hasAnchorableHistory(hostMessages, latest)) return -1;
+    return found;
   }
-  function hasPacket(prompt) {
-    return Array.isArray(prompt) && prompt.some((m) => m?.role === "system" && contentText(m.content).includes(PACKET_TAG));
+  var SHORT_TURN = 6;
+  var WORD_CHAR = /[\p{L}\p{N}]/u;
+  function holdsWord(text2, word) {
+    const edgeStart = WORD_CHAR.test(word.charAt(0));
+    const edgeEnd = WORD_CHAR.test(word.charAt(word.length - 1));
+    for (let at = text2.indexOf(word); at >= 0; at = text2.indexOf(word, at + 1)) {
+      const before = text2.charAt(at - 1);
+      const after = text2.charAt(at + word.length);
+      if ((!edgeStart || !before || !WORD_CHAR.test(before)) && (!edgeEnd || !after || !WORD_CHAR.test(after))) return true;
+    }
+    return false;
+  }
+  function hasAnchorableHistory(hostMessages, latest) {
+    for (let i = activeStartIndex(hostMessages); i < latest; i += 1) {
+      const m = hostMessages[i];
+      if (isActive(m) && cleanText(selectedContent(m)).length >= MIN_ANCHOR) return true;
+    }
+    return false;
+  }
+  var PACKET_END = "</NarrativeMemory>";
+  function hasPacket(prompt, hostMessages) {
+    if (!Array.isArray(prompt)) return false;
+    if (prompt.some((m) => m?.role === "system" && contentText(m.content).includes(PACKET_TAG))) return true;
+    if (!Array.isArray(hostMessages)) return false;
+    let chat = null;
+    const echoed = (block) => {
+      chat ??= hostMessages.map((h) => {
+        const raw = selectedContent(h);
+        return { raw, clean: cleanText(raw) };
+      });
+      const clean = cleanText(block);
+      return chat.some((h) => h.raw.includes(block) || clean.length >= 2 * MIN_ANCHOR && h.clean.includes(clean));
+    };
+    return prompt.some((m) => {
+      if (m?.role !== "user") return false;
+      const text2 = contentText(m.content);
+      for (let at = text2.indexOf(PACKET_TAG); at >= 0; at = text2.indexOf(PACKET_TAG, at + 1)) {
+        const end = text2.indexOf(PACKET_END, at);
+        if (end < 0) return false;
+        if (!echoed(text2.slice(at, end + PACKET_END.length))) return true;
+      }
+      return false;
+    });
   }
   function cleanText(value) {
-    return normalizeText(value).replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ").replace(/<[^>\n]{1,500}>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    return normalizeText(value).replace(/<(style|script|thoughts|think|thinking)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ").replace(/<[^>\n]{1,500}>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
   }
   function anchorOf(text2, size = 48) {
     if (text2.length <= size) return text2;
     const start = Math.floor((text2.length - size) / 2);
     return text2.slice(start, start + size);
   }
-  function matchPromptToHost(prompt, hostMessages, minAnchor = 16, maxMisses = 3) {
+  function matchPromptToHost(prompt, hostMessages, minAnchor = MIN_ANCHOR, maxMisses = 3) {
     const matches = /* @__PURE__ */ new Map();
     if (!Array.isArray(prompt) || !Array.isArray(hostMessages)) return matches;
     const texts = prompt.map((m) => cleanText(contentText(m?.content)));
+    const start = activeStartIndex(hostMessages);
     let pointer = texts.length - 1;
     let misses = 0;
-    for (let i = hostMessages.length - 1; i >= 0 && pointer >= 0; i -= 1) {
+    for (let i = hostMessages.length - 1; i >= start && pointer >= 0; i -= 1) {
       const m = hostMessages[i];
       if (!m || !isActive(m)) continue;
       const text2 = cleanText(selectedContent(m));
       if (text2.length < minAnchor) continue;
       const anchor = anchorOf(text2);
       let found = -1;
+      let other = -1;
       for (let k = pointer; k >= 0; k -= 1) {
-        if (texts[k].includes(anchor)) {
+        if (!texts[k].includes(anchor)) continue;
+        if (rolesFit(m.role, prompt[k]?.role)) {
           found = k;
           break;
         }
+        if (other < 0) other = k;
       }
+      if (found < 0) found = other;
       if (found >= 0) {
         matches.set(i, found);
         pointer = found - 1;
@@ -1708,6 +1789,21 @@ ${revisionHash}`;
       }
     }
     return matches;
+  }
+  var MIN_ANCHOR = 16;
+  function rolesFit(host, prompt) {
+    return host === "user" ? prompt !== "assistant" : prompt !== "user";
+  }
+  function markerCount(text2) {
+    return text2 ? text2.split(MEMORY_MARKER).length - 1 : 0;
+  }
+  function historyMarkerIndices(prompt, hostMessages, matches = matchPromptToHost(prompt, hostMessages)) {
+    const out = /* @__PURE__ */ new Set();
+    for (const [hostIdx, promptIdx] of matches) {
+      const own = markerCount(selectedContent(hostMessages[hostIdx]));
+      if (own > 0 && markerCount(contentText(prompt[promptIdx]?.content)) <= own) out.add(promptIdx);
+    }
+    return out;
   }
   function inContextIds(prompt, hostMessages, minAnchor = 16, maxMisses = 3) {
     const matches = matchPromptToHost(prompt, hostMessages, minAnchor, maxMisses);
@@ -1770,7 +1866,8 @@ ${GUARD_LINE}` : "";
     const userIndex = latestUserIndex(hostMessages);
     const query = userIndex >= 0 ? normalizeText(selectedContent(hostMessages[userIndex])) : "";
     let previousAi = "";
-    for (let i = userIndex - 1; i >= 0; i -= 1) {
+    const start = activeStartIndex(hostMessages);
+    for (let i = userIndex - 1; i >= start; i -= 1) {
       const m = hostMessages[i];
       if (m.role === "char" && isActive(m)) {
         previousAi = normalizeText(selectedContent(m));
@@ -1801,8 +1898,16 @@ ${GUARD_LINE}` : "";
   }
 
   // src/trim.ts
-  var DROPPABLE_KEYS = /* @__PURE__ */ new Set(["role", "content", "memo", "attr", "thoughts"]);
-  var MIN_ANCHOR = 16;
+  var DROPPABLE_KEYS = /* @__PURE__ */ new Set([
+    "role",
+    "content",
+    "memo",
+    "attr",
+    "thoughts",
+    "name",
+    "removable",
+    "cachePoint"
+  ]);
   function sameText(prompt, hostMessages, p, i) {
     const m = prompt[p];
     if (!m || typeof m.content !== "string") return false;
@@ -1816,21 +1921,26 @@ ${GUARD_LINE}` : "";
       return refuse();
     }
     try {
+      if (prompt.some((m) => m != null && typeof m.content !== "string" && !Array.isArray(m.content))) return refuse();
+      const start = activeStartIndex(hostMessages);
+      const active = (i) => i >= start && isActive(hostMessages[i]);
       const b = hostMessages.findIndex(
-        (m) => isActive(m) && m?.chatId != null && String(m.chatId) === keepFromId
+        (m, i) => active(i) && m?.chatId != null && String(m.chatId) === keepFromId
       );
       if (b < 0) return refuse();
       if (b > latestUserIndex(hostMessages)) return refuse();
       const turn = userTurnIndex(prompt, hostMessages);
       if (turn < 0) return refuse();
       const pairs = matchPromptToHost(prompt, hostMessages);
+      const matched = new Set(pairs.values());
+      const injected = (p2, i) => prompt[p2]?.role === "system" && !matched.has(p2) && !sameText(prompt, hostMessages, p2, i);
       let K = turn;
       for (const [hostIdx, promptIdx] of pairs) {
         if (hostIdx >= b && promptIdx < K) K = promptIdx;
       }
       let j = -1;
-      for (let i = b - 1; i >= 0; i -= 1) {
-        if (isActive(hostMessages[i]) && pairs.has(i)) {
+      for (let i = b - 1; i >= start; i -= 1) {
+        if (active(i) && pairs.has(i)) {
           j = i;
           break;
         }
@@ -1841,8 +1951,9 @@ ${GUARD_LINE}` : "";
       const run = /* @__PURE__ */ new Map([[jPrompt, j]]);
       let q = jPrompt + 1;
       for (let i = j + 1; i < b; i += 1) {
-        if (!isActive(hostMessages[i])) continue;
+        if (!active(i)) continue;
         if (pairs.has(i)) return refuse();
+        while (q < K && injected(q, i)) q += 1;
         if (q < K && sameText(prompt, hostMessages, q, i)) {
           run.set(q, i);
           q += 1;
@@ -1851,8 +1962,9 @@ ${GUARD_LINE}` : "";
         }
       }
       let p = jPrompt - 1;
-      for (let i = j - 1; i >= 0; i -= 1) {
-        if (!isActive(hostMessages[i])) continue;
+      for (let i = j - 1; i >= start; i -= 1) {
+        if (!active(i)) continue;
+        while (p >= 0 && injected(p, i)) p -= 1;
         if (pairs.has(i)) {
           if (pairs.get(i) === p) {
             run.set(p, i);
@@ -1880,8 +1992,8 @@ ${GUARD_LINE}` : "";
       }
       const before = prompt.slice(0, runStart).map((m) => cleanText(contentText(m?.content)));
       if (before.length > 0) {
-        for (let i = runOldest - 1; i >= 0; i -= 1) {
-          if (!isActive(hostMessages[i])) continue;
+        for (let i = runOldest - 1; i >= start; i -= 1) {
+          if (!active(i)) continue;
           const text2 = cleanText(selectedContent(hostMessages[i]));
           if (text2.length < MIN_ANCHOR) continue;
           const anchor = anchorOf(text2);
@@ -1894,27 +2006,71 @@ ${GUARD_LINE}` : "";
         if (!m || m.role !== "user" && m.role !== "assistant") return refuse();
         if (typeof m.content !== "string") return refuse();
         if (Object.keys(m).some((key) => !DROPPABLE_KEYS.has(key))) return refuse();
-        if (m.content.includes(MEMORY_MARKER)) return refuse();
+        if (markerCount(m.content) > markerCount(selectedContent(hostMessages[hostIdx]))) return refuse();
         if (k >= K || k >= turn) return refuse();
         const sent = cleanText(m.content).length;
         const own = cleanText(selectedContent(hostMessages[hostIdx])).length;
         if (sent > 1.25 * own + 64) return refuse();
         savedTokens += estimateTokens(m.content);
       }
+      let newest = -1;
+      for (const k of run.keys()) if (k > newest) newest = k;
       const boundary = cleanText(selectedContent(hostMessages[b]));
       if (boundary) {
-        let newest = -1;
-        for (const k of run.keys()) if (k > newest) newest = k;
         const sent = cleanText(prompt[newest]?.content);
         const own = cleanText(selectedContent(hostMessages[run.get(newest)]));
         const at = own ? sent.lastIndexOf(own) : -1;
         const tail = at >= 0 ? sent.slice(at + own.length) : sent;
         if (tail.includes(boundary)) return refuse();
       }
-      const out = prompt.filter((_, idx) => !run.has(idx));
+      let point;
+      let pointAt = -1;
+      for (const k of run.keys()) {
+        const value = prompt[k]?.cachePoint;
+        if (value !== void 0 && value !== null && value !== false && k > pointAt) {
+          point = value;
+          pointAt = k;
+        }
+      }
+      const out = [];
+      let moved = pointAt < 0;
+      for (let idx = 0; idx < prompt.length; idx += 1) {
+        if (run.has(idx)) continue;
+        const m = prompt[idx];
+        if (!moved && idx > newest) {
+          moved = true;
+          const own = m?.cachePoint;
+          if (m && typeof m === "object" && (own === void 0 || own === null || own === false)) {
+            out.push({ ...m, cachePoint: point });
+            continue;
+          }
+        }
+        out.push(m);
+      }
       return { prompt: out, dropped: run.size, savedTokens, reason: null };
     } catch {
       return refuse();
+    }
+  }
+  function canTrimPrompt(prompt, hostMessages) {
+    try {
+      if (!Array.isArray(prompt) || !Array.isArray(hostMessages)) return false;
+      const latest = latestUserIndex(hostMessages);
+      const turn = userTurnIndex(prompt, hostMessages);
+      if (latest < 0 || turn < 0) return false;
+      let oldest = -1;
+      for (const [hostIdx, promptIdx] of matchPromptToHost(prompt, hostMessages)) {
+        if (hostIdx < latest && promptIdx < turn && (oldest < 0 || hostIdx < oldest)) oldest = hostIdx;
+      }
+      if (oldest < 0) return false;
+      for (let i = oldest + 1; i <= latest; i += 1) {
+        if (!isActive(hostMessages[i])) continue;
+        const id = hostMessages[i]?.chatId;
+        return id != null && trimPrompt(prompt, hostMessages, String(id)).reason === null;
+      }
+      return false;
+    } catch {
+      return false;
     }
   }
 
@@ -1940,6 +2096,7 @@ ${GUARD_LINE}` : "";
   var DeadlineError = class extends Error {
   };
   var FAILED_TRIM = { keepFromId: null, keepFromTurn: null, reason: "failed" };
+  var FORMAT_TRIM = { keepFromId: null, keepFromTurn: null, reason: "format" };
   function keepRecentTurnsOf(settings) {
     if (!settings.trimOldTurns) return 0;
     const n = settings.keepRecentTurns;
@@ -1962,7 +2119,9 @@ ${GUARD_LINE}` : "";
     return { recordedThroughTurn: finiteOrNull(c.recorded_through_turn), coveredThroughTurn: finiteOrNull(c.covered_through_turn) };
   }
   var SUCCESS_TTL_MS = 10 * 6e4;
+  var EMPTY_TTL_MS = 6e4;
   var FAILURE_TTL_MS = 3e4;
+  var REFUSED_TRIM_TTL_MS = 10 * 6e4;
   var CACHE_LIMIT = 64;
   var RETRY_MEMO_TTL_MS = 12e4;
   var RETRY_MEMO_LIMIT = 4;
@@ -1987,6 +2146,8 @@ ${GUARD_LINE}` : "";
     const canonSent = /* @__PURE__ */ new Map();
     const canonQueue = /* @__PURE__ */ new Map();
     const textHashes = /* @__PURE__ */ new Map();
+    const heldCard = /* @__PURE__ */ new Map();
+    const refusedTrim = /* @__PURE__ */ new Map();
     let canonUnsupported = false;
     let personas = null;
     const buildManifest = createManifestBuilder();
@@ -2040,7 +2201,13 @@ ${GUARD_LINE}` : "";
       const character = names.get(chat.id);
       const texts = canonTexts(character?.card ?? null, chat, lore, personaRecord(chat));
       const held = heldKeys(texts, prompt);
-      if (character?.card?.desc?.trim() && !held.includes("card:desc")) refreshCharacter(chat.id);
+      const fields = CARD_FIELDS.filter((f) => held.includes(f));
+      const before = heldCard.get(chat.id);
+      heldCard.delete(chat.id);
+      heldCard.set(chat.id, fields);
+      while (heldCard.size > CACHE_LIMIT) heldCard.delete(heldCard.keys().next().value);
+      const card = character?.card;
+      if (card?.desc?.trim() && !held.includes("card:desc") || card && before?.some((f) => f !== "card:desc" && !fields.includes(f) && !!card[f.slice(5)]?.trim())) refreshCharacter(chat.id);
       if (!character?.card) return { held, snapshot: null };
       const entries = await within(Promise.all(texts.map(async (t2) => {
         let hash = textHashes.get(t2.text);
@@ -2113,8 +2280,8 @@ ${GUARD_LINE}` : "";
       if (!personas || host.now() - personas.at > PERSONA_TTL_MS) warmPersonas();
       return personas?.value ? personaOf(chat, personas.value) : null;
     }
-    function remember(key, packet, ttl, failed = false, memory = null, vectors = null, canon, trim = null, coverage = null) {
-      cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon, trim, coverage });
+    function remember(key, packet, ttl, failed = false, memory = null, vectors = null, canon, trim = null, coverage = null, chatId) {
+      cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon, trim, coverage, chatId });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
     }
     function promptSignature(prompt) {
@@ -2242,6 +2409,10 @@ ${GUARD_LINE}` : "";
           emit({ type: "request-end", outcome: "chat-off", chars: 0, conversationId: null });
           return prompt;
         }
+        if (hasPacket(prompt, messages)) {
+          emit({ type: "request-abandon" });
+          return prompt;
+        }
         const turn = userTurnIndex(prompt, messages);
         if (turn < 0) {
           const reason = "the latest user message was not found in the prompt";
@@ -2267,7 +2438,9 @@ ${GUARD_LINE}` : "";
           });
           return prompt;
         }
-        const marker = findMarker(prompt);
+        const chatMarkers = historyMarkerIndices(prompt, messages);
+        const marker = findMarker(prompt, chatMarkers);
+        const skipIn = (p) => chatMarkers.size === 0 ? chatMarkers : p === prompt ? chatMarkers : historyMarkerIndices(p, messages);
         const position = settings.injectPosition;
         const after = landsAfterUserTurn(prompt, messages, position, turn, marker);
         const budget = after ? Math.max(0, settings.reservedMemoryTokens - GUARD_RESERVE_TOKENS) : settings.reservedMemoryTokens;
@@ -2276,7 +2449,7 @@ ${GUARD_LINE}` : "";
           if (holdsText(p, packet2.split(MEMORY_MARKER).join(""))) return { out: stripMarkers(p), placed: false };
           const text2 = after ? withGuard(packet2) : packet2;
           return {
-            out: marker ? resolvePlaceholders(p, text2) : stripMarkers(injectPacket(p, text2, position, at)),
+            out: stripMarkers(marker ? resolvePlaceholders(p, text2, skipIn(p)) : injectPacket(p, text2, position, at)),
             placed: true
           };
         };
@@ -2285,10 +2458,18 @@ ${GUARD_LINE}` : "";
           let dropped = 0;
           let savedTokens = 0;
           let reason = decision2?.reason ?? null;
+          let refused = false;
           if (decision2?.keepFromId) {
             if (!packet2) reason = "empty_packet";
             else {
               const r = trimPrompt(prompt, messages, decision2.keepFromId);
+              if (r.reason !== null) {
+                refused = true;
+                refusedTrim.delete(chat.id);
+                refusedTrim.set(chat.id, { id: decision2.keepFromId, at: host.now() });
+                while (refusedTrim.size > CACHE_LIMIT) refusedTrim.delete(refusedTrim.keys().next().value);
+                return { out: prompt, trim: { dropped: 0, savedTokens: 0, reason: r.reason, keepFromTurn: null }, refused };
+              }
               p = r.prompt;
               dropped = r.dropped;
               savedTokens = r.savedTokens;
@@ -2303,7 +2484,7 @@ ${GUARD_LINE}` : "";
             reason,
             keepFromTurn: dropped > 0 ? decision2?.keepFromTurn ?? null : null
           };
-          return { out, trim: outcome2 };
+          return { out, trim: outcome2, refused };
         };
         const shown = (o) => ({ dropped: o.dropped, savedTokens: o.savedTokens, reason: o.reason });
         const t0 = host.now();
@@ -2314,7 +2495,10 @@ ${GUARD_LINE}` : "";
         ), deadline, "the manifest");
         const manifestMs = host.now() - t0;
         const inContext = inContextIds(prompt, messages);
-        key = await within(sha256Hex(JSON.stringify([
+        const refusedAt = refusedTrim.get(chat.id);
+        if (refusedAt && host.now() - refusedAt.at > REFUSED_TRIM_TTL_MS) refusedTrim.delete(chat.id);
+        const askTrim = k > 0 && canTrimPrompt(prompt, messages) && !(refusedAt && host.now() - refusedAt.at <= REFUSED_TRIM_TTL_MS && trimPrompt(prompt, messages, refusedAt.id).reason !== null);
+        const keyOf = (withTrim) => within(sha256Hex(JSON.stringify([
           chat.id,
           mode,
           prompt.length,
@@ -2327,16 +2511,20 @@ ${GUARD_LINE}` : "";
           settings.authToken,
           budget,
           !!settings.trimOldTurns,
-          k
+          k,
+          withTrim
         ])), deadline, "the cache key");
+        key = await keyOf(askTrim);
         const canon = await observeCanon(chat, prompt, deadline);
         const canonKey = JSON.stringify([canon?.snapshot?.id ?? null, canon?.held ?? []]);
         const cached = cache.get(key);
-        if (cached && cached.expires > host.now() && (cached.failed || cached.canon === canonKey)) {
+        const hit = cached && cached.expires > host.now() && (cached.failed || cached.canon === canonKey) ? finishPrompt(cached.packet, k > 0 ? cached.failed ? FAILED_TRIM : cached.trim ?? FAILED_TRIM : null) : null;
+        if (hit?.refused) cache.delete(key);
+        if (cached && hit && !hit.refused) {
           const known = conversations.get(chat.id);
           if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
           const outcome2 = cached.packet ? "injected" : "nothing-relevant";
-          const done2 = finishPrompt(cached.packet, k > 0 ? cached.failed ? FAILED_TRIM : cached.trim ?? FAILED_TRIM : null);
+          const done2 = hit;
           if (!cached.failed) last = {
             at: Date.now(),
             ms: Math.round(host.now() - started),
@@ -2371,7 +2559,7 @@ ${GUARD_LINE}` : "";
         }
         const { query, previousAi } = queryTexts(messages);
         const t2 = host.now();
-        const retrieved = await call(settings, "/v1/retrieve", {
+        const retrieve = (withTrim) => call(settings, "/v1/retrieve", {
           host: "pocketrisu",
           chat_id: chat.id,
           active_commit: synced.active_commit,
@@ -2383,17 +2571,46 @@ ${GUARD_LINE}` : "";
           client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
           canon_manifest_id: canon?.snapshot?.id ?? null,
           canon_held: canon?.held ?? [],
-          // Only when the owner turned trimming on: without it the request is the one sent before PHASE-60.
-          ...k > 0 ? { trim: { keep_recent_turns: k, step: k } } : {}
+          // Only when the owner turned trimming on and the prompt can take a cut: otherwise the request is the one sent
+          // before PHASE-60.
+          ...withTrim ? { trim: { keep_recent_turns: k, step: k } } : {}
         }, deadline, void 0, late);
+        let retrieved = await retrieve(askTrim);
         if (canon?.snapshot && synced.conversation_id) syncCanon(settings, synced.conversation_id, chat.id, canon.snapshot);
-        const packet = retrieved.freshness === "fresh" ? retrieved.packet.text : "";
-        const memory = retrieved.freshness === "fresh" ? retrieved.memory ?? null : null;
-        const vectors = retrieved.freshness === "fresh" ? retrieved.vectors ?? null : null;
-        const decision = k > 0 ? trimDecisionOf(retrieved.freshness === "fresh", retrieved.trim) : null;
-        const coverage = coverageOf(retrieved.coverage);
+        const answer = (r, withTrim) => {
+          const fresh = r.freshness === "fresh";
+          return {
+            packet: fresh ? r.packet.text : "",
+            memory: fresh ? r.memory ?? null : null,
+            // older sidecars send none
+            vectors: fresh ? r.vectors ?? null : null,
+            coverage: coverageOf(r.coverage),
+            decision: k > 0 ? withTrim ? trimDecisionOf(fresh, r.trim) : FORMAT_TRIM : null
+          };
+        };
+        let got = answer(retrieved, askTrim);
         if (epoch !== since) throw new Error("memory changed during this request");
-        remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors, canonKey, decision, coverage);
+        let done = finishPrompt(got.packet, got.decision);
+        if (done.refused) {
+          key = await keyOf(false);
+          retrieved = await retrieve(false);
+          got = answer(retrieved, false);
+          if (epoch !== since) throw new Error("memory changed during this request");
+          done = finishPrompt(got.packet, got.decision);
+        }
+        const { packet, memory, vectors, decision, coverage } = got;
+        remember(
+          key,
+          packet,
+          packet ? SUCCESS_TTL_MS : EMPTY_TTL_MS,
+          false,
+          memory,
+          vectors,
+          canonKey,
+          decision,
+          coverage,
+          chat.id
+        );
         host.debug("[NMOS] request done", {
           ms: Math.round(host.now() - started),
           manifestMs: Math.round(manifestMs),
@@ -2402,7 +2619,6 @@ ${GUARD_LINE}` : "";
           packetChars: packet.length
         });
         const outcome = packet ? "injected" : "nothing-relevant";
-        const done = finishPrompt(packet, decision);
         last = {
           at: Date.now(),
           ms: Math.round(host.now() - started),
@@ -2464,6 +2680,7 @@ ${GUARD_LINE}` : "";
       void (async () => {
         const settings = await host.settings();
         if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id || settings.offChats?.includes(arg2.chat.id)) return;
+        for (const [k, entry] of cache) if (entry.chatId === arg2.chat.id && !entry.packet && !entry.failed) cache.delete(k);
         adviseOnce(settings.language);
         reachOnce(settings.language, settings.sidecarUrl);
         emit({ type: "background", conversationId: conversations.get(arg2.chat.id) ?? null });
@@ -2542,6 +2759,7 @@ ${GUARD_LINE}` : "";
     }
     return { beforeRequest, onOutput, status, api, file, warmPersonas };
   }
+  var CARD_FIELDS = ["card:desc", "card:personality", "card:scenario"];
   function firstSaying(messages) {
     for (const m of messages) if (m.role === "char" && m.saying) return m.saying;
     return null;
