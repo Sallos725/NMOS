@@ -27,7 +27,7 @@ NORMALIZER_VERSION = "clean-v3"
 DEFAULT_NORMALIZER = NORMALIZER_VERSION
 # Every normalizer NMOS_NORMALIZER may select, with its cleaner. Their rows are kept side by side (`retention.prune_text`
 # prunes only other normalizers'), and a switch among them re-derives nothing a model wrote (`generations.classify`:
-# `normalizer`).
+# `carry`).
 CLEANERS: dict[str, Callable[[str], str]] = {"clean-v3": clean_text, "clean-v4": clean_text_v4}
 NORMALIZERS = tuple(CLEANERS)
 

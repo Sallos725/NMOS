@@ -1,7 +1,7 @@
 """PHASE-66 part 3: `clean-v4` as an opt-in normalizer (`NMOS_NORMALIZER`) that costs nothing to turn on.
 
 Under the default every key, row and text is the base's. A switch either way is a carry-on for every model projection
-(`generations.classify`: `normalizer`): only embeddings are made again, locally. Both normalizers' text is kept side by
+(`generations.classify`: `carry`): only embeddings are made again, locally. Both normalizers' text is kept side by
 side, a replay reads the normalizer its request was served from, and no excerpt is cut with another text's offsets.
 """
 
@@ -126,7 +126,7 @@ def test_the_config_says_which_normalizer_is_active(migrated):
 # --- classify -------------------------------------------------------------------------------------------------------
 
 
-def test_a_normalizer_only_change_is_its_own_carry_on_class(db):
+def test_a_normalizer_only_change_is_its_own_carry_on_class(db, monkeypatch):
     def gen(normalizer="clean-v3", **spec):
         base = {"compiler": "extract-v20", "prompt": "p20", "normalizer": normalizer, "temperature": 0,
                 "target_chars": 6000, "context_turns": 3}
@@ -134,7 +134,7 @@ def test_a_normalizer_only_change_is_its_own_carry_on_class(db):
 
     old = gen()
     generations.ensure(db, old)
-    assert generations.classify(db, old.key, gen("clean-v4")) == "normalizer"
+    assert generations.classify(db, old.key, gen("clean-v4")) == "carry"
     assert generations.classify(db, old.key, gen("clean-v4", compiler="extract-v21", prompt="p21")) == "adds"
     assert generations.classify(db, old.key, gen("clean-v4", target_chars=36000)) == "reads"
     assert generations.classify(db, old.key, gen("clean-v4", model="m2")) == "model"
@@ -143,6 +143,12 @@ def test_a_normalizer_only_change_is_its_own_carry_on_class(db):
     assert generations.classify(db, old.key, gen("clean-v4", context_turns=4)) == "version"
     assert generations.classify(db, old.key, gen("clean-v2")) == "version"
     assert generations.classify(db, old.key, gen("clean-v4", compiler="extract-v15", prompt="p15")) == "version"
+    # a second carry-on field is one more entry (any value: None), absent from every earlier key
+    assert generations.classify(db, old.key, gen(revision="r1")) == "version"
+    monkeypatch.setitem(generations.CARRY_FIELDS, "revision", None)
+    assert generations.classify(db, old.key, gen(revision="r1")) == "carry"
+    assert generations.classify(db, old.key, gen("clean-v4", revision="r1")) == "carry"
+    assert generations.classify(db, old.key, gen(revision="r1", prompt="p20b")) == "version"
 
 
 # --- the switch, end to end -----------------------------------------------------------------------------------------

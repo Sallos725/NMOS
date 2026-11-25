@@ -183,7 +183,7 @@ class Settings:
     extract_compiler: str = field(default_factory=lambda: os.environ.get("NMOS_EXTRACT_COMPILER", ""))
     # The normalizer every projection reads (PHASE-66 part 3, `normtext`): `clean-v3` (the default; empty reads as it,
     # as the compose files pass an unset variable) or `clean-v4`. Part of every generation key, but a switch between
-    # the two re-derives nothing a model wrote (`generations.classify`: `normalizer`): only the embeddings are made
+    # the two re-derives nothing a model wrote (`generations.classify`: `carry`): only the embeddings are made
     # again, locally. Read at startup only.
     normalizer: str = field(default_factory=lambda: os.environ.get("NMOS_NORMALIZER") or NORMALIZERS[0])
     # Scene summaries and the story so far (PHASE-12, ADR 0042, 0043), written by the extraction model; "0" or the
