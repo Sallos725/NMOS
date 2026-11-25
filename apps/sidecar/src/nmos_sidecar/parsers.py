@@ -156,8 +156,26 @@ def load_rules(path: str | None) -> RuleSet:
     return ruleset
 
 
+_BREAK = "\x00"  # a line break a tag made, inside one value: a space
+_SCRIPT = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.I | re.S)
+
+
+def markup(text: str) -> str:
+    """The text of HTML for reading line by line: `<style>` and `<script>` blocks left out, block-level tags (`<br>`,
+    `<p>`, `<div>`, `<tr>`, `<li>`, headings, …) as line breaks, adjacent table cells joined by " | ", other tags
+    removed. Text without tags comes back as it was."""
+    if "<" not in text:
+        return text
+    return statusshape.html_text(text)[0]
+
+
 def _clean(text: str) -> str:
-    return re.sub(r"<[^>]+>", "", text).strip()[:MAX_VALUE]
+    """One value, key or entity as stored: its tags removed (a block-level tag or a cell boundary as a space or " | ",
+    so `<div>a</div><div>b</div>` is "a b", not "ab"), `<style>`/`<script>` blocks left out, at most MAX_VALUE."""
+    if "<" in text:
+        text = statusshape.html_text(text, line=_BREAK)[0]
+        text = re.sub(r" *\x00+ *", " ", text)
+    return text.strip()[:MAX_VALUE]
 
 
 def _key(rule: Rule, key: str, entity: str | None) -> str:
@@ -235,7 +253,11 @@ def parse(ruleset: RuleSet, content: str, role: str | None, character: str | Non
                 e = rule.end.search(content, s.end())
                 block = content[s.end(): e.start() if e else len(content)]
                 entity = s.groupdict().get("entity")
-                for line in (block.split(rule.separator) if rule.separator else block.splitlines()):
+                # HTML read as its lines first: a <style> over several lines is left out whole, and
+                # "<div>HP: 80</div><div>MP: 40</div>" is two lines, not "HP: 80MP: 40"
+                pieces = (_SCRIPT.sub("", block).split(rule.separator) if rule.separator
+                          else markup(block).splitlines())
+                for line in pieces:
                     line = _clean(line.replace("\n", " ") if rule.separator else line)
                     if rule.entity_line and (em := rule.entity_line.fullmatch(line.strip())):
                         entity = em.group("entity")
@@ -251,6 +273,6 @@ def parse(ruleset: RuleSet, content: str, role: str | None, character: str | Non
                 if statusshape.matches(block, wanted):
                     for key, value in block.fields:
                         if key in wanted:
-                            k = _key(rule, key, None)
+                            k = _key(rule, key, block.entity)  # "서연.HP": each character's window its own
                             out[k] = (rule.id, k, _clean(value)[:MAX_VALUE])
     return list(out.values())
