@@ -14,16 +14,20 @@ The shapes read:
 A run of `name: words` lines without a header is how a script writes dialogue, so it is never read as a window, and a
 block whose values read mostly like speech is not one either.
 
-A block names the character it is about (`entity`) when its first segment or header is a name and no field: `[서연 |
-HP: 80 | MP: 30 | 호감도: 45]`, `[서연 상태창]`. It depends on the block alone, so one character's window keeps its keys
-from reply to reply; `fields` and `keys` stay bare and the rule parser prefixes them (`서연.HP`), so three characters'
-windows in one reply do not overwrite each other.
+A block's first segment or header that is a word and no field is its `entity` candidate (`[서연 | HP: 80 | …]`,
+`[서연 상태창]`, but also `[교실 | 날짜: …]`): the shape alone cannot tell a character from a place. `fields` and `keys`
+stay bare. Only `characters` makes a candidate a character: when one reply holds windows for two or more different
+candidates, which is when their keys would otherwise overwrite each other, and then only for keys that are not about the
+scene (`scene_only`: a date, time, place or weather is the scene's, not a character's). A window for one character keeps
+its bare keys, as before the candidate existed, so stored state, pins and watches keep matching.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+
+from .statechange import SCENE_KEYS, base
 
 MIN_FIELDS = 3
 FIELD_SHARE = 0.6  # of a block's segments, at least this many must be fields
@@ -58,7 +62,8 @@ class Block:
     start: int  # the opening bracket (or the header, fence or first row)
     end: int  # after the closing bracket (or the last line)
     fields: tuple[tuple[str, str], ...]  # (key, raw value), in order; a repeated key keeps its last value
-    entity: str | None = None  # the character the window is about, when it names one
+    entity: str | None = None  # its leading word or header's name: a candidate, made a character by `characters`
+    classic: bool = False  # one line of fields in [..] in the message as written: the window PHASE-43 read
 
     @property
     def keys(self) -> frozenset[str]:
@@ -242,20 +247,30 @@ def _lines(text: str) -> list[tuple[int, int]]:
 
 # --- the shapes -------------------------------------------------------------------------------------------------------
 
-def _bracketed(text: str) -> list[Block]:
-    found: list[Block] = []
+def _bracketed(text: str) -> tuple[list[Block], list[Block]]:
+    """The bracketed blocks: those read as PHASE-43 read them (one line of `|`-separated fields in [..]) first, then the
+    other shapes."""
+    first: list[Block] = []
+    other: list[Block] = []
     for start, end in (span for opener in BRACKETS for span in _outer(text, opener)):
         inner = text[start + 1:end - 1]
-        segments = _split(inner)
-        if len(segments) >= 2:
-            block = _one_line(start, end, segments)
+        plain = re.split(r"[|｜]", inner)
+        if len(plain) >= 2:
+            block = _one_line(start, end, _split(inner))
+            # every `|` splits when that reads more keys: a field inside the nested bracket ("[물약: 2 | 열쇠: 1]",
+            # "(버프: 공격 | 방어: 10)") was a key before nesting was read, and a stored key does not go away
+            flat = _one_line(start, end, plain)
+            if flat is not None and (block is None or not flat.keys <= block.keys):
+                block = flat
+            if block is not None:
+                if text[start] == "[":
+                    first.append(Block(block.start, block.end, block.fields, block.entity, classic=True))
+                else:
+                    other.append(block)
         elif text[start] in MULTILINE and "\n" in inner.strip():
-            block = _field_lines(start, end, inner.splitlines(), whole=True)
-        else:
-            block = None
-        if block is not None:
-            found.append(block)
-    return found
+            if (block := _field_lines(start, end, inner.splitlines(), whole=True)) is not None:
+                other.append(block)
+    return first, other
 
 
 def _one_line(start: int, end: int, segments: list[str]) -> Block | None:
@@ -273,9 +288,12 @@ def _one_line(start: int, end: int, segments: list[str]) -> Block | None:
     counted = 0
     for segment, f in zip(segments, parsed):
         bare = segment.strip()
-        if f is None and fields and bare and len(bare) <= MERGE_MAX and not _NOT_A_KEY.search(bare):
+        # "Status: 중독 | 출혈": one field of two words. Not after a number ("HP: 80 | 피곤함"): a count stays a count,
+        # as the change line and the watches read it
+        if (f is None and fields and bare and len(bare) <= MERGE_MAX and not _NOT_A_KEY.search(bare)
+                and not re.search(r"\d", fields[-1][1])):
             key, value = fields[-1]
-            fields[-1] = (key, f"{value} | {bare}")  # "Status: 중독 | 출혈": one field of two values
+            fields[-1] = (key, f"{value} | {bare}")
             continue
         counted += 1
         if f is not None:
@@ -380,21 +398,25 @@ def _table(text: str, rows: list[tuple[int, int]]) -> Block | None:
 
 
 def _found(text: str, tagged: frozenset[int] = frozenset()) -> list[Block]:
-    return _bracketed(text) + _runs(text, tagged)
+    """Every shape's blocks, none overlapping another: a one-line [..] window wins any overlap (an enclosing 【..】 or a
+    header's run of lines never hides the window PHASE-43 read inside it), then the earlier and longer block."""
+    first, other = _bracketed(text)
+    return _disjoint(first, other + _runs(text, tagged))
 
 
-def _disjoint(blocks_: list[Block]) -> list[Block]:
+def _disjoint(first: list[Block], other: list[Block] = ()) -> list[Block]:
     out: list[Block] = []
-    for b in sorted(blocks_, key=lambda x: (x.start, -x.end)):
-        if not any(b.start < o.end and o.start < b.end for o in out):
-            out.append(b)
-    return out
+    for group in (first, other):
+        for b in sorted(group, key=lambda x: (x.start, -x.end)):
+            if not any(b.start < o.end and o.start < b.end for o in out):
+                out.append(b)
+    return sorted(out, key=lambda x: x.start)
 
 
 def blocks(text: str) -> list[Block]:
     """The status-shaped blocks of a message, in order. An HTML card is read as its text; a block found there is
     returned with its place in the message, and one that overlaps a block of the message as written is left out."""
-    found = _disjoint(_found(text))
+    found = _found(text)
     if _HTML_HINT.search(text):
         plain, starts, ends = html_text(text, rows=True)
         if plain != text:
@@ -402,11 +424,34 @@ def blocks(text: str) -> list[Block]:
             for b in _found(plain, tagged):
                 if b.end <= b.start:
                     continue
-                raw = Block(starts[b.start], ends[b.end - 1], b.fields, b.entity)
+                raw = Block(starts[b.start], ends[b.end - 1], b.fields, b.entity)  # never classic: read from HTML
                 if not any(raw.start < o.end and o.start < raw.end for o in found):
                     found.append(raw)
-            found = _disjoint(found)
+            found = sorted(found, key=lambda x: x.start)
     return found
+
+
+# A scene's keys, never a character's: the clock and place keys (`statechange.SCENE_KEYS`) and the weather and season.
+SCENE_ONLY = SCENE_KEYS | frozenset({"날씨", "weather", "계절", "season", "요일", "weekday", "day"})
+
+
+def scene_only(key: str) -> bool:
+    """A key about the scene, never prefixed with a character (`Status.날씨` too: its last part, as `statechange.base`)."""
+    return base(key) in SCENE_ONLY
+
+
+def characters(found: list[Block]) -> list[str | None]:
+    """The character each window of one reply is about, or None: a block's `entity` candidate only when the reply holds
+    windows of two or more different candidates that share a key that is not about the scene (so `[서연 | HP …]` and
+    `[도윤 | HP …]` are two characters, `[교실 | 날짜 …]` alone or `[교실 | 날짜 …]` with `[복도 | 날짜 …]` none)."""
+    named = [b for b in found if b.entity]
+    if len({b.entity for b in named}) < 2:
+        return [None] * len(found)
+    keys: dict[str, set[str]] = {}
+    for b in named:
+        keys.setdefault(b.entity, set()).update(k for k in b.keys if not scene_only(k))
+    shared = {e for e in keys if any(keys[e] & keys[o] for o in keys if o != e)}
+    return [b.entity if b.entity in shared else None for b in found]
 
 
 def covers(found: frozenset[str], keys: frozenset[str]) -> bool:

@@ -269,10 +269,16 @@ def parse(ruleset: RuleSet, content: str, role: str | None, character: str | Non
                 pos = _past(pos, e.end() if e else len(content))
         elif rule.kind == "shape":
             wanted = frozenset(rule.keys)
-            for block in statusshape.blocks(content):
-                if statusshape.matches(block, wanted):
-                    for key, value in block.fields:
-                        if key in wanted:
-                            k = _key(rule, key, block.entity)  # "서연.HP": each character's window its own
-                            out[k] = (rule.id, k, _clean(value)[:MAX_VALUE])
+            found = [b for b in statusshape.blocks(content) if statusshape.matches(b, wanted)]
+            # "서연.HP" and "도윤.HP" only when one reply holds both windows; one character's window keeps bare keys
+            classic: set[str] = set()  # keys a classic one-line [..] window set: a newer shape does not overwrite them
+            for block, entity in zip(found, statusshape.characters(found)):
+                for key, value in block.fields:
+                    if key in wanted:
+                        k = _key(rule, key, None if statusshape.scene_only(key) else entity)
+                        if k in classic and not block.classic:
+                            continue
+                        out[k] = (rule.id, k, _clean(value)[:MAX_VALUE])
+                        if block.classic:
+                            classic.add(k)
     return list(out.values())

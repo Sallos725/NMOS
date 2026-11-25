@@ -28,6 +28,7 @@ import psycopg
 
 from .parsers import RuleSet, prose, watched
 from .state import history
+from .statechange import covered
 
 SPLIT = re.compile(r"\s*[/,·、]\s*")
 COUNT = re.compile(r"\s*(?:[×xX*]\s*\d+|\(\s*\d+\s*\)|\d+\s*개)\s*$")  # "물약 ×2", "(3)", "3개"
@@ -196,7 +197,7 @@ def detect(hist: Mapping[str, list[dict[str, Any]]], watch: Mapping[str, frozens
     for key, entries in hist.items():
         for k in range(1, len(entries)):
             e, before = entries[k], entries[k - 1]
-            if key not in watch.get(e["rule_id"], ()):
+            if not covered(key, watch.get(e["rule_id"], ())):  # a watch on `HP` covers `서연.HP` too
                 continue
             base = {"key": key, "rule_id": e["rule_id"], "old": before["value"], "new": e["value"], "turn": e["turn"],
                     "position": e["position"], "revision_id": e["revision_id"]}
@@ -222,7 +223,13 @@ def flags_of(conn: psycopg.Connection, head: UUID, ruleset: RuleSet, card: str |
     if not watch:
         return []
     keys = sorted(set().union(*watch.values()))
-    hist = history(conn, head, ruleset.version, upto, keys=keys, redone=True)
+    # A watch on a bare key covers the keys a reply with two characters' windows prefixes (`서연.HP`), which only the
+    # chat's own history names: then read every key and keep the covered ones.
+    if any("." not in k for k in keys):
+        hist = {k: v for k, v in history(conn, head, ruleset.version, upto, redone=True).items()
+                if any(covered(k, w) for w in watch.values())}
+    else:
+        hist = history(conn, head, ruleset.version, upto, keys=keys, redone=True)
     revisions = sorted({e["revision_id"] for es in hist.values() for e in es[1:]}, key=str)
     if not revisions:
         return []

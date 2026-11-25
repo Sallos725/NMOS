@@ -68,14 +68,30 @@ def change(before: str | None, after: str) -> str | None:
     return list_change(before, after)
 
 
+def base(key: str) -> str:
+    """A status key's last part, lower-cased and trimmed (`서연.HP` → `hp`): `source_time.base`'s convention (its
+    BASE_SQL), here because `source_time` imports this module."""
+    return key.strip().lower().rsplit(".", 1)[-1].strip()
+
+
+def covered(key: str, names: frozenset[str] | set[str] | tuple[str, ...]) -> bool:
+    """Whether a pin or a watch names a key: the key itself, or a bare name (no ".") its last part (`base`), so `HP`
+    covers `HP`, `서연.HP` and `민지.HP` while `서연.HP` covers only itself. A window keeps bare keys until one reply
+    holds two characters' windows (`statusshape.characters`); a pin set on the bare key keeps covering them then."""
+    if key in names:
+        return True
+    last = base(key)
+    return any("." not in n and base(n) == last for n in names)
+
+
 def scene_key(key: str) -> bool:
     """A date, time or place key, also under an entity (`도윤.location`)."""
-    return key.rsplit(".", 1)[-1].strip().casefold() in SCENE_KEYS
+    return base(key) in SCENE_KEYS
 
 
 def core_keys(windows: list[dict[str, Any]], pins: frozenset[str] | set[str] = frozenset()) -> set[str]:
-    """Pinned keys, scene keys, and those that changed in at least half of the last CORE_WINDOWS windows (PHASE-43
-    Q3)."""
+    """Pinned keys (and the keys they cover, `covered`), scene keys, and those that changed in at least half of the
+    last CORE_WINDOWS windows (PHASE-43 Q3)."""
     recent = windows[-CORE_WINDOWS:]
     counts: dict[str, int] = {}
     for prev, cur in zip(recent, recent[1:]):
@@ -84,7 +100,8 @@ def core_keys(windows: list[dict[str, Any]], pins: frozenset[str] | set[str] = f
                 counts[key] = counts.get(key, 0) + 1
     floor = max(1, len(recent) // 2)
     scene = {k for w in recent for k in w["values"] if scene_key(k)}
-    return set(pins) | scene | {k for k, n in counts.items() if n >= floor}
+    pinned = {k for w in recent for k in w["values"] if pins and covered(k, pins)}
+    return set(pins) | pinned | scene | {k for k, n in counts.items() if n >= floor}
 
 
 @dataclass(frozen=True)
