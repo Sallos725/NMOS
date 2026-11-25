@@ -198,3 +198,54 @@ def test_a_carried_secret_ends_when_its_learned_row_arrives_under_every_compiler
     carried["position"] = -1
     s = only([carried, learned(4, "노엘", carried, compiler=compiler)])
     assert s["turn"] == -1 and s["open"] == [] and s["ended"]["노엘"]["turn"] == 4
+
+
+# --- 6. a promise's condition ------------------------------------------------------------------------------------------
+
+PRIVATE, TIPSY, EVERY = {"scope": "private", "when": None}, {"scope": "situational", "when": "술자리"}, {
+    "scope": "all", "when": None}
+
+
+def promise(pos: int, cond: dict | None = None, value: str = "등대 앞에서 만나기", polarity: str = "positive",
+            **kw: Any) -> dict[str, Any]:
+    return v21(pos, "루카", "promised", "노엘", value, object_type=C, polarity=polarity,
+               **({"condition": cond} if cond else {}), **kw)
+
+
+def kept_promise(pos: int, value: str = "등대 앞에서 만나기") -> dict[str, Any]:
+    return v21(pos, "루카", "fulfilled", None, value)
+
+
+def threads_of(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return threads.fold(rows, resolve(uuid.uuid4(), rows))[0]
+
+
+def by_slot(ts: list[dict[str, Any]]) -> dict[str, str]:
+    return {(t.get("condition") or {}).get("scope", "-"): t["status"] for t in ts}
+
+
+def test_a_conditioned_promise_carries_its_condition_and_is_its_own_thread():
+    ts = threads_of([promise(1), promise(2, PRIVATE)])
+    assert len(ts) == 2 and by_slot(ts) == {"-": "open", "private": "open"}
+    assert next(t for t in ts if t.get("condition"))["condition"] == PRIVATE
+    assert "condition" not in next(t for t in ts if not t.get("condition"))
+    # said again in its own slot it restates; scope all restates whichever is open
+    assert len(threads_of([promise(1, PRIVATE), promise(2, PRIVATE)])) == 1
+    assert len(threads_of([promise(1, TIPSY), promise(2, {"scope": "situational", "when": "전화"})])) == 2
+
+
+def test_the_unconditioned_ones_end_never_closes_the_conditioned_promise():
+    ts = threads_of([promise(1), promise(2, PRIVATE), kept_promise(3)])
+    assert by_slot(ts) == {"-": "kept", "private": "open"}
+    # a break said in the private slot ends the private promise alone
+    ts = threads_of([promise(1), promise(2, PRIVATE), promise(3, PRIVATE, polarity="negative")])
+    assert by_slot(ts) == {"-": "open", "private": "broken"}
+    # a conditioned break never reaches another slot; scope all ends the one it names
+    ts = threads_of([promise(1), promise(3, TIPSY, polarity="negative")])
+    assert by_slot(ts) == {"-": "open"}
+    ts = threads_of([promise(1, PRIVATE), promise(3, EVERY, polarity="negative")])
+    assert by_slot(ts) == {"private": "broken"}
+
+
+def test_with_no_unconditioned_promise_open_the_end_reaches_the_conditioned_one_as_before():
+    assert by_slot(threads_of([promise(1, PRIVATE), kept_promise(3)])) == {"private": "kept"}
