@@ -32,10 +32,14 @@ def test_a_full_name_with_its_given_name_and_a_nickname_is_one_person():
     assert a == b == c and r.status("character", "윤하람") == "resolved"
 
 
-@pytest.mark.parametrize("second", [("윤하람", "람이"), ("람이", "윤하람")], ids=["as-stored", "reversed"])
-def test_extract_v15_rows_resolve_as_before(second):
+@pytest.mark.parametrize(("second", "status"), [(("윤하람", "람이"), "resolved"), (("람이", "윤하람"), "ambiguous")],
+                         ids=["as-stored", "reversed"])
+def test_extract_v15_rows_resolve_as_before(second, status):
+    """resolve-v6 (Tier 1 B1, owner decision): a name that is the subject of every alias (윤하람 → 하람, 윤하람 → 람이)
+    is one person's names, under any compiler; before, it read as ambiguous. A name that is also another's alias
+    (람이 → 윤하람) keeps the undirected rule, as before."""
     r = resolve(uuid.uuid4(), [alias(33, "윤하람", "하람", **C), alias(182, *second, **C)])
-    assert r.status("character", "윤하람") == "ambiguous"
+    assert r.status("character", "윤하람") == status
 
 
 def test_a_letter_s_addressee_taken_for_its_writer_stays_ambiguous_and_the_pair_holds():
@@ -47,9 +51,14 @@ def test_a_letter_s_addressee_taken_for_its_writer_stays_ambiguous_and_the_pair_
     assert a == b and r.status("character", "람이") == "ambiguous" and d not in {a, c}
 
 
-def test_two_names_besides_the_part_still_make_the_full_name_ambiguous():
+def test_two_names_besides_the_part_are_the_full_name_s_own_names():
+    """resolve-v6 (Tier 1 B1): the full name is the subject of every alias, so 람이 and 도도 are its own names (it was
+    ambiguous before). Written the other way (도도 → 윤하람) the full name is another name's alias: ambiguous."""
     r = resolve(uuid.uuid4(), [alias(33, "윤하람", "하람", **V16), alias(182, "윤하람", "람이", **V16),
                                alias(200, "윤하람", "도도", **V16)])
+    assert r.status("character", "윤하람") == "resolved" and len(set(keys(r, "윤하람", "하람", "람이", "도도"))) == 1
+    r = resolve(uuid.uuid4(), [alias(33, "윤하람", "하람", **V16), alias(182, "윤하람", "람이", **V16),
+                               alias(200, "도도", "윤하람", **V16)])
     assert r.status("character", "윤하람") == "ambiguous"
 
 
@@ -118,7 +127,8 @@ def test_the_persona_s_given_name_is_a_part_of_the_name_the_host_reports():
     assert r.is_persona("character", "서윤")
     r = resolve(uuid.uuid4(), [alias(0, "한서윤", "서윤", **V16), alias(1, "한서윤", "사냥꾼", **V16),
                                alias(2, "한서윤", "은빛", **V16)], persona=["한서윤"])
-    assert r.status("character", "한서윤") == "ambiguous"  # two names besides the part, as for any full name
+    # resolve-v6 (Tier 1 B1): the persona is the subject of every alias, so they are its names (ambiguous before)
+    assert r.status("character", "한서윤") == "resolved" and r.is_persona("character", "은빛")
 
 
 def test_a_persona_and_another_character_sharing_a_given_name_stay_separate():
