@@ -23,13 +23,14 @@ from .config import Settings
 from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, ReplyError, metered
-from .entities import PERSONA, UNNAMED, node, norm, resolve
+from .entities import PERSONA, UNNAMED, Resolution, node, norm, resolve
 from .facts import _versions, fact_text, links_of, persona_of, served_assertions, version_key
 from . import canon
-from .repairs import repairs_of, splits_of
+from .repairs import (apply_facts, live, quoted_turns, repairs_of, secret_events, splits_of, thread_events,
+                      unedited_quotes)
 from .predicates import (DERIVED, EXTENSION_PARTICIPANTS, REGISTRY, alias_evidenced, because, feeling, fill_types,
-                         knowledge, outcome, participants, horizon, registry_for, registry_prompt, salience, semantics,
-                         validate, when_happened)
+                         knowledge, outcome, participants, horizon, polarity_of, registry_for, registry_prompt,
+                         salience, semantics, takes_value, validate, when_happened)
 from .secrets import fold as fold_secrets, reveal_value
 from .source_time import KEYS
 from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity
@@ -562,8 +563,14 @@ def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] |
     and the other lists then come from turns this generation already extracted, so what a later turn resolves still
     names them (PHASE-10, ADR 0033); newest first, a first sight's lists were empty. The newest turns are the ones the
     host prompt still carries, and their messages are embedded first. Other work below RECENT_PRIORITY (live turns,
-    embeddings, canon facts) runs newest first. A first-sight job waits while an earlier one of its chat and generation
-    waits for a retry: only a dead job lets the turns after it go (PHASE-30 Q2)."""
+    embeddings, canon facts) runs newest first.
+
+    Story order within a chat (Tier 1 D5): an extract job waits while an earlier one (lower id) of its chat and
+    generation, in its lane or a more urgent one (priority not above its own), is running or queued, so several
+    workers never extract a turn before the turns its hints come from; a later live turn waits for the earlier one, so
+    a chat's live turns run oldest first (chats still newest first). Only a dead job lets the turns after it go; a
+    first-sight or backfill job also waits while an earlier one waits for a retry (PHASE-30 Q2), a live turn does not.
+    A less urgent earlier job (a history turn) never holds a more urgent one."""
     with conn.transaction():
         conn.execute(
             "UPDATE job SET status = 'queued', locked_at = NULL, updated_at = now()"
@@ -571,20 +578,25 @@ def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] |
         )
         return conn.execute(
             """
+            WITH ahead AS MATERIALIZED (  -- per active extract job: the most urgent lane of an earlier one of its chat
+                SELECT id, min(priority) OVER (PARTITION BY conversation_id, payload->>'generation' ORDER BY id
+                                               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS earlier
+                FROM job
+                WHERE kind = 'extract' AND (status = 'running' OR (status = 'queued'
+                                                                   AND (run_after <= now() OR priority <> %(live)s)))
+            )
             UPDATE job SET status = 'running', locked_at = now(), attempts = attempts + 1, updated_at = now()
-            WHERE id = (SELECT j.id FROM job j WHERE j.status = 'queued' AND j.run_after <= now()
+            WHERE id = (SELECT j.id FROM job j LEFT JOIN ahead a ON a.id = j.id
+                        WHERE j.status = 'queued' AND j.run_after <= now()
                           AND j.kind || '|' || coalesce(j.payload->>'generation', '') = ANY(%(handled)s)
-                          AND NOT (j.priority = %(first)s AND EXISTS (
-                              SELECT 1 FROM job e WHERE e.kind = j.kind AND e.conversation_id = j.conversation_id
-                                AND e.priority = %(first)s AND e.status = 'queued' AND e.id < j.id
-                                AND e.run_after > now() AND e.payload->>'generation' = j.payload->>'generation'))
+                          AND NOT coalesce(a.earlier <= j.priority, false)
                         ORDER BY j.priority, CASE WHEN j.priority >= %(recent)s OR j.priority = %(first)s
                                                   THEN j.id ELSE -j.id END
-                        FOR UPDATE SKIP LOCKED LIMIT 1)
+                        FOR UPDATE OF j SKIP LOCKED LIMIT 1)
             RETURNING *
             """,
             {"handled": [f"{kind}|{key}" for kind, key in handled.items()], "recent": RECENT_PRIORITY,
-             "first": FIRST_PRIORITY},
+             "first": FIRST_PRIORITY, "live": LIVE_PRIORITY},
         ).fetchone()
 
 
@@ -628,7 +640,9 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, tu
         if target is None:
             return None
         target["links"] = links_of(conn, target["conversation_id"])  # the owner's (ADR 0025): hints use them
-        target["splits"] = splits_of(repairs_of(conn, target["conversation_id"]))  # and the owner's splits (ADR 0044)
+        repairs = repairs_of(conn, target["conversation_id"])
+        target["splits"] = splits_of(repairs)  # and the owner's splits (ADR 0044)
+        target["repairs"], target["repair_turns"] = _repairs_before(conn, target, repairs)  # and the rest (Tier 1 C5)
         target["canon"] = canon.names(conn, target["conversation_id"])[0]  # and canon's names (PHASE-14 Q6)
         rows = conn.execute(
             """
@@ -651,48 +665,85 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, tu
     return {"target": target, "members": members, "context": context, "done": bool(done)}
 
 
+def _repairs_before(conn: psycopg.Connection, target: dict[str, Any],
+                    repairs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[int, tuple[int, str | None]]]:
+    """The owner's repairs (ADR 0044) a read of the head before the target turn applies, as `facts.memory_view` takes
+    them for a read up to that turn (`live`, and a quote only while its turn reads as it did), and each turn a quote or
+    a restore names: (its last position on the head, its turn hash). The hint lists fold them (`_repaired`), so a
+    thread or secret the owner closed, a fact retracted, stops taking a listed slot, and one reopened or kept comes
+    back. Turn-scoped: a repair made at turn 50 does not apply to a re-extraction of turn 10."""
+    in_force = live(repairs, target["turn"] - 1)
+    turns = sorted(set(quoted_turns(in_force)) | {rep["target"].get("turn") for rep in in_force
+                                                  if rep["kind"] == "fact_restore"} - {None})
+    info = {x["turn"]: (x["p"], x["h"]) for x in conn.execute(
+        "SELECT turn, max(position) AS p, max(turn_hash) AS h FROM active_membership WHERE commit_id = %s"
+        " AND turn = ANY(%s) GROUP BY turn", (target["commit_id"], turns)).fetchall()} if turns else {}
+    if quoted := quoted_turns(in_force):
+        in_force = unedited_quotes(in_force, {t: info[t][1] if t in info else None for t in quoted})
+    return in_force, info
+
+
+# The status-window keys a story clock reads, by category (PHASE-60 S7): `source_time.KEYS` (date, time) and the forms
+# role-play status windows also use for them (Tier 1 G2), each kind of day its own category, so a window that shows a
+# date and a weekday keeps both. Matched after any `<prefix>.` ("상태.날짜").
+CLOCK_KEYS = {**KEYS, "현재 시간": "time", "현재 시각": "time", "일차": "day", "day": "day", "요일": "weekday",
+              "계절": "season"}
+CLOCK_ORDER = ("date", "day", "weekday", "season", "time")
+CLOCK_TURNS = 1  # a field from more than this many turns before the newest one is stale: not shown beside it
+
+
+def clock_key(key: str) -> str:
+    """A stored status-window key as CLOCK_KEYS reads it: trimmed, lower case, without a `<prefix>.`."""
+    return key.strip().lower().rsplit(".", 1)[-1].strip()
+
+
 def story_clock(conn: psycopg.Connection, ctx: dict[str, Any]) -> str | None:
     """The literal status-window clock as of the TARGET turn (PHASE-60 S7, ADR 0086 item 3), or None.
 
     Read from `state_observation` as stored, on the target's commit up to the target's last member, after the latest
     `allBefore` cut (as `state.current_state`), on accepted, enabled, non-comment revisions. Observations of more than
-    one `rules_version` give no clock. Per category (`date`, then `time`, by `source_time.KEYS`), only the rows at the
-    greatest position that has one count: exactly one, with a value non-empty and at most `CLOCK_MAX` characters, gives
-    the field; otherwise that category is left out (as `source_time.read`). The text is `key: value` pairs, as stored,
+    one `rules_version` give no clock. Per category (CLOCK_KEYS, after any `<prefix>.`), only the rows at the greatest
+    position that has one count: exactly one, with a value non-empty and at most `CLOCK_MAX` characters, gives the
+    field; otherwise that category is left out (as `source_time.read`). Fields of different turns are one clock only
+    when they are at most CLOCK_TURNS apart: otherwise only those of the newest turn's neighbourhood are shown (a date
+    of turn 30 is never shown with a time last seen at turn 10, Tier 1 G2). The text is `key: value` pairs, as stored,
     joined by "; ". A recorded input like the hints: never part of validity or of any key."""
     upto = max(r["position"] for r in ctx["members"])
     rows = conn.execute(
-        """
+        r"""
         WITH m AS (
-            SELECT am.position, sr.id, sr.lifecycle, sr.metadata
+            SELECT am.position, am.turn, sr.id, sr.lifecycle, sr.metadata
             FROM active_membership am
             JOIN source_revision sr ON sr.id = am.source_revision_id
             WHERE am.commit_id = %(head)s AND am.position <= %(upto)s
         )
-        SELECT st.key, st.value, st.rules_version, m.position
+        SELECT st.key, st.value, st.rules_version, m.position, m.turn
         FROM state_observation st
         JOIN m ON m.id = st.source_revision_id
         WHERE m.lifecycle = 'accepted'
           AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')
           AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
           AND coalesce(m.metadata->>'isComment', 'false') <> 'true'
-          AND lower(btrim(st.key)) = ANY(%(keys)s)
+          AND btrim(regexp_replace(lower(btrim(st.key)), '^.*\.', '')) = ANY(%(keys)s)
         ORDER BY m.position, st.key, st.rule_id
         """,
-        {"head": ctx["target"]["commit_id"], "upto": upto, "keys": list(KEYS)},
+        {"head": ctx["target"]["commit_id"], "upto": upto, "keys": list(CLOCK_KEYS)},
     ).fetchall()
+    rows = [r for r in rows if clock_key(r["key"]) in CLOCK_KEYS]  # as the SQL matched them
     if len({r["rules_version"] for r in rows}) != 1:
         return None
     fields = []
-    for category in ("date", "time"):
-        candidates = [r for r in rows if KEYS[r["key"].strip().lower()] == category]
+    for category in CLOCK_ORDER:
+        candidates = [r for r in rows if CLOCK_KEYS[clock_key(r["key"])] == category]
         if not candidates:
             continue
         latest = max(r["position"] for r in candidates)
         there = [r for r in candidates if r["position"] == latest]
         if len(there) == 1 and there[0]["value"].strip() and len(there[0]["value"]) <= CLOCK_MAX:
-            fields.append(f"{there[0]['key']}: {there[0]['value']}")
-    return "; ".join(fields) or None
+            fields.append(there[0])
+    newest = max((r["turn"] if r["turn"] is not None else -1 for r in fields), default=None)
+    return "; ".join(f"{r['key']}: {r['value']}" for r in fields
+                     if newest is None or (r["turn"] if r["turn"] is not None else -1) >= newest - CLOCK_TURNS) or None
 
 
 def _speaker(meta: dict[str, Any]) -> str:
@@ -705,6 +756,26 @@ def earlier_assertions(conn: psycopg.Connection, ctx: dict[str, Any], key: str) 
     target = ctx["target"]
     return [r for r in served_assertions(conn, target["commit_id"], key)
             if r["predicate"] in REGISTRY and r["turn"] is not None and r["turn"] < target["turn"]]
+
+
+def _resolution(ctx: dict[str, Any], rows: list[dict[str, Any]]) -> Resolution:
+    """The entity resolution of the rows before the target turn, as the hint lists read them: the persona, the owner's
+    links and splits, canon's names."""
+    target = ctx["target"]
+    return resolve(target["conversation_id"], rows, persona_of(target.get("host_persona_name")),
+                   target.get("links") or (), target.get("splits") or (), target.get("canon") or ())
+
+
+def _repaired(ctx: dict[str, Any], rows: list[dict[str, Any]],
+              r: Resolution) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(rows with the owner's fact retractions, corrections and restores applied, the repairs in force), as
+    `facts.memory_view` applies them before its folds, for the repairs `load_context` found (`_repairs_before`): the
+    threads' and secrets' own repairs are events of those folds (`thread_events`, `secret_events`). A context without
+    repairs (none made, or a hand-built context) reads its rows as they are."""
+    repairs = ctx["target"].get("repairs") or []
+    if not repairs:
+        return rows, []
+    return apply_facts(rows, repairs, r, {}, turn_info=ctx["target"].get("repair_turns") or {})[0], repairs
 
 
 def entity_hints(conn: psycopg.Connection, ctx: dict[str, Any], key: str, limit: int,
@@ -752,10 +823,10 @@ def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = 
     story, so it does not count as named."""
     if limit <= 0 or not rows:
         return []
-    r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
-                ctx["target"].get("links") or (),
-                ctx["target"].get("splits") or (), ctx["target"].get("canon") or ())
-    threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r)[0]
+    r = _resolution(ctx, rows)
+    rows, repairs = _repaired(ctx, rows, r)  # the owner's closes and reopens are events of the fold (ADR 0044)
+    threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r,
+                                       thread_events(repairs, r, {}))[0]
                if t["status"] == "open" and t["kind"] == "promise"]
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
     out = []
@@ -777,10 +848,10 @@ def thread_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
     at most `limit`. A thread can only be ended while it is listed: an old one the story comes back to must be."""
     if limit <= 0 or not rows:
         return []
-    r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
-                ctx["target"].get("links") or (),
-                ctx["target"].get("splits") or (), ctx["target"].get("canon") or ())
-    threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r)[0]
+    r = _resolution(ctx, rows)
+    rows, repairs = _repaired(ctx, rows, r)
+    threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r,
+                                       thread_events(repairs, r, {}))[0]
                if t["status"] == "open" and t["kind"] != "promise"]
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
     target = thread_grams(" ".join(row["content"] for row in ctx["members"]))
@@ -807,12 +878,11 @@ def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
     always in the story, so it does not count as named."""
     if limit <= 0 or not rows:
         return []
-    r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
-                ctx["target"].get("links") or (),
-                ctx["target"].get("splits") or (), ctx["target"].get("canon") or ())
+    r = _resolution(ctx, rows)
+    rows, repairs = _repaired(ctx, rows, r)  # found out or kept by the owner: events of the fold (ADR 0044)
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
     out = []
-    for s in fold_secrets([dict(row) for row in rows], r)[0]:
+    for s in fold_secrets([dict(row) for row in rows], r, secret_events(repairs, r, {}))[0]:
         if not s["open"]:
             continue
         names = set()
@@ -835,13 +905,14 @@ def role_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPE
     persona's own (the persona is in every scene, so naming it says nothing), at most `limit`. A role can only be
     ended as listed while it is listed. On a first connection later turns are extracted first (`claim`), so a role
     set up in a turn not yet extracted is not listed."""
+    if limit <= 0 or not (any(row["predicate"] == "role_toward" for row in rows) or ctx["target"].get("repairs")):
+        return []
+    r = _resolution(ctx, rows)
+    rows = _repaired(ctx, rows, r)[0]  # a role the owner retracted or corrected (ADR 0044)
     roles = [dict(row) for row in rows if row["predicate"] == "role_toward"
              and row.get("modality", "actual") == "actual" and row.get("source") != "character_claim"]
-    if limit <= 0 or not roles:
+    if not roles:
         return []
-    r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
-                ctx["target"].get("links") or (),
-                ctx["target"].get("splits") or (), ctx["target"].get("canon") or ())
     by_key: dict[tuple, list[dict[str, Any]]] = {}
     for row in roles:
         by_key.setdefault(version_key(row, r), []).append(row)
@@ -1103,11 +1174,14 @@ def shown_target(ctx: dict[str, Any]) -> str:
     return "\n".join(r["content"][:cap] for r in ctx["members"])
 
 
-def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: str) -> list[dict[str, Any]]:
+def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: str,
+             resolution: Resolution | None = None) -> list[dict[str, Any]]:
     """The model's `secrets` check → `learned` items (ADR 0033): one per listed secret (S<n>) and each named
     character it was kept from, value the listed text with its turn (`reveal_value`), which the read side matches
     even after that turn is extracted again in other words. A name the secret
-    was not kept from, an unknown number, or evidence not found in the target turn gives nothing."""
+    was not kept from, an unknown number, or evidence not found in the target turn gives nothing. With `resolution`
+    (the earlier turns' entities), a name counts for a listed one it resolves to: an alias (서윤 for 한서윤) or the
+    persona under another of its names (타쿠미 for {{user}}); the subject stays the name as listed (Tier 1 C4)."""
     out: list[dict[str, Any]] = []
     entries = answer.get("secrets")
     if not secrets or not isinstance(entries, list):
@@ -1122,13 +1196,27 @@ def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: s
         evidence = str(entry.get("evidence") or "").strip()[:300]
         if not evidence or similarity(evidence, turn_text) < EVIDENCE_MIN:
             continue
-        kept = {norm(n): n for n in listed["kept_from"]}
+        kept: dict[Any, str] = {norm(n): n for n in listed["kept_from"]}
+        if resolution is not None:
+            for n in listed["kept_from"]:
+                kept.setdefault(_who(resolution, n), n)
+
+        def listed_as(name: str) -> str | None:
+            return kept.get(norm(name)) or (kept.get(_who(resolution, name)) if resolution is not None else None)
+
         names = entry.get("found_out_by") if isinstance(entry.get("found_out_by"), list) else []
-        for name in dict.fromkeys(kept[norm(n)] for n in names if isinstance(n, str) and norm(n) in kept):
+        for name in dict.fromkeys(x for n in names if isinstance(n, str) and norm(n) and (x := listed_as(n))):
             out.append({"subject": name, "subject_type": "character", "predicate": "learned", "value": reveal_value(listed),
                         "modality": "actual", "source": "narration", "evidence": evidence, "knowledge": "unknown",
                         "epistemic": "stated"})
     return out
+
+
+def _who(r: Resolution, name: str) -> tuple[str, str]:
+    """Who a character's name stands for in `r`: the persona under any of its names, else its entity (or its text)."""
+    if r.node("character", name)[1] == PERSONA or r.is_persona("character", name):
+        return ("persona", PERSONA)
+    return ("entity", r.key("character", name))
 
 
 ELLIPSIS = re.compile(r"\s*(?:\.{3,}|…)\s*")
@@ -1139,6 +1227,24 @@ ELLIPSIS = re.compile(r"\s*(?:\.{3,}|…)\s*")
 LATER = re.compile(r"(내일|모레|다음\s?날|이튿날|다음\s?(주|달|해)|(내주|내달)(?=$|[\s에의로부까중쯤초말,.!?])|내년|머지않아|예정|"
                    r"\b(tomorrow|soon|will|shall)\b|\bgoing to\b|\bplan(s|ned)? to\b|\bnext (day|week|month|year)\b|"
                    r"\bfrom (tomorrow|next)\b)", re.IGNORECASE)
+# Words that date the change itself now (Tier 1 G2): "오늘부로 퇴사하고 내일부터 쉬기로 했다", "예정보다 일찍 오늘 방을
+# 뺐다" (예정 is a LATER word). Not a word that only says something happens now (이미, 당장, 방금; already, just, just now,
+# right away, today): it dates whatever its clause does, a preparation as often as an ending ("내일 이사할 짐은 이미 다
+# 쌌다", "방금 사직서를 내고 다음 달에 떠난다"), and a premature ending is the worse error.
+DONE_NOW = re.compile(r"(오늘\s?부로|예정보다\s?(일찍|빨리|앞당겨)|\bas of (today|now)\b|\beffective (today|immediately)\b)",
+                      re.IGNORECASE)
+# The clauses of a quote: sentences and their parts joined by a connective (…하고, …하며, …지만; and, but, then).
+CLAUSES = re.compile(r"[.!?;…,]+|(?<=[가-힣])(?:고|며|면서|지만|는데|다가)\s+|\s+(?:and|but|then|while)\s+",
+                     re.IGNORECASE)
+
+
+def places_later(quote: str) -> bool:
+    """A role ending's quote places the change later (`LATER`), unless one of its clauses states it done now: a clause
+    with a DONE_NOW marker and, the marker aside, no LATER word ("오늘부로 퇴사하고 / 내일부터 쉬기로 했다"). A clause
+    that only plans or prepares keeps the quote a plan."""
+    if not LATER.search(quote):
+        return False
+    return not any(DONE_NOW.search(c) and not LATER.search(DONE_NOW.sub(" ", c)) for c in CLAUSES.split(quote) if c)
 
 
 def quoted_in(evidence: str, turn_text: str) -> str | None:
@@ -1199,7 +1305,8 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
     prepared there (packing for tomorrow's move) closes nothing yet; the owner's run of 4a7c11c saw a stay ended on the
     eve of the move, three times out of three. An unknown number, or evidence not found in the target turn, gives
     nothing; a quote that joins passages with an ellipsis counts by its passage found there (`quoted_in`); a quote that
-    places the change later (`LATER`: tomorrow, next week, planned…) closes nothing, whatever `when` says. A negative
+    places the change later (`places_later`: tomorrow, next week, planned…, unless a clause of it states
+    the change done now) closes nothing, whatever `when` says. A negative
     `role_toward` the model wrote itself between the two parties of a listed role is dropped: the listed ending is the
     one way to close it, and a free one in other words would stand beside the role as a fact of its own.
     The counterpart must be named in the shown TARGET (not necessarily in the quote); hints alone cannot establish
@@ -1214,7 +1321,7 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
     parties = _parties(hints, persona)
     pairs = {(x, y) for r in roles for x in parties(r["by"]) for y in parties(r["to"])}
     kept = [a for a in items if not (isinstance(a, dict) and a.get("predicate") == "role_toward"
-                                     and str(a.get("polarity") or "").strip().lower() == "negative"
+                                     and polarity_of(a.get("polarity")) == "negative"
                                      and any((x, y) in pairs for x in parties(a.get("subject"))
                                              for y in parties(a.get("object"))))]
     entries = answer.get("roles_ended")
@@ -1229,7 +1336,7 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
             continue
         now = str(entry.get("when") or "").strip().lower() == "now"
         evidence = quoted_in(str(entry.get("evidence") or "").strip()[:300], turn_text)
-        if evidence is None or LATER.search(evidence):
+        if evidence is None or places_later(evidence):
             continue
         listed = roles[int(ref) - 1]
         if not role_party_named(listed, turn_text, hints, persona):
@@ -1327,9 +1434,9 @@ def confirm_prompt(role: dict[str, Any], ctx: dict[str, Any]) -> str:
 
 def confirmed(answer: Any, turn_text: str) -> tuple[str, str | None]:
     """(outcome, quote) of one confirmation answer: "yes" when it says the role ended and quotes the TARGET turn
-    (`quoted_in`) with nothing placing the change later (`LATER`), with that quote; otherwise why not, and no quote:
-    "no" (with or without a quote: a no withholds), "quote not in the turn", "quote places it later" or "invalid
-    answer". Whether the turn completes the ending is the prompt's judgment; the quote checks only filter a yes, they
+    (`quoted_in`) with nothing placing the change later (`places_later`), with that quote; otherwise why not, and no
+    quote: "no" (with or without a quote: a no withholds), "quote not in the turn", "quote places it later" or
+    "invalid answer". Whether the turn completes the ending is the prompt's judgment; the quote checks only filter a yes, they
     do not prove completion."""
     if not isinstance(answer, dict):
         return "invalid answer", None
@@ -1342,7 +1449,7 @@ def confirmed(answer: Any, turn_text: str) -> tuple[str, str | None]:
     quote = quoted_in((evidence or "").strip()[:300], turn_text)
     if quote is None:
         return "quote not in the turn", None
-    if LATER.search(quote):
+    if places_later(quote):
         return "quote places it later", None
     return "yes", quote
 
@@ -1504,13 +1611,13 @@ def aliases_to_confirm(items: list[Any], turn_text: str, hints: list[dict[str, A
     name (ADR 0024: no quote could contain it, so every reveal would be held; found by the Q5 (c) comparison at
     S1 turn 29). Not a NAME PAIRS answer
     (`listed_pair`, already confirmed by number), not the persona's own alias (PHASE-28 Q6), not an item's or a
-    place's. Only the first 40 items, the ones `normalize` stores."""
+    place's. Only the items `normalize` stores (`capped`)."""
     me = frozenset(n for n in map(norm, persona or ()) if n)
     groups = [[n for n in [h.get("name"), *h.get("also", [])] if n]
               for h in hints or () if h.get("type") == "character"]
     out = []
     seen: set[tuple[str, str]] = set()
-    for item, _ in fill_types(items[:40], hints):
+    for item, _ in fill_types(capped(items), hints):
         if not (isinstance(item, dict) and item.get("predicate") == "also_called"
                 and item.get("subject_type") == "character" and not item.get("listed_pair") and not item.get("held")):
             continue
@@ -1596,10 +1703,43 @@ def assertion_values(a: dict[str, Any]) -> tuple[Any, ...]:
     return tuple(Jsonb(a[c]) if c in JSON_COLUMNS and a.get(c) is not None else a.get(c) for c in ASSERTION_COLUMNS)
 
 
+MAX_ASSERTIONS = 40  # the model's own assertions kept per turn
+# What the worker adds to the model's assertions (`learned` from `secrets`, a listed role's ending, a confirmed NAME
+# PAIR) and how it marks them; a model's own item never carries a marker (`own_items`).
+MARKERS = ("listed", "listed_pair", "held", "doubt")
+
+
+def own_items(items: list[Any]) -> list[Any]:
+    """The model's own assertions as the worker reads them: no DERIVED predicate (the worker fills those), no marker
+    of a derived row (a model's "listed_pair" would skip the alias confirmation), at most MAX_ASSERTIONS."""
+    return [{k: v for k, v in a.items() if k not in MARKERS} if isinstance(a, dict) else a for a in items
+            if not (isinstance(a, dict) and a.get("predicate") in DERIVED)][:MAX_ASSERTIONS]
+
+
+def _derived(item: Any) -> bool:
+    return isinstance(item, dict) and (item.get("predicate") in DERIVED or item.get("listed") is not None
+                                       or bool(item.get("listed_pair")))
+
+
+def capped(items: list[Any]) -> list[Any]:
+    """The rows `normalize` stores, in order: the model's own assertions up to MAX_ASSERTIONS, and every row the worker
+    derived from the rest of its answer (`revealed`, `ended_roles`, `same_names`; each bounded by its listed hints).
+    Capping the whole list cut the derived rows, appended last, from a dense turn (Tier 1 D1)."""
+    out, own = [], 0
+    for a in items:
+        if not _derived(a):
+            own += 1
+            if own > MAX_ASSERTIONS:
+                continue
+        out.append(a)
+    return out
+
+
 def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
               shown: str | None = None, apart: bool = False, horizons: bool = False,
               feelings: bool = False, compiler: str | None = None) -> list[dict[str, Any]]:
-    """Model output → assertion rows (at most 40): missing entity types filled from the reply or the
+    """Model output → assertion rows (`capped`: the model's own at most 40, the derived ones all; a `value` on a
+    predicate that takes none dropped, `takes_value`): missing entity types filled from the reply or the
     hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
     (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). `shown` (the turn worker, since extract-v14,
     ADR 0054: the target turn as the model saw it, `shown_target`): a quote of EVIDENCE_MIN_CHARS or more that is
@@ -1609,10 +1749,11 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
     so the real-model evaluation (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
     out = []
     also = EXTENSION_PARTICIPANTS.get(compiler or "", frozenset())
-    for item, inferred in fill_types(items[:40], hints):
+    registry = registry_for(compiler)
+    for item, inferred in fill_types(capped(items), hints):
         if not isinstance(item, dict):
             continue
-        status, reason = validate(item, registry_for(compiler))
+        status, reason = validate(item, registry)
 
         def text(key: str, limit: int = 300) -> str | None:
             value = item.get(key)
@@ -1623,7 +1764,7 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
         except (TypeError, ValueError):
             confidence = None
         scope, known_by, hidden_from, note = knowledge(item)
-        polarity, modality, source, asserted_by, unclaimed = semantics(item)
+        polarity, modality, source, asserted_by, unread = semantics(item)  # a claim without its speaker, a polarity
         if status == "valid" and item.get("held"):  # a listed role's ending not confirmed (ADR 0064 item 4)
             status, reason = "pending", str(item["held"])
         if (status == "valid" and apart and item.get("predicate") == "also_called"
@@ -1633,8 +1774,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
         if (status == "valid" and item.get("predicate") == "also_called"
                 and not alias_evidenced(item, turn_text, hints, apart)):
             status, reason = "pending", "alias not stated in the turn"
-        if status == "valid" and unclaimed:
-            status, reason = "pending", unclaimed
+        if status == "valid" and unread:
+            status, reason = "pending", unread
         if status == "valid" and item.get("predicate") == "resolved" and outcome(item) is None:
             status, reason = "pending", "resolved without an outcome"
         quote = text("evidence")
@@ -1648,7 +1789,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
                 reason = f"{reason}; {extra}" if reason else extra
         out.append({"subject": text("subject", 120) or "?", "subject_type": text("subject_type", 20),
                     "predicate": text("predicate", 40) or "?", "object": text("object", 120),
-                    "object_type": text("object_type", 20), "value": text("value"),
+                    "object_type": text("object_type", 20),
+                    "value": text("value") if takes_value(item.get("predicate"), registry) else None,
                     "epistemic": "implied" if item.get("epistemic") == "implied" else "stated",
                     "confidence": confidence, "evidence": text("evidence"), "status": status, "reason": reason,
                     "knowledge": scope, "known_by": known_by, "hidden_from": hidden_from, "polarity": polarity,
@@ -1682,8 +1824,10 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     roles: list[dict[str, Any]] = []
     pairs: list[dict[str, Any]] = []
     clock: str | None = None
+    resolution: Resolution | None = None
     compiler = gen.spec.get("compiler", COMPILER_VERSION)
     turn_text = "\n".join(r["content"] for r in ctx["members"])
+    shown = shown_target(ctx)  # what the model is shown of the TARGET: hints and quote checks read this (Tier 1 D2)
     if sum(len(r["content"]) for r in ctx["members"]) < MIN_CONTENT_CHARS:
         parsed, raw, usage = {"assertions": []}, "", NO_CALL
     else:
@@ -1692,10 +1836,12 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         hints = entity_hints(conn, ctx, gen.key, limit, earlier) if limit > 0 else None
         promises = promise_hints(ctx, earlier)
         secrets = secret_hints(ctx, earlier)
+        if secrets:  # who a reveal names, as the earlier turns resolve them (Tier 1 C4)
+            resolution = _resolution(ctx, earlier)
         threads = thread_hints(ctx, earlier)
         roles = role_hints(ctx, earlier) if compiler in ROLES else []
         if compiler in PARTS_APART:
-            pairs = name_pairs(hints, turn_text, persona_of(ctx["target"].get("host_persona_name")))
+            pairs = name_pairs(hints, shown, persona_of(ctx["target"].get("host_persona_name")))
         if compiler in HAPPENED:  # a recorded input like the hints, never part of validity (PHASE-60 S7)
             clock = story_clock(conn, ctx)
         system = prompt_of(compiler, bool(roles)).format(registry=registry_prompt(compiler=compiler))  # PHASE-60 S7
@@ -1705,20 +1851,21 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     items = parsed.get("assertions")
     if not isinstance(items, list):  # not an empty answer: fail the job, so it is retried and then counted failed
         raise LLMError("model reply has no `assertions` list")
-    items = [a for a in items if not (isinstance(a, dict) and a.get("predicate") in DERIVED)]
-    items += revealed(parsed, secrets, turn_text)
+    # The model's own at most MAX_ASSERTIONS, before the derived rows are added: they are never cut (Tier 1 D1).
+    items = own_items(items)
+    items += revealed(parsed, secrets, shown, resolution)
     if roles:
-        items = ended_roles(parsed, items, roles, shown_target(ctx), hints=hints,
+        items = ended_roles(parsed, items, roles, shown, hints=hints,
                             persona=persona_of(ctx["target"].get("host_persona_name")))
     confirmations: list[dict[str, Any]] = []
     alias_confirmations: list[dict[str, Any]] = []
     confirm_usage: dict[str, Any] | None = None
     if roles and compiler in CONFIRMS:
-        confirmations, confirm_usage = confirm_endings(complete, items, ctx, shown_target(ctx))
+        confirmations, confirm_usage = confirm_endings(complete, items, ctx, shown)
     if pairs:
-        items = same_names(parsed, items, pairs, turn_text)
+        items = same_names(parsed, items, pairs, shown)
     if compiler in CONFIRMS and raw:  # PHASE-29: an alias whose two names are both in the turn (no reply, no call)
-        alias_confirmations, alias_usage = confirm_aliases(complete, items, ctx, turn_text, shown_target(ctx), hints,
+        alias_confirmations, alias_usage = confirm_aliases(complete, items, ctx, turn_text, shown, hints,
                                                            persona_of(ctx["target"].get("host_persona_name")))
         confirm_usage = summed(confirm_usage, alias_usage)
     usage = with_confirmations(usage, confirm_usage)
@@ -1749,7 +1896,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         if inserted is None:
             return "done"
         rows = [(extraction_id, revision_id, *assertion_values(a))
-                for a in normalize(items, turn_text, hints, shown_target(ctx), compiler in PARTS_APART,
+                for a in normalize(items, turn_text, hints, shown, compiler in PARTS_APART,
                                   compiler in HORIZONS, compiler in FEELINGS, compiler=compiler)]
         if rows:
             with conn.cursor() as cur:
@@ -2120,6 +2267,12 @@ def discard_turns(conn: psycopg.Connection, turns: list[dict[str, Any]]) -> int:
         return 0
     rids, hashes = [t["rid"] for t in turns], [t["turn_hash"] for t in turns]
     with conn.transaction():
+        # Serialize with worker commits, as `discard` does (Tier 1 D5): a worker storing one of these turns holds its
+        # job row until it commits, so the discard below sees its extraction; one that commits after finds its job
+        # obsolete and stores nothing.
+        conn.execute("SELECT id FROM job WHERE kind = 'extract' AND status IN ('queued', 'running')"
+                     " AND payload->>'revision_id' = ANY(%s) ORDER BY id FOR UPDATE",
+                     ([str(r) for r in rids],)).fetchall()
         n = conn.execute(
             "UPDATE extraction x SET discarded_at = now() FROM unnest(%s::uuid[], %s::text[]) AS t(rid, h)"
             " WHERE x.source_revision_id = t.rid AND x.window_hash = t.h AND x.discarded_at IS NULL",
