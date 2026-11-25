@@ -387,12 +387,9 @@ def snapshot_of(
     resolved_names = _validate_mode_and_names(mode, names, r, mem_excluded)
     rev_map: Mapping[int, UUID | str] = revisions or {}
 
-    # Facts: newest first (source position descending), canon rows left out. A belief the source still holds
-    # (extract-v21, PHASE-66) is carried as its row; a forgetting is not: what it withdrew is already out of the
-    # facts and their marks. A view without beliefs has no `beliefs` key, so its snapshot is as before.
+    # Facts: newest first (source position descending), canon rows left out.
     source_facts = sorted(
-        (f for f in [*(view.get("facts") or ()), *(b for b in view.get("beliefs") or () if b.get("status") == "held")]
-         if not f.get("canon")),
+        (f for f in (view.get("facts") or ()) if not f.get("canon")),
         key=lambda f: f.get("position") or 0,
         reverse=True,
     )
@@ -858,7 +855,7 @@ def cutoff_of(
 def _fetch_revisions(conn: psycopg.Connection, view: Mapping[str, Any], mode: str) -> dict[int, UUID]:
     """Fetch source_revision_id for every stored assertion referenced by the reading, in one query."""
     ids: set[int] = set()
-    for row in [*(view.get("facts") or ()), *(view.get("beliefs") or ())]:  # a held belief is carried too (PHASE-66)
+    for row in view.get("facts") or ():
         if not row.get("canon") and (aid := _positive_int(row.get("id"))) is not None:
             ids.add(aid)
     r: Resolution | None = view.get("resolution")

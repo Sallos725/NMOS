@@ -175,8 +175,7 @@ def by_slot(out: list[dict[str, Any]]) -> dict[tuple, str | None]:
     return {repairs.slot(f): f["value"] for f in out}
 
 
-@pytest.mark.parametrize("predicate,obj", [("feels_toward", "도윤"), ("role_toward", "도윤"), ("has_status", None),
-                                           ("identity", None)])
+@pytest.mark.parametrize("predicate,obj", [("feels_toward", "도윤"), ("has_status", None), ("identity", None)])
 def test_a_conditional_fact_and_the_unconditional_one_coexist_each_with_its_own_history(predicate, obj):
     h = [row(0, predicate, "기본", obj=obj), row(1, predicate, "비밀", PRIV, obj=obj),
          row(2, predicate, "공식", PUB, obj=obj), row(3, predicate, "새 기본", obj=obj),
@@ -306,7 +305,7 @@ def test_retract_claims_dropped_restore_and_carry_work_per_slot(migrated: str):
 
 G, I, PL = "group", "item", "place"
 ONTO = {
-    "t0": [a("리안", "vital_status", None, "사망"),
+    "t0": [a("루카", "vital_status", None, "사망"),
            a("하나", "lives_in", "저택", None, ot=PL),
            a("하나", "possesses", "마검", None, ot=I, item_kind="unique"),
            a("하나", "possesses", "물약", None, ot=I, item_kind="fungible"),
@@ -315,14 +314,14 @@ ONTO = {
            a("하나", "role_toward", "도윤", "제자"),
            a("하나", "role_toward", "기사단", "후원자", ot=G),
            a("하나", "identity", None, "암살자")],
-    "t1": [a("리안", "has_status", None, "부상"),
+    "t1": [a("루카", "has_status", None, "부상"),
            a("하나", "located_in", "시장", None, ot=PL),
            a("마검", "located_in", "무기고", None, st=I, ot=PL),
            a("도윤", "possesses", "물약", None, ot=I, item_kind="fungible"),
            a("하나", "role_toward", "도윤", "비서"),
            a("하나", "cover_identity", None, "꽃집 주인"),
-           a("리안", "disguised_as", "카이", None, knowledge="limited", hidden_from=["아리아"], guise="카이")],
-    "t2": [a("리안", "vital_status", None, "생존"),
+           a("루카", "disguised_as", "카이", None, knowledge="limited", hidden_from=["유나"], guise="카이")],
+    "t2": [a("루카", "vital_status", None, "생존"),
            a("마검", "contained_in", "상자", None, st=I, ot=I, item_kind="unique"),
            a("하나", "possesses", "물약", None, ot=I, item_kind="fungible", polarity="negative"),
            a("하나", "holds_rank", "기사단", "단장", ot=G),
@@ -340,8 +339,8 @@ def test_the_ontology_folds_in_its_own_slots(migrated: str):
         v21.run(c)
         view = v21.view()
     # a death has its own slot: a later wound does not overwrite it, a later state of being alive does
-    assert values(view, "vital_status") == {("리안", None, "생존", "positive")}
-    assert values(view, "has_status", "리안") == {("리안", None, "부상", "positive")}
+    assert values(view, "vital_status") == {("루카", None, "생존", "positive")}
+    assert values(view, "has_status", "루카") == {("루카", None, "부상", "positive")}
     # a home is not where one is now
     assert values(view, "lives_in") == {("하나", "저택", None, "positive")}
     assert values(view, "located_in", "하나") == {("하나", "시장", None, "positive")}
@@ -360,7 +359,7 @@ def test_the_ontology_folds_in_its_own_slots(migrated: str):
     assert values(view, "identity") == {("하나", None, "암살자", "positive")}
     assert values(view, "cover_identity") == {("하나", None, "꽃집 주인", "positive")}
     guise = current(view, "disguised_as")[0]
-    assert (guise["object"], guise["guise"], guise["hidden_from"]) == ("카이", "카이", ["아리아"])
+    assert (guise["object"], guise["guise"], guise["hidden_from"]) == ("카이", "카이", ["유나"])
     # the item timeline of the unique item keeps its holder current beside its place
     blade = next(i for i in view["items"] if i["item"] == "마검")
     assert {(e["predicate"], e["outcome"]) for e in blade["history"]} == {("possesses", "current"),
@@ -396,7 +395,7 @@ def test_every_reader_of_the_view_serves_a_chat_with_the_ontology(migrated: str,
     with make_client(migrated, **LLM, extract_compiler="extract-v21", packet_policy=policy) as c:
         v21.run(c)
         view = v21.view()
-        out = recall(c, v21.chat, "리안은 살아 있어? 하나는 도윤을 어떻게 생각해?", budget=1500)
+        out = recall(c, v21.chat, "루카은 살아 있어? 하나는 도윤을 어떻게 생각해?", budget=1500)
         assert out["packet"] is not None
         ents = {e["name"]: e["id"] for e in view["entities"]}
         for path in ("facts", "entities", "threads", "secrets", "dropped", "repairs", "state"):
@@ -404,7 +403,7 @@ def test_every_reader_of_the_view_serves_a_chat_with_the_ontology(migrated: str,
             assert res.status_code == 200, (path, res.text[:300])
         for path in (f"/v1/inspector/c/{v21.cid}", f"/v1/inspector/c/{v21.cid}/e/{ents['하나']}",
                      f"/v1/inspector/c/{v21.cid}/t/1", f"/v1/views/c/{v21.cid}/working",
-                     f"/v1/views/c/{v21.cid}/memory", f"/v1/views/c/{v21.cid}/person/{ents['리안']}",
+                     f"/v1/views/c/{v21.cid}/memory", f"/v1/views/c/{v21.cid}/person/{ents['루카']}",
                      f"/v1/views/c/{v21.cid}/map", f"/v1/views/c/{v21.cid}/map/graph"):
             res = c.get(path)
             assert res.status_code == 200, (path, res.text[:300])
@@ -416,17 +415,17 @@ def test_every_reader_of_the_view_serves_a_chat_with_the_ontology(migrated: str,
 
 EPI = {
     "t0": [a("카이", "identity", None, "카이의 정체는 왕자"),
-           a("아리아", "believes", None, "카이의 정체는 상인"),
-           a("아리아", "believes", None, "도윤이 배신했다"),
+           a("유나", "believes", None, "카이의 정체는 상인"),
+           a("유나", "believes", None, "도윤이 배신했다"),
            a("세라", "believes", None, "하나가 마녀다", source="character_claim", asserted_by="도윤"),
-           a("아리아", "knows", None, "비밀 통로의 위치", knowledge="limited", known_by=["아리아"]),
-           a("하나", "has_status", None, "임신함", knowledge="limited", known_by=["하나", "아리아"],
+           a("유나", "knows", None, "비밀 통로의 위치", knowledge="limited", known_by=["유나"]),
+           a("하나", "has_status", None, "임신함", knowledge="limited", known_by=["하나", "유나"],
              hidden_from=["도윤"])],
-    "t1": [a("아리아", "knows", None, "카이의 정체는 왕자"),
+    "t1": [a("유나", "knows", None, "카이의 정체는 왕자"),
            a("도윤", "believes", None, "보물은 동굴에 있다")],
-    "t2": [a("아리아", "forgot", None, "all"),
+    "t2": [a("유나", "forgot", None, "all"),
            a("도윤", "forgot", None, "보물은 동굴에 있다")],
-    "t3": [a("아리아", "knows", None, "새 암호", knowledge="limited", known_by=["아리아"])],
+    "t3": [a("유나", "knows", None, "새 암호", knowledge="limited", known_by=["유나"])],
 }
 
 
@@ -444,23 +443,23 @@ def test_a_belief_is_its_own_kind_and_ends_when_its_holder_learns_or_forgets_the
         # learning the matter ends it; forgetting it ends it; "all" ends every belief of the forgetter
         assert beliefs["카이의 정체는 상인"]["status"] == "ended"
         assert beliefs["카이의 정체는 상인"]["ended_by"]["predicate"] == "knows"
-        assert beliefs["도윤이 배신했다"]["status"] == "ended"  # 아리아 forgot all at t2
+        assert beliefs["도윤이 배신했다"]["status"] == "ended"  # 유나 forgot all at t2
         assert beliefs["보물은 동굴에 있다"]["ended_by"]["predicate"] == "forgot"
         # another's claim of a belief is another assertion (stored, inspectable, never in the packet)
         assert any(o["predicate"] == "believes" and o["source"] == "character_claim" for o in view["other"])
-        assert not any(s["text"].startswith("아리아 believes") for s in view["secrets"])
+        assert not any(s["text"].startswith("유나 believes") for s in view["secrets"])
 
         # a forgetting withdraws the character's knowledge from its turn on, and is itself in the view
         forgot = {g["who"]: g for g in view["forgotten"]}
-        assert forgot["아리아"]["scope"] == "all" and forgot["도윤"]["scope"] == "matter"
-        withdrawn = {(w["predicate"], w["how"]) for w in forgot["아리아"]["withdrew"]}
+        assert forgot["유나"]["scope"] == "all" and forgot["도윤"]["scope"] == "matter"
+        withdrawn = {(w["predicate"], w["how"]) for w in forgot["유나"]["withdrew"]}
         assert ("knows", "fact") in withdrawn and ("has_status", "known_by") in withdrawn
-        assert not {f["value"] for f in current(view, "knows", "아리아")} & {"비밀 통로의 위치", "카이의 정체는 왕자"}
-        assert {f["value"] for f in current(view, "knows", "아리아")} == {"새 암호"}  # learned after it: stands
+        assert not {f["value"] for f in current(view, "knows", "유나")} & {"비밀 통로의 위치", "카이의 정체는 왕자"}
+        assert {f["value"] for f in current(view, "knows", "유나")} == {"새 암호"}  # learned after it: stands
         status = current(view, "has_status", "하나")[0]
         # her name leaves known_by; nothing is added to hidden_from
         assert status["known_by"] == ["하나"] and status["hidden_from"] == ["도윤"]
-        assert status["forgotten_by"] == ["아리아"]
+        assert status["forgotten_by"] == ["유나"]
 
         # the owner's repairs reach a belief and a forgetting as they reach a fact
         # (a correction is planned and read here; api.py's own fact_correct guard looks in view["facts"] only, the
@@ -475,13 +474,13 @@ def test_a_belief_is_its_own_kind_and_ends_when_its_holder_learns_or_forgets_the
         corrected = next(b for b in fixed["beliefs"] if b.get("owner"))
         with pytest.raises(repairs.RepairError, match="not locked"):
             repairs.plan("fact_lock", str(corrected["id"]), fixed, 3)
-        gid = str(forgot["아리아"]["id"])
+        gid = str(forgot["유나"]["id"])
         res = c.post(f"/v1/conversations/{v21.cid}/repairs", json={"kind": "fact_retract", "item": gid})
         assert res.status_code == 200 and res.json()["applied"] == gid, res.text
         after = v21.view()
         assert {g["who"] for g in after["forgotten"]} == {"도윤"}
-        assert "비밀 통로의 위치" in {f["value"] for f in current(after, "knows", "아리아")}
-        assert current(after, "has_status", "하나")[0]["known_by"] == ["하나", "아리아"]
+        assert "비밀 통로의 위치" in {f["value"] for f in current(after, "knows", "유나")}
+        assert current(after, "has_status", "하나")[0]["known_by"] == ["하나", "유나"]
 
 
 def test_forgot_reads_one_matter_all_or_since_a_turn():
@@ -515,8 +514,8 @@ def test_retract_correct_lock_and_restore_reach_the_ontologys_rows(migrated: str
         vital = current(view, "vital_status")[0]
         assert post(c, v21.cid, kind="fact_retract", item=str(vital["id"]))["applied"] == str(vital["id"])
         after = v21.view()
-        assert values(after, "vital_status") == {("리안", None, "사망", "positive")}
-        assert values(after, "has_status", "리안") == {("리안", None, "부상", "positive")}
+        assert values(after, "vital_status") == {("루카", None, "사망", "positive")}
+        assert values(after, "has_status", "루카") == {("루카", None, "부상", "positive")}
         # correct a rank at its own turn, then lock the correction: a later rank in the same group is held off
         rank = next(f for f in current(after, "holds_rank") if f["object"] == "길드")
         post(c, v21.cid, kind="fact_correct", item=str(rank["id"]), new_value="길드장")
@@ -577,9 +576,9 @@ def test_a_carried_fact_is_retracted_and_corrected_through_the_api(migrated: str
 
 def test_a_carried_death_is_a_current_carried_fact_and_the_marks_survive_every_link(migrated: str):
     from nmos_sidecar import retrieval
-    src = Chat(migrated, {"t0": [a("리안", "vital_status", None, "사망"),
+    src = Chat(migrated, {"t0": [a("루카", "vital_status", None, "사망"),
                                  a("하나", "feels_toward", "도윤", "그리움", condition=PRIV),
-                                 a("하나", "believes", None, "리안이 살아 있다")]}, name="w3-carry-src")
+                                 a("하나", "believes", None, "루카이 살아 있다")]}, name="w3-carry-src")
     with src.client() as c:
         src.run(c)
         src.view()
@@ -605,7 +604,60 @@ def test_a_carried_death_is_a_current_carried_fact_and_the_marks_survive_every_l
             assert death["carried"] == links[n].link and death["value"] == "사망" and death["knowledge_scope"]
             assert retrieval.says_gone(death)  # the gone rule's word list reads it (the gone pin: report)
             assert current(view, "feels_toward")[0]["condition"] == PRIV
-            assert {b["value"] for b in view["beliefs"]} == {"리안이 살아 있다"} and view["beliefs"][0]["carried"]
-            assert view["beliefs"][0]["carried_from"]["revision"]  # its provenance names the source's message
+            assert "beliefs" not in view  # a belief is not carried (left for the next wave: report)
         lines = {x.get("predicate"): x for x in links["reg"].regression if x["line"] == "fact"}
         assert lines["feels_toward"]["condition"] == PRIV and lines["feels_toward"]["knowledge_scope"] == "public"
+
+
+# --- a chat switched from extract-v20 to extract-v21 (the switch queues nothing: old turns stay v20's) ----------------
+
+def r20(i: int, *args: Any, **kw: Any) -> dict[str, Any]:
+    out = row(i, *args, **kw)
+    out["compiler"] = "extract-v20"
+    out.pop("knowledge_scope")
+    return out
+
+
+def fold(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """memory_view's grouping by version key, then the fold."""
+    groups: dict[tuple, list[dict[str, Any]]] = {}
+    for x in rows:
+        groups.setdefault(facts.version_key(x), []).append(x)
+    return [f for g in groups.values() for f in facts._versions(g, None)]
+
+
+def test_a_role_and_an_item_keep_one_history_across_the_switch_to_v21():
+    # a role an earlier generation stated ends by extract-v21's denial, and is not doubled by its restatement
+    assert [(f["value"], f["polarity"]) for f in fold([r20(0, "role_toward", "제자"),
+                                                        row(1, "role_toward", "제자", polarity="negative")])] == [
+        ("제자", "negative")]
+    assert [(f["value"], f["polarity"]) for f in fold([r20(0, "role_toward", "제자"),
+                                                        row(1, "role_toward", "제자")])] == [("제자", "positive")]
+    # a new role beside it: several roles once v21 speaks; a pair only v20 speaks of keeps its one role
+    assert {f["value"] for f in fold([r20(0, "role_toward", "제자"), row(1, "role_toward", "비서")])} == {"제자", "비서"}
+    assert {f["value"] for f in fold([r20(0, "role_toward", "제자"), r20(1, "role_toward", "비서")])} == {"비서"}
+    # an item once called fungible: each holder's own, also a statement that did not say so (an earlier one's)
+    potion = dict(obj="물약", object_type="item")
+    out = fold([r20(0, "possesses", None, **potion),
+                row(1, "possesses", None, subject="도윤", item_kind="fungible", **potion),
+                row(2, "possesses", None, polarity="negative", item_kind="fungible", **potion)])
+    assert {(f["subject"], f["polarity"]) for f in out} == {("하나", "negative"), ("도윤", "positive")}
+    # a unique item still has one holder
+    blade = dict(obj="마검", object_type="item")
+    assert [f["subject"] for f in fold([row(0, "possesses", None, **blade),
+                                        row(1, "possesses", None, subject="도윤", **blade)])] == ["도윤"]
+
+
+def test_a_conditional_role_and_cover_fold_per_slot_within_their_value(migrated: str):
+    v21 = Chat(migrated, {"t0": [a("하나", "role_toward", "도윤", "비서", condition=PUB),
+                                 a("하나", "role_toward", "도윤", "비서"),
+                                 a("하나", "cover_identity", None, "꽃집 주인", condition=PUB),
+                                 a("하나", "cover_identity", None, "학생")],
+                          "t1": [a("하나", "role_toward", "도윤", "비서", condition=ALL)]})
+    with v21.client() as c:
+        v21.run(c)
+        view = v21.view()
+    # `all` unifies the slots of one role (one value); a cover's slots, each value apart
+    assert [(f["value"], repairs.slot(f)) for f in current(view, "role_toward")] == [("비서", ("default",))]
+    assert {(f["value"], repairs.slot(f)) for f in current(view, "cover_identity")} == {
+        ("꽃집 주인", ("public",)), ("학생", ("default",))}

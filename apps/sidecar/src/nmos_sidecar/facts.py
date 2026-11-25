@@ -204,16 +204,15 @@ def version_key(a: dict[str, Any], r: Resolution | None = None) -> tuple:
 
     extract-v21's own predicates (PHASE-66) take their registry entry (`READ_REGISTRY`): `vital_status`, `lives_in`,
     `disguised_as` and `contained_in` one each per subject (apart from `has_status`, `located_in` and `identity`),
-    `holds_rank` one per (character, group), `cover_identity` beside `identity`. A fungible item's `possesses` is each
-    holder's own, and an extract-v21 `role_toward` accumulates (`repairs.cardinality`)."""
+    `holds_rank` one per (character, group), `cover_identity` beside `identity`. The key never depends on the row's
+    generation: a pair's roles and an item's holders keep one history across an extract-v20 → v21 switch, and the fold
+    (`_versions`) reads several roles or a fungible item's holders apart."""
     if a["predicate"] == "relationship":  # one history per pair, both directions (ADR 0038)
         return ("relationship",) + tuple(sorted((_subject(a, r), _object(a, r))))
-    if fungible(a):  # PHASE-66: one of many alike, each holder's own; giving one away empties no one else's
-        return ("possesses", _subject(a, r), _object(a, r))
     if whereabouts(a):  # one current holder per item (ADR 0011), one whereabouts with its place (PHASE-6)
         return ("whereabouts", _item(a, r))
     pred = READ_REGISTRY[a["predicate"]]
-    if cardinality(a) == "single":
+    if pred.cardinality == "single":
         return (a["predicate"], _subject(a, r)) + ((_object(a, r),) if pred.per_object else ())
     return (a["predicate"], _subject(a, r), _object(a, r), _norm(a["value"]))
 
@@ -229,7 +228,7 @@ def relation(a: dict[str, Any], r: Resolution | None = None) -> tuple:
     if whereabouts(a):
         return (a["predicate"], _object(a, r))
     pred = READ_REGISTRY[a["predicate"]]
-    if cardinality(a) == "single":
+    if pred.cardinality == "single":
         return ((_norm(a["value"]),) if pred.per_object else (_object(a, r), _norm(a["value"])))
     return ()
 
@@ -573,6 +572,30 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
         if any(conditional(a) for a in history):  # extract-v21 (PHASE-66): a pair's ties by condition slot
             return _conditional_pairs(history, r)
         return _pair_versions(history, r)
+    if history and history[0]["predicate"] == "role_toward" and any(is_v21(a) for a in history):
+        # PHASE-66: once extract-v21 speaks of a pair's roles, each role is its own history (several roles toward one
+        # counterpart, each ended by its own denial), earlier generations' statements of the same role among them
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for a in history:
+            groups.setdefault(_norm(a.get("value")), []).append(a)
+        return [f for g in groups.values() for f in _one_slot(g, r)]
+    if history and whereabouts(history[0]) and any(fungible(a) for a in history):
+        # PHASE-66: an item one of many alike (any statement of it says so): each holder's possession its own history,
+        # never ending another's; its place and its end fold apart, and end no one's possession
+        holders: dict[str, list[dict[str, Any]]] = {}
+        rest = []
+        for a in history:
+            if a["predicate"] in HOLDER_PER_ITEM:
+                holders.setdefault(_subject(a, r), []).append(a)
+            else:
+                rest.append(a)
+        return [f for g in [*holders.values(), *([rest] if rest else [])] for f in _one_slot(g, r)]
+    return _one_slot(history, r)
+
+
+def _one_slot(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
+    """`_versions` of one history that holds one role or one holder (or any other key): conditional slots when a row
+    states a condition (PHASE-64, PHASE-66), else the plain fold below."""
     if history and slotted(history[0]["predicate"]) and any(conditional(a) for a in history):
         return _address_versions(history, r)  # PHASE-64 addresses; PHASE-66 the other conditioned predicates
     slots: dict[str, dict[str, Any] | None] = {}
