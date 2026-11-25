@@ -1250,7 +1250,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if body.kind == "entity_exclude":
                 host_character(conn, conv_id, view, body.entity_type, body.item)
             if (body.kind == "fact_correct" and not body.lock
-                    and not any(str(f["id"]) == body.item for f in view["facts"])):
+                    and not any(str(f["id"]) == body.item for f in [*view["facts"], *(view.get("beliefs") or ()), *(view.get("forgotten") or ())])):
                 # a canon statement the story replaced: corrected alone it would be replaced at once (PHASE-57 B2)
                 raise HTTPException(status_code=422, detail="a statement the story replaced is corrected with its lock")
             target, value = plan_repair(conn, head, view, body)
@@ -2167,6 +2167,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                         canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
                                         canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
                                         canon_facts=view.get("canon_facts", 0), dropped=lost,
+                                        beliefs=view.get("beliefs"), forgotten=view.get("forgotten"),  # PHASE-66
                                         endings=role_ends, span=inspector.span_of(span),
                                         cast=None if embed else cast_of(view, traces), lazy=lazy,
                                         overuse=overuse.placement(readmodel.ledgers(conn, conv_id)),
@@ -2292,6 +2293,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
              "story": told.get("story"), "scenes": list(reversed(scenes)),
              "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
              "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+        for key in ("beliefs", "forgotten"):  # PHASE-66 part 5: extract-v21 only; absent, the screen is as before
+            if view.get(key):
+                d[key] = view[key]
         if (carried := carry_data(conn, cid, view)) is not None:  # PHASE-60 S6: only a chat with a link in force
             d["carry"] = carried
         return d
@@ -2384,6 +2388,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "knows": [s for s in view["secrets"] if s.get("open") and names & {norm(n) for n in s.get("holders") or []}],
                 "kept": [s for s in view["secrets"] if names & {norm(n) for n in s.get("open") or []}],
                 "marks": marks, "first": 0, "last": last, "entities": character_ids(view)}
+        for key in ("beliefs", "forgotten"):  # PHASE-66 part 5: this person's, extract-v21 only
+            if own := [b for b in view.get(key) or () if str((b.get("subject_entity") or {}).get("id")) == eid]:
+                data[key] = own
         if (carried := carry_data(conn, cid, view, eid)) is not None:  # PHASE-60 S6: only a chat with a link in force
             data["carry"] = carried
         return with_told(data, told_chain(view["told"], eid))  # PHASE-60 S8: the chains this person tells or hears
