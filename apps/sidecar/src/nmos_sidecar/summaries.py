@@ -659,10 +659,21 @@ def _insert(conn: psycopg.Connection, conv: UUID, gen: Generation, level: str, w
          Jsonb(usage) if usage is not None else None)).fetchone() is not None
 
 
+def carried_of(conn: psycopg.Connection, head: UUID) -> Any:
+    """What the chat at `head` carries from its link in force (`carry.target_rows`, ADR 0085), or None."""
+    from . import carry  # carry imports this module
+
+    row = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
+    link = carry.in_force(conn, row["conversation_id"]) if row is not None else None
+    return carry.target_rows(link) if link is not None else None
+
+
 def head_secrets(conn: psycopg.Connection, head: UUID) -> list[dict[str, Any]]:
-    """The head's secrets as the facts of the active extractor generation fold them (ADR 0033)."""
+    """The head's secrets as the facts of the active extractor generation fold them (ADR 0033), with those its carry
+    link carries (a row kept from someone in the earlier chat is a secret of this one, ADR 0085): the set the packet's
+    and the note's views hold a summary by, so a summary that did not list a carried secret is written again."""
     key = generations.active(conn, "extract")
-    return memory_view(conn, head, key)["secrets"] if key else []
+    return memory_view(conn, head, key, carried=carried_of(conn, head))["secrets"] if key else []
 
 
 def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[Any, ...]],
