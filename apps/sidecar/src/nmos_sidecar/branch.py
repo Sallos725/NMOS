@@ -29,8 +29,8 @@ On the branch's first applied sync (`on_first_sync`, called by `api.do_reconcile
    (PHASE-60 S6) when the branch has none. Each copied row records `inherited_from`. Status pins are per card
    (`app_config`), so a branch of the same card already has them.
 
-Then `drop_covered` takes back the extraction and embedding jobs this sync queued for what a copy already covers: no
-job is queued for a prefix turn or message. All of it runs in one savepoint of the sync's transaction with a time
+Then `drop_covered` takes back the extraction and embedding jobs a sync queued for what a copy already covers: no job is
+queued for a prefix turn or message, on the first sync or when the branch point's reply is accepted later. All of it runs in one savepoint of the sync's transaction with a time
 bound; any error rolls the savepoint back, logs a line and the branch starts without inherited memory, as before. The
 marker `conversation.branch_inherit` records the outcome either way, so no later sync tries again on its own.
 
@@ -211,7 +211,7 @@ class _Copier:
 
 def _plan_extractions(c: _Copier) -> dict[UUID, UUID]:
     """Item 2: every live extraction of a prefix anchor's turn (any generation) and its live reveal check, planned under
-    the branch's anchor and turn hash. Returns origin extraction id → planned copy id (written ones only after run)."""
+    the branch's anchor and turn hash. Returns origin extraction id → copy id, filled as `run` writes them."""
     p = c.prefix
     if not p.anchors:
         return {}
@@ -256,8 +256,7 @@ def _plan_extractions(c: _Copier) -> dict[UUID, UUID]:
     for r in rows:
         if r["window_hash"] in p.remap:
             plan(r)
-    c.copy_assertions = written  # type: ignore[attr-defined]
-    return written
+    return written  # filled as `run` writes them
 
 
 def _copy_assertions(c: _Copier, written: dict[UUID, UUID]) -> None:
@@ -459,12 +458,12 @@ def inherit(conn: psycopg.Connection, conv_id: UUID, *, backfill: bool = False, 
     if prefix.length == 0:
         return {**out, "status": "empty"}
     c = _Copier(conn, conv_id, prefix, backfill, started + budget_s)
-    _plan_extractions(c)
+    written = _plan_extractions(c)
     _plan_summaries(c)
     _plan_settings(c)
     c.check()
     c.run()
-    _copy_assertions(c, c.copy_assertions)  # type: ignore[attr-defined]
+    _copy_assertions(c, written)
     c.check()
     _copy_embeddings(c)
     c.check()
@@ -524,7 +523,7 @@ def backfill(conn: psycopg.Connection, conv_id: UUID, dry_run: bool = True) -> d
         result = inherit(conn, conv_id, backfill=True, budget_s=BACKFILL_BUDGET_S, limit=10 ** 9)
         _restore(conn, before)
         if result["status"] == "done":
-            result["jobs_settled"] = drop_covered(conn, conv_id, first=False, any_chat=True)
+            result["jobs_settled"] = drop_covered(conn, conv_id, any_chat=True)
         if dry_run:
             raise psycopg.Rollback(tx)
     result = {**result, "dry_run": dry_run, "ms": round((time.perf_counter() - started) * 1000, 1)}
@@ -545,16 +544,16 @@ _COVERED = """(
           AND e.projection = j.payload->>'generation')))"""
 
 
-def drop_covered(conn: psycopg.Connection, conv_id: UUID, first: bool, any_chat: bool = False) -> int:
-    """Take back the queued extraction and embedding jobs of an inheriting branch whose result a copy already holds:
-    on the first sync they were queued in this transaction and are deleted (never queued); on a later sync (the tail
-    reply accepted, its turn copied) they are settled as `done`, what the worker would make of them without a call.
-    Only a branch whose copy is done (the marker) is touched, unless `any_chat` (the back-fill)."""
+def drop_covered(conn: psycopg.Connection, conv_id: UUID, any_chat: bool = False) -> int:
+    """Take back the queued extraction and embedding jobs of an inheriting branch whose result a copy already holds, so
+    no job is queued for a prefix turn or message: a row this transaction inserted (`created_at = now()`, the
+    transaction's time) is deleted, as if never queued; an older row this sync queued again (`REQUEUE`) is settled
+    `done`, what the worker would make of it without a call. The first sync deletes them all; a later one (the tail
+    reply accepted, its turn copied) the one it queued. Only a branch whose copy is done (the marker) is touched, unless
+    `any_chat` (the back-fill); for any other chat the marker test is a one-time filter and nothing is scanned."""
     inherited = "TRUE" if any_chat else ("EXISTS (SELECT 1 FROM conversation c WHERE c.id = %(c)s"
                                          " AND c.branch_inherit->>'status' = 'done')")
-    if first:
-        sql = f"DELETE FROM job j WHERE j.conversation_id = %(c)s AND j.status = 'queued' AND {inherited} AND {_COVERED}"
-    else:
-        sql = (f"UPDATE job j SET status = 'done', updated_at = now() WHERE j.conversation_id = %(c)s"
-               f" AND j.status = 'queued' AND {inherited} AND {_COVERED}")
-    return conn.execute(sql, {"c": conv_id}).rowcount
+    where = f"j.conversation_id = %(c)s AND j.status = 'queued' AND {inherited} AND {_COVERED}"
+    n = conn.execute(f"DELETE FROM job j WHERE {where} AND j.created_at = now()", {"c": conv_id}).rowcount
+    return n + conn.execute(f"UPDATE job j SET status = 'done', updated_at = now() WHERE {where}",
+                            {"c": conv_id}).rowcount
