@@ -29,24 +29,25 @@ ambiguous, and when the story's aliases made it ambiguous, only the owner's link
 named after its first mentioned name that is not the description of an unnamed character ("?…",
 `extract-v9`, ADR 0024), so a revealed character takes its name even if the description came first.
 
-Since `resolve-v6` (Tier 1 identity fixes; owner decisions B1, B2, B4):
-- An alias has a direction (subject → value: the person, then another name for them). A name whose every alias that
-  counts is its own (it is the subject of each) is one person with several names, not ambiguous (세라 → Sera, 세라 →
-  별빛); a name two otherwise unconnected names give as their alias is ambiguous, as before (하나 선배 → 하나, 하나
-  후배 → 하나); a name that is both an alias and has aliases keeps the undirected rule. The description of an unnamed
-  character ("?…") never counts toward a name's ambiguity, though two names revealed as one description still make
-  that description ambiguous. An owner's link on an ambiguous name drops only the aliases by which other names
-  claimed it, never its own aliases, parts or descriptions.
-- The host's persona name may be composite ("Ronan Voss/ 윤기현", "A (B)"): every piece of it is a persona name
-  (`persona_parts`), the only names `node()` folds into `{{user}}`. The names the persona is called by beyond them
-  (its given name 기현, its Western first name Ronan, a Hangul spelling 로넌 or 로난, a full name ending with a
-  persona name as its own word, 아오키 타쿠미 for 타쿠미, not after a title such as 경비병) join the persona in
-  `Resolution` as ordinary links: an owner's split separates any of them, and one another character's full name
-  holds (강기현 → 기현) is not the persona's. This is the one place a spelling links names, and only to the persona.
-- A lorebook entry whose keys the story mentions under several entities joins them when their names are one
-  person's names (a full name and its part or given name, a romanized spelling: 윤하람, 하람, Haram) and no other
-  entry names one of them with another known entity; an entry naming unrelated characters (a pair or a group) still joins nothing, and an owner's
-  split between any of their names keeps them apart.
+Since `resolve-v6` (Tier 1 identity fixes; owner decisions B1, B2, B4, and the coordinator's on the review):
+- An alias has a direction (subject → value: the person, then another name for them), read only on rows of a
+  compiler whose prompt states it (`DIRECTED`, extract-v16 on); older rows keep the undirected rule. On such rows a
+  name that is the subject of every alias that counts is one person with several names, not ambiguous (세라 → Sera,
+  세라 → 별빛); a name two otherwise unconnected names give as their alias is ambiguous (하나 선배 → 하나, 하나 후배 →
+  하나), as is a name that is both an alias and has aliases; an unnamed character's description never counts toward a
+  name's ambiguity, though two names revealed as one description still make that description ambiguous. An owner's
+  link settles a shared name. A part edge needs a strictly shorter name.
+- The host's persona name may be composite ("Ronan Voss/ 윤기현", "A (B)"): every piece of it that is a name is a
+  persona name (`persona_parts`), folded by `node()`, as is a full name ending with one (아오키 타쿠미 for 타쿠미,
+  resolve-v5's rule, titles included). An owner's split of such a full name from a persona name makes it its own
+  character (`Resolution._n`). The names the persona is called by beyond them (its given name 기현, its Western
+  first name Ronan, a Hangul spelling 로난) join the persona in `Resolution` as ordinary links: an owner's split
+  separates any of them, and one another character's name holds (강기현 → 기현) or gives as its alias is not the
+  persona's. This is the one place a spelling links names, and only to the persona.
+- A lorebook entry whose keys the story mentions under several characters joins them when all of them are one
+  person's names (a word or the given name of another, a romanized spelling: 윤하람, 하람, Haram) and no other entry
+  names one of them with another known entity; an entry naming any unrelated character (a pair or a group) joins
+  nothing, and an owner's split between any of their names keeps them apart.
 """
 
 from __future__ import annotations
@@ -65,8 +66,8 @@ PART_EDGES = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v1
 USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
 PERSONA = "{{user}}"
 UNNAMED = "?"  # the extractor names a character shown without a name by a description starting with it (ADR 0024)
-# Words before a name that make it a title and a name, not a family name and a given name: "경비병 민수" is not the
-# persona 민수, "Sir Arthur" is not named Sir. Normalized (casefolded), compared without a trailing period.
+# Words that are a title, not a name: never a piece of a composite persona name, a derived name or a given name
+# ("Sir Arthur" is not named Sir). Normalized (casefolded), compared without a trailing period.
 TITLES = frozenset({
     "경비병", "경비", "병사", "대장", "부대장", "단장", "부단장", "기사", "기사단장", "교수", "선생", "선생님", "박사",
     "의사", "형사", "경감", "경위", "반장", "부장", "과장", "차장", "대리", "사장", "회장", "이사", "실장", "팀장",
@@ -113,15 +114,13 @@ def _primary(persona: frozenset[str]) -> frozenset[str]:
     return frozenset(out - USER_NAMES)
 
 
-def _titled(words: list[str]) -> bool:
-    return any(w.rstrip(".") in TITLES for w in words)
-
-
 def _full_name(n: str, primary: frozenset[str]) -> bool:
-    """A normalized character name of two or more words whose last word is a persona name, not after a title: the
-    persona's full name (아오키 타쿠미 for 타쿠미; resolve-v5, ADR 0038), never 경비병 타쿠미 (resolve-v6)."""
+    """A normalized character name of two or more words whose last word is a persona name: the persona's full name
+    (아오키 타쿠미 for 타쿠미; resolve-v5, ADR 0038). A title before it (경비병 타쿠미) is far more often the persona
+    than a namesake, so it folds too (coordinator's decision on the review: existing chats must not change on deploy);
+    the owner's split makes it its own character (`_detached`)."""
     words = n.split()
-    return len(words) >= 2 and words[-1] in primary and not _titled(words[:-1])
+    return len(words) >= 2 and words[-1] in primary
 
 
 @lru_cache(maxsize=256)
@@ -554,7 +553,7 @@ class Resolution:
     def names_persona(self, name: str | None) -> bool:
         """Whether a character name is the persona's in this conversation: what the resolution says of a name it knows
         (never an ambiguous name, never another character's), and for one it does not, a name the persona goes by
-        (`persona_names`) or a full name ending with one, not after a title (resolve-v6)."""
+        (`persona_names`) or a full name ending with one (resolve-v6)."""
         n = self._n("character", name)
         if n in self.ambiguous:
             return False
@@ -562,7 +561,7 @@ class Resolution:
             return self._persona_root is not None and self._root[n] == self._persona_root
         words = n[1].split()
         return n[1] in self.persona_names or (
-            len(words) >= 2 and words[-1] in self.persona_names - USER_NAMES and not _titled(words[:-1]))
+            len(words) >= 2 and words[-1] in self.persona_names - USER_NAMES)
 
     def status(self, entity_type: str | None, name: str | None) -> str:
         n = self._n(entity_type, name)

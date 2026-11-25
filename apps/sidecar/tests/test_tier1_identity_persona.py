@@ -224,10 +224,15 @@ def test_the_reverse_mismatch_a_given_or_first_name_alone_is_the_persona():
     assert resolve(CONV, [fact("Takumi")], persona=["타쿠미"]).is_persona("character", "Takumi")
 
 
-def test_a_titled_name_is_not_the_persona_and_a_full_name_ending_with_it_is_but_splittably():
+def test_a_titled_full_name_is_the_persona_by_default_and_one_split_makes_it_its_own_character():
+    """Coordinator's decision on the review: a title before the persona's own name folds as under resolve-v5, so
+    existing chats keep their meaning; the owner's split (refused with 422 before) makes it a character and it stays."""
     rows = [fact("민수"), fact("경비병 민수"), fact("Captain Smith")]
     r = resolve(CONV, rows, persona=["민수", "Smith"])
-    assert not r.is_persona("character", "경비병 민수") and not r.is_persona("character", "Captain Smith")
+    assert r.is_persona("character", "경비병 민수") and r.is_persona("character", "Captain Smith")
+    r = resolve(CONV, rows + [fact("경비병 민수")], persona=["민수", "Smith"], splits=[split("경비병 민수", "민수")])
+    assert not r.is_persona("character", "경비병 민수") and r.status("character", "경비병 민수") == "resolved"
+    assert key(r, "경비병 민수") != key(r, "민수") and r.is_persona("character", "Captain Smith")
     rows = [fact("Smith"), fact("John Smith")]
     r = resolve(CONV, rows, persona=["Smith"])
     assert r.is_persona("character", "John Smith")  # resolve-v5's rule still holds
@@ -345,7 +350,7 @@ def test_names_persona_reads_one_name_without_a_resolution():
     assert entities.names_persona("character", "Seon Hale", ["Hale"])  # resolve-v5's full name, for extraction
     assert entities.names_persona("character", "기현", ["Ronan Voss/ 윤기현"])
     assert entities.names_persona("character", "{{user}}") and entities.names_persona("character", "윤기현", ["윤기현"])
-    assert not entities.names_persona("character", "경비병 민수", ["민수"])
+    assert entities.names_persona("character", "경비병 민수", ["민수"])  # titled full names fold, as under resolve-v5
     assert not entities.names_persona("place", "기현", ["윤기현"]) and not entities.names_persona("character", "카이토", [])
 
 
@@ -429,7 +434,7 @@ def test_review_5_an_unmentioned_full_name_is_the_persona_in_direct_lookups():
     r = resolve(CONV, [fact("타쿠미")], persona=["타쿠미"])
     assert r.is_persona("character", FP) and r.key("character", FP) == r.key("character", "타쿠미")
     assert r.status("character", FP) == "resolved"
-    assert not r.is_persona("character", "경비병 타쿠미")  # resolve-v6: never after a title
+    assert r.is_persona("character", "경비병 타쿠미")  # a titled full name too, as under resolve-v5
 
 
 def test_review_5_the_call_sites_read_the_full_name_as_the_persona():
