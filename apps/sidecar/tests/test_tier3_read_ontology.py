@@ -568,3 +568,41 @@ def test_a_carried_fact_is_retracted_and_corrected_through_the_api(migrated: str
         fixed = current(after, "feels_toward")[0]
         assert fixed["value"] == "미련" and fixed["owner"] and fixed["condition"] == PRIV
         assert values(after, "lives_in") == {("하나", "저택", None, "positive")}
+
+
+# --- 6. carry ------------------------------------------------------------------------------------------------------
+
+def test_a_carried_death_is_a_current_carried_fact_and_the_marks_survive_every_link(migrated: str):
+    from nmos_sidecar import retrieval
+    src = Chat(migrated, {"t0": [a("리안", "vital_status", None, "사망"),
+                                 a("하나", "feels_toward", "도윤", "그리움", condition=PRIV),
+                                 a("하나", "believes", None, "리안이 살아 있다")]}, name="w3-carry-src")
+    with src.client() as c:
+        src.run(c)
+        src.view()
+        mid = Chat(migrated, {"m0": [a("하나", "has_status", None, "슬픔")]}, name="w3-carry-mid")
+        mid.run(c)
+        end = Chat(migrated, {"e0": []}, name="w3-carry-end")
+        end.run(c)
+        reg = Chat(migrated, {"r0": []}, name="w3-carry-reg")
+        reg.run(c)
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            keys = carry.Keys(extractor=src.key)
+            carry.link(conn, mid.cid, src.cid, "continue", None, keys)
+            conn.commit()
+            carry.link(conn, end.cid, mid.cid, "continue", None, keys)  # chained: mid's carried rows come along
+            conn.commit()
+            carry.link(conn, reg.cid, src.cid, "regression", ["하나"], keys)
+            conn.commit()
+            links = {n: carry.target_rows(carry.in_force(conn, x.cid)) for n, x in (("mid", mid), ("end", end),
+                                                                                     ("reg", reg))}
+        for n in ("mid", "end"):
+            view = (mid if n == "mid" else end).view(carried=links[n])
+            death = current(view, "vital_status")[0]
+            assert death["carried"] == links[n].link and death["value"] == "사망" and death["knowledge_scope"]
+            assert retrieval.says_gone(death)  # the gone rule's word list reads it (the gone pin: report)
+            assert current(view, "feels_toward")[0]["condition"] == PRIV
+            assert {b["value"] for b in view["beliefs"]} == {"리안이 살아 있다"} and view["beliefs"][0]["carried"]
+            assert view["beliefs"][0]["carried_from"]["revision"]  # its provenance names the source's message
+        lines = {x.get("predicate"): x for x in links["reg"].regression if x["line"] == "fact"}
+        assert lines["feels_toward"]["condition"] == PRIV and lines["feels_toward"]["knowledge_scope"] == "public"
