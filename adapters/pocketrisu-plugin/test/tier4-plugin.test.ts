@@ -350,16 +350,15 @@ describe("the background sync only while the sidecar extracts a reply right afte
       const h = harness({}, undefined, answer ?? true);
       const adapter = answer === null ? createAdapter(h.host, undefined, h.options) : await h.start();
       adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
-      await settle();
+      await vi.waitFor(() => expect(h.paths()).toEqual(['/v1/output']));  // hashed first: may take more than a few ticks
       expect(h.timers).toHaveLength(0);  // no timer at all
-      expect(h.paths()).toEqual(['/v1/output']);
       h.setChat(structuredClone(baseChat));  // a reroll
       expect(hasPacket(await adapter.beforeRequest(structuredClone(prompt), 'model'))).toBe(true);
       // The calls are those of a build without the background sync.
       const without = harness({}, undefined, answer ?? true);
       const plain = createAdapter(without.host, undefined, { ...without.options, outputSyncMs: 0 });
       plain.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
-      await settle();
+      await vi.waitFor(() => expect(without.paths()).toEqual(['/v1/output']));
       without.setChat(structuredClone(baseChat));
       await plain.beforeRequest(structuredClone(prompt), 'model');
       expect(sent(h.calls)).toEqual(sent(without.calls));
