@@ -276,6 +276,18 @@ def test_a_queued_early_job_is_withdrawn_without_a_model_call(on, migrated, db, 
     assert "lighthouse" not in packet["packet"]["text"]
 
 
+def test_a_sync_that_leaves_the_open_turn_as_it_is_keeps_its_early_job(on, migrated, db):
+    chat, model = _open(on, migrated, db)
+    chat.edit(0, "Idle chatter edited, long before the open turn.")  # outside the open turn's K-turn context
+    assert sync(on, chat)["commit_reason"] == "edit"
+    assert [j["status"] for j in extract_jobs(db) if j["payload"].get("early")] == ["queued"]
+    drain(migrated, model)
+    calls = model.calls
+    chat.user("Is she still there?")
+    sync(on, chat)
+    assert drain(migrated, model) == 0 and model.calls == calls  # the early extraction is the turn's
+
+
 def test_a_running_early_job_stores_nothing_once_the_reply_is_rerolled(on, migrated, db):
     chat, _ = _open(on, migrated, db)
     gen = active_generation(db, "extract")

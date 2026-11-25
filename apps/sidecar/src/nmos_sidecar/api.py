@@ -400,11 +400,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         stand for it. Fail-open, as the sync must be: an error is logged and the sync goes on (a savepoint)."""
         try:
             with conn.transaction():
-                keep = extraction.enqueue_open_turn(
-                    conn, conv_id, first_sight, manifest, lifecycle, ids, settings.extract_turns,
-                    extractor_key=rt["extractor"].key if rt["extractor"] else None,
-                    embed_key=rt["projection"].key if rt["projection"] else None) if trigger == "output" else []
-                extraction.withdraw_early(conn, conv_id, keep)
+                if trigger == "output":
+                    extraction.enqueue_open_turn(conn, conv_id, first_sight, manifest, lifecycle, ids,
+                                                 settings.extract_turns,
+                                                 extractor_key=rt["extractor"].key if rt["extractor"] else None,
+                                                 embed_key=rt["projection"].key if rt["projection"] else None)
+                extraction.withdraw_early(conn, conv_id)
         except Exception as e:  # noqa: BLE001 — the turn is still queued once the user continues (ADR 0008)
             log.warning("early extraction not scheduled conversation=%s (%s)", conv_id, type(e).__name__)
 
