@@ -7,7 +7,8 @@ import { budgetAdvice } from './budget';
 import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
-import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_RESERVED_TOKENS, dirtySections, embedWaitTooLong,
+import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_EMBED_MAX_CHUNKS, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_RESERVED_TOKENS,
+  dirtySections, EMBED_CHUNK_CHARS, embedChunkChars, embedWaitTooLong, MAX_EMBED_MAX_CHUNKS, MIN_EMBED_MAX_CHUNKS,
   endpointForKey, fillProject, isVertexEndpoint, MAX_DEADLINE_MS, MAX_KEEP_RECENT_TURNS, MAX_RERANK_TIMEOUT_MS,
   MIN_KEEP_RECENT_TURNS, MIN_RERANK_TIMEOUT_MS, modelChange, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl,
   serviceAccountProject, trimArgs, VERTEX_URL, type FormValues, type Section } from './form';
@@ -74,7 +75,8 @@ interface ServerConfig {
   /** `extra_body` and `no_temperature` from PHASE-61 on (ADR 0088). */
   llm: { url: string; model: string; api_key_set: boolean; json_mode: boolean; extra_body?: Record<string, unknown>;
     no_temperature?: boolean };
-  embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string };
+  /** `max_chunks` (ADR 0062) only from a sidecar that lets the panel change it. */
+  embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string; max_chunks?: number };
   rerank?: { url: string; model: string; timeout_ms: number; format: string; key_set: boolean; configured: boolean;
     note?: string };
   recall: { threshold: number; vector_min_sim: number; embed_timeout_ms?: number; top_k: number; facts_limit: number;
@@ -1826,6 +1828,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }).catch(() => {}); // an older sidecar has no prompt: the box starts empty
     const length = el('select', { 'aria-label': L('notes.length') },
       el('option', { value: '3000', text: L('notes.short') }), el('option', { value: '6000', text: L('notes.long') }));
+    // What a model writes the note's parts in (`notes.LANGUAGES`): the chat's own language, or English.
+    const language = el('select', { 'aria-label': L('notes.language') },
+      el('option', { value: 'chat', text: L('notes.lang_chat') }), el('option', { value: 'en', text: L('notes.lang_en') }));
     const secrets = el('input', { type: 'checkbox' });
     const warn = el('p', { class: 'sub warn', text: L('notes.secrets_warn'), style: 'display:none' });
     secrets.addEventListener('change', () => { warn.style.display = secrets.checked ? '' : 'none'; });
@@ -1847,7 +1852,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
           saved = text;
         } catch { unsaved = true; } // the note is still made from the box (C2)
       }
-      const body: Record<string, unknown> = { sections, chars: Number(length.value), secrets: secrets.checked };
+      const body: Record<string, unknown> = { sections, chars: Number(length.value), secrets: secrets.checked,
+        language: language.value };
       if (custom.checked) Object.assign(body, { custom_prompt: text, custom_setting: setting.checked });
       try {
         const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,
@@ -1860,7 +1866,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     });
     if (!studio) {
       target.replaceChildren(el('h2', { text: L('notes.title') }), el('p', { class: 'sub', text: L('notes.sub') }),
-        ...kinds.map((k) => k.row), customArea, el('div', { class: 'row' }, field(L('notes.length'), length)),
+        ...kinds.map((k) => k.row), customArea,
+        el('div', { class: 'row' }, field(L('notes.length'), length), field(L('notes.language'), language)),
         el('div', { class: 'check' }, secrets, el('span', { text: L('notes.secrets') })), warn,
         el('div', { class: 'btns' }, make), msg, results);
       return;
@@ -1868,7 +1875,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const leftCol = el('div', { class: 'studio-col' },
       el('h3', { text: L('notes.config_head') }),
       ...kinds.map((k) => k.row), customArea,
-      el('div', { class: 'row' }, field(L('notes.length'), length)),
+      el('div', { class: 'row' }, field(L('notes.length'), length), field(L('notes.language'), language)),
       el('div', { class: 'check' }, secrets, el('span', { text: L('notes.secrets') })), warn,
       estBar, el('div', { class: 'btns' }, make), msg);
     const rightCol = el('div', { class: 'studio-col' },
@@ -2157,11 +2164,26 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const canonFacts = el('input', { type: 'checkbox' });  // facts read from the canon (ADR 0047)
   const pinAt = el('input', { type: 'checkbox', disabled: true });  // @name in a message pins a character for that reply (ADR 0087)
   let pinAtKnown = false;  // the sidecar reported the setting: an older one refuses the key
+  // Chunks embedded per message (ADR 0062): how much of a long message semantic search reaches, beside extraction's cap.
+  const embedChunks = el('input', { type: 'number', min: MIN_EMBED_MAX_CHUNKS, max: MAX_EMBED_MAX_CHUNKS, step: 1,
+    disabled: true });
+  let embedChunksKnown = false;  // likewise: a sidecar that does not report it keeps it in NMOS_EMBED_MAX_CHUNKS
+  const embedChunksHint = el('p', { class: 'sub' });
+  const showEmbedChunks = (): void => {
+    const chars = embedChunkChars(embedChunks.value);
+    embedChunksHint.textContent = !embedChunksKnown ? L('tune.embed_chunks_fixed')
+      : chars === null ? L('tune.embed_chunks_range', { min: MIN_EMBED_MAX_CHUNKS, max: MAX_EMBED_MAX_CHUNKS })
+        : L('tune.embed_chunks_hint', { n: embedChunks.value.trim(), chars: chars.toLocaleString('en-US'),
+          d: DEFAULT_EMBED_MAX_CHUNKS, dchars: (DEFAULT_EMBED_MAX_CHUNKS * EMBED_CHUNK_CHARS).toLocaleString('en-US') });
+  };
+  embedChunks.addEventListener('input', showEmbedChunks);
+  showEmbedChunks();
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('tune.title') }), el('p', { class: 'sub', text: L('tune.sub') }),
     el('div', { class: 'row' }, field(L('tune.threshold'), threshold), field(L('tune.min_sim'), minSim),
       field(L('tune.embed_wait'), embedWait)),
     el('p', { class: 'sub', text: L('tune.embed_wait_hint') }),
+    el('div', { class: 'row' }, field(L('tune.embed_chunks'), embedChunks)), embedChunksHint,
     el('div', { class: 'row' }, field(L('tune.top_k'), topK), field(L('tune.facts'), factsLimit), field(L('tune.backfill'), backfill)),
     el('div', { class: 'check' }, summaries, el('span', { text: L('tune.summaries') })),
     el('p', { class: 'sub', text: L('tune.summaries_hint') }),
@@ -2427,7 +2449,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       llm: { ...llm.values(), ...extraValues() }, emb: emb.values(), rerank: rerank.values(),
       tune: { threshold: threshold.value, minSim: minSim.value, embedWait: embedWait.value, topK: topK.value,
         facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked,
-        pinAt: pinAt.checked },
+        pinAt: pinAt.checked, embedChunks: embedChunks.value },
       trim: { on: trimOn.checked, keep: trimKeep.value },
     };
   }
@@ -2458,7 +2480,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     hudBox.checked = Number(await deps.getArg('hud')) === 1;
   }
 
-  /** The trimming args as `host.ts` reads them: on only at 1, the recent turns kept within 4..200 (20 when unset). */
+  /** The trimming args as `host.ts` reads them: on only at 1, the recent turns kept within 4..200 (16 when unset). */
   async function loadTrim(): Promise<void> {
     const stored = trimArgs({ on: Number(await deps.getArg('trim_old_turns')) === 1,
       keep: String((await deps.getArg('keep_recent_turns')) ?? '') });
@@ -2484,6 +2506,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     pinAtKnown = typeof cfg.recall.pin_at_mentions === 'boolean';
     pinAt.checked = cfg.recall.pin_at_mentions === true;
     pinAt.disabled = !pinAtKnown;  // a sidecar older than the setting: nothing to show, nothing sent
+    embedChunksKnown = typeof cfg.embeddings.max_chunks === 'number';
+    embedChunks.value = embedChunksKnown ? String(cfg.embeddings.max_chunks) : '';
+    embedChunks.disabled = !embedChunksKnown;  // likewise
+    showEmbedChunks();
     fillParsers(cfg);
   }
 
@@ -2571,7 +2597,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         deadline.value = String(args.deadline_ms);
         baseline = { ...baseline, conn: values().conn };
       }
-      const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown }, baseline);
+      const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown, embedChunks: embedChunksKnown }, baseline);
       // Said with any save that touches either value; the save itself goes ahead (audit F20).
       const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
         ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';

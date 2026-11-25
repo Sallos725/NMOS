@@ -1191,6 +1191,64 @@ describe('panel', () => {
     });
   });
 
+  describe('embedding chunks per message (ADR 0062, Tier 4 E8)', () => {
+    const open = async (reported?: number) => {
+      const h = deps();
+      if (reported !== undefined) (config.embeddings as Record<string, unknown>).max_chunks = reported;
+      await openPanel(h.d, 'settings');
+      await settle();
+      const panel = document.getElementById('nmos-panel')!;
+      const label = [...panel.querySelectorAll('label')].find((l) => l.textContent === 'Embedding chunks per message')!;
+      const input = label.nextElementSibling as HTMLInputElement;
+      return { ...h, panel, input, hint: input.closest('.row')!.nextElementSibling as HTMLElement,
+        save: panel.querySelector<HTMLButtonElement>('.bar button.primary')! };
+    };
+    const puts = (calls: [string, string, unknown][]) => calls.filter(([method]) => method === 'PUT').map(([, , body]) => body);
+    afterEach(() => { delete (config.embeddings as Record<string, unknown>).max_chunks; });
+
+    it('shows the reported cap in the tuning card with the characters it covers, and saves a change', async () => {
+      const { input, hint, save, calls } = await open(8);
+      expect(input.closest('.card')!.querySelector('h2')!.textContent).toBe('Recall tuning');
+      expect([input.value, input.disabled, input.min, input.max]).toEqual(['8', false, '1', '64']);
+      expect(hint.textContent).toContain('8 chunks = 5,600 characters');
+      input.value = '16';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(hint.textContent).toContain('16 chunks = 11,200 characters');
+      expect(hint.textContent).toContain('embeds every chat again');
+      input.value = '65';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(hint.textContent).toBe('Enter a whole number from 1 to 64.');
+      input.value = '16';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).toMatchObject({ embed_max_chunks: 16 });
+    });
+
+    it('is not sent with another tuning change while it is unchanged', async () => {
+      const { panel, save, calls } = await open(8);
+      const topK = [...panel.querySelectorAll<HTMLInputElement>('input[type="number"][max="20"]')][0]!;
+      topK.value = '3';
+      topK.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).toMatchObject({ recall_top_k: 3 });
+      expect(puts(calls)[0]).not.toHaveProperty('embed_max_chunks');
+    });
+
+    it('is disabled and never sent on a sidecar that does not report it', async () => {
+      const { panel, input, hint, save, calls } = await open();
+      expect([input.value, input.disabled]).toEqual(['', true]);
+      expect(hint.textContent).toContain('NMOS_EMBED_MAX_CHUNKS');
+      const topK = [...panel.querySelectorAll<HTMLInputElement>('input[type="number"][max="20"]')][0]!;
+      topK.value = '3';
+      topK.dispatchEvent(new Event('input', { bubbles: true }));
+      save.click();
+      await vi.waitFor(() => expect(puts(calls)).toHaveLength(1));
+      expect(puts(calls)[0]).not.toHaveProperty('embed_max_chunks');
+    });
+  });
+
   it('turns canon facts off from the settings (ADR 0047)', async () => {
     const { d, calls } = deps();
     await openPanel(d, 'settings');
@@ -1330,7 +1388,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     button('Make').click();
     await settle();
     expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
-      { sections: ['diverged', 'address'], chars: 3000, secrets: false }]);
+      { sections: ['diverged', 'address'], chars: 3000, secrets: false, language: 'chat' }]);
     const shown = [...panel().querySelectorAll<HTMLTextAreaElement>('textarea[readonly]')];
     expect(shown.map((b) => b.value)).toEqual(['[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]']);
     expect(panel().textContent).toContain('chronicle: no scene summary yet');
@@ -1339,6 +1397,20 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect(panel().textContent).toContain('3 lorebook entries compared, 1 left out for length');
     expect(panel().textContent).toContain('Left out 21 open threads not mentioned again for more than 30 turns');
     expect(button('Copy')).toBeTruthy();
+  });
+
+  it("asks for the note's parts in the chat's language or in English (Tier 4 C2)", async () => {
+    const { d, calls } = deps();
+    await openChat(d);
+    button("For the author's note").click();
+    const language = panel().querySelector<HTMLSelectElement>('select[aria-label="Note language"]')!;
+    expect([...language.options].map((o) => [o.value, o.textContent])).toEqual([['chat', "The chat's language"],
+      ['en', 'English']]);
+    expect(language.value).toBe('chat');
+    language.value = 'en';
+    button('Make').click();
+    await settle();
+    expect(posts(calls).at(-1)![2]).toMatchObject({ sections: ['diverged'], language: 'en' });
   });
 
   it('writes a custom part from the saved prompt and saves an edited one (PHASE-56)', async () => {
@@ -1358,7 +1430,8 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     await settle();
     expect(calls.filter(([m]) => m === 'PUT')).toEqual([]); // unchanged: not saved again
     expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
-      { sections: ['custom'], chars: 3000, secrets: false, custom_prompt: 'List outfits.', custom_setting: false }]);
+      { sections: ['custom'], chars: 3000, secrets: false, language: 'chat', custom_prompt: 'List outfits.',
+        custom_setting: false }]);
     prompt.value = '  Who owes whom?  ';
     const setting = [...panel().querySelectorAll<HTMLInputElement>('input[type=checkbox]:not([value])')]
       .find((b) => b.nextElementSibling?.textContent === 'Include the setting (card, lorebook)')!;
