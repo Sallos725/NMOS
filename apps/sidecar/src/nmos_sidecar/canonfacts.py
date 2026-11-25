@@ -145,9 +145,9 @@ def prompt_of(version: str) -> str:
 
 
 # The rules a canon read's answer becomes rows with (PHASE-66 part 5, owner decision 2026-11-25), as
-# `extraction.REVISION` is for a turn's: `revision` in the spec, a bump alone a carry-on (no text is read again: what no
-# canon generation has read whole is, `READ_ANY`). A read is reused for another chat only from the same key, so the first
-# chat to show an already read text after a bump pays for that read once.
+# `extraction.REVISION` is for a turn's: `revision` in the spec, a bump alone a carry-on (no text is read again: what
+# no canon generation has read whole is, `READ_ANY`). A read is reused for another chat only from the same key, so the
+# first chat to show an already read text after a bump pays for that read once.
 # 0 (no field): the production base, Phase 64 (`cdf2c9a`).
 # 1 (Tier 1 and its review fixes), against the base:
 #   - the answer goes through the turn rows' rules: polarity ("negated", "neg", "false", "no", JSON false negative; an
@@ -248,7 +248,7 @@ READ = """(SELECT count(*) AS calls, max((x.coverage->>'parts')::int) AS parts,
            FROM extraction x WHERE x.source_revision_id = f.rid AND x.extractor_key = %(gen)s
              AND x.discarded_at IS NULL AND split_part(x.window_hash, ':', 3) = f.wtag)"""
 # Whether a carry-on peer of the generation (`generations.peers`: only `revision` or `normalizer` differs, PHASE-66
-# part 5) has read the text whole, each generation's read chosen as in READ_ANY: its read counts as the generation's own.
+# part 5) has read the text whole, each generation's read chosen as in READ_ANY: it counts as the generation's own.
 READ_PEERS = ("(SELECT coalesce(bool_or(r.n >= r.parts), false) AS complete FROM ("
               " SELECT count(*) AS n, max((x.coverage->>'parts')::int) AS parts FROM extraction x"
               " WHERE x.source_revision_id = f.rid AND x.extractor_key = ANY(%(peers)s) AND x.discarded_at IS NULL"

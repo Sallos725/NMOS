@@ -2091,8 +2091,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                           choice=choice)
                         ex = rt["extractor"]
                         if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
+                            # what nothing serves, a turn an earlier generation serves left to it (PHASE-66 part 5)
                             queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill,
-                                                                     uncovered=True)  # what nothing serves (PHASE-66 part 5)
+                                                                     uncovered=True)
                         if before["settings"].extract_on_output and not rt["settings"].extract_on_output:
                             extraction.withdraw_early(conn)  # PHASE-67: off means no early call starts from now on
                         prepared = dict(rt)

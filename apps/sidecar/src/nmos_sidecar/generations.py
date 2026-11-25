@@ -104,8 +104,8 @@ ADDS_FIELDS = ("compiler", "prompt")
 READS_FIELDS = ("target_chars", "message_chars")
 # Spec fields a change of re-derives nothing a model wrote, each with the values a switch among carries on (None: any
 # value): rows written under the one value stay as good as they were, and what comes due afterwards is written under the
-# other. A change of only these fields is "carry"; one with a compiler or a cap change too is "adds" or "reads", one with
-# the model "model", one with anything else "version" (the more expensive class wins).
+# other. A change of only these fields is "carry"; one with a compiler or a cap change too is "adds" or "reads", one
+# with the model "model", one with anything else "version" (the more expensive class wins).
 # - `normalizer` (PHASE-66 part 3, `normtext`): between clean-v3 and clean-v4, what was read from the one normalizer's
 #   text keeps serving and new work reads the other's. Another normalizer is a version.
 # - `revision` (PHASE-66 part 5, owner decision 2026-11-25): the number of the post-processing rules a projection kind

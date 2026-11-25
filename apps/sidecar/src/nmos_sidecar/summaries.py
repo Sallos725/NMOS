@@ -486,14 +486,14 @@ def schedule_all(conn: psycopg.Connection, key: str, conv: UUID | None = None, r
 
 def schedule_redo(conn: psycopg.Connection, conv: UUID, head: UUID, key: str, turns: int | None,
                   priority: int = BACKFILL_PRIORITY) -> int:
-    """Queue the due windows `key` (or a carry-on peer) has not summarized itself, whatever earlier summarizer serves them: those that end
-    in the head's latest `turns` turns, or every one (`turns` None: the per-chat "extract all history", PHASE-57 A3).
-    The story follows once they are written."""
+    """Queue the due windows `key` (or a carry-on peer) has not summarized itself, whatever earlier summarizer serves
+    them: those that end in the head's latest `turns` turns, or every one (`turns` None: the per-chat "extract all
+    history", PHASE-57 A3). The story follows once they are written."""
     ws = windows(conn, head)
     if turns is not None:
         last = replied_turns(conn, head)
         ws = [w for w in ws if w.last_turn >= last - turns]
-    own: dict[str, Any] = {}  # `key`'s own, a carry-on peer's counting as its own (`generations.peers`, PHASE-66 part 5)
+    own: dict[str, Any] = {}  # `key`'s own; a carry-on peer's counts as its own (`generations.peers`, PHASE-66 part 5)
     for k in generations.peers(conn, key):
         own.update(_scenes(conn, conv, k, ws, fallback=False))
     rows = [_scene_job(conv, key, w, priority) for w in ws if w.key not in own]
