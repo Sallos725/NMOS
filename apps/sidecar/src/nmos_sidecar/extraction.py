@@ -24,7 +24,7 @@ from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, ReplyError, metered
 from .entities import PERSONA, UNNAMED, Resolution, names_persona, node, norm, resolve
-from .facts import _versions, fact_text, links_of, persona_of, served_assertions, version_key
+from .facts import _versions, attribute_persona, fact_text, links_of, persona_of, served_assertions, version_key
 from . import canon
 from .repairs import (apply_facts, live, quoted_turns, repairs_of, secret_events, splits_of, thread_events,
                       unedited_quotes)
@@ -860,8 +860,8 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, tu
     with conn.transaction():
         target = conn.execute(
             """
-            SELECT am.commit_id, am.position, am.turn, sr.id, sr.metadata, so.conversation_id,
-                   c.host_persona_name
+            SELECT am.commit_id, am.position, am.turn, sr.id, sr.metadata, sr.persona_name AS turn_persona,
+                   so.conversation_id, c.host_persona_name
             FROM active_membership am
             JOIN conversation c ON c.head_commit_id = am.commit_id
             JOIN source_revision sr ON sr.id = am.source_revision_id
@@ -899,6 +899,11 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, tu
     return {"target": target, "members": members, "context": context, "done": bool(done)}
 
 
+def _target_persona(target: dict[str, Any]) -> str | None:
+    """The host persona active on the target turn (audit B4.3): its recorded `turn_persona`, else `host_persona_name`."""
+    return target.get("turn_persona") or target.get("host_persona_name")
+
+
 def carried_rows(conn: psycopg.Connection, target: dict[str, Any]) -> list[dict[str, Any]]:
     """The rows the chat's carry link in force brings (`carry.target_rows`), as `facts.memory_view` reads them: only a
     `continue` link's, with the source's persona marker spelled as this chat's persona, the knowledge lists copied
@@ -908,7 +913,7 @@ def carried_rows(conn: psycopg.Connection, target: dict[str, Any]) -> list[dict[
     link = carry.in_force(conn, target["conversation_id"])
     if link is None:
         return []
-    carried = carry.target_rows(link).for_persona(target.get("host_persona_name"))
+    carried = carry.target_rows(link).for_persona(_target_persona(target))
     if carried.mode != "continue":
         return []
     return [{**x, "known_by": list(x["known_by"]) if x.get("known_by") else None,
@@ -1040,7 +1045,8 @@ def _resolution(ctx: dict[str, Any], rows: list[dict[str, Any]]) -> Resolution:
     """The entity resolution of the rows before the target turn, as the hint lists read them: the persona, the owner's
     links and splits, canon's names."""
     target = ctx["target"]
-    return resolve(target["conversation_id"], rows, persona_of(target.get("host_persona_name")),
+    personas = attribute_persona(rows, _target_persona(target))
+    return resolve(target["conversation_id"], rows, personas,
                    target.get("links") or (), target.get("splits") or (), target.get("canon") or ())
 
 
@@ -1064,7 +1070,6 @@ def entity_hints(conn: psycopg.Connection, ctx: dict[str, Any], key: str, limit:
     it already. Since `extract-v9` a typed participant is a mention too (ADR 0024): a character first shown
     without a name is often only a participant, and a later turn can reveal its name only if it is listed.
     `carried` (extract-v21): a carry link's rows, mentions from before turn 0, so the least recent."""
-    target = ctx["target"]
     if rows is None:
         rows = earlier_assertions(conn, ctx, key)
     if limit <= 0 or not (rows or carried):
@@ -1072,8 +1077,7 @@ def entity_hints(conn: psycopg.Connection, ctx: dict[str, Any], key: str, limit:
     if carried:
         rows, r = _with_carried(ctx, rows, carried)
     else:
-        r = resolve(target["conversation_id"], rows, persona_of(target.get("host_persona_name")),
-                    target.get("links") or (), target.get("splits") or (), target.get("canon") or ())
+        r = _resolution(ctx, rows)
     last: dict[str, int] = {}
     seen: dict[str, list[dict[str, Any]]] = {}  # entity id → the rows that mention it, in order
     seq = 0
@@ -2251,7 +2255,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         threads = thread_hints(ctx, earlier, carried=onto.get("carried"))
         roles = role_hints(ctx, earlier, **onto) if compiler in ROLES else []
         if compiler in PARTS_APART:
-            pairs = name_pairs(hints, shown, persona_of(ctx["target"].get("host_persona_name")))
+            pairs = name_pairs(hints, shown, persona_of(_target_persona(ctx["target"])))
         if compiler in HAPPENED:  # a recorded input like the hints, never part of validity (PHASE-60 S7)
             clock = story_clock(conn, ctx)
         system = prompt_of(compiler, bool(roles)).format(registry=registry_prompt(compiler=compiler))  # PHASE-60 S7
@@ -2266,7 +2270,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     items += revealed(parsed, secrets, shown, resolution)
     if roles:
         items = ended_roles(parsed, items, roles, shown, hints=hints,
-                            persona=persona_of(ctx["target"].get("host_persona_name")))
+                            persona=persona_of(_target_persona(ctx["target"])))
     confirmations: list[dict[str, Any]] = []
     alias_confirmations: list[dict[str, Any]] = []
     confirm_usage: dict[str, Any] | None = None
@@ -2276,7 +2280,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         items = same_names(parsed, items, pairs, shown)
     if compiler in CONFIRMS and raw:  # PHASE-29: an alias whose two names are both in the turn (no reply, no call)
         alias_confirmations, alias_usage = confirm_aliases(complete, items, ctx, turn_text, shown, hints,
-                                                           persona_of(ctx["target"].get("host_persona_name")))
+                                                           persona_of(_target_persona(ctx["target"])))
         confirm_usage = summed(confirm_usage, alias_usage)
     usage = with_confirmations(usage, confirm_usage)
     spoken = speakers_of(parsed, target_quotes(ctx)) if compiler in SPEAKERS and raw else None  # PHASE-45 S2

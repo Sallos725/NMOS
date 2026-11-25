@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:203cccc4d5ae".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:ae867777cd06".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2263,7 +2263,7 @@ ${GUARD_LINE}` : "";
   var CANON_ROUNDS = 20;
   var CANON_BATCH_CHARS = 8e5;
   var TEXT_HASH_LIMIT = 4e3;
-  var PERSONA_TTL_MS = 3e4;
+  var PERSONA_TTL_MS = 5e3;
   function personaOf(chat, host) {
     const list = Array.isArray(host.personas) ? host.personas : [];
     const bound = chat.bindedPersona ? list.find((p) => p?.id === chat.bindedPersona) : void 0;

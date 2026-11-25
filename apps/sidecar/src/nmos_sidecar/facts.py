@@ -17,7 +17,7 @@ from uuid import UUID, uuid5
 import psycopg
 from xml.sax.saxutils import escape, quoteattr
 
-from .entities import USER_NAMES, Resolution, resolve
+from .entities import USER_NAMES, Resolution, names_persona, resolve
 from .packet import Line
 from .keywords import keywords
 from .predicates import (EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, address_label,
@@ -46,6 +46,7 @@ if TYPE_CHECKING:  # carry imports this module: never at run time
 ACTIVE_ASSERTIONS_TEMPLATE = """
 WITH m AS (
     SELECT am.position, am.turn, coalesce(am.turn, -1 - am.position) AS unit, am.source_revision_id AS rid,
+           sr.persona_name AS turn_persona,
            am.turn_hash, sr.lifecycle, sr.metadata, so.host_logical_id
     FROM active_membership am
     JOIN source_revision sr ON sr.id = am.source_revision_id
@@ -54,6 +55,7 @@ WITH m AS (
 ),
 live AS (
     SELECT e.id AS eid, e.extractor_key, e.compiler_version, m.position, m.turn, m.host_logical_id, m.turn_hash,
+           m.turn_persona,
            e.window_hash <> m.turn_hash AS is_check,
            CASE WHEN e.window_hash <> m.turn_hash THEN e.hints->>'checks' END AS checks,
            first_value(e.extractor_key) OVER w AS chosen, first_value(e.id) OVER w AS chosen_id,
@@ -76,7 +78,7 @@ SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.
        -- extract-v21's own marks (PHASE-66, migration 0041); null on every earlier generation's row
        a.condition::text AS condition, a.guise, a.item_kind, a.knowledge_scope,
        -- a check's rows read as the extraction it checked
-       l.position, l.turn, l.host_logical_id, l.chosen AS generation, l.chosen_compiler AS compiler,
+       l.position, l.turn, l.host_logical_id, l.turn_persona, l.chosen AS generation, l.chosen_compiler AS compiler,
        -- the turn's hash: a secret's (ADR 0033 amendment 2) and an owner repair's target (ADR 0044); and the hash a
        -- reveal's listed turn had
        l.turn_hash,
@@ -842,11 +844,21 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if what_if:
         links = [x for x in links if str(x["id"]) not in what_if.get("drop_links", ())] + list(
             what_if.get("add_links", ()))
+    # Audit B4.3: per-turn persona attribution. On a live read (`upto is None`), `conv["host_persona_name"]` is active;
+    # on a historical replay (`upto is not None`), the latest recorded `turn_persona` up to `upto` is the persona that
+    # was active then (legacy NULL rows fall back to `conv["host_persona_name"]`, preserving replay identity).
+    active_persona = conv["host_persona_name"]
+    if upto is not None:
+        for s in reversed(served):
+            if s.get("turn_persona"):
+                active_persona = s["turn_persona"]
+                break
+    personas = attribute_persona(served, active_persona)
     # Carried rows (ADR 0085), copied: a read annotates and folds its rows in place, and the link's rows are reused. The
     # source's persona is this chat's (S6): its stored marker reads as the persona name the host reports here.
     finale = None
     if carried is not None:
-        carried = carried.for_persona(conv["host_persona_name"])
+        carried = carried.for_persona(active_persona)
         from .carry import finale_left  # carry imports this module: here, not at import time
         carried, finale = finale_left(conn, carried)  # PHASE-67: a source finale replaced since serves nothing
     carried_all = [{**x, "known_by": list(x["known_by"]) if x.get("known_by") else None,
@@ -856,7 +868,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # response model plays them in disguise; what someone unaware holds toward the guise is kept apart below
     guise_aliases = _guise_aliases(rows + carried_all if carried_all else rows)
     r = resolve(conv["conversation_id"], (rows + carried_all if carried_all else rows) + guise_aliases,
-                persona_of(conv["host_persona_name"]), links, splits_of(in_force), canon_names)
+                personas, links, splits_of(in_force), canon_names)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
@@ -1440,6 +1452,67 @@ def links_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime | 
 def persona_of(host_persona_name: str | None) -> list[str]:
     """The persona names the host reported for a conversation (ADR 0023): none, or its current one."""
     return [host_persona_name] if host_persona_name else []
+
+
+def _same_persona_name(a: str, b: str) -> bool:
+    """Whether two host persona names name the same person (exact match, or one is a piece/given/full-name variant of
+    the other via `entities.names_persona`: e.g. '카일' <-> '아오키 카일', '기현' <-> '윤기현',
+    'Ronan Voss' <-> 'Ronan Voss/ 윤기현'). Distinct names ('타쿠미' vs '레이') return False."""
+    na, nb = _norm(a), _norm(b)
+    if not na or not nb or na == nb:
+        return True
+    return names_persona("character", a, (b,)) or names_persona("character", b, (a,))
+
+
+def attribute_persona(rows: list[dict[str, Any]], current_persona: str | None) -> list[str]:
+    """Per-turn persona attribution (Tier 4, audit B4.3), applied in place on `rows`.
+
+    Returns the persona names for `entities.resolve(...)`: `current_persona` plus any earlier turn persona that is a
+    name variant/rename of it. Rows from turns synced under a distinct earlier persona have their `USER_NAMES`
+    references (`subject`, `object`, `asserted_by`, `also_called` value, `known_by`, `hidden_from`, `participants`)
+    rewritten to that turn's recorded `turn_persona`, preventing retroactive reassignment to the new persona while
+    keeping the earlier persona's `{{user}}` and named rows unified as one character. Legacy rows (`turn_persona` None)
+    and single-persona chats are untouched. Idempotent.
+    """
+    personas = persona_of(current_persona)
+    if not current_persona or not current_persona.strip():
+        return personas
+    seen_same: set[str] = {_norm(current_persona)}
+    for row in rows:
+        tp = row.get("turn_persona")
+        if not tp or not isinstance(tp, str):
+            continue
+        tp = tp.strip()
+        if not tp:
+            continue
+        ntp = _norm(tp)
+        if ntp in seen_same:
+            continue
+        if _same_persona_name(tp, current_persona):
+            seen_same.add(ntp)
+            personas.append(tp)
+            continue
+        if row.get("subject_type") == "character" and _norm(row.get("subject")) in USER_NAMES:
+            row["subject"] = tp
+        if row.get("object") and row.get("object_type") == "character" and _norm(row.get("object")) in USER_NAMES:
+            row["object"] = tp
+        if row.get("predicate") == "also_called" and row.get("subject_type") == "character" and _norm(row.get("value")) in USER_NAMES:
+            row["value"] = tp
+        if row.get("asserted_by") and _norm(row.get("asserted_by")) in USER_NAMES:
+            row["asserted_by"] = tp
+        if kb := row.get("known_by"):
+            if any(_norm(x) in USER_NAMES for x in kb):
+                row["known_by"] = [tp if _norm(x) in USER_NAMES else x for x in kb]
+        if hf := row.get("hidden_from"):
+            if any(_norm(x) in USER_NAMES for x in hf):
+                row["hidden_from"] = [tp if _norm(x) in USER_NAMES else x for x in hf]
+        if parts := row.get("participants"):
+            if any(p.get("type") == "character" and _norm(p.get("name")) in USER_NAMES for p in parts):
+                row["participants"] = tuple(
+                    {**p, "name": tp} if p.get("type") == "character" and _norm(p.get("name")) in USER_NAMES else p
+                    for p in parts
+                )
+    return personas
 
 
 def _annotate(row: dict[str, Any], r: Resolution) -> None:

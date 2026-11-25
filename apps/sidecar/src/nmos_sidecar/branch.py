@@ -298,6 +298,19 @@ def _copy_embeddings(c: _Copier) -> None:
     c.count("embedding_chunks", n)
 
 
+def _copy_turn_personas(c: _Copier) -> None:
+    """Audit B4.3: preserve each inherited prefix revision's recorded `persona_name` from the origin chat."""
+    if not c.prefix.rids:
+        return
+    c.conn.execute(
+        "UPDATE source_revision b SET persona_name = o.persona_name"
+        " FROM unnest(%s::uuid[], %s::uuid[]) r(o, b)"
+        " JOIN source_revision o ON o.id = r.o"
+        " WHERE b.id = r.b AND o.persona_name IS NOT NULL AND b.persona_name IS DISTINCT FROM o.persona_name",
+        ([o for o, _ in c.prefix.rids], [b for _, b in c.prefix.rids]),
+    )
+
+
 def _windows(p: Prefix) -> list[tuple[int, int, list[UUID], list[UUID]]]:
     """The scene windows wholly inside the prefix: (first turn, last turn, origin members, branch members)."""
     complete = {a[1] for a in p.anchors}
@@ -478,6 +491,7 @@ def inherit(conn: psycopg.Connection, conv_id: UUID, *, backfill: bool = False, 
     _copy_assertions(c, written)
     c.check()
     _copy_embeddings(c)
+    _copy_turn_personas(c)
     c.check()
     return {**out, "status": "done", "copied": c.counts, "ms": round((time.perf_counter() - started) * 1000, 1)}
 

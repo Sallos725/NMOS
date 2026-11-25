@@ -632,13 +632,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def bodies(body: BodiesRequest, request: Request):
         with request.app.state.pool.connection() as conn:
             prefetch_query(body, conn)  # before the sync's lock and writes: the embedder gets that time too
-            conv = ledger.lock_conversation(conn, body.host, body.chat_id, None)
+            req_persona = body.then_reconcile.persona_name if body.then_reconcile is not None else None
+            conv = ledger.lock_conversation(conn, body.host, body.chat_id, None, persona_name=req_persona)
             def derive(rid: UUID, content: str, meta: dict[str, Any]) -> None:
                 normtext.write(conn, rid, content)
                 write_state(conn, rt["rules"], conv.id, rid, content, meta)
 
             stored, rejected = ledger.store_bodies(conn, conv.id, [b.model_dump() for b in body.bodies],
-                                                   on_insert=derive)
+                                                   on_insert=derive, persona_name=conv.persona_name)
             result = None
             if body.then_reconcile is not None and not rejected:
                 if body.then_reconcile.chat_id != body.chat_id:

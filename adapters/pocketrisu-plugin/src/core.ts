@@ -229,7 +229,7 @@ interface CanonObservation {
   held: string[];
   snapshot: CanonSnapshot | null;
 }
-const PERSONA_TTL_MS = 30_000; // a persona switch reaches the sidecar within this (it is re-read in the background)
+const PERSONA_TTL_MS = 5_000; // a persona switch reaches the sidecar within this (it is re-read in the background)
 
 /** The persona the host uses for `{{user}}` in this chat: the chat-bound one, else the selected one. */
 export function personaOf(chat: HostChat, host: HostPersonas): string | null {
