@@ -165,10 +165,19 @@ def persona_parts(persona: Iterable[str]) -> tuple[frozenset[str], frozenset[str
 @lru_cache(maxsize=8192)
 def node(entity_type: str | None, name: str | None, persona: frozenset[str] = frozenset()) -> Node:
     """(type, normalized name). `persona`: the conversation's normalized persona names beyond `USER_NAMES`; a
-    composite one counts by each of its pieces (`persona_parts`). Only those exact names fold into `{{user}}` here;
-    `Resolution` also reads a full name ending with one (아오키 타쿠미) as the persona unless the owner split the two,
-    and links a name derived from one (기현 for 윤기현), splittably. Pure; cached because every fact read asks for the
-    same few names."""
+    composite one counts by each of its pieces (`persona_parts`). Those names and a full name ending with one
+    (`_full_name`: 아오키 타쿠미 for 타쿠미, resolve-v5) fold into `{{user}}`. In a `Resolution` an owner's split of
+    such a full name from a persona name keeps it apart, and a name derived from one (기현 for 윤기현) joins the
+    persona splittably. Pure; cached because every fact read asks for the same few names."""
+    t, n = _node(entity_type, name, persona)
+    if t == "character" and n != PERSONA and _full_name(n, _primary(persona)):
+        n = PERSONA
+    return (t, n)
+
+
+@lru_cache(maxsize=8192)
+def _node(entity_type: str | None, name: str | None, persona: frozenset[str] = frozenset()) -> Node:
+    """`node()` without the full-name fold: the node an owner's split can name apart from the persona."""
     n = norm(name)
     if entity_type == "character" and (n in USER_NAMES or n in _primary(persona)):
         n = PERSONA
@@ -177,7 +186,7 @@ def node(entity_type: str | None, name: str | None, persona: frozenset[str] = fr
 
 def names_persona(entity_type: str | None, name: str | None, persona: Iterable[str] = ()) -> bool:
     """Whether a name, read without a conversation's resolution, is the persona: a name `node()` folds into
-    `{{user}}`, a full name ending with one (`_full_name`), or one the story calls it by (`_persona_matcher`: 기현 for
+    `{{user}}` (a full name ending with one included), or one the story calls it by (`_persona_matcher`: 기현 for
     윤기현). For callers that check one name against the host's persona name (extraction's role check); a read uses
     `Resolution.names_persona`, where the owner's splits and other characters' names also count."""
     return _names_persona(entity_type, norm(name), frozenset(n for n in map(norm, persona) if n))
@@ -189,8 +198,7 @@ def _names_persona(entity_type: str | None, n: str, persona: frozenset[str]) -> 
         return True
     if entity_type != "character":
         return False
-    primary, derived = persona_parts(persona)
-    return _full_name(n, primary) or _persona_matcher(primary, derived)(n)
+    return _persona_matcher(*persona_parts(persona))(n)
 
 
 def mentions(row: dict[str, Any], persona: frozenset[str] = frozenset()) -> Iterable[tuple[Node, str]]:
@@ -206,8 +214,8 @@ def _detached(links: list[dict[str, Any]], splits: list[dict[str, Any]], primary
     persona_node = ("character", PERSONA)
     latest: dict[frozenset, str] = {}
     for kind, item in _by_time(links, splits):
-        latest[frozenset((node(item["entity_type"], item["name"], primary),
-                          node(item["entity_type"], item.get("same_as") or item.get("other"), primary)))] = kind
+        latest[frozenset((_node(item["entity_type"], item["name"], primary),
+                          _node(item["entity_type"], item.get("same_as") or item.get("other"), primary)))] = kind
     out: set[str] = set()
     for pair, kind in latest.items():
         if kind == "split" and persona_node in pair and len(pair) == 2:
@@ -376,7 +384,7 @@ class Resolution:
                 parent[rv] = rp
                 members[rp].extend(members.pop(rv))
                 self.persona_links.append((persona_node, v, {}))
-        if synthetic and not any(find(n) == persona_node for n in first if n != persona_node):
+        if synthetic and not any(find(n) == find(persona_node) for n in first if n != persona_node):
             del first[persona_node], parent[persona_node]
             cut = [(a, b) for a, b in cut if persona_node not in (a, b)]
         self._root = {n: find(n) for n in first if n not in self.ambiguous}
@@ -508,7 +516,7 @@ class Resolution:
         owner split the two (resolve-v5's fold, kept for every lookup, link, split and alias)."""
         k = (entity_type, name)
         if (hit := self._memo.get(k)) is None:
-            t, n = node(entity_type, name, self.persona)
+            t, n = _node(entity_type, name, self.persona)
             if t == "character" and n != PERSONA and n not in self._detached and _full_name(n, self.persona):
                 n = PERSONA
             hit = self._memo[k] = (t, n)
@@ -535,9 +543,10 @@ class Resolution:
     # --- lookups --------------------------------------------------------------------------------
 
     def node(self, entity_type: str | None, name: str | None) -> Node:
-        """`node()` with this conversation's persona names: a full name ending with one is its own node here (an
-        owner's split can name it apart); every lookup below reads it as the persona."""
-        return node(entity_type, name, self.persona)
+        """`node()` with this conversation's persona names, but a full name ending with one is its own node here, so
+        an owner's split can name it apart from the persona (`repairs`); every lookup below reads it as the persona
+        unless such a split holds."""
+        return _node(entity_type, name, self.persona)
 
     def is_persona(self, entity_type: str | None, name: str | None) -> bool:
         return self._persona_root is not None and self._root.get(self._n(entity_type, name)) == self._persona_root

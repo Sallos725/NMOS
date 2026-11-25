@@ -231,7 +231,10 @@ def test_a_titled_name_is_not_the_persona_and_a_full_name_ending_with_it_is_but_
     rows = [fact("Smith"), fact("John Smith")]
     r = resolve(CONV, rows, persona=["Smith"])
     assert r.is_persona("character", "John Smith")  # resolve-v5's rule still holds
-    assert node("character", "John Smith", frozenset({"smith"})) != node("character", "Smith", frozenset({"smith"}))
+    # node() folds the full name as resolve-v5 did (review finding 5: callers without a resolution); the resolution's
+    # own node keeps it apart, so the owner's split below can be planned
+    assert node("character", "John Smith", frozenset({"smith"})) == node("character", "Smith", frozenset({"smith"}))
+    assert r.node("character", "John Smith") != r.node("character", "Smith")
     r = resolve(CONV, rows, persona=["Smith"], splits=[split("Smith", "John Smith")])
     assert not r.is_persona("character", "John Smith") and r.is_persona("character", "Smith")
     # the owner splits; a later link takes it back
