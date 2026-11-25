@@ -17,6 +17,7 @@ from test_extraction import drain as drain_extract
 from test_generations import conv_id
 from test_phase60_carry_take import ON, SECRET_TEXT, _build_source_chat, _keys, _stub_extract
 from test_sidecar_integration import sync
+from test_source_time import clock_story  # noqa: F401 (a fixture)
 from test_summaries import drain as drain_summaries
 
 V20 = {**ON, "packet_policy": "packet-v20"}
@@ -337,3 +338,34 @@ def test_flags_of_reads_only_the_watched_keys_by_their_last_part(migrated, monke
         html = c.get(f"/v1/inspector/c/{conv}?lang=en").json()["html"]
     assert "서연.HP: 80 → 60" in html and "민지.HP" not in html.split("state_dismiss:")[0][-200:]
     assert asked and all(sorted(k) == ["민지.HP", "서연.HP"] for k in asked)  # never the whole history
+
+
+# --- item 9: the bare clock key first; the two new cues only as questions ---------------------------------------------
+
+def test_cues_that_narration_uses_do_not_ask_for_the_clock():
+    from nmos_sidecar import source_time
+
+    for q in ("오늘 몇 일차야?", "지금 3일차지?", "그게 어느 날이었지?", "어느 날에 있었던 일이야?"):
+        assert source_time.CUE.search(q), q
+    for narration in ("어느 날 갑자기 비가 쏟아졌다.", "일차적으로 세라가 책임을 졌다."):
+        assert not source_time.CUE.search(narration), narration
+
+
+def test_a_bare_clock_key_is_preferred_to_a_dotted_one(migrated, clock_story):  # noqa: F811
+    from nmos_sidecar import source_time
+    from nmos_sidecar.parsers import load_rules
+
+    path, chat, _ = clock_story
+    with make_client(migrated, parsers_file=str(path)) as c:
+        sync(c, chat, character_name="Clock test")
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            head = conn.execute("SELECT head_commit_id FROM conversation WHERE host_chat_ref=%s",
+                                (chat.id,)).fetchone()["head_commit_id"]
+            rid = str(conn.execute("SELECT source_revision_id FROM active_membership WHERE commit_id=%s AND position=1",
+                                   (head,)).fetchone()["source_revision_id"])
+            version = load_rules(str(path)).version
+            conn.execute("INSERT INTO state_observation (conversation_id,source_revision_id,rules_version,rule_id,key,value)"
+                         " SELECT conversation_id,source_revision_id,rules_version,rule_id,'Quest.Date','D-3'"
+                         " FROM state_observation WHERE source_revision_id=%s AND key='Date'", (rid,))
+            clock = source_time.read(conn, head, version, [rid], 16, -1)[rid]
+    assert [(k, v) for k, v, _ in clock.fields] == [("Date", "0712-03-01"), ("Time", "07:05")]
