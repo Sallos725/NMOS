@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:ae274536fc3f".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:582c51d7d767".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2967,7 +2967,7 @@ ${GUARD_LINE}` : "";
       try {
         const out = await call(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : void 0);
         if (config) noteConfig(settings, out);
-        if (covered) noteCoverage(decodeURIComponent(covered), out);
+        if (covered) noteCoverage(covered, out);
         return out;
       } catch (error) {
         if (config) noteConfig(settings, null);

@@ -1071,7 +1071,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     try {
       const out = await call<T>(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : undefined);
       if (config) noteConfig(settings, out);
-      if (covered) noteCoverage(decodeURIComponent(covered), out);
+      if (covered) noteCoverage(covered, out);  // a conversation id (a UUID), as the HUD and panel put it in the path
       return out;
     } catch (error) {
       if (config) noteConfig(settings, null);
