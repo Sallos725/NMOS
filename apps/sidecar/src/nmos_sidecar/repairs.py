@@ -23,7 +23,7 @@ Pure: no database here, except `repairs_of`.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
 from typing import Any
@@ -32,7 +32,7 @@ from uuid import UUID
 import psycopg
 
 from .entities import Resolution, norm
-from .predicates import OUTCOMES, REGISTRY, address_slot
+from .predicates import CONDITIONED_PREDICATES, OUTCOMES, REGISTRY, address_slot, is_address_all
 from .secrets import secret_text
 from .statewatch import target as flag_target
 from .threads import MATCH_MIN, similarity
@@ -85,6 +85,39 @@ def repairs_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime 
 IN_FORCE = {False: "r.removed_at IS NULL",
             True: "r.created_at <= %(at)s AND (r.removed_at IS NULL OR r.removed_at > %(at)s)"}
 REPAIR_COLUMNS = ("id", "kind", "target", "value", "note", "created_at")
+
+
+def slotted(predicate: str | None) -> bool:
+    """Whether a predicate's facts hold in condition slots: `addresses` by its `address_condition` (PHASE-64, ADR
+    0091), extract-v21's conditioned predicates by their `condition` (PHASE-66)."""
+    return predicate == "addresses" or predicate in CONDITIONED_PREDICATES
+
+
+def slot(row: Mapping[str, Any]) -> tuple[str, ...]:
+    """A row's condition slot: an address's (`predicates.address_slot`), a conditioned predicate's read from its
+    `condition` the same way (its scope and `when`; `audience` and `as_guise` ride along), `("default",)` otherwise:
+    for a row without a condition, of every earlier generation, every slot is the default one."""
+    if row.get("predicate") == "addresses":
+        return address_slot(row)
+    cond = row.get("condition")
+    if row.get("predicate") in CONDITIONED_PREDICATES and isinstance(cond, Mapping):
+        return address_slot({"address_condition": cond})
+    return ("default",)
+
+
+def unifies(row: Mapping[str, Any]) -> bool:
+    """Whether a row explicitly unifies an earlier split of its slots (`scope="all"`): an address's `address_condition`
+    or a conditioned predicate's `condition`."""
+    if row.get("predicate") == "addresses":
+        return is_address_all(row)
+    cond = row.get("condition")
+    return row.get("predicate") in CONDITIONED_PREDICATES and isinstance(cond, Mapping) and cond.get("scope") == "all"
+
+
+def conditional(row: Mapping[str, Any]) -> bool:
+    """Whether a row states a condition at all (an `address_condition`, or a conditioned predicate's `condition`)."""
+    return bool(row.get("address_condition")) or (row.get("predicate") in CONDITIONED_PREDICATES
+                                                   and bool(row.get("condition")))
 
 
 def _key(r: Resolution | None, name: str | None) -> str:
@@ -314,7 +347,7 @@ def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution
     subject = _ekey(r, target.get("subject_type"), target.get("subject"))
     obj = _ekey(r, target.get("object_type"), target.get("object"))
     before = _before_story(target)
-    target_slot = address_slot(target) if target.get("predicate") == "addresses" else None
+    target_slot = slot(target) if slotted(target.get("predicate")) else None
 
     def where(a: dict[str, Any]) -> str | None:
         return "canon" if a.get("canon") else "carried" if a.get("carried") else None
@@ -324,7 +357,7 @@ def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution
                 and (a.get("source") or "narration") == (target.get("source") or "narration")
                 and _ekey(r, a.get("subject_type"), a["subject"]) == subject
                 and _ekey(r, a.get("object_type"), a.get("object")) == obj
-                and (target_slot is None or address_slot(a) == target_slot))
+                and (target_slot is None or slot(a) == target_slot))
     return (_closest(target, [a for a in rows if _same_turn(target, a) and same(a)], secret_text)
             or (_by_quote(target, rows, same, lambda a: a.get("evidence")) if quote else None))
 
@@ -354,7 +387,7 @@ def _restates(level: int, a: dict[str, Any], b: dict[str, Any], r: Resolution | 
         return quoted(a.get("evidence"), b.get("evidence"))
     if _ekey(r, a.get("object_type"), a.get("object")) != _ekey(r, b.get("object_type"), b.get("object")):
         return False
-    if a["predicate"] == "addresses" and address_slot(a) != address_slot(b):
+    if slotted(a["predicate"]) and slot(a) != slot(b):
         return False
     pred = REGISTRY.get(a["predicate"])
     if pred is not None and pred.cardinality == "single":

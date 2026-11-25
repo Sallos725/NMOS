@@ -151,3 +151,152 @@ def test_an_earlier_generations_rows_have_none_of_the_four_keys(migrated: str):
         for h in f.get("history") or ():
             assert not set(facts.ONTOLOGY_MARKS) & set(h)
     assert current(view, "addresses")[0]["address_condition"] == PRIV
+
+
+# --- 2. per-slot folding of `condition` (modelled on PHASE-64's addresses) ------------------------------------------
+
+def row(i: int, predicate: str, value: str | None, cond: dict[str, Any] | None = None, *, subject: str = "하나",
+        obj: str | None = "도윤", turn: int | None = None, polarity: str = "positive", canon: str | None = None,
+        **extra: Any) -> dict[str, Any]:
+    """A served row of an extract-v21 turn (or canon), as `_versions` reads one version key's history."""
+    out = {"id": i, "position": -1000 + i if canon else i * 2, "turn": -1 if canon else (i if turn is None else turn),
+           "predicate": predicate, "subject": subject, "subject_type": C, "object": obj,
+           "object_type": C if obj else None, "value": value, "polarity": polarity, "modality": "actual",
+           "source": "narration", "knowledge": "public", "known_by": None, "hidden_from": None, "evidence": "",
+           "host_logical_id": f"m{i}", "compiler": "extract-v21", "knowledge_scope": "public", **extra}
+    if cond is not None:
+        out["condition"] = cond
+    if canon:
+        out["canon"] = canon
+    return out
+
+
+def by_slot(out: list[dict[str, Any]]) -> dict[tuple, str | None]:
+    return {repairs.slot(f): f["value"] for f in out}
+
+
+@pytest.mark.parametrize("predicate,obj", [("feels_toward", "도윤"), ("role_toward", "도윤"), ("has_status", None),
+                                           ("identity", None)])
+def test_a_conditional_fact_and_the_unconditional_one_coexist_each_with_its_own_history(predicate, obj):
+    h = [row(0, predicate, "기본", obj=obj), row(1, predicate, "비밀", PRIV, obj=obj),
+         row(2, predicate, "공식", PUB, obj=obj), row(3, predicate, "새 기본", obj=obj),
+         row(4, predicate, "술김", SIT, obj=obj)]
+    out = facts._versions(h, None)
+    assert by_slot(out) == {("default",): "새 기본", ("private",): "비밀", ("public",): "공식",
+                            ("situational", "술자리"): "술김"}
+    hist = {repairs.slot(f): [(e["value"], e["outcome"]) for e in f["history"]] for f in out}
+    assert hist[("default",)] == [("기본", "superseded"), ("새 기본", "current")]  # the private one never enters it
+    assert hist[("private",)] == [("비밀", "current")]
+    # a denial of the situational one ends only its slot
+    ended = facts._versions(h + [row(5, predicate, "술김", SIT, obj=obj, polarity="negative")], None)
+    assert {repairs.slot(f): (f["value"], f["polarity"]) for f in ended}[("situational", "술자리")] == ("술김", "negative")
+    assert by_slot(ended)[("private",)] == "비밀"
+
+
+def test_scope_all_unifies_a_split_and_retracting_it_brings_the_split_back():
+    h = [row(0, "feels_toward", "존중", PUB), row(1, "feels_toward", "사랑", PRIV), row(2, "feels_toward", "신뢰"),
+         row(3, "feels_toward", "편안함", ALL)]
+    out = facts._versions(h, None)
+    assert [(f["value"], repairs.slot(f)) for f in out] == [("편안함", ("default",))]
+    assert {(e["value"], e["outcome"]) for e in out[0]["history"]} == {
+        ("존중", "superseded"), ("사랑", "superseded"), ("신뢰", "superseded"), ("편안함", "current")}
+    assert by_slot(facts._versions(h[:3], None)) == {("public",): "존중", ("private",): "사랑", ("default",): "신뢰"}
+
+
+def test_a_split_retires_the_stale_default_as_an_address_split_does():
+    h = [row(0, "identity", "회사원", obj=None), row(1, "identity", "회사원", PUB, obj=None),
+         row(2, "identity", "조직의 간부", PRIV, obj=None)]
+    out = facts._versions(h, None)
+    assert by_slot(out) == {("public",): "회사원", ("private",): "조직의 간부"}
+
+
+def test_a_relationship_folds_per_slot_and_keeps_its_direction_and_symmetry_rules():
+    h = [row(0, "relationship", "부하"), row(1, "relationship", "연인", PRIV, subject="도윤", obj="하나"),
+         row(2, "relationship", "상사", subject="도윤", obj="하나")]
+    out = facts._versions(h, None)
+    got = {(repairs.slot(f), f["subject"]): f["value"] for f in out}
+    # the private tie of the other direction coexists; in the default slot each (one-way) direction keeps its latest
+    assert got == {(("default",), "하나"): "부하", (("default",), "도윤"): "상사", (("private",), "도윤"): "연인"}
+    # a symmetric default tie replaces both directions of the default slot only
+    sym = facts._versions(h + [row(3, "relationship", "친구")], None)
+    assert {(repairs.slot(f), f["subject"]): f["value"] for f in sym} == {
+        (("default",), "하나"): "친구", (("private",), "도윤"): "연인"}
+    # `all` closes the private tie, whose history joins the unifying statement's
+    unified = facts._versions(h + [row(4, "relationship", "가족", ALL)], None)
+    assert [(f["value"], repairs.slot(f)) for f in unified if f["subject"] == "하나"] == [("가족", ("default",))]
+    assert not any(repairs.slot(f) == ("private",) for f in unified)
+    fam = next(f for f in unified if f["value"] == "가족")
+    assert ("연인", "superseded") in {(e["value"], e["outcome"]) for e in fam["history"]}
+    # a public and a private tie both standing retire the stale default of that direction
+    split = facts._versions([row(0, "relationship", "동료"), row(1, "relationship", "동료", PUB),
+                             row(2, "relationship", "연인", PRIV)], None)
+    assert by_slot(split) == {("public",): "동료", ("private",): "연인"}
+    assert [e["value"] for e in next(f for f in split if repairs.slot(f) == ("public",))["history"]] == ["동료", "동료"]
+
+
+def test_a_lock_holds_off_only_its_own_slot_or_a_unifying_statement():
+    locked = row(0, "feels_toward", "사랑", PRIV, owner=True, locked="L")
+    later = [row(1, "feels_toward", "미움", PRIV), row(2, "feels_toward", "무관심"),
+             row(3, "feels_toward", "평온", ALL)]
+    kept, off = facts._hold([locked] + later, None)
+    assert [x["value"] for x in kept] == ["사랑", "무관심"]
+    assert [b["value"] for _, b in off] == ["미움", "평온"]
+    assert by_slot(facts._versions(kept, None)) == {("private",): "사랑", ("default",): "무관심"}
+    # a relationship's lock needs both: its slot (or all) and its direction (or a symmetric value)
+    rel = row(0, "relationship", "후원자", PRIV, owner=True, locked="L")
+    kept, off = facts._hold([rel, row(1, "relationship", "제자", PRIV, subject="도윤", obj="하나"),
+                             row(2, "relationship", "원수"), row(3, "relationship", "원수", PRIV)], None)
+    assert [b["value"] for _, b in off] == ["원수"] and len(kept) == 3
+
+
+def test_repairs_and_dropped_name_a_conditional_fact_by_its_slot():
+    pub, priv = row(0, "feels_toward", "존중", PUB, turn=0), row(1, "feels_toward", "존중", PRIV, turn=0)
+    target = repairs.fact_target(priv)
+    assert target["condition"] == PRIV
+    assert repairs.match_fact(target, [pub, priv], None) is priv
+    assert repairs.match_fact(repairs.fact_target(pub), [pub, priv], None) is pub
+    assert repairs._restates(1, pub, priv, None) is False and repairs._restates(1, priv, dict(priv), None)
+    assert facts._restates(pub, priv, None) is False
+    assert facts.fact_text(priv) == "하나 feels toward 도윤 [둘만 있을 때]: 존중"
+
+
+COND = {
+    "t0": [a("하나", "feels_toward", "도윤", "존중", condition=PUB),
+           a("하나", "feels_toward", "도윤", "사랑", condition=PRIV),
+           a("하나", "relationship", "도윤", "동료"),
+           a("하나", "relationship", "도윤", "연인", condition=PRIV),
+           a("세라", "feels_toward", "도윤", "질투", source="character_claim", asserted_by="세라", condition=PRIV),
+           a("하나", "has_status", None, "긴장함", condition=SIT)],
+    "t1": [a("하나", "feels_toward", "도윤", "서운함")],
+}
+
+
+def test_retract_claims_dropped_restore_and_carry_work_per_slot(migrated: str):
+    v21 = Chat(migrated, COND)
+    with v21.client() as c:
+        v21.run(c)
+        view = v21.view()
+        assert by_slot(current(view, "feels_toward", "하나")) == {
+            ("public",): "존중", ("private",): "사랑", ("default",): "서운함"}
+        assert by_slot(current(view, "relationship")) == {("default",): "동료", ("private",): "연인"}
+        assert current(view, "has_status")[0]["condition"] == SIT
+        priv = next(f for f in current(view, "feels_toward", "하나") if repairs.slot(f) == ("private",))
+        res = c.post(f"/v1/conversations/{v21.cid}/repairs", json={"kind": "fact_retract", "item": str(priv["id"])})
+        assert res.status_code == 200 and res.json()["applied"] == str(priv["id"]), res.text
+        assert by_slot(current(v21.view(), "feels_toward", "하나")) == {("public",): "존중", ("default",): "서운함"}
+        c.post(f"/v1/conversations/{v21.cid}/repairs/{res.json()['repair']['id']}/remove")
+        # a correction of the private tie leaves the default one
+        rel = next(f for f in current(v21.view(), "relationship") if repairs.slot(f) == ("private",))
+        res = c.post(f"/v1/conversations/{v21.cid}/repairs",
+                     json={"kind": "fact_correct", "item": str(rel["id"]), "new_value": "약혼자"})
+        assert res.status_code == 200 and res.json()["applied"], res.text
+        assert by_slot(current(v21.view(), "relationship")) == {("default",): "동료", ("private",): "약혼자"}
+        # a re-extraction that drops the private feeling: dropped by its slot (the default one does not hold it)
+        c.post(f"/v1/conversations/{v21.cid}/rebuild")
+        drain(migrated, model_for(COND, frozenset({("하나", "사랑")})))
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            lost = dropped.find(conn, v21.head, v21.key, v21.view())
+        assert [(d["value"], d["condition"]) for d in lost] == [("사랑", PRIV)]
+        res = c.post(f"/v1/conversations/{v21.cid}/repairs", json={"kind": "fact_restore", "item": str(lost[0]["id"])})
+        assert res.status_code == 200 and res.json()["applied"], res.text
+        assert by_slot(current(v21.view(), "feels_toward", "하나"))[("private",)] == "사랑"

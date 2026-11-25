@@ -20,11 +20,11 @@ from xml.sax.saxutils import escape, quoteattr
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .keywords import keywords
-from .predicates import (EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, address_label, address_slot, is_address_all,
+from .predicates import (EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, address_label,
                          stored_knowledge, whereabouts)
 from . import canon, canonfacts
-from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, exclusions, live, pins, quoted_turns,
-                      secret_events, splits_of, thread_events, unedited_quotes)
+from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, conditional, exclusions, live, pins,
+                      quoted_turns, secret_events, slot, slotted, splits_of, thread_events, unedited_quotes, unifies)
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -376,7 +376,10 @@ def _different_source(earlier_row: dict[str, Any], later_row: dict[str, Any]) ->
 
 
 def _address_versions(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
-    """One direction's `addresses` assertions in position order with conditional slots (PHASE-64, ADR 0091).
+    """One direction's `addresses` assertions in position order with conditional slots (PHASE-64, ADR 0091); since
+    PHASE-66 also one version key's history of an extract-v21 conditioned predicate other than `relationship`
+    (`repairs.slot` and `repairs.unifies` read its `condition` as they read an address's `address_condition`, and are
+    `predicates.address_slot` and `is_address_all` for an address).
 
     Each condition slot (`default`, `public`, `private`, or `("situational", normalized_when)`) keeps its own current
     row and per-slot history so settling a private form does not supersede the public form or pollute its `before:`
@@ -399,8 +402,8 @@ def _address_versions(history: list[dict[str, Any]], r: Resolution | None = None
             outcome[id(row)] = how
             closer[id(row)] = by
 
-    def add_hist(slot: tuple[str, ...], items: list[dict[str, Any]]) -> None:
-        bucket = slot_history.setdefault(slot, [])
+    def add_hist(key: tuple[str, ...], items: list[dict[str, Any]]) -> None:
+        bucket = slot_history.setdefault(key, [])
         seen = {id(x) for x in bucket}
         for x in items:
             if id(x) not in seen:
@@ -408,39 +411,39 @@ def _address_versions(history: list[dict[str, Any]], r: Resolution | None = None
                 seen.add(id(x))
 
     for a in history:
-        slot = address_slot(a)
-        unifies = a["polarity"] == "positive" and is_address_all(a)
+        here = slot(a)
+        unifying = a["polarity"] == "positive" and unifies(a)
         rel = relation(a, r)
         if a["polarity"] == "negative":
-            current = slots.get(slot)
+            current = slots.get(here)
             if current is not None and relation(current, r) != rel:
-                negatives[(slot, rel)] = a
-                add_hist(slot, [a])
+                negatives[(here, rel)] = a
+                add_hist(here, [a])
                 continue
-            close(negatives.pop((slot, rel), None), "superseded", a)
+            close(negatives.pop((here, rel), None), "superseded", a)
             close(current, "ended", a)
-            slots[slot] = a
-            add_hist(slot, [a])
+            slots[here] = a
+            add_hist(here, [a])
             continue
-        close(negatives.pop((slot, rel), None), "superseded", a)
-        if unifies:
+        close(negatives.pop((here, rel), None), "superseded", a)
+        if unifying:
             for other, held in list(slots.items()):
-                if other != slot and held is not None and _different_source(held, a):
+                if other != here and held is not None and _different_source(held, a):
                     close(held, "superseded", a)
-                    add_hist(slot, slot_history.get(other, []))
+                    add_hist(here, slot_history.get(other, []))
                     slots[other] = None
             for nkey in [k for k, neg in negatives.items() if _different_source(neg, a)]:
                 neg = negatives.pop(nkey)
                 close(neg, "superseded", a)
-                add_hist(slot, [neg])
-            close(slots.get(slot), "superseded", a)
-            slots[slot] = a
-            add_hist(slot, [a])
+                add_hist(here, [neg])
+            close(slots.get(here), "superseded", a)
+            slots[here] = a
+            add_hist(here, [a])
             continue
-        close(slots.get(slot), "superseded", a)
-        slots[slot] = a
-        add_hist(slot, [a])
-        if slot in (("public",), ("private",)):
+        close(slots.get(here), "superseded", a)
+        slots[here] = a
+        add_hist(here, [a])
+        if here in (("public",), ("private",)):
             pub, priv, dflt = slots.get(("public",)), slots.get(("private",)), slots.get(("default",))
             if (pub is not None and pub["polarity"] == "positive"
                     and priv is not None and priv["polarity"] == "positive"
@@ -448,7 +451,7 @@ def _address_versions(history: list[dict[str, Any]], r: Resolution | None = None
                     and _different_source(dflt, a)):
                 close(dflt, "superseded", a)
                 slots[("default",)] = None
-                target = slot
+                target = here
                 if not _different_source(pub, a) and not _different_source(priv, a):
                     dv = _norm(dflt.get("value"))
                     if _norm(pub.get("value")) == dv:
@@ -463,10 +466,79 @@ def _address_versions(history: list[dict[str, Any]], r: Resolution | None = None
     for _, row in current_items:
         outcome[id(row)] = "current"
     out = []
-    for slot, row in current_items:
-        my_history = sorted(slot_history.get(slot, [row]), key=lambda x: order[id(x)])
+    for key, row in current_items:
+        my_history = sorted(slot_history.get(key, [row]), key=lambda x: order[id(x)])
         entries = [_entry(h, outcome, closer) for h in my_history]
         out.append({**row, "versions": len(entries), "history": entries, "claims": []})
+    return out
+
+
+def _conditional_pairs(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
+    """One pair's relationships when some hold under a condition (extract-v21, PHASE-66), in position order.
+
+    Each condition slot (`repairs.slot`: default, public, private, or situational with its `when`) is folded as a pair
+    is (`_pair_versions`: each direction its latest, a symmetric tie both ways), so a private tie and the public one
+    coexist, each with its own history. Two cross-slot transitions, as for addresses (`_address_versions`, ADR 0091):
+    - unification: a positive `scope="all"` statement (in the default slot) closes every other slot's current tie from
+      an earlier turn or canon source, whose history joins its own;
+    - split cleanup: a positive default tie is retired, into the history of the slot that says the same (else the
+      later one), once a positive public and a positive private tie of its direction (or symmetric) stand after it from
+      another turn or source."""
+    order = {(a["id"], a["position"]): i for i, a in enumerate(history)}
+    groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    for a in history:
+        groups.setdefault(slot(a), []).append(a)
+    folded = {key: _pair_versions(rows, r) for key, rows in groups.items()}
+    unifiers = [a for a in history if a["polarity"] == "positive" and unifies(a)]
+    gone: dict[int, dict[str, Any]] = {}  # id() of an output closed across slots -> the statement that closed it
+    joins: dict[tuple, list[dict[str, Any]]] = {}  # (id, position) of a closing statement -> the entries it took in
+
+    def retire(f: dict[str, Any], by: dict[str, Any]) -> None:
+        for entry in f["history"]:
+            if entry["position"] == f["position"] and entry["outcome"] == "current":
+                entry["outcome"] = "superseded"
+                entry["closed_turn"] = by["turn"] if by.get("turn") is not None else (0 if by.get("canon") else None)
+        gone[id(f)] = by
+        joins.setdefault((by["id"], by["position"]), []).extend(f["history"])
+
+    for key, outs in folded.items():
+        if key == ("default",):
+            continue
+        for f in outs:
+            at = order[(f["id"], f["position"])]
+            closer = next((u for u in reversed(unifiers)
+                           if order[(u["id"], u["position"])] > at and _different_source(f, u)), None)
+            if closer is not None:
+                retire(f, closer)
+    pub = [f for f in folded.get(("public",), ()) if id(f) not in gone and f["polarity"] == "positive"]
+    priv = [f for f in folded.get(("private",), ()) if id(f) not in gone and f["polarity"] == "positive"]
+    for f in folded.get(("default",), ()):
+        if f["polarity"] != "positive" or unifies(f):
+            continue
+        d = _subject(f, r)
+        mine = lambda x: _subject(x, r) == d or symmetric(x.get("value"))  # noqa: E731
+        p = next((x for x in pub if mine(x) and x["position"] > f["position"]), None)
+        q = next((x for x in priv if mine(x) and x["position"] > f["position"]), None)
+        if p is None or q is None:
+            continue
+        later = p if p["position"] > q["position"] else q
+        if not _different_source(f, later):
+            continue
+        retire(f, next((x for x in (p, q) if _norm(x.get("value")) == _norm(f.get("value"))), later))
+    out = []
+    for key, outs in folded.items():
+        for f in outs:
+            if id(f) in gone:
+                continue
+            # the entries a closing statement took in join every output whose history holds it (as an address's slot
+            # history does), so they stay readable after that statement is itself replaced in its slot
+            held = {h["position"] for h in f["history"]}
+            extra = [e for (_, at), entries in joins.items() if at in held for e in entries]
+            if extra:
+                seen = {id(e) for e in f["history"]}
+                merged = sorted(f["history"] + [e for e in extra if id(e) not in seen], key=lambda e: e["position"])
+                f = {**f, "history": merged, "versions": len(merged)}
+            out.append(f)
     return out
 
 
@@ -489,9 +561,11 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     by a negation or an end) or `conflicting` (an end that later statements contradict).
     """
     if history and history[0]["predicate"] == "relationship":
+        if any(conditional(a) for a in history):  # extract-v21 (PHASE-66): a pair's ties by condition slot
+            return _conditional_pairs(history, r)
         return _pair_versions(history, r)
-    if history and history[0]["predicate"] == "addresses" and any(a.get("address_condition") for a in history):
-        return _address_versions(history, r)
+    if history and slotted(history[0]["predicate"]) and any(conditional(a) for a in history):
+        return _address_versions(history, r)  # PHASE-64 addresses; PHASE-66 the other conditioned predicates
     slots: dict[str, dict[str, Any] | None] = {}
     negatives: dict[tuple, dict[str, Any]] = {}
     disputed_by: dict[str, Any] | None = None
@@ -737,9 +811,10 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             continue
         if row["source"] == "character_claim" and row["modality"] in ("actual", "unknown"):
             # A claim's truth is unknown by nature; the model may say so (owner decision 2026-09-24).
-            # latest wins, per speaker as an entity: "백이안" and "이안" are one speaker; an address per condition slot
-            slot = (address_slot(row),) if row["predicate"] == "addresses" else ()
-            claimed[version_key(row, r) + slot + (r.key("character", row["asserted_by"]),)] = row
+            # latest wins, per speaker as an entity: "백이안" and "이안" are one speaker; an address (and an extract-v21
+            # conditioned fact) per condition slot
+            where = (slot(row),) if slotted(row["predicate"]) else ()
+            claimed[version_key(row, r) + where + (r.key("character", row["asserted_by"]),)] = row
         elif row["modality"] != "actual":
             other.append(row)
         else:
@@ -763,14 +838,14 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     claims = sorted(claimed.values(), key=lambda c: c["position"], reverse=True)
     for c in claims:
         for f in by_key.get(version_key(c, r), []):
-            if c["predicate"] == "addresses" and address_slot(f) != address_slot(c):
+            if slotted(c["predicate"]) and slot(f) != slot(c):
                 continue
             f["claims"].append({"by": c["asserted_by"], "turn": c["turn"], "position": c["position"],
                                 "object": c["object"], "value": c["value"], "polarity": c["polarity"]})
     facts.sort(key=lambda f: f["position"], reverse=True)
     for rid, gone in retracted.items():  # the version a retraction made current again names it (ADR 0044, Q7)
         for f in by_key.get(version_key(gone, r), []):
-            if gone["predicate"] == "addresses" and address_slot(f) != address_slot(gone):
+            if slotted(gone["predicate"]) and slot(f) != slot(gone):
                 continue
             if not f.get("repair"):
                 f["repair"] = rid
@@ -916,12 +991,14 @@ def _canon_conflicts(facts: list[dict[str, Any]], canon_at: dict[int, dict[str, 
 def _changes(locked: dict[str, Any], a: dict[str, Any], r: Resolution | None) -> bool:
     """Whether a statement of the locked fact's version key would replace or end it: for a relationship, one of the same
     direction or a symmetric one (ADR 0038); for `addresses`, the same condition slot or a unifying `scope="all"`
-    (PHASE-64, ADR 0091); for every other key, any."""
+    (PHASE-64, ADR 0091), and so for an extract-v21 conditioned fact (PHASE-66: a relationship needs both); for every
+    other key, any."""
+    same_slot = (not (slotted(locked["predicate"]) and slotted(a["predicate"]))
+                 or unifies(a) or unifies(locked) or slot(a) == slot(locked))
     if locked["predicate"] == "relationship" and a["predicate"] == "relationship":
-        return _subject(a, r) == _subject(locked, r) or symmetric(a["value"]) or symmetric(locked["value"])
-    if locked["predicate"] == "addresses" and a["predicate"] == "addresses":
-        return is_address_all(a) or is_address_all(locked) or address_slot(a) == address_slot(locked)
-    return True
+        return same_slot and (_subject(a, r) == _subject(locked, r) or symmetric(a["value"])
+                              or symmetric(locked["value"]))
+    return same_slot
 
 
 def _restates(a: dict[str, Any], b: dict[str, Any], r: Resolution | None) -> bool:
@@ -931,7 +1008,7 @@ def _restates(a: dict[str, Any], b: dict[str, Any], r: Resolution | None) -> boo
     if a["predicate"] != b["predicate"] or a.get("polarity") != b.get("polarity") \
             or _norm(a.get("value")) != _norm(b.get("value")):
         return False
-    if a["predicate"] == "addresses" and address_slot(a) != address_slot(b):
+    if slotted(a["predicate"]) and slot(a) != slot(b):
         return False
     ends = lambda x: (_subject(x, r), _object(x, r) if x.get("object") else None)  # noqa: E731
     if ends(a) == ends(b):
@@ -1054,8 +1131,9 @@ def fact_text(f: dict[str, Any]) -> str:
     if f.get("object"):
         parts.append(f["object"])
     text = " ".join(parts)
-    if label := address_label(f):
-        text = f"{text} [{label}]"
+    if label := address_label(f) or (address_label({"predicate": "addresses", "address_condition": f["condition"]})
+                                     if conditional(f) and f.get("predicate") != "addresses" else None):
+        text = f"{text} [{label}]"  # PHASE-64; PHASE-66: a conditioned fact names its condition the same way
     return f"{text}: {f['value']}" if f.get("value") else text
 
 

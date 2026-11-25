@@ -19,8 +19,8 @@ import psycopg
 
 from .entities import norm
 from .facts import _parse_feeling, ontology_marks
-from .predicates import REGISTRY, address_slot, stored_knowledge
-from .repairs import _ekey, _established, restated
+from .predicates import REGISTRY, stored_knowledge
+from .repairs import _ekey, _established, restated, slot, slotted
 from .secrets import secret_text
 
 NOT_FACTS = frozenset({"learned", "also_called"})  # a reveal and a name link are not facts (ADR 0033, 0012)
@@ -81,12 +81,12 @@ def find(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, 
     def hold(a: dict[str, Any]) -> tuple:
         """What memory must hold for a fact not to be dropped: the same predicate, subject, object (as entities) and
         polarity, and for a predicate that accumulates the same value: one other event of a character does not hold
-        the event a re-extraction left out. An address holds only its own condition slot (PHASE-64)."""
+        the event a re-extraction left out. An address, or a conditioned fact, holds only its own condition slot (PHASE-64, PHASE-66)."""
         pred = REGISTRY.get(a["predicate"])
         value = norm(a.get("value")) if pred is not None and pred.cardinality == "multi" else None
         base = (a["predicate"], _ekey(r, a.get("subject_type"), a["subject"]), _ekey(r, a.get("object_type"), a.get("object")),
                 a.get("polarity") or "positive", value)
-        return base + (address_slot(a),) if a["predicate"] == "addresses" else base
+        return base + (slot(a),) if slotted(a["predicate"]) else base
 
     held = {hold(a) for a in view.get("assertions") or () if _established(a)}
     out = []
