@@ -342,6 +342,45 @@ def test_a_second_reply_in_the_same_turn_moves_the_anchor_and_is_extracted_once_
     assert "bakery" in packet["packet"]["text"]
 
 
+def _e(name: str, role: str, rev: str = "r", **kw) -> Any:
+    from nmos_sidecar.reconcile import Entry
+
+    return Entry(name, f"{name}-{rev}", role, **kw)
+
+
+def test_the_open_turn_is_kept_only_when_its_prefix_and_anchor_stay():
+    from nmos_sidecar.extraction import open_turn_kept
+
+    head = [_e("u0", "user"), _e("a0", "char"), _e("u1", "user"), _e("a1", "char")]
+    life = {e.key: "accepted" for e in head[:3]} | {head[3].key: "provisional"}
+    assert open_turn_kept(head, life, head + [_e("u2", "user")])  # the user continued: the common request sync
+    assert open_turn_kept(head, life, head + [_e("c", "char", is_comment=True), _e("u2", "user")])
+    assert not open_turn_kept(head, life, head + [_e("a1b", "char")])  # a second reply: the anchor moves
+    assert not open_turn_kept(head, life, head[:3])  # rerolled (H14)
+    assert not open_turn_kept(head, life, head[:3] + [_e("a1", "char", "edited")])  # edit, swipe, continue
+    assert not open_turn_kept(head, life, [_e("u0", "user", "edited")] + head[1:])  # an edit before it: checked
+    assert not open_turn_kept(head, life, head + [_e("x", "user", disabled="allBefore")])
+    assert open_turn_kept(head, {e.key: "accepted" for e in head}, head[:3])  # no open turn: nothing early
+    assert open_turn_kept(head[:3], life, head)  # the previous head ended with the user: nothing early yet
+    assert open_turn_kept(None, {}, head)  # first sight
+
+
+def test_an_append_after_the_open_turn_does_not_scan_the_job_table(on, migrated, db, monkeypatch):
+    chat, _ = _open(on, migrated, db)
+    scans = []
+    real = extraction.withdraw_early
+    monkeypatch.setattr(extraction, "withdraw_early", lambda *a, **k: scans.append(a) or real(*a, **k))
+    chat.user("Is she still there?")
+    sync(on, chat)
+    assert scans == []
+    chat.reply("She is.")
+    sync(on, chat, trigger="output")  # the previous head ended with the user's message: nothing to withdraw
+    assert scans == []
+    chat.messages.pop()
+    sync(on, chat)  # a reroll of the open turn: the scan runs
+    assert len(scans) == 1
+
+
 # --- item 5: provisional stays provisional for memory selection -------------------------------------------------------
 
 def test_until_the_user_continues_the_reply_serves_nothing_of_its_own(on, migrated, db):

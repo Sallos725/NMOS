@@ -714,6 +714,30 @@ def enqueue_open_turn(
     return len(rows)
 
 
+def open_turn_kept(old_head: list[Entry] | None, old_lifecycle: dict[RevKey, str], manifest: list[Entry]) -> bool:
+    """Whether this sync left the previous head's open turn as it was (PHASE-67), without I/O: then no early job can
+    have lost its turn, and `withdraw_early` (a scan of the job table) is skipped on the sync path.
+
+    The open turn is the previous head's last turn member when it is a reply not accepted. It is kept when the new
+    manifest repeats the previous head up to and including that reply, adds no further reply to its turn (the anchor
+    would move) and no `allBefore` cut after it: the turn's grouping and its hash read only that prefix (`turn_layout`).
+    When unsure it answers False, and the withdrawal runs."""
+    if not old_head:
+        return True  # first sight: no early job of this chat yet
+    last = next((i for i in range(len(old_head) - 1, -1, -1)
+                 if not old_head[i].is_comment and old_head[i].disabled not in (True, "true", "allBefore")), None)
+    if last is None or old_head[last].role == "user" or old_lifecycle.get(old_head[last].key) == "accepted":
+        return True  # no open turn in the previous head
+    if len(manifest) <= last or [e.key for e in manifest[:last + 1]] != [e.key for e in old_head[:last + 1]]:
+        return False
+    for e in manifest[last + 1:]:
+        if e.disabled == "allBefore":
+            return False
+        if not e.is_comment and e.disabled not in (True, "true"):
+            return e.role == "user"  # the next member opens a new turn, or adds a reply to this one
+    return True
+
+
 def withdraw_early(conn: psycopg.Connection, conv_id: UUID | None = None) -> int:
     """Early extractions (PHASE-67) that no longer stand for their turn never start, and a running one stores nothing.
 

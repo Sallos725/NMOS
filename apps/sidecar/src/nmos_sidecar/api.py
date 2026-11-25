@@ -393,19 +393,21 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                 embed_key=rt["projection"].key if rt["projection"] else None,
                                 embed_backfill=cur.embed_backfill)
         if cur.extract_on_output and (rt["extractor"] or rt["projection"]):
-            early(conn, conv_id, old_head is None, manifest, new_lifecycle, ids, trigger)
+            early(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids, trigger)
 
-    def early(conn, conv_id, first_sight, manifest, lifecycle, ids, trigger) -> None:
-        """PHASE-67: an output sync queues the open turn now; any applied sync withdraws early jobs that no longer
-        stand for it. Fail-open, as the sync must be: an error is logged and the sync goes on (a savepoint)."""
+    def early(conn, conv_id, old_head, old_lifecycle, manifest, lifecycle, ids, trigger) -> None:
+        """PHASE-67: an output sync queues the open turn now; an applied sync that changed the previous open turn
+        withdraws early jobs that no longer stand for theirs (checked without I/O first: an append skips the scan).
+        Fail-open, as the sync must be: an error is logged and the sync goes on (a savepoint)."""
         try:
             with conn.transaction():
                 if trigger == "output":
-                    extraction.enqueue_open_turn(conn, conv_id, first_sight, manifest, lifecycle, ids,
+                    extraction.enqueue_open_turn(conn, conv_id, old_head is None, manifest, lifecycle, ids,
                                                  settings.extract_turns,
                                                  extractor_key=rt["extractor"].key if rt["extractor"] else None,
                                                  embed_key=rt["projection"].key if rt["projection"] else None)
-                extraction.withdraw_early(conn, conv_id)
+                if not extraction.open_turn_kept(old_head, old_lifecycle, manifest):
+                    extraction.withdraw_early(conn, conv_id)
         except Exception as e:  # noqa: BLE001 — the turn is still queued once the user continues (ADR 0008)
             log.warning("early extraction not scheduled conversation=%s (%s)", conv_id, type(e).__name__)
 
