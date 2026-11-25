@@ -1947,9 +1947,12 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
         return not options.narrator or scene.narrator_knows(row, options.narrator, r)
 
     mine: dict[str, list[dict[str, Any]]] = {}
+    unshown_pairs: set[tuple[str, str]] = set()  # packet-v21: a pair with a form of address the scene may not read
     for f in view["facts"]:
         if f["predicate"] in (CAST_PREDICATES_V21 if v21 else CAST_PREDICATES) and shown(f):
             mine.setdefault(scene.key(r, f["subject"]), []).append(f)
+        elif v21 and f["predicate"] == "addresses" and f.get("object"):
+            unshown_pairs.add((scene.key(r, f["subject"]), scene.key(r, f["object"])))
     others = {k for k in cast if k != persona and str(k) not in left_out}
     groups: list[tuple[str, list[Line]]] = []
     used: set[Any] = set()
@@ -1962,6 +1965,10 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
         more: list[dict[str, Any]] = []
         if v21:
             pick, more = cast_facts_v21(own, to_persona, lambda f: scene.key(r, f["object"]) in others - {k})
+            # a pair's slots show together or not at all: with one of them private here (or withheld), the pair's
+            # forms of address stay in lead and <Private>, as packet-v20 has them
+            more = [f for f in more if f["predicate"] != "addresses"
+                    or (k, scene.key(r, f["object"])) not in unshown_pairs]
         else:
             pick = cast_facts(own, to_persona)
         named = any(n in said for n in scene.names({k: cast[k]}, r, aliases))
@@ -2106,9 +2113,12 @@ def gone_lines(view: dict[str, Any], r: Any, cast: dict[str, str], now: int | No
         return []
     before, cause = options.policy in BEFORE_POLICIES, options.policy in CAUSE_POLICIES
     v21 = options.policy in V21_POLICIES
+    if v21:  # packet-v21: a public gone line drops a clause that would say a secret (`entry_v21`)
+        shown = Shown(view.get("secrets") or [], scene.names(cast, r))
+        return [entry_v21(f, scene.private(f, cast, r), before, cause, options.history_marks, shown, gone=True,
+                          happened=options.policy in HAPPENED_POLICIES) for f in gone_rows(view, r, now, v21=True)]
     return [fact_entry(f, scene.private(f, cast, r), before, cause, options.history_marks, gone=True,
-                       happened=options.policy in HAPPENED_POLICIES)
-            for f in (gone_rows(view, r, now, v21=True) if v21 else gone_rows(view, r, now))]
+                       happened=options.policy in HAPPENED_POLICIES) for f in gone_rows(view, r, now)]
 
 
 def pin_gone(g: Gathered, view: dict[str, Any], r: Any, now: int | None, options: RecallOptions) -> list[dict[str, Any]]:

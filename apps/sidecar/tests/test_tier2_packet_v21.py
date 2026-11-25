@@ -588,7 +588,9 @@ def test_a_private_address_slot_stays_out_of_cast_under_v21():
     r = res(folded + [row(9, "카이토", "event", None, "x", **C)])
     cast = {r.key("character", n): n for n in ("하나", "도윤", "카이토")}
     groups = dict(cast_groups(view_of(folded), cast, r, "", V21, shown_v21=Shown())[0])
-    assert [line.content for line in groups["하나"]] == ["존댓말, '과장님'"]  # private to 카이토 here: its own section
+    # the private slot is private here (카이토 is present): neither slot enters <Cast>, so one never shows alone;
+    # both stay where packet-v20 has them (lead, and <Private>)
+    assert "하나" not in groups or not any(line.content.startswith(("존댓말", "반말")) for line in groups["하나"])
 
 
 def test_replaced_address_handling_is_the_same_under_v21():
@@ -696,3 +698,45 @@ def test_a_pairs_address_slots_enter_cast_together_and_a_cut_one_stays_in_lead()
         if not in_cast & {1, 2} and out.text:  # left out of <Cast>: lead still offers them as packet-v20 does
             lead_only = compile_lines([], budget, cast=[("하나", [place])], lead=[pub, priv], policy="packet-v20")
             assert ("오빠" in out.text) == ("오빠" in lead_only.text), budget
+
+
+def test_extras_are_placed_beside_a_full_core_at_ordinary_budgets():
+    def group(n):
+        core = [_line("fact", f'    <Fact kind="{p}" turn="{n * 10 + i}">인물{n} {p}: 값{i} 조금 긴 설명이 붙은 상태</Fact>',
+                      n * 10 + i) for i, p in enumerate(("located_in", "has_status", "feels_toward", "possesses"))]
+        more = dataclasses.replace(_line("fact", f'    <Fact kind="feels_toward" turn="{n * 10 + 5}">인물{n} feels toward '
+                                         f'인물{(n + 1) % 4}: 신뢰</Fact>', n * 10 + 5), marks={"cast_extra": True})
+        return (f"인물{n}", [*core, more])
+    persona = ("나", [dataclasses.replace(_line("fact", '    <Fact kind="has_status" turn="90">나 has status: 다리 부상'
+                                                  '</Fact>', 90), marks={"cast_extra": True})])
+    cast = [group(n) for n in range(4)] + [persona]
+    for budget in (2000, 3000, 4000):
+        out = compile_lines([], budget, cast=cast, facts=[SECRET], lead=[LEAD], policy="packet-v21")
+        placed = {e["ref"].get("assertion") for e in out.ledger if e["placed"]}
+        assert {n * 10 + i for n in range(4) for i in range(4)} <= placed, budget  # every core line
+        assert 90 in placed and {5, 15, 25, 35} <= placed, budget  # the persona group and the peers
+        assert {3, 4} <= placed, budget
+        assert not any(e["why"] == "budget" for e in out.ledger if (e.get("marks") or {}).get("cast_extra"))
+
+
+def test_v21_selects_conditional_address_rows_as_v20_does():
+    from nmos_sidecar import facts
+    rows = [_addr(1, "존댓말, '과장님'", PUBLIC), _addr(2, "반말, '오빠'", PRIVATE)] + [
+        _addr(3 + i, f"별명 {i}", {"scope": "situational", "when": f"상황 {i}"}) for i in range(5)]
+    folded = facts._versions(rows)
+    for q in ("하나가 도윤을 본다.", "하나가 상황 0일 때 도윤을 뭐라고 불러?"):
+        for limit in (2, 4, 8):
+            v20 = facts.relevant_facts(folded, q, "", set(), limit)
+            v21 = facts.relevant_facts(folded, q, "", set(), len(folded))[:limit]  # v21's call, then its slice
+            assert [f["id"] for f in v21] == [f["id"] for f in v20], (q, limit)
+
+
+def test_a_public_gone_line_drops_a_cause_that_says_a_secret_under_v21():
+    dead = row(10, "세라", "has_status", None, "사망", **C, because="열쇠는 우물 속에 숨겨져 있다")
+    view = view_of([dead], secrets=SECRETS)
+    r = res([dead, row(19, "카이토", "event", None, "x", **C)])
+    cast = {r.key("character", n): n for n in ("카이토",)}
+    [v21] = retrieval.gone_lines(view, r, cast, 20, V21)
+    [v20] = retrieval.gone_lines(view, r, cast, 20, V20)
+    assert 'gone="true"' in v21.xml and "because" not in v21.xml
+    assert "because: 열쇠는" in v20.xml

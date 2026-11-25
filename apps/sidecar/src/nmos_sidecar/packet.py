@@ -723,8 +723,8 @@ def _cast_v21(cast: list[tuple[str, list[Line]]], ledger: list[dict[str, Any]], 
               est: Callable[[str], int], in_cast: set[Any]) -> tuple[list[str], int, int]:
     """packet-v21's <Cast>: first every line packet-v20 would hold (marked lines aside), across all groups, as the
     budget allows; then the extra lines (`marks[CAST_EXTRA]`: feelings toward and forms of address for other scene
-    characters, the persona's own group), within CAST_EXTRA_SHARE of the budget and never into the room held back for
-    lead and Private lines (`held_back`). So the wider <Cast> yields first, and it yields its extras before any group
+    characters, the persona's own group), within CAST_EXTRA_SHARE of the budget counted from where the first pass ended,
+    and never into the room held back for lead and Private lines (`held_back`). So the wider <Cast> yields first, and it yields its extras before any group
     loses a line v20 had. Extra lines that share a mark value other than True (one pair's forms of address, one per
     condition slot) are placed together or not at all, so one slot never shows without the others. A placed extra's
     assertion goes to `in_cast`: the same line offered to lead or facts is not said again; one left out here is still
@@ -739,7 +739,6 @@ def _cast_v21(cast: list[tuple[str, list[Line]]], ledger: list[dict[str, Any]], 
                 + (f" back_after={quoteattr(cast_marks[name])}" if name in cast_marks else "") + ">"
                 for name, _ in cast]
     placed: dict[int, list[tuple[int, str]]] = {}
-    extra_cap = used + int(inner * CAST_EXTRA_SHARE)
     def cost_of(gi: int, line: Line, opened: bool, any_placed: bool) -> tuple[int, list[str]]:
         xml = "  " + line.xml
         needed = needed_notes(xml + openings[gi])
@@ -760,7 +759,7 @@ def _cast_v21(cast: list[tuple[str, list[Line]]], ledger: list[dict[str, Any]], 
             extras.extend(needed)
             used += cost
             entry["placed"], entry["why"] = True, "placed"
-    bound = min(limit - held_back, extra_cap)
+    bound = min(limit - held_back, used + int(inner * CAST_EXTRA_SHARE))  # the share counts from after the core
     bundles: list[list[tuple[int, int, Line, int]]] = []  # second pass: the extras, a pair's slots as one bundle
     for item in items:
         mark = item[2].marks.get(CAST_EXTRA)
@@ -788,7 +787,7 @@ def _cast_v21(cast: list[tuple[str, list[Line]]], ledger: list[dict[str, Any]], 
                 placed.setdefault(gi, []).append((li, "  " + line.xml))
                 in_cast.add(line.ref.get("assertion"))
                 entry["placed"], entry["why"] = True, "placed"
-            elif used + total <= limit - held_back:
+            else:  # never "budget": its line may still be placed in lead, and the panel's fit counts only cut memory
                 entry["why"] = "cast_cap"
         if fits:
             extras.extend(t for t in notes_needed if t not in extras)
