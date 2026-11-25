@@ -41,13 +41,10 @@ def _said(name: str, said: str, words: str) -> bool:
 
 
 def is_persona(r: Resolution, name: str) -> bool:
-    """Every name the persona goes by in `r` (ADR 0023, resolve-v6): uses the conversation's resolution when the name
-    is a known entity (so a split NPC or title-prefixed NPC is never hijacked), and `names_persona` for mark-only names."""
-    if r.is_persona("character", name):
-        return True
-    if r.entity("character", name) is not None:
-        return False
-    return norm(name) in r.persona_names or names_persona("character", name, r.persona)
+    """Every name the persona goes by in `r` (ADR 0023, resolve-v6): what the resolution says (`names_persona`), so a
+    name it reads as ambiguous or as another character's is never the persona here, and a mark-only name is the
+    persona's when the persona goes by it or it is a full name ending with one."""
+    return r.names_persona(name)
 
 
 def key(r: Resolution, name: str) -> str:
