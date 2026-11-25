@@ -12,7 +12,10 @@ import psycopg
 
 from .packet import Compiled, Excerpt, NON_ASCII, PACKET_CLOSE, SOURCE_CLOCK_POLICIES, estimate_tokens
 
-CUE = re.compile(r"언제|날짜|시각|시간|며칠째|며칠|몇\s*(?:년|월|일|시)|일차|무슨\s*요일|어느\s*날|무슨\s*계절|얼마나\s*지났"
+# "일차" only after a number or "몇" ("일차적으로" is "primarily"); "어느 날" only as a question ("어느 날이었지?", not
+# the narration "어느 날 갑자기").
+CUE = re.compile(r"언제|날짜|시각|시간|며칠째|며칠|몇\s*(?:년|월|일|시)|(?:\d+|몇)\s*일차|무슨\s*요일"
+                 r"|어느\s*날(?:이었|이야|이지|이더|인가|일까|에\s*있었)|무슨\s*계절|얼마나\s*지났"
                  r"|\b(?:when|date|time|day)\b", re.I)
 # A clock key, as `statechange.scene_key` reads it (its last part under an entity: `Status.Date`, `World.시간`), and its
 # category. Phase 42's `date` and `time` keep their keys; the other clock keys an RP status window uses have
@@ -85,6 +88,9 @@ def read(conn: psycopg.Connection, head: UUID, rules_version: str, revisions: li
         fields = []
         for category in CATEGORIES:
             candidates = [r for r in entries if KEYS.get(base(r['key'])) == category]
+            # The bare key first: a window with `Date` and `Quest.Date` gives the date Phase 42 gave from `Date`.
+            bare = [r for r in candidates if '.' not in r['key']]
+            candidates = bare if len(bare) == 1 else candidates
             # Multiple stored aliases are ambiguous here. The parser already resolved repeated exact keys
             # using its established last-match-wins rule; do not reinterpret that stored observation.
             if len(candidates) != 1:

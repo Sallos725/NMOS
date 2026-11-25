@@ -676,9 +676,11 @@ def _blocks(conn: psycopg.Connection, rids: set[UUID],
 
 
 def shown(blocks: Blocks | None, rid: UUID, evidence: str | None, names: Names = (None, None)) -> bool:
-    """Whether a canon fact is served: its text has no conditional block, or its evidence is found outside them at
-    least as often as only inside (in pieces of CHUNK characters, spaces and case ignored), in the text as the model
-    read it (`read_blocks` under `names`). Evidence found nowhere is not served (fail closed)."""
+    """Whether a canon fact is served: its text has no conditional block, or its evidence is found outside them and
+    no piece of it only inside (in pieces of CHUNK characters, spaces and case ignored), in the text as the model
+    read it (`read_blocks` under `names`). Evidence found nowhere is not served, and neither is evidence that is
+    partly only in a block (fail closed): a block that restates an unconditional sentence and adds a sentence of its
+    own gives a quote of both, and the fact may come from the branch the host does not show."""
     if blocks is None:
         return True
     verdict = _verdicts.get((rid, *names, evidence or ""))
@@ -697,7 +699,7 @@ def shown(blocks: Blocks | None, rid: UUID, evidence: str | None, names: Names =
                 outside += 1
             else:
                 inside += 1
-        verdict = outside > 0 and outside >= inside
+        verdict = outside > 0 and inside == 0
         _verdicts[(rid, *names, evidence or "")] = verdict
         for old in list(_verdicts)[:max(0, len(_verdicts) - CACHED * 4)]:
             _verdicts.pop(old, None)

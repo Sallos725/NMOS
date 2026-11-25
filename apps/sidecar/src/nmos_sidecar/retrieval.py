@@ -2920,8 +2920,10 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         else:
             def decide() -> tuple[coverage.Coverage, str | None, int | None, str | None, set[str]]:
                 # the trim decision tells held summaries apart, so it reads the memory view (secrets) it needs
+                # with the carry link the packet reads: a summary its carried secret holds covers nothing
                 c = coverage.read(conn, conv.id, head, options.summarize_key,
-                                  extractor_key=options.extractor_key, upto=upto)
+                                  extractor_key=options.extractor_key, upto=upto,
+                                  carried=read_carry(conn, conv.id, options.policy)[0])
                 last_id = _head_last(conn, head, upto)
                 window_ids = original_in_context | ({last_id} if last_id is not None else set())
                 w_turns = coverage.window_turns(conn, head, window_ids, upto)
