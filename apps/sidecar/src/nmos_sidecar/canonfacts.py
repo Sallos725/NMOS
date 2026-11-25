@@ -420,7 +420,7 @@ def _still_claimed(conn: psycopg.Connection, job: dict[str, Any]) -> bool:
 def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[Any, ...]],
             gen: Generation) -> str:
     """Read one canon revision (every part not read yet) and store its facts. Returns the final job status."""
-    from .extraction import ASSERTION_COLUMNS, assertion_values, normalize  # the same normalizer as a turn's (ADR 0013, D6, D19)
+    from .extraction import ASSERTION_COLUMNS, assertion_values, normalize, own_items  # the same normalizer as a turn's (ADR 0013, D6, D19)
 
     if job["payload"].get("generation") != gen.key:
         raise ValueError(f"job generation {job['payload'].get('generation')} is not handler generation {gen.key}")
@@ -480,7 +480,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         items = parsed.get("assertions")
         if not isinstance(items, list):
             raise LLMError("model reply has no `assertions` list")
-        rows = normalize(items, piece, address_conditions=is_v2)
+        rows = normalize(own_items(items), piece, address_conditions=is_v2)  # the model's own, capped (review F5)
         for a in rows:
             if a.get("address_condition") and a["address_condition"].get("scope") == "all":
                 a["address_condition"] = None  # canon is the initial baseline: no earlier split to unify

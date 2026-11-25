@@ -26,7 +26,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_extraction_model import ROOT, SCENES as PHASE5_SCENES, Line, call, norm  # noqa: E402
 
-from nmos_sidecar.extraction import SYSTEM_PROMPT, build_prompt, normalize  # noqa: E402
+from nmos_sidecar.extraction import SYSTEM_PROMPT, build_prompt, normalize, own_items  # noqa: E402
 from nmos_sidecar.facts import _versions, version_key  # noqa: E402
 from nmos_sidecar.generations import fingerprint  # noqa: E402
 from nmos_sidecar.llm import parse_json_object  # noqa: E402
@@ -263,7 +263,7 @@ def main() -> None:
             parsed = parse_json_object(reply["text"]) if reply["text"] else {}
             items = parsed.get("assertions") if isinstance(parsed.get("assertions"), list) else []
             turn_text = "\n".join(x for _, _, x in scene.target)
-            record["assertions"] = normalize(items, turn_text, scene.hints)
+            record["assertions"] = normalize(own_items(items), turn_text, scene.hints)
             record["multi_valued"] = multi_valued_turn(record["assertions"])
             if scene.check:
                 ok, detail = scene.check(record["assertions"], scene)
