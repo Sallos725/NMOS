@@ -392,7 +392,8 @@ describe('in-context detection (D3)', () => {
 
 describe('query texts', () => {
   it('uses the latest user message and the AI message before it', () => {
-    expect(queryTexts(host)).toEqual({ query: 'Where did we hide the lantern?', previousAi: 'The harbor bell rang twice at dusk.' });
+    expect(queryTexts(host)).toEqual({ query: 'Where did we hide the lantern?', previousAi: 'The harbor bell rang twice at dusk.',
+      isContinue: false });
   });
 });
 

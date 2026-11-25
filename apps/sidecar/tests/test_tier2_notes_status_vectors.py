@@ -288,11 +288,14 @@ def test_three_characters_windows_keep_their_own_keys():
     assert {b.keys for b in statusshape.blocks(text)} == {frozenset({"HP", "MP", "호감도"})}  # keys stay bare
 
 
-def test_one_characters_window_has_the_same_keys_alone_or_with_others():
+def test_one_characters_window_keeps_bare_keys_and_two_characters_are_prefixed():
+    """Owner 2026-11-25: a prefix only when one reply holds two characters' windows; one character keeps its keys."""
     rules = shape("HP", "MP", "호감도")
-    alone = read(rules, "[서연 | HP: 80 | MP: 30 | 호감도: 45]")
+    assert read(rules, "[서연 | HP: 80 | MP: 30 | 호감도: 45]") == {"HP": "80", "MP": "30", "호감도": "45"}
+    assert read(rules, "[서연 | HP: 1 | MP: 2 | 호감도: 3]\n[서연 | HP: 4 | MP: 5 | 호감도: 6]") == {
+        "HP": "4", "MP": "5", "호감도": "6"}  # the same name twice is one character
     together = read(rules, "[서연 | HP: 70 | MP: 30 | 호감도: 46]\n[도윤 | HP: 1 | MP: 2 | 호감도: 3]")
-    assert set(alone) <= set(together) and alone["서연.HP"] == "80" and together["서연.HP"] == "70"
+    assert together["서연.HP"] == "70" and together["도윤.HP"] == "1" and "HP" not in together
 
 
 @pytest.mark.parametrize("text", [
@@ -304,13 +307,15 @@ def test_a_label_names_no_character(text):
     assert entity is None
 
 
-def test_a_place_as_the_leading_word_is_taken_for_a_character():
-    """Pinned as built (an open decision for the owner): a letter-only leading word is read as the window's character,
-    so a place that changes from reply to reply changes the keys a shape rule reads."""
+def test_a_place_or_a_scene_word_is_never_a_character():
     rules = shape("날짜", "시간", "날씨")
-    assert read(rules, "[교실 | 날짜: 3일 | 시간: 오후 | 날씨: 맑음]") == {"교실.날짜": "3일", "교실.시간": "오후",
-                                                                      "교실.날씨": "맑음"}
-    assert set(read(rules, "[복도 | 날짜: 3일 | 시간: 밤 | 날씨: 비]")) == {"복도.날짜", "복도.시간", "복도.날씨"}
+    assert read(rules, "[교실 | 날짜: 3일 | 시간: 오후 | 날씨: 맑음]") == {"날짜": "3일", "시간": "오후", "날씨": "맑음"}
+    # two places in one reply: every key is the scene's, so nothing is prefixed
+    two = read(rules, "[교실 | 날짜: 3일 | 시간: 오후 | 날씨: 맑음]\n[복도 | 날짜: 3일 | 시간: 밤 | 날씨: 비]")
+    assert set(two) == {"날짜", "시간", "날씨"}
+    # two characters with a scene key: the scene key stays bare, the rest is each character's
+    mixed = read(shape("위치", "HP", "MP"), "[서연 | 위치: 숲 | HP: 1 | MP: 2]\n[도윤 | 위치: 숲 | HP: 3 | MP: 4]")
+    assert mixed == {"위치": "숲", "서연.HP": "1", "서연.MP": "2", "도윤.HP": "3", "도윤.MP": "4"}
 
 
 def test_entity_names_from_labels():

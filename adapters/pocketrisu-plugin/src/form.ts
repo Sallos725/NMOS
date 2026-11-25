@@ -96,7 +96,9 @@ export interface FormValues {
   tune: { threshold: string; minSim: string; embedWait: string; topK: string; facts: string; backfill: string;
     summaries: boolean; canonFacts: boolean;
     /** Pin a character with @name in a message (PHASE-60 S8, ADR 0087); sent only when the sidecar has the setting. */
-    pinAt: boolean };
+    pinAt: boolean;
+    /** Chunks embedded per message (ADR 0062, `embed_max_chunks`), as typed; sent only when the sidecar reports it. */
+    embedChunks?: string };
   /** Leaving out old dialogue (PHASE-60 S1): the switch and the recent turns always sent, as typed. */
   trim: { on: boolean; keep: string };
 }
@@ -125,7 +127,21 @@ function num(value: string): number | string {
 }
 
 /** Settings a sidecar reports only from the version that has them; one it did not report is never sent. */
-export interface KnownSettings { pinAt?: boolean; rerank?: boolean }
+export interface KnownSettings { pinAt?: boolean; rerank?: boolean; embedChunks?: boolean }
+
+/** Chunks embedded per message (ADR 0062): the sidecar's default, the panel's range, and the characters one covers
+ *  (`vectors.CHUNK_CHARS`). A changed cap is a new projection: the chats are embedded again. */
+export const DEFAULT_EMBED_MAX_CHUNKS = 8;
+export const MIN_EMBED_MAX_CHUNKS = 1;
+export const MAX_EMBED_MAX_CHUNKS = 64;
+export const EMBED_CHUNK_CHARS = 700;
+
+/** The characters of a message `chunks` covers, or null when it is not a whole number in the panel's range. */
+export function embedChunkChars(chunks: string): number | null {
+  const n = Number(chunks.trim());
+  return chunks.trim() !== '' && Number.isInteger(n) && n >= MIN_EMBED_MAX_CHUNKS && n <= MAX_EMBED_MAX_CHUNKS
+    ? n * EMBED_CHUNK_CHARS : null;
+}
 
 /** One PUT /v1/config body for every changed server-side section (validated and saved atomically). With `base`, the
  *  extra body and the temperature switch are sent when they differ from it (PHASE-61 S4). */
@@ -157,6 +173,11 @@ export function configBody(dirty: Section[], v: FormValues, known: KnownSettings
     // empty when the sidecar is older than the setting: sending it would be refused as not editable
     if (v.tune.embedWait.trim() !== '') body.embed_timeout_ms = num(v.tune.embedWait);
     if (known.pinAt) body.pin_at_mentions = v.tune.pinAt;  // likewise: an older sidecar has no such setting
+    // likewise, and only when it changed: a changed cap embeds every chat again (ADR 0062)
+    const chunks = v.tune.embedChunks?.trim() ?? '';
+    if (known.embedChunks && chunks !== '' && chunks !== (base?.tune.embedChunks?.trim() ?? '')) {
+      body.embed_max_chunks = num(chunks);
+    }
   }
   return body;
 }

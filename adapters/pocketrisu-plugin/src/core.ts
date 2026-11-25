@@ -239,8 +239,30 @@ export function personaOf(chat: HostChat, host: HostPersonas): string | null {
   return typeof name === 'string' && name.trim() ? name.trim() : null;
 }
 
+/** How long after a reply its chat is synced in the background (G6), unless a request or another reply comes first. */
+export const OUTPUT_SYNC_MS = 20_000;
+/** The background sync's own time limit: it holds no request, so it is not cut at the request deadline. */
+const OUTPUT_SYNC_TIMEOUT_MS = 30_000;
+/** A request of the chat a background sync is still running for waits this long at most for it to end. */
+const OUTPUT_SYNC_WAIT_MS = 1000;
+
+/** Timers for the background sync after a reply (G6), injectable so tests need not wait. */
+export interface AdapterOptions {
+  /** The wait after a reply; 0 or less: no background sync. `OUTPUT_SYNC_MS` when missing. */
+  outputSyncMs?: number;
+  setTimer?: (run: () => void, ms: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
+}
+
+function defaultSetTimer(run: () => void, ms: number): unknown {
+  const handle = setTimeout(run, ms);
+  // In Node (the tests) a waiting sync must not keep the process alive; a browser timer has no `unref`.
+  (handle as { unref?: () => void }).unref?.();
+  return handle;
+}
+
 /** `onActivity` feeds the progress display (D28): called synchronously, never awaited, errors ignored. */
-export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent) => void) {
+export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent) => void, options: AdapterOptions = {}) {
   const cache = new Map<string, CacheEntry>();
   const returnedMemo = new Map<string, number>(); // serialized returned prompt → expiry (H2 retry idempotence)
   const conversations = new Map<string, string>(); // host chat id → sidecar conversation id
@@ -255,6 +277,14 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   const buildManifest = createManifestBuilder();
   let last: LastRequest | null = null;
   let epoch = 0; // bumped by every panel change: a request that saw another epoch neither caches nor injects
+  // The background sync after a reply (G6): one waiting at a time, for the chat of the latest reply. `turnSeq` is bumped
+  // by every main request and every reply: a sync that saw another one stops between its steps.
+  const outputSyncMs = options.outputSyncMs ?? OUTPUT_SYNC_MS;
+  const setTimer = options.setTimer ?? defaultSetTimer;
+  const clearTimer = options.clearTimer ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+  let outputTimer: unknown = null;
+  let turnSeq = 0;
+  let outputRunning: { chatId: string; done: Promise<void> } | null = null;
 
   /** Drops every cached packet, and every packet still being fetched. */
   function invalidate(): void {
@@ -488,8 +518,11 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     }
   }
 
-  /** `rewritten`: how many of the bodies sent were replies the host rewrote after generating them (a trigger, Lua). */
-  async function sync(settings: Settings, manifest: ReconcileRequest, bodies: Bodies, deadline: number) {
+  /** `rewritten`: how many of the bodies sent were replies the host rewrote after generating them (a trigger, Lua).
+   *  `live`: checked before each step after the first; once false, the sync stops there (a background sync a request
+   *  overtook, G6). */
+  async function sync(settings: Settings, manifest: ReconcileRequest, bodies: Bodies, deadline: number,
+                      live?: () => boolean) {
     const request = { ...manifest, plugin_build: PLUGIN_BUILD };  // the sidecar tells an outdated plugin (ADR 0037)
     let result = await call<ReconcileResult>(settings, '/v1/sync/reconcile', request, deadline);
     let rewritten = 0;
@@ -501,6 +534,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // Chunked so a first sync of a long chat makes durable progress even when it cannot finish
       // inside one request's deadline; the next request continues from what the sidecar stored.
       for (let i = 0; i < needed.length; i += BODY_CHUNK) {
+        if (live && !live()) throw new Error('a newer request or reply came first');
         const last = i + BODY_CHUNK >= needed.length;
         const out = await call<{ ok: boolean; reconcile: ReconcileResult | null }>(settings, '/v1/sync/bodies', {
           host: 'pocketrisu', chat_id: request.chat_id, bodies: needed.slice(i, i + BODY_CHUNK),
@@ -677,6 +711,10 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         return done.out;
       }
 
+      // A background sync of this chat that is still running (G6) may apply after this sync: the head would then move
+      // past the commit recall is asked for. It is given a moment to end first, within the deadline.
+      if (outputRunning?.chatId === chat.id) await settleWithin(outputRunning.done,
+        Math.min(OUTPUT_SYNC_WAIT_MS, (deadline - host.now()) / 2));
       const t1 = host.now();
       const synced = await sync(settings, request, bodies, deadline);
       const syncMs = host.now() - t1;
@@ -686,7 +724,9 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         while (conversations.size > CACHE_LIMIT) conversations.delete(conversations.keys().next().value as string);
       }
 
-      const { query, previousAi } = queryTexts(messages);
+      // A Continue asks with the reply it continues (G7); the request to the sidecar is the same shape.
+      const { query, previousAi, isContinue } = queryTexts(messages);
+      if (isContinue) host.debug('[NMOS] continue: recall asks with the reply being continued');
       const t2 = host.now();
       const retrieve = (withTrim: boolean) => call<{ freshness: string; packet: { text: string };
         memory?: MemoryFit | null; vectors?: Vectors | null; trim?: unknown; coverage?: unknown }>(settings!, '/v1/retrieve', {
@@ -757,6 +797,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
   /** Every path out of `beforeRequest` strips any remaining `[NMOS.memory]` literal (ADR 0083). */
   async function beforeRequest(prompt: PromptMessage[], mode: unknown): Promise<PromptMessage[]> {
+    // A main request (a send, a reroll, a Continue) syncs the chat itself: the background sync after the last reply is
+    // not needed, and one already running stops before its next step (G6). An auxiliary request (Auto Suggest runs
+    // after every reply) leaves it.
+    if (mode === 'model') {
+      turnSeq++;
+      cancelOutputSync();
+    }
     try {
       return stripMarkers(await prepare(prompt, mode));
     } catch {
@@ -764,13 +811,87 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     }
   }
 
-  /** Output listener: provisional hint only (H7). Never awaited work, never throws. */
+  function cancelOutputSync(): void {
+    if (outputTimer === null) return;
+    try { clearTimer(outputTimer); } catch { /* a timer that cannot be cleared finds `turnSeq` moved on */ }
+    outputTimer = null;
+  }
+
+  /** Syncs chat `chatId` in the background once the wait after its reply is over (G6), so the reply is in memory (and
+   *  can be extracted) before the next message, and the panel's Author's Note, Carry and Inspector see it. Replaces a
+   *  waiting one; never throws. */
+  function scheduleOutputSync(chatId: string, seen: number): void {
+    cancelOutputSync();
+    if (!(outputSyncMs > 0)) return;
+    try {
+      const handle = setTimer(() => {
+        if (outputTimer === handle) outputTimer = null;
+        const done = outputSync(chatId, seen);
+        const running = { chatId, done };
+        outputRunning = running;
+        void done.finally(() => { if (outputRunning === running) outputRunning = null; });
+      }, outputSyncMs);
+      outputTimer = handle;
+    } catch (error) {
+      host.debug('[NMOS] background sync not scheduled:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  /** The sync a request would make, of the chat as it is now: the `output` snapshot is provisional (H7), and the chat
+   *  read now must still be the one replied in (there is no hook for a chat switch). */
+  async function outputSync(chatId: string, seen: number): Promise<void> {
+    const live = () => turnSeq === seen;
+    try {
+      const settings = await host.settings();
+      if (!live() || !settings.enabled || !settings.sidecarUrl || settings.offChats?.includes(chatId) || !secureContext()) return;
+      const chat = await host.currentChat();
+      if (!live() || !chat?.id || chat.id !== chatId) return;  // another chat is open: its own next request syncs it
+      const messages: HostMessage[] = Array.isArray(chat.message) ? chat.message : [];
+      const deadline = host.now() + OUTPUT_SYNC_TIMEOUT_MS;
+      const { request, bodies } = await within(buildManifest(chat, firstSaying(messages),
+        { characterName: characterName(chat.id), personaName: personaName(chat) }), deadline, 'the manifest');
+      if (!live()) return;
+      // A packet cached for this chat is not reused once the ledger holds the reply: a reroll removes it from the chat
+      // before its request (H14), and a reroll served from the cache would skip the sync that takes it out again.
+      dropChatPackets(chatId);
+      const synced = await sync(settings, { ...request, trigger: 'output' }, bodies, deadline, live);
+      if (synced.conversation_id) {
+        conversations.delete(chatId);
+        conversations.set(chatId, synced.conversation_id);
+        while (conversations.size > CACHE_LIMIT) conversations.delete(conversations.keys().next().value as string);
+      }
+      // Again: a packet remembered while the sync ran may be of the chat without what it applied.
+      dropChatPackets(chatId);
+      host.debug('[NMOS] reply synced in the background', { status: synced.status });
+    } catch (error) {
+      host.debug('[NMOS] background sync after the reply failed:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  /** Waits for `work` (which never rejects) up to `ms`; never throws. */
+  async function settleWithin(work: Promise<void>, ms: number): Promise<void> {
+    if (!(ms > 0)) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([work, new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); })]);
+    clearTimeout(timer);
+  }
+
+  function dropChatPackets(chatId: string): void {
+    for (const [k, entry] of cache) if (entry.chatId === chatId) cache.delete(k);
+  }
+
+  /** Output listener: provisional hint only (H7), and the background sync after the reply (G6). Never awaited work,
+   *  never throws. */
   function onOutput(arg: { chat?: HostChat; messageIndex?: number }): void {
+    const seen = ++turnSeq;
+    cancelOutputSync();
     void (async () => {
       const settings = await host.settings();
       if (!settings.enabled || !settings.sidecarUrl || !arg?.chat?.id || settings.offChats?.includes(arg.chat.id)) return;
+      // Scheduled first: whatever happens to the notification below, the reply is synced.
+      if (turnSeq === seen) scheduleOutputSync(arg.chat.id, seen);
       // A reply is extracted after it (H7): an empty packet cached for this chat may have memory now. A packet with
-      // memory stays for a reroll of an unchanged chat.
+      // memory stays for a reroll of an unchanged chat until the background sync has the reply.
       for (const [k, entry] of cache) if (entry.chatId === arg.chat.id && !entry.packet && !entry.failed) cache.delete(k);
       adviseOnce(settings.language);
       reachOnce(settings.language, settings.sidecarUrl);
