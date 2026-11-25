@@ -78,7 +78,7 @@ def wait_for(emb: Counting, n: int) -> None:
 # --- sem_query (pure) ------------------------------------------------------------------------------------------------
 
 def test_the_policies_that_embed_a_short_message_with_the_reply():
-    assert packet.SEM_QUERY_POLICIES == frozenset({"packet-v20"})
+    assert packet.SEM_QUERY_POLICIES == frozenset({"packet-v20", "packet-v21"})
 
 
 def test_a_message_of_39_characters_is_short_and_one_of_40_is_not():
