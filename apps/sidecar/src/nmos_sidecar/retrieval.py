@@ -79,11 +79,13 @@ STATUS_WORDS = tuple(frozenset(g) for g in (
     ("mood", "기분"), ("weather", "날씨")))
 
 
-def asked_keys(query: str, keys: list[str]) -> list[str]:
+def asked_keys(query: str, keys: list[str], every_window: bool = False) -> list[str]:
     """The status keys a message names (PHASE-39 Q3b), in the order it names them: a key of two characters or more as
     the bar writes it, case and spacing aside, or a word of its STATUS_WORDS group; a word where a word starts ("HP",
     not the "hp" of another word; 마나, not the 마나 of 얼마나), a Korean one with any particle after it; a sim bot's
-    "<character>.<key>" when the message names both."""
+    "<character>.<key>" when the message names both. With `every_window` (`packet-v21`, PHASE-65), a message that
+    names no character any key is prefixed with asks that key of every character ("HP 얼마야?" with two characters'
+    windows); earlier policies keep asking none there, so their recorded requests replay as they were."""
     text = query.casefold()
 
     def at(word: str) -> int:
@@ -103,11 +105,11 @@ def asked_keys(query: str, keys: list[str]) -> list[str]:
     for key in keys:
         entity, _, name = key.rpartition(".")
         where = first(name)
-        # a character's key ("하나.HP") is asked when the message names that character, or when it names no
-        # character any key is prefixed with ("HP 얼마야?" asks every window's HP; status windows are prefixed only
-        # when one reply holds two characters' windows)
-        if where >= 0 and (not entity or at(entity) >= 0
-                           or not any(at(k.rpartition(".")[0]) >= 0 for k in keys if "." in k)):
+        # a character's key ("하나.HP") is asked when the message names that character; with `every_window`, also
+        # when it names no character any key is prefixed with (status windows are prefixed only when one reply holds
+        # two characters' windows, or by a sim bot's rule)
+        if where >= 0 and (not entity or at(entity) >= 0 or (
+                every_window and not any(at(k.rpartition(".")[0]) >= 0 for k in keys if "." in k))):
             found.append((where, -len(name), key))
     return [k for _, _, k in sorted(found)]
 
@@ -1148,7 +1150,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             # "in context" (judged by the prose) is no reason to leave it out
             told = statechange.tell(state_windows(conn, head, options.rules_version, upto, statechange.CORE_WINDOWS),
                                     frozenset(options.state_pins),
-                                    frozenset(asked_keys(query, [r["key"] for r in held])), by_turn)
+                                    frozenset(asked_keys(query, [r["key"] for r in held],
+                                                         options.policy in V21_POLICIES)), by_turn)
             g.state = [StateItem(key=t.key, value=t.value, turn=t.turn, since_previous=t.since_previous) for t in told]
         else:
             g.state = [StateItem(key=r["key"], value=r["value"], turn=r["turn"] if by_turn else r["position"])
@@ -1158,7 +1161,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         if options.policy in STATE_HISTORY_POLICIES and held and STATE_CHANGE_CUE.search(query):
             # packet-v17: the history of each key the message asks about, first: it asked for it. Changes whose bar
             # is still in the prompt count too: the line is the sequence, which the prompt shows only scattered.
-            asked = asked_keys(query, [r["key"] for r in held])[:STATE_HISTORY_KEYS]
+            asked = asked_keys(query, [r["key"] for r in held],
+                               options.policy in V21_POLICIES)[:STATE_HISTORY_KEYS]
             lines = state_history(conn, head, options.rules_version, upto, keys=asked) if asked else {}
             g.state[:0] = [StateItem(key=k, value=lines[k][-1]["value"], turn=_turn_of(lines[k][-1], by_turn),
                                      history=tuple((_turn_of(e, by_turn), e["value"])

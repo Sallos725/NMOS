@@ -609,10 +609,15 @@ def test_replaced_address_handling_is_the_same_under_v21():
 
 def test_asked_keys_with_two_characters_windows():
     keys = ["하나.HP", "카이토.HP", "하나.MP"]
-    assert set(retrieval.asked_keys("HP 얼마야?", keys)) == {"하나.HP", "카이토.HP"}  # names no one: every window's
+    # packet-v21: a message that names no one asks every window's key
+    assert set(retrieval.asked_keys("HP 얼마야?", keys, every_window=True)) == {"하나.HP", "카이토.HP"}
+    assert retrieval.asked_keys("하나 HP 얼마야?", keys, every_window=True) == ["하나.HP"]
+    assert retrieval.asked_keys("카이토 HP 얼마야?", keys, every_window=True) == ["카이토.HP"]
+    assert retrieval.asked_keys("HP 얼마야?", ["HP", "MP"], every_window=True) == ["HP"]  # unprefixed: as before
+    # earlier policies keep PHASE-39 Q3b: a prefixed key is asked only when the message names its character too
+    assert retrieval.asked_keys("HP 얼마야?", keys) == []
     assert retrieval.asked_keys("하나 HP 얼마야?", keys) == ["하나.HP"]
-    assert retrieval.asked_keys("카이토 HP 얼마야?", keys) == ["카이토.HP"]
-    assert retrieval.asked_keys("HP 얼마야?", ["HP", "MP"]) == ["HP"]  # one window, unprefixed: as before
+    assert retrieval.asked_keys("HP 얼마야?", ["HP", "MP"]) == ["HP"]
 
 
 def test_the_cast_extras_yield_first_and_never_into_lead_and_private():
