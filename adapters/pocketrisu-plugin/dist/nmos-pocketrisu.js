@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:8b20ac1acd21".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:c228ef49152e".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -353,6 +353,14 @@
     const n = Number(value.trim());
     return value.trim() !== "" && Number.isFinite(n) ? n : value;
   }
+  var DEFAULT_EMBED_MAX_CHUNKS = 8;
+  var MIN_EMBED_MAX_CHUNKS = 1;
+  var MAX_EMBED_MAX_CHUNKS = 64;
+  var EMBED_CHUNK_CHARS = 700;
+  function embedChunkChars(chunks) {
+    const n = Number(chunks.trim());
+    return chunks.trim() !== "" && Number.isInteger(n) && n >= MIN_EMBED_MAX_CHUNKS && n <= MAX_EMBED_MAX_CHUNKS ? n * EMBED_CHUNK_CHARS : null;
+  }
   function configBody(dirty, v, known = {}, base) {
     const body = {};
     for (const [section, prefix] of [["llm", "llm"], ["emb", "embed"]]) {
@@ -384,6 +392,10 @@
       });
       if (v.tune.embedWait.trim() !== "") body.embed_timeout_ms = num(v.tune.embedWait);
       if (known.pinAt) body.pin_at_mentions = v.tune.pinAt;
+      const chunks = v.tune.embedChunks?.trim() ?? "";
+      if (known.embedChunks && chunks !== "" && chunks !== (base?.tune.embedChunks?.trim() ?? "")) {
+        body.embed_max_chunks = num(chunks);
+      }
     }
     return body;
   }
@@ -718,6 +730,9 @@
     "notes.length": ["\uC5F0\uB300\uAE30\xB7\uCEE4\uC2A4\uD140 \uAE38\uC774", "Chronicle and custom length"],
     "notes.short": ["\uC9E7\uAC8C (3,000\uC790)", "Short (3,000 characters)"],
     "notes.long": ["\uAE38\uAC8C (6,000\uC790)", "Long (6,000 characters)"],
+    "notes.language": ["\uB178\uD2B8 \uC5B8\uC5B4", "Note language"],
+    "notes.lang_chat": ["\uCC44\uD305 \uC5B8\uC5B4\uC5D0 \uB9DE\uCDA4", "The chat's language"],
+    "notes.lang_en": ["English", "English"],
     "notes.secrets": ["\uBE44\uBC00 \uD3EC\uD568 (\uB204\uAC00 \uBAA8\uB974\uB294\uC9C0 \uD45C\uC2DC)", "Include secrets (marked with who does not know)"],
     "notes.secrets_warn": [
       "\uC791\uAC00\uC758 \uB178\uD2B8\uB294 \uBAA8\uB4E0 \uC7A5\uBA74\uC5D0 \uB4E4\uC5B4\uAC11\uB2C8\uB2E4. \uBE44\uBC00\uC744 \uB123\uC73C\uBA74 \uBAA8\uB974\uB294 \uCE90\uB9AD\uD130 \uC55E\uC5D0\uC11C \uBAA8\uB378\uC774 \uD758\uB9B4 \uC218 \uC788\uC5B4\uC694.",
@@ -1035,6 +1050,16 @@
     "tune.threshold": ["\uAE00\uC790 \uC77C\uCE58 \uAE30\uC900", "Lexical threshold"],
     "tune.min_sim": ["\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900", "Vector min similarity"],
     "tune.embed_wait": ["\uC758\uBBF8 \uAC80\uC0C9 \uB300\uAE30(ms)", "Embedding wait (ms)"],
+    "tune.embed_chunks": ["\uC784\uBCA0\uB529 \uCD5C\uB300 \uCCAD\uD06C \uC218", "Embedding chunks per message"],
+    "tune.embed_chunks_hint": [
+      "\uAE34 \uBA54\uC2DC\uC9C0\uC5D0\uC11C \uC758\uBBF8 \uAC80\uC0C9\uC774 \uB2FF\uB294 \uAE38\uC774\uC785\uB2C8\uB2E4: \uCCAD\uD06C {n}\uAC1C = {chars}\uC790 (\uAE30\uBCF8 {d}\uAC1C = {dchars}\uC790). \uCD94\uCD9C \uC0C1\uD55C\uC744 \uC62C\uB838\uB2E4\uBA74 \uAC19\uC774 \uC62C\uB9AC\uC138\uC694. \uBC14\uAFB8\uBA74 \uBAA8\uB4E0 \uCC44\uD305\uC744 \uB2E4\uC2DC \uC784\uBCA0\uB529\uD569\uB2C8\uB2E4(\uC784\uBCA0\uB529 \uD638\uCD9C\uC774 \uADF8\uB9CC\uD07C \uB4ED\uB2C8\uB2E4).",
+      "How much of a long message semantic search reaches: {n} chunks = {chars} characters (default {d} = {dchars}). Raise it along with a raised extraction cap. A change embeds every chat again (that many embedding calls)."
+    ],
+    "tune.embed_chunks_range": ["{min}\uC5D0\uC11C {max} \uC0AC\uC774\uC758 \uC815\uC218\uB97C \uB123\uC5B4 \uC8FC\uC138\uC694.", "Enter a whole number from {min} to {max}."],
+    "tune.embed_chunks_fixed": [
+      "\uC774 \uC0AC\uC774\uB4DC\uCE74\uC5D0\uC11C\uB294 \uD328\uB110\uC5D0\uC11C \uBC14\uAFC0 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4 (NMOS_EMBED_MAX_CHUNKS\uB85C \uC815\uD569\uB2C8\uB2E4).",
+      "This sidecar does not let the panel change it (set NMOS_EMBED_MAX_CHUNKS)."
+    ],
     "tune.embed_wait_hint": [
       "\uC784\uBCA0\uB529 \uB2F5\uC744 \uAE30\uB2E4\uB9AC\uB294 \uC2DC\uAC04\uC785\uB2C8\uB2E4. \uB118\uC73C\uBA74 \uADF8 \uC694\uCCAD\uC740 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAE30\uC5B5\uB9CC \uCC3E\uC2B5\uB2C8\uB2E4. \uAE30\uBCF8 300ms. \uC0C1\uD0DC \uD0ED\uC5D0 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uCC3E\uC558\uB2E4\uB294 \uC54C\uB9BC\uC774 \uC790\uC8FC \uB728\uBA74(\uC6D0\uACA9 \uC784\uBCA0\uB529, \uB290\uB9B0 PC) 1000 \uC815\uB3C4\uB85C \uB298\uB9AC\uC138\uC694. \uB298\uB9B0 \uB9CC\uD07C \uB2F5\uC7A5 \uC2DC\uC791\uC774 \uB2A6\uC5B4\uC9C8 \uC218 \uC788\uACE0, \uC704\uC758 \uC81C\uD55C \uC2DC\uAC04\uBCF4\uB2E4 \uC9E7\uC544\uC57C \uD569\uB2C8\uB2E4.",
       "How long a request waits for the embedding. Past it, that request recalls by shared words only. Default 300 ms. If the Status tab often warns that semantic search was skipped (a remote embedder, a slow PC), raise it to about 1000. Replies may start that much later, and it must stay below the deadline above."
@@ -1862,19 +1887,48 @@ ${GUARD_LINE}` : "";
     const after = Array.isArray(prompt) ? textAfterMarker(prompt[marker.message], marker) : "";
     return !cleanText(after).includes(anchor);
   }
+  var SAYS_NOTHING = /* @__PURE__ */ new Set(["*says nothing*", "says nothing"]);
+  function isSaysNothing(message) {
+    return message != null && SAYS_NOTHING.has(cleanText(selectedContent(message)).toLowerCase());
+  }
+  var CONTINUE_QUERY_TAIL = 400;
+  var BURST_MESSAGES = 3;
+  var BURST_QUERY_CHARS = 2e4;
   function queryTexts(hostMessages) {
     const userIndex = latestUserIndex(hostMessages);
-    const query = userIndex >= 0 ? normalizeText(selectedContent(hostMessages[userIndex])) : "";
+    let query = userIndex >= 0 ? normalizeText(selectedContent(hostMessages[userIndex])) : "";
     let previousAi = "";
+    let isContinue = false;
     const start = activeStartIndex(hostMessages);
-    for (let i = userIndex - 1; i >= start; i -= 1) {
-      const m = hostMessages[i];
-      if (m.role === "char" && isActive(m)) {
-        previousAi = normalizeText(selectedContent(m));
-        break;
+    const activeAi = (from, to) => {
+      for (let i = from; i >= to; i -= 1) {
+        const m = hostMessages[i];
+        if (m.role === "char" && isActive(m)) return normalizeText(selectedContent(m));
       }
+      return null;
+    };
+    if (userIndex < 0) return { query, previousAi, isContinue };
+    const after = activeAi(hostMessages.length - 1, userIndex + 1);
+    if (after !== null) {
+      previousAi = after;
+      isContinue = true;
+    } else {
+      previousAi = activeAi(userIndex - 1, start) ?? "";
     }
-    return { query, previousAi };
+    if (isSaysNothing(hostMessages[userIndex])) {
+      isContinue = true;
+      if (previousAi.trim()) query = previousAi.slice(-CONTINUE_QUERY_TAIL);
+      return { query, previousAi, isContinue };
+    }
+    const parts = [query];
+    for (let i = userIndex - 1; i >= start && parts.length < BURST_MESSAGES; i -= 1) {
+      const m = hostMessages[i];
+      if (!isActive(m)) continue;
+      if (m.role !== "user" || isSaysNothing(m)) break;
+      parts.unshift(normalizeText(selectedContent(m)));
+    }
+    if (parts.length > 1) query = parts.filter((p) => p.trim()).join("\n").slice(-BURST_QUERY_CHARS);
+    return { query, previousAi, isContinue };
   }
 
   // src/budget.ts
@@ -2138,7 +2192,15 @@ ${GUARD_LINE}` : "";
     const name = (bound ?? list[host.selected])?.name;
     return typeof name === "string" && name.trim() ? name.trim() : null;
   }
-  function createAdapter(host, onActivity) {
+  var OUTPUT_SYNC_MS = 2e4;
+  var OUTPUT_SYNC_TIMEOUT_MS = 3e4;
+  var OUTPUT_SYNC_WAIT_MS = 1e3;
+  function defaultSetTimer(run, ms) {
+    const handle = setTimeout(run, ms);
+    handle.unref?.();
+    return handle;
+  }
+  function createAdapter(host, onActivity, options = {}) {
     const cache = /* @__PURE__ */ new Map();
     const returnedMemo = /* @__PURE__ */ new Map();
     const conversations = /* @__PURE__ */ new Map();
@@ -2153,6 +2215,12 @@ ${GUARD_LINE}` : "";
     const buildManifest = createManifestBuilder();
     let last = null;
     let epoch = 0;
+    const outputSyncMs = options.outputSyncMs ?? OUTPUT_SYNC_MS;
+    const setTimer = options.setTimer ?? defaultSetTimer;
+    const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle));
+    let outputTimer = null;
+    let turnSeq = 0;
+    let outputRunning = null;
     function invalidate() {
       epoch++;
       cache.clear();
@@ -2347,7 +2415,7 @@ ${GUARD_LINE}` : "";
         throw error;
       }
     }
-    async function sync(settings, manifest, bodies, deadline) {
+    async function sync(settings, manifest, bodies, deadline, live) {
       const request = { ...manifest, plugin_build: PLUGIN_BUILD };
       let result = await call(settings, "/v1/sync/reconcile", request, deadline);
       let rewritten2 = 0;
@@ -2357,6 +2425,7 @@ ${GUARD_LINE}` : "";
         const needed = keys.map((k) => bodies.get(k));
         if (needed.some((b) => !b)) throw new Error("sidecar asked for an unknown body");
         for (let i = 0; i < needed.length; i += BODY_CHUNK) {
+          if (live && !live()) throw new Error("a newer request or reply came first");
           const last2 = i + BODY_CHUNK >= needed.length;
           const out = await call(settings, "/v1/sync/bodies", {
             host: "pocketrisu",
@@ -2549,6 +2618,10 @@ ${GUARD_LINE}` : "";
           });
           return done2.out;
         }
+        if (outputRunning?.chatId === chat.id) await settleWithin(
+          outputRunning.done,
+          Math.min(OUTPUT_SYNC_WAIT_MS, (deadline - host.now()) / 2)
+        );
         const t1 = host.now();
         const synced = await sync(settings, request, bodies, deadline);
         const syncMs = host.now() - t1;
@@ -2557,7 +2630,8 @@ ${GUARD_LINE}` : "";
           conversations.set(chat.id, synced.conversation_id);
           while (conversations.size > CACHE_LIMIT) conversations.delete(conversations.keys().next().value);
         }
-        const { query, previousAi } = queryTexts(messages);
+        const { query, previousAi, isContinue } = queryTexts(messages);
+        if (isContinue) host.debug("[NMOS] continue: recall asks with the reply being continued");
         const t2 = host.now();
         const retrieve = (withTrim) => call(settings, "/v1/retrieve", {
           host: "pocketrisu",
@@ -2670,16 +2744,88 @@ ${GUARD_LINE}` : "";
       }
     }
     async function beforeRequest(prompt, mode) {
+      if (mode === "model") {
+        turnSeq++;
+        cancelOutputSync();
+      }
       try {
         return stripMarkers(await prepare(prompt, mode));
       } catch {
         return stripMarkers(prompt);
       }
     }
+    function cancelOutputSync() {
+      if (outputTimer === null) return;
+      try {
+        clearTimer(outputTimer);
+      } catch {
+      }
+      outputTimer = null;
+    }
+    function scheduleOutputSync(chatId, seen) {
+      cancelOutputSync();
+      if (!(outputSyncMs > 0)) return;
+      try {
+        const handle = setTimer(() => {
+          if (outputTimer === handle) outputTimer = null;
+          const done = outputSync(chatId, seen);
+          const running = { chatId, done };
+          outputRunning = running;
+          void done.finally(() => {
+            if (outputRunning === running) outputRunning = null;
+          });
+        }, outputSyncMs);
+        outputTimer = handle;
+      } catch (error) {
+        host.debug("[NMOS] background sync not scheduled:", error instanceof Error ? error.message : error);
+      }
+    }
+    async function outputSync(chatId, seen) {
+      const live = () => turnSeq === seen;
+      try {
+        const settings = await host.settings();
+        if (!live() || !settings.enabled || !settings.sidecarUrl || settings.offChats?.includes(chatId) || !secureContext()) return;
+        const chat = await host.currentChat();
+        if (!live() || !chat?.id || chat.id !== chatId) return;
+        const messages = Array.isArray(chat.message) ? chat.message : [];
+        const deadline = host.now() + OUTPUT_SYNC_TIMEOUT_MS;
+        const { request, bodies } = await within(buildManifest(
+          chat,
+          firstSaying(messages),
+          { characterName: characterName(chat.id), personaName: personaName(chat) }
+        ), deadline, "the manifest");
+        if (!live()) return;
+        dropChatPackets(chatId);
+        const synced = await sync(settings, { ...request, trigger: "output" }, bodies, deadline, live);
+        if (synced.conversation_id) {
+          conversations.delete(chatId);
+          conversations.set(chatId, synced.conversation_id);
+          while (conversations.size > CACHE_LIMIT) conversations.delete(conversations.keys().next().value);
+        }
+        dropChatPackets(chatId);
+        host.debug("[NMOS] reply synced in the background", { status: synced.status });
+      } catch (error) {
+        host.debug("[NMOS] background sync after the reply failed:", error instanceof Error ? error.message : error);
+      }
+    }
+    async function settleWithin(work, ms) {
+      if (!(ms > 0)) return;
+      let timer;
+      await Promise.race([work, new Promise((resolve) => {
+        timer = setTimeout(resolve, ms);
+      })]);
+      clearTimeout(timer);
+    }
+    function dropChatPackets(chatId) {
+      for (const [k, entry] of cache) if (entry.chatId === chatId) cache.delete(k);
+    }
     function onOutput(arg2) {
+      const seen = ++turnSeq;
+      cancelOutputSync();
       void (async () => {
         const settings = await host.settings();
         if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id || settings.offChats?.includes(arg2.chat.id)) return;
+        if (turnSeq === seen) scheduleOutputSync(arg2.chat.id, seen);
         for (const [k, entry] of cache) if (entry.chatId === arg2.chat.id && !entry.packet && !entry.failed) cache.delete(k);
         adviseOnce(settings.language);
         reachOnce(settings.language, settings.sidecarUrl);
@@ -6034,6 +6180,12 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("option", { value: "3000", text: L("notes.short") }),
         el("option", { value: "6000", text: L("notes.long") })
       );
+      const language2 = el(
+        "select",
+        { "aria-label": L("notes.language") },
+        el("option", { value: "chat", text: L("notes.lang_chat") }),
+        el("option", { value: "en", text: L("notes.lang_en") })
+      );
       const secrets = el("input", { type: "checkbox" });
       const warn = el("p", { class: "sub warn", text: L("notes.secrets_warn"), style: "display:none" });
       secrets.addEventListener("change", () => {
@@ -6059,7 +6211,12 @@ html,body{margin:0;background:${PALETTE.bg}}
             unsaved = true;
           }
         }
-        const body = { sections, chars: Number(length.value), secrets: secrets.checked };
+        const body = {
+          sections,
+          chars: Number(length.value),
+          secrets: secrets.checked,
+          language: language2.value
+        };
         if (custom.checked) Object.assign(body, { custom_prompt: text2, custom_setting: setting.checked });
         try {
           const r = await deps.api(
@@ -6084,7 +6241,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           el("p", { class: "sub", text: L("notes.sub") }),
           ...kinds.map((k) => k.row),
           customArea,
-          el("div", { class: "row" }, field(L("notes.length"), length)),
+          el("div", { class: "row" }, field(L("notes.length"), length), field(L("notes.language"), language2)),
           el("div", { class: "check" }, secrets, el("span", { text: L("notes.secrets") })),
           warn,
           el("div", { class: "btns" }, make2),
@@ -6099,7 +6256,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("h3", { text: L("notes.config_head") }),
         ...kinds.map((k) => k.row),
         customArea,
-        el("div", { class: "row" }, field(L("notes.length"), length)),
+        el("div", { class: "row" }, field(L("notes.length"), length), field(L("notes.language"), language2)),
         el("div", { class: "check" }, secrets, el("span", { text: L("notes.secrets") })),
         warn,
         estBar,
@@ -6461,6 +6618,26 @@ html,body{margin:0;background:${PALETTE.bg}}
     const canonFacts = el("input", { type: "checkbox" });
     const pinAt = el("input", { type: "checkbox", disabled: true });
     let pinAtKnown = false;
+    const embedChunks = el("input", {
+      type: "number",
+      min: MIN_EMBED_MAX_CHUNKS,
+      max: MAX_EMBED_MAX_CHUNKS,
+      step: 1,
+      disabled: true
+    });
+    let embedChunksKnown = false;
+    const embedChunksHint = el("p", { class: "sub" });
+    const showEmbedChunks = () => {
+      const chars = embedChunkChars(embedChunks.value);
+      embedChunksHint.textContent = !embedChunksKnown ? L("tune.embed_chunks_fixed") : chars === null ? L("tune.embed_chunks_range", { min: MIN_EMBED_MAX_CHUNKS, max: MAX_EMBED_MAX_CHUNKS }) : L("tune.embed_chunks_hint", {
+        n: embedChunks.value.trim(),
+        chars: chars.toLocaleString("en-US"),
+        d: DEFAULT_EMBED_MAX_CHUNKS,
+        dchars: (DEFAULT_EMBED_MAX_CHUNKS * EMBED_CHUNK_CHARS).toLocaleString("en-US")
+      });
+    };
+    embedChunks.addEventListener("input", showEmbedChunks);
+    showEmbedChunks();
     settingsView.append(el(
       "div",
       { class: "card" },
@@ -6474,6 +6651,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         field(L("tune.embed_wait"), embedWait)
       ),
       el("p", { class: "sub", text: L("tune.embed_wait_hint") }),
+      el("div", { class: "row" }, field(L("tune.embed_chunks"), embedChunks)),
+      embedChunksHint,
       el("div", { class: "row" }, field(L("tune.top_k"), topK), field(L("tune.facts"), factsLimit), field(L("tune.backfill"), backfill)),
       el("div", { class: "check" }, summaries, el("span", { text: L("tune.summaries") })),
       el("p", { class: "sub", text: L("tune.summaries_hint") }),
@@ -6818,7 +6997,8 @@ html,body{margin:0;background:${PALETTE.bg}}
           backfill: backfill.value,
           summaries: summaries.checked,
           canonFacts: canonFacts.checked,
-          pinAt: pinAt.checked
+          pinAt: pinAt.checked,
+          embedChunks: embedChunks.value
         },
         trim: { on: trimOn.checked, keep: trimKeep.value }
       };
@@ -6875,6 +7055,10 @@ html,body{margin:0;background:${PALETTE.bg}}
       pinAtKnown = typeof cfg.recall.pin_at_mentions === "boolean";
       pinAt.checked = cfg.recall.pin_at_mentions === true;
       pinAt.disabled = !pinAtKnown;
+      embedChunksKnown = typeof cfg.embeddings.max_chunks === "number";
+      embedChunks.value = embedChunksKnown ? String(cfg.embeddings.max_chunks) : "";
+      embedChunks.disabled = !embedChunksKnown;
+      showEmbedChunks();
       fillParsers(cfg);
     }
     async function loadAll() {
@@ -6965,7 +7149,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           deadline.value = String(args.deadline_ms);
           baseline = { ...baseline, conn: values().conn };
         }
-        const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown }, baseline);
+        const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown, embedChunks: embedChunksKnown }, baseline);
         const tight = (d.includes("tune") || d.includes("conn")) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline) ? ` ${L("tune.embed_wait_tight", { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : "";
         if (!Object.keys(body).length) {
           fillServer(await deps.api("GET", "/v1/config", void 0, 5e3));
