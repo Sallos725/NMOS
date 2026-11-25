@@ -11,7 +11,11 @@ content is closest, however it is worded now: a later re-extraction of that turn
 extracted after the reveal) rewords it; and (2) every other open secret kept from that character whose head
 matches and whose content is equal or reaches the thread match (trigram overlap MATCH_MIN, ADR 0019): the same
 secret is often extracted again in later turns. A head is compared apart from the content because a shared
-head alone ("루카 goal:") made two secrets of one character look alike. No match ends nothing and is reported
+head alone ("루카 goal:") made two secrets of one character look alike; a line whose predicate takes no value
+("김하나 possesses 독약") has its object as the content, and two heads compare by subject, predicate and object, not
+as one string ("김서연 …" is not "김서윤 …"). Rule 1 takes a secret sharing nothing with the reveal's content only
+when it is the one secret of that turn with the head and its content is not an object name (RULE1_FLOOR): a
+secret the re-extraction left out does not end another one of its turn. No match ends nothing and is reported
 as unmatched. Rule 1 holds only while the listed turn reads as it did when the reveal was extracted (the
 reveal's `listed_hash` against the secret's `turn_hash`, ADR 0033 amendment 2): an edit of that turn can make
 it a different secret, which the reveal did not report; only rule 2 can still match it.
@@ -26,6 +30,7 @@ import re
 from typing import Any
 
 from .entities import Resolution, norm
+from .predicates import REGISTRY
 from .threads import MATCH_MIN, Event, fire, similarity
 
 PREDICATE = "learned"
@@ -45,9 +50,18 @@ def secret_text(a: dict[str, Any]) -> str:
 
 
 HEAD_MIN = 0.8  # the head of a reworded reveal ("루카 goal") may differ in spacing or an alias's spelling
+# Rule 1 floor (exclusive). The one secret of the listed turn with the head is that secret however it is worded now
+# (ADR 0033 amendment 2). Of two or more, the closest must share something with the reveal's content: a reworded turn
+# still shares a trigram or two (0.08 on the owner's example), and at 0.0 every one of them tied and ended. A head
+# without a value (`possesses`, ...) has an object name for content: there 0.0 is another item, never a rewording.
+RULE1_FLOOR = 0.0
 
 
-TURN = re.compile(r"^\[turn (\d+)\] ")
+TURN = re.compile(r"^\[turn (-?\d+)\] ")  # -1: a carried secret, from before turn 0 (ADR 0085)
+# The predicate words of a secret's text (`secret_text`), longest first ("feels toward" before a shorter one). A
+# predicate without a value (`possesses`, `located_in`, `member_of`) has no ": " in its text: its object is the content.
+_WORDS = tuple(sorted({p.replace("_", " ") for p in REGISTRY}, key=len, reverse=True))
+_VALUELESS = tuple(sorted({p.replace("_", " ") for p, d in REGISTRY.items() if not d.needs_value}, key=len, reverse=True))
 
 
 def reveal_value(listed: dict[str, Any]) -> str:
@@ -56,37 +70,86 @@ def reveal_value(listed: dict[str, Any]) -> str:
 
 
 def _split(text: str | None) -> tuple[int | None, str | None, str]:
-    """(turn, head, content) of a reveal's value or a secret's text; None where it gives none."""
+    """(turn, head, content) of a reveal's value or a secret's text; None where it gives none. A line without ": "
+    whose predicate takes no value ("김하나 possesses 독약") has its subject and predicate as the head and its object as
+    the content: compared whole, two belongings of one character shared most of their text and one reveal ended both."""
     text = str(text or "")
     m = TURN.match(text)
     turn = int(m.group(1)) if m else None
-    head, sep, body = norm(text[m.end():] if m else text).partition(": ")
-    return (turn, head, body) if sep else (turn, None, head)
+    line = norm(text[m.end():] if m else text)
+    head, sep, body = line.partition(": ")
+    if sep:
+        return turn, head, body
+    for words in _VALUELESS:
+        i = line.find(f" {words} ")
+        if i > 0:
+            return turn, line[:i + len(words) + 1], line[i + len(words) + 2:]
+    return turn, None, line
 
 
-def _heads(sh: str | None, rh: str | None) -> bool:
-    return rh is None or rh == sh or (sh is not None and similarity(rh, sh) >= HEAD_MIN)
+def _parts(head: str) -> tuple[str, str, str] | None:
+    """(subject, predicate words, object) of a head, or None when it names no predicate."""
+    for words in _WORDS:
+        for i in (m.start() for m in re.finditer(re.escape(f" {words}"), head)):
+            end = i + len(words) + 1
+            if i > 0 and (end == len(head) or head[end] == " "):
+                return head[:i], words, head[end:].strip()
+    return None
 
 
-def matches(secret: str, reveal: str | None) -> bool:
+def _same_name(a: str, b: str, r: Resolution | None) -> bool:
+    """Two spellings of a head's subject or object are one name: equal apart from spacing, one entity, or as close as a
+    head must be. A whole head compared alone let two characters whose names differ by a syllable ("김서연", "김서윤")
+    share a long predicate and pass."""
+    if a.replace(" ", "") == b.replace(" ", ""):
+        return True
+    if not a or not b:
+        return False
+    if r is not None:
+        ka, kb = r.key("character", a), r.key("character", b)
+        if not ka.startswith("text:") and not kb.startswith("text:"):
+            return ka == kb
+    return similarity(a, b) >= HEAD_MIN
+
+
+def _heads(sh: str | None, rh: str | None, r: Resolution | None = None) -> bool:
+    if rh is None or rh == sh:
+        return True
+    if sh is None:
+        return False
+    ps, pr = _parts(sh), _parts(rh)
+    if ps is not None and pr is not None:
+        return ps[1] == pr[1] and _same_name(ps[0], pr[0], r) and (ps[2] == pr[2] or _same_name(ps[2], pr[2], r))
+    return similarity(rh, sh) >= HEAD_MIN
+
+
+def matches(secret: str, reveal: str | None, r: Resolution | None = None) -> bool:
     """The content rule (2): head as given, content equal or similar."""
     (_, sh, sb), (_, rh, rb) = _split(secret), _split(reveal)
-    return _heads(sh, rh) and bool(rb) and (rb == sb or similarity(rb, sb) >= MATCH_MIN)
+    return _heads(sh, rh, r) and bool(rb) and (rb == sb or similarity(rb, sb) >= MATCH_MIN)
 
 
-def _hits(pool: list[dict[str, Any]], reveal: str | None, listed_hash: str | None = None) -> list[dict[str, Any]]:
+def _hits(pool: list[dict[str, Any]], reveal: str | None, listed_hash: str | None = None,
+          r: Resolution | None = None) -> list[dict[str, Any]]:
     """Open secrets a reveal ends: the closest of its listed turn with the same head (rule 1), while that turn
-    reads as it did when the reveal was extracted (`listed_hash`; None: not recorded), and every one the content
-    rule matches (rule 2)."""
+    reads as it did when the reveal was extracted (`listed_hash`; None: not recorded) and its content shares
+    something with the reveal's (RULE1_FLOOR), and every one the content rule matches (rule 2)."""
     turn, rh, rb = _split(reveal)
-    hits = [s for s in pool if matches(s["text"], reveal)]
-    same = [s for s in pool if turn is not None and s["turn"] == turn and rh is not None and _heads(_split(s["text"])[1], rh)
+    hits = [s for s in pool if matches(s["text"], reveal, r)]
+    same = [s for s in pool if turn is not None and s["turn"] == turn and rh is not None
+            and _heads(_split(s["text"])[1], rh, r)
             and (listed_hash is None or s.get("turn_hash") in (None, listed_hash))]
     if same:
         scored = [(similarity(_split(s["text"])[2], rb), s) for s in same]
         best = max(score for score, _ in scored)
-        hits += [s for score, s in scored if score == best and s not in hits]
+        if best > RULE1_FLOOR or (len(same) == 1 and not _valueless(reveal)):
+            hits += [s for score, s in scored if score == best and s not in hits]
     return hits
+
+
+def _valueless(text: str | None) -> bool:
+    """A line whose head `_split` found by a predicate without a value: no ": " in it."""
+    return ": " not in str(text or "") and _split(text)[1] is not None
 
 
 def _who(r: Resolution | None, name: str | None) -> str:
@@ -137,7 +200,7 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
         elif reveals(a):
             used.add(a["id"])
             who = _who(r, a["subject"])
-            hit = _hits([s for s in secrets if who in s["_kept"]], a.get("value"), a.get("listed_hash"))
+            hit = _hits([s for s in secrets if who in s["_kept"]], a.get("value"), a.get("listed_hash"), r)
             if not hit:
                 unmatched.append(_ref(a))
             for s in hit:  # a secret this character already found out stays ended by the first reveal
