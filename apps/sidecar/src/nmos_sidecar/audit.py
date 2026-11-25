@@ -35,7 +35,7 @@ from uuid import UUID
 
 import psycopg
 
-from . import carry, overuse, spans
+from . import carry, normtext, overuse, spans
 from .carry import Carried
 from .facts import LIVE
 from .packet import CARRY_POLICIES, POLICIES, REST_POLICIES, V21_POLICIES, clean_text
@@ -67,6 +67,13 @@ def _trace(conn: psycopg.Connection, trace_id: UUID) -> dict[str, Any] | None:
         " WHERE t.id = %s", (trace_id,)).fetchone()
 
 
+def normalizer_of(t: dict[str, Any]) -> str:
+    """The normalizer a recorded request was served from (PHASE-66 part 3): recorded when it was not the default, so
+    every trace from before the setting, and every one under the default, reads the default."""
+    n = (t.get("recall_options") or {}).get("normalizer")
+    return n if n in normtext.CLEANERS else normtext.DEFAULT_NORMALIZER
+
+
 def reply_after(conn: psycopg.Connection, t: dict[str, Any]) -> tuple[str, str | None]:
     """(status, reply text) for a trace: `ok`, `pending` (no reply on the head yet), `not_a_reply` (the
     next message is not the character's), `changed` (the story up to the request changed since) or
@@ -80,8 +87,8 @@ def reply_after(conn: psycopg.Connection, t: dict[str, Any]) -> tuple[str, str |
         "SELECT sr.metadata->>'role' AS role, rt.clean_content FROM active_membership am"
         " JOIN source_revision sr ON sr.id = am.source_revision_id"
         " LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id"
-        " WHERE am.commit_id = %s AND am.position = %s ORDER BY rt.normalizer DESC LIMIT 1",
-        (head, t["upto_position"] + 1)).fetchone()
+        " WHERE am.commit_id = %s AND am.position = %s ORDER BY rt.normalizer = %s DESC, rt.normalizer DESC LIMIT 1",
+        (head, t["upto_position"] + 1, normalizer_of(t))).fetchone()  # the text its packet was read from first
     if row is None:
         return "pending", None
     if row["role"] != "char":
@@ -167,6 +174,16 @@ def _carried_of(conn: psycopg.Connection, t: dict[str, Any], policy: str, at: da
 def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, policy: str | None = None,
            known_at: datetime | None = None, query: str | None = None, budget: int | None = None,
            projection: str | None = None, recent: list[Any] | None = None, **overrides: Any) -> dict[str, Any] | None:
+    """`_replay` read as the normalizer the request was served from (PHASE-66 part 3, ADR 0027): its text, its
+    excerpts' offsets and its vectors' spans are that normalizer's whatever NMOS_NORMALIZER says now."""
+    t = _trace(conn, trace_id)
+    with normtext.reading(normalizer_of(t) if t is not None else None):
+        return _replay(conn, trace_id, options, policy, known_at, query, budget, projection, recent, **overrides)
+
+
+def _replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, policy: str | None = None,
+            known_at: datetime | None = None, query: str | None = None, budget: int | None = None,
+            projection: str | None = None, recent: list[Any] | None = None, **overrides: Any) -> dict[str, Any] | None:
     """Compile a recorded request again, as of its time, with its own recall options, generations and
     budget; `policy`, `query` (a probe in place of the request's user message, as the request would have sent
     it), `budget` (tokens) and `overrides` (RecallOptions fields) change what is being tested. `options` gives

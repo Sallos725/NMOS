@@ -149,46 +149,46 @@ def test_a_canon_join_respects_the_owners_split_the_persona_other_kinds_and_othe
 # --- B4: a composite, bilingual persona; no suffix hijacking ------------------------------------------------------
 
 def test_persona_parts_of_a_composite_name():
-    primary, derived = persona_parts(["Daniel Park/ 박현우"])
-    assert primary == {"daniel park/ 박현우", "daniel park", "박현우"}
-    assert {"daniel", "현우"} <= derived and "park" not in derived
+    primary, derived = persona_parts(["Ronan Voss/ 윤기현"])
+    assert primary == {"ronan voss/ 윤기현", "ronan voss", "윤기현"}
+    assert {"ronan", "기현"} <= derived and "voss" not in derived
     assert persona_parts(["세라 (Sera)"])[0] == {"세라 (sera)", "세라", "sera"}
     assert persona_parts(["Ethan Vance"])[1] == {"ethan"}
-    assert persona_parts(["남궁세연"])[1] == {"세연"} and persona_parts(["박 현우"])[1] == {"현우"}
+    assert persona_parts(["남궁세연"])[1] == {"세연"} and persona_parts(["윤 기현"])[1] == {"기현"}
     assert "타쿠미" in persona_parts(["아오키 타쿠미"])[1]
-    assert persona_parts(["Captain Daniel"])[1] == {"daniel"}  # a title is never the name
+    assert persona_parts(["Captain Ronan"])[1] == {"ronan"}  # a title is never the name
     assert persona_parts([]) == (frozenset(), frozenset())
 
 
 def test_a_composite_bilingual_persona_is_one_entity_under_every_name_it_is_called():
-    names = ["Daniel Park", "박현우", "Daniel", "현우", "대니얼", "다니엘", "{{user}}"]
+    names = ["Ronan Voss", "윤기현", "Ronan", "기현", "로넌", "로난", "{{user}}"]
     rows = [fact(n) for n in names] + [fact("카이토")]
-    r = resolve(CONV, rows, persona=["Daniel Park/ 박현우"])
-    assert one(r, *names) and r.is_persona("character", "대니얼")
-    e = r.entity("character", "현우")
+    r = resolve(CONV, rows, persona=["Ronan Voss/ 윤기현"])
+    assert one(r, *names) and r.is_persona("character", "로넌")
+    e = r.entity("character", "기현")
     assert e["persona"] and e["id"] == str(uuid5(entities._NS, f"{CONV}:{RESOLVER_VERSION}:character:{PERSONA}"))
-    assert {"daniel park", "박현우", "daniel", "현우", "대니얼", "다니엘"} <= r.persona_names
+    assert {"ronan voss", "윤기현", "ronan", "기현", "로넌", "로난"} <= r.persona_names
     assert not r.is_persona("character", "카이토") and "카이토" not in r.persona_names
     # the pieces fold into {{user}} wherever node() is asked with the host's raw name
-    raw = frozenset({"daniel park/ 박현우"})
-    assert node("character", "박현우", raw) == node("character", "Daniel Park", raw) == ("character", PERSONA)
-    assert node("character", "현우", raw) == ("character", "현우")  # a derived name joins in Resolution only
+    raw = frozenset({"ronan voss/ 윤기현"})
+    assert node("character", "윤기현", raw) == node("character", "Ronan Voss", raw) == ("character", PERSONA)
+    assert node("character", "기현", raw) == ("character", "기현")  # a derived name joins in Resolution only
 
 
 def test_the_persona_named_only_by_a_derived_name_is_still_the_persona_and_splittable():
-    rows = [fact("현우"), fact("카이토")]
-    r = resolve(CONV, rows, persona=["박현우"])
-    assert r.is_persona("character", "현우") and r.entity("character", "현우")["persona"]
-    r = resolve(CONV, rows, persona=["박현우"], splits=[split("박현우", "현우")])
-    assert not r.is_persona("character", "현우") and not any(e["persona"] for e in r.entities())
+    rows = [fact("기현"), fact("카이토")]
+    r = resolve(CONV, rows, persona=["윤기현"])
+    assert r.is_persona("character", "기현") and r.entity("character", "기현")["persona"]
+    r = resolve(CONV, rows, persona=["윤기현"], splits=[split("윤기현", "기현")])
+    assert not r.is_persona("character", "기현") and not any(e["persona"] for e in r.entities())
 
 
 def test_a_given_name_another_characters_full_name_holds_is_not_the_persona():
-    for rows in ([fact("박현우"), alias("강현우", "현우"), fact("현우")], [fact("박현우"), fact("강현우"), fact("현우")]):
-        r = resolve(CONV, rows, persona=["박현우"])
-        assert not r.is_persona("character", "현우") and "현우" not in r.persona_names
-    r = resolve(CONV, [fact("박현우")], persona=["박현우"])
-    assert "현우" in r.persona_names  # nobody else holds it
+    for rows in ([fact("윤기현"), alias("강기현", "기현"), fact("기현")], [fact("윤기현"), fact("강기현"), fact("기현")]):
+        r = resolve(CONV, rows, persona=["윤기현"])
+        assert not r.is_persona("character", "기현") and "기현" not in r.persona_names
+    r = resolve(CONV, [fact("윤기현")], persona=["윤기현"])
+    assert "기현" in r.persona_names  # nobody else holds it
 
 
 def test_the_reverse_mismatch_a_given_or_first_name_alone_is_the_persona():
@@ -216,13 +216,13 @@ def test_a_titled_name_is_not_the_persona_and_a_full_name_ending_with_it_is_but_
 
 
 def test_the_owners_link_or_split_outranks_a_derived_name():
-    rows = [fact("박현우"), fact("현우"), fact("카이토"), fact("대니얼")]
-    linked = resolve(CONV, rows, persona=["박현우"], links=[link("현우", "카이토")])
-    assert one(linked, "현우", "카이토") and not linked.is_persona("character", "현우")
+    rows = [fact("윤기현"), fact("기현"), fact("카이토"), fact("로넌")]
+    linked = resolve(CONV, rows, persona=["윤기현"], links=[link("기현", "카이토")])
+    assert one(linked, "기현", "카이토") and not linked.is_persona("character", "기현")
     # a split between two names the persona would go by keeps the later one off it
-    apart = resolve(CONV, rows, persona=["Daniel Park/ 박현우"], splits=[split("현우", "대니얼")])
-    assert key(apart, "현우") != key(apart, "대니얼")
-    assert apart.is_persona("character", "현우") != apart.is_persona("character", "대니얼")
+    apart = resolve(CONV, rows, persona=["Ronan Voss/ 윤기현"], splits=[split("기현", "로넌")])
+    assert key(apart, "기현") != key(apart, "로넌")
+    assert apart.is_persona("character", "기현") != apart.is_persona("character", "로넌")
 
 
 def test_a_full_name_mentioned_first_keeps_the_personas_id():
@@ -233,7 +233,7 @@ def test_a_full_name_mentioned_first_keeps_the_personas_id():
 
 
 def test_no_persona_reported_derives_nothing():
-    r = resolve(CONV, [fact("현우"), fact("Daniel")])
+    r = resolve(CONV, [fact("기현"), fact("Ronan")])
     assert not any(e["persona"] for e in r.entities())
     assert r.persona_names == frozenset(entities.USER_NAMES)
 
@@ -256,8 +256,8 @@ def test_a_western_first_name_is_indexed():
     assert variants.key("sir") not in variants.latin_keys("sir arthur pendragon")
     assert variants.aliases([{"id": "e", "type": "character", "names": ["Elena Vance"]}], [], "엘레나는?") == {
         "elena vance": frozenset({"엘레나"})}
-    assert variants.aliases([{"id": "d", "type": "character", "names": ["Daniel Park"]}], [], "다니엘이 왔다") == {
-        "daniel park": frozenset({"다니엘"})}
+    assert variants.aliases([{"id": "d", "type": "character", "names": ["Ronan Voss"]}], [], "로난이 왔다") == {
+        "ronan voss": frozenset({"로난"})}
 
 
 def test_a_five_syllable_spelling_is_read():
@@ -299,30 +299,30 @@ def test_aliases_widen_the_names_and_a_shared_one_names_neither():
 def test_a_split_from_a_persona_the_story_never_names_does_not_break_a_canon_join():
     """Self-review of e2d7064: the persona's node made for a derived name and dropped again left the owner's split in
     the canon join's split list, and the read raised KeyError."""
-    rows = [fact("현우"), fact("윤하람"), fact("하람")]
-    r = resolve(CONV, rows, persona=["박현우"], splits=[split("박현우", "현우")],
+    rows = [fact("기현"), fact("윤하람"), fact("하람")]
+    r = resolve(CONV, rows, persona=["윤기현"], splits=[split("윤기현", "기현")],
                 canon=[{"key": "lore:haram", "names": ["윤하람", "하람"]}])
-    assert one(r, "윤하람", "하람") and not r.is_persona("character", "현우")
+    assert one(r, "윤하람", "하람") and not r.is_persona("character", "기현")
     assert not any(e["persona"] for e in r.entities())
 
 
 def test_names_persona_reads_one_name_without_a_resolution():
     assert entities.names_persona("character", "Seon Hale", ["Hale"])  # resolve-v5's full name, for extraction
-    assert entities.names_persona("character", "현우", ["Daniel Park/ 박현우"])
-    assert entities.names_persona("character", "{{user}}") and entities.names_persona("character", "박현우", ["박현우"])
+    assert entities.names_persona("character", "기현", ["Ronan Voss/ 윤기현"])
+    assert entities.names_persona("character", "{{user}}") and entities.names_persona("character", "윤기현", ["윤기현"])
     assert not entities.names_persona("character", "경비병 민수", ["민수"])
-    assert not entities.names_persona("place", "현우", ["박현우"]) and not entities.names_persona("character", "카이토", [])
+    assert not entities.names_persona("place", "기현", ["윤기현"]) and not entities.names_persona("character", "카이토", [])
 
 
 def test_a_derived_name_another_name_gives_as_its_alias_is_that_names():
     """Self-review: guard (b) for story aliases that do not contain the derived name."""
-    r = resolve(CONV, [fact("박현우"), alias("카이토", "현우")], persona=["박현우"])
-    assert not r.is_persona("character", "카이토") and not r.is_persona("character", "현우")
-    r = resolve(CONV, [fact("Daniel Park"), alias("Daniel Craig", "대니얼")], persona=["Daniel Park"])
-    assert not r.is_persona("character", "Daniel Craig") and not r.is_persona("character", "대니얼")
+    r = resolve(CONV, [fact("윤기현"), alias("카이토", "기현")], persona=["윤기현"])
+    assert not r.is_persona("character", "카이토") and not r.is_persona("character", "기현")
+    r = resolve(CONV, [fact("Ronan Voss"), alias("Ronan Pryce", "로넌")], persona=["Ronan Voss"])
+    assert not r.is_persona("character", "Ronan Pryce") and not r.is_persona("character", "로넌")
     # the persona's own derived name with an alias of its own still joins
-    r = resolve(CONV, [fact("박현우"), alias("현우", "현우형")], persona=["박현우"])
-    assert r.is_persona("character", "현우형")
+    r = resolve(CONV, [fact("윤기현"), alias("기현", "기현형")], persona=["윤기현"])
+    assert r.is_persona("character", "기현형")
 
 
 def test_the_persona_introducing_itself_under_another_of_its_names():
@@ -336,8 +336,8 @@ def test_the_persona_introducing_itself_under_another_of_its_names():
 
 @pytest.mark.parametrize(("persona", "names", "a", "b"), [
     (["Smith"], ["Smith", "John Smith"], "Smith", "John Smith"),
-    (["박현우"], ["박현우", "현우"], "박현우", "현우"),
-    (["Daniel Park/ 박현우"], ["{{user}}", "대니얼"], "{{user}}", "대니얼"),
+    (["윤기현"], ["윤기현", "기현"], "윤기현", "기현"),
+    (["Ronan Voss/ 윤기현"], ["{{user}}", "로넌"], "{{user}}", "로넌"),
 ])
 def test_the_owner_can_plan_a_split_of_a_derived_persona_name(persona, names, a, b):
     """The brief's symptom: a name folded into {{user}} by node() could not be split ("the two names are the same",

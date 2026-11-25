@@ -30,7 +30,7 @@ import re
 from typing import Any
 
 from .entities import Resolution, norm
-from .predicates import REGISTRY, address_label
+from .predicates import REGISTRY, address_label, address_slot
 from .threads import MATCH_MIN, Event, fire, similarity
 
 PREDICATE = "learned"
@@ -63,6 +63,7 @@ TURN = re.compile(r"^\[turn (-?\d+)\] ")  # -1: a carried secret, from before tu
 # The predicate words of a secret's text (`secret_text`), longest first ("feels toward" before a shorter one). A
 # predicate without a value (`possesses`, `located_in`, `member_of`) has no ": " in its text: its object is the content.
 _WORDS = tuple(sorted({p.replace("_", " ") for p in REGISTRY}, key=len, reverse=True))
+ADDRESSES = "addresses"  # the predicate words of the one predicate whose head can carry a label (PHASE-64)
 _VALUELESS = tuple(sorted({p.replace("_", " ") for p, d in REGISTRY.items() if not d.needs_value}, key=len, reverse=True))
 
 
@@ -81,6 +82,12 @@ def _split(text: str | None) -> tuple[int | None, str | None, str]:
     line = norm(text[m.end():] if m else text)
     head, sep, body = line.partition(": ")
     if sep:
+        # A conditional form of address (PHASE-64) has its label in the head ("X addresses Y [label]: content"), and
+        # the label may hold ": " itself: such a head ends at the label's "]: ". What is stored stays as it is.
+        i = line.find(" [")
+        if 0 < i < len(head) and (end := line.find("]: ", i)) > 0 and (p := _parts(line[:i])) is not None \
+                and p[1] == ADDRESSES:
+            return turn, line[:end + 1], line[end + 3:]
         return turn, head, body
     for words in _VALUELESS:
         i = line.find(f" {words} ")
@@ -114,21 +121,78 @@ def _same_name(a: str, b: str, r: Resolution | None) -> bool:
     return similarity(a, b) >= HEAD_MIN
 
 
-def _heads(sh: str | None, rh: str | None, r: Resolution | None = None) -> bool:
+def _unlabel(head: str) -> tuple[str, str | None]:
+    """(head without its label, the label) of a conditional form of address's head ("x addresses y [label]",
+    PHASE-64); (head, None) for any other head. The label is not part of the object's name."""
+    i = head.find(" [")
+    if i > 0 and head.endswith("]") and (p := _parts(head[:i])) is not None and p[1] == ADDRESSES and p[2]:
+        return head[:i], head[i + 2:-1].strip()
+    return head, None
+
+
+# The labels `secret_text` gives a public or private form of address without a `when` (either language), by scope.
+_SCOPE_OF = {norm(address_label({"predicate": ADDRESSES, "address_condition": {"scope": scope, "when": None}}, lang)):
+             scope for scope in ("public", "private") for lang in (None, "ko")}
+
+
+def _label_slot(label: str | None) -> tuple[str, ...]:
+    """What a label's text says of its slot: `default` without one, the scope of a scope's own label, else only the
+    phrase (a `when`: of a public, private or situational form, which the text does not say)."""
+    if label is None:
+        return ("default",)
+    return (_SCOPE_OF[label],) if label in _SCOPE_OF else ("phrase", label)
+
+
+def _same_slot(label: str | None, slot: tuple[str, ...] | None, other: str | None) -> bool | None:
+    """Whether a reveal's label `other` names the slot of the secret with label `label` and, when its row is at hand,
+    slot `slot` (`predicates.address_slot`), one slot as Phase 64 folds them: public and private by scope, a situational
+    form by its `when` exactly as folded, the default without a condition. None when the text cannot tell, as a
+    re-extraction of the listed turn leaves it (`_hits` rule 1, unique only): a phrase other than the secret's own
+    against a public or private secret (a phrase does not say its scope), or a condition one side has and the other has
+    not (added or dropped by the re-extraction, or a reveal recorded before extract-v20). Never a scope's label against
+    the other scope or a situational form, nor another `when` against a situational form. Without the row (a listing's
+    text alone) only an equal label matches."""
+    theirs = _label_slot(other)
+    if slot is None:
+        return theirs == _label_slot(label)
+    if theirs == slot:
+        return True
+    if slot == ("default",) or theirs == ("default",):
+        return None
+    if slot[0] == "situational":
+        return theirs == ("phrase", slot[1])
+    if theirs[0] == "phrase":  # against a public or private secret
+        return True if theirs[1] == label else None
+    return False  # the other scope's label
+
+
+def _heads(sh: str | None, rh: str | None, r: Resolution | None = None,
+           slot: tuple[str, ...] | None = None) -> bool | None:
+    """Whether a reveal's head `rh` is a secret's head `sh`: subject, predicate and object compared as names, and for a
+    form of address its label's slot (`_same_slot`) apart from them; None when the names are and the slot cannot be
+    told."""
     if rh is None or rh == sh:
         return True
     if sh is None:
         return False
-    ps, pr = _parts(sh), _parts(rh)
+    (bs, ls), (br, lr) = _unlabel(sh), _unlabel(rh)
+    ps, pr = _parts(bs), _parts(br)
     if ps is not None and pr is not None:
-        return ps[1] == pr[1] and _same_name(ps[0], pr[0], r) and (ps[2] == pr[2] or _same_name(ps[2], pr[2], r))
-    return similarity(rh, sh) >= HEAD_MIN
+        same = ps[1] == pr[1] and _same_name(ps[0], pr[0], r) and (ps[2] == pr[2] or _same_name(ps[2], pr[2], r))
+    else:
+        same = similarity(br, bs) >= HEAD_MIN
+    if not same:
+        return False
+    if ps is None or ps[1] != ADDRESSES:
+        return True
+    return _same_slot(ls, slot, lr)
 
 
-def matches(secret: str, reveal: str | None, r: Resolution | None = None) -> bool:
-    """The content rule (2): head as given, content equal or similar."""
+def matches(secret: str, reveal: str | None, r: Resolution | None = None,
+            slot: tuple[str, ...] | None = None) -> bool:
+    """The content rule (2): head as given (a slot that cannot be told is not), content equal or similar."""
     (_, sh, sb), (_, rh, rb) = _split(secret), _split(reveal)
-    return _heads(sh, rh, r) and bool(rb) and (rb == sb or similarity(rb, sb) >= MATCH_MIN)
+    return _heads(sh, rh, r, slot) is True and bool(rb) and (rb == sb or similarity(rb, sb) >= MATCH_MIN)
 
 
 def _hits(pool: list[dict[str, Any]], reveal: str | None, listed_hash: str | None = None,
@@ -137,10 +201,18 @@ def _hits(pool: list[dict[str, Any]], reveal: str | None, listed_hash: str | Non
     reads as it did when the reveal was extracted (`listed_hash`; None: not recorded) and its content shares
     something with the reveal's (RULE1_FLOOR), and every one the content rule matches (rule 2)."""
     turn, rh, rb = _split(reveal)
-    hits = [s for s in pool if matches(s["text"], reveal, r)]
-    same = [s for s in pool if turn is not None and s["turn"] == turn and rh is not None
-            and _heads(_split(s["text"])[1], rh, r)
-            and (listed_hash is None or s.get("turn_hash") in (None, listed_hash))]
+    hits = [s for s in pool if matches(s["text"], reveal, r, s.get("_slot"))]
+    heads = [(s, _heads(_split(s["text"])[1], rh, r, s.get("_slot"))) for s in pool
+             if turn is not None and s["turn"] == turn and rh is not None
+             and (listed_hash is None or s.get("turn_hash") in (None, listed_hash))]
+    same = [s for s, head in heads if head]
+    if not same:
+        # A form of address whose label the re-extraction worded anew (PHASE-64; coordinator decision 2026-11-25): a public
+        # or private secret of the listed turn whose slot the label cannot tell is it only when it is the one such
+        # secret. With two (a public and a private one of the pair), neither ends: the secret stays hidden, fail-safe,
+        # and a repair can end it.
+        loose = [s for s, head in heads if head is None]
+        same = loose if len(loose) == 1 else []
     if same:
         scored = [(similarity(_split(s["text"])[2], rb), s) for s in same]
         best = max(score for score, _ in scored)
@@ -198,7 +270,8 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
                             "position": a["position"],
                             "host_logical_id": a.get("host_logical_id"), "holders": list(a.get("known_by") or []),
                             "kept_from": list(kept.values()), "ended": {}, "_kept": kept,
-                            "_evidence": a.get("evidence")})  # for a repair's quote (repairs.match_secret)
+                            "_evidence": a.get("evidence"),  # for a repair's quote (repairs.match_secret)
+                            "_slot": address_slot(a) if a["predicate"] == ADDRESSES else None})
         elif reveals(a):
             used.add(a["id"])
             who = _who(r, a["subject"])
@@ -212,6 +285,7 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
         s["open"] = [n for n in s["kept_from"] if n not in s["ended"]]
         s.pop("_kept")
         s.pop("_evidence")
+        s.pop("_slot")
     secrets.sort(key=lambda s: s["position"], reverse=True)
     unmatched.sort(key=lambda u: u["position"], reverse=True)
     return secrets, unmatched, used

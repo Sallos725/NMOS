@@ -164,11 +164,13 @@ def test_a_new_text_is_read_under_the_names_beside_a_carried_one(migrated, db):
 
 
 def plain_copy(db: psycopg.Connection, x: dict, value: str) -> None:
-    """Store beside read `x` (under the names) a `plain` read of the same revision and generation, saying `value`."""
-    xid = uuid7()
+    """Store beside read `x` (under the names) a `plain` read of the same revision, generation and part, saying
+    `value`."""
+    xid, part = uuid7(), x["window_hash"].split(":")[1]
     db.execute("INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
-               " raw, coverage, members, hints, usage) SELECT %s, source_revision_id, 'canon:0:plain', compiler_version,"
-               " extractor_key, model, raw, coverage, members, hints, usage FROM extraction WHERE id = %s", (xid, x["id"]))
+               " raw, coverage, members, hints, usage) SELECT %s, source_revision_id, %s, compiler_version,"
+               " extractor_key, model, raw, coverage, members, hints, usage FROM extraction WHERE id = %s",
+               (xid, f"canon:{part}:plain", x["id"]))
     cols = ", ".join(c for c in ("subject", "subject_type", "predicate", "object", "object_type", "epistemic",
                                  "confidence", "evidence", "status", "reason", "knowledge", "polarity", "modality",
                                  "source"))
@@ -332,3 +334,131 @@ def test_the_owner_can_count_carried_reads_shown_other_names(migrated, db):
         assert len(model.canon_calls()) == 2
         assert ("card:desc", "Hana", "lighthouse keeper") in served(migrated, chat)
         assert count() == {"other": (2, 1, 2)}
+
+
+# One read per (revision, generation) (review of 47a020a, finding 1): the names read when it is complete (every part
+# the text has under the names) or there is no `plain` read, else the carried `plain` one. Never both (duplicate facts),
+# never neither: a names read that started and died beside a complete `plain` one (a build with B7 and without the carry
+# forward, never deployed, could leave one) took the facts of the parts it had not read.
+TWO_PARTS = "Taku is a night walker. " + "x" * 5000 + "\n\nTaku is a map maker. " + "y" * 3000
+NAMES_READ = {("persona", "Taku", "night walker"), ("persona", "Taku", "map maker")}
+PLAIN_READ = {("persona", "Taku", "plain walker"), ("persona", "Taku", "plain maker")}
+
+
+def two_parts(migrated: str, db: psycopg.Connection, name: str, model: Model) -> tuple[SimChat, list[dict]]:
+    """A chat whose two-part persona (no macros) is read under the names, and a complete `plain` read of it beside."""
+    chat = chat_of(name)
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        push(c, chat, texts(persona=TWO_PARTS))
+        drain(migrated, model)
+    named = sorted(reads(db, chat, "persona"), key=lambda x: x["window_hash"])
+    assert [x["window_hash"].split(":")[1] for x in named] == ["0", "1"]
+    assert not any(x["window_hash"].endswith(":plain") for x in named)
+    for x, value in zip(named, ("plain walker", "plain maker")):
+        plain_copy(db, x, value)
+    assert len(model.canon_calls()) == 3  # the card field and the persona's two parts
+    return chat, named
+
+
+def drop(db: psycopg.Connection, xs: list[dict]) -> None:
+    for x in xs:
+        db.execute("DELETE FROM assertion WHERE extraction_id = %s", (x["id"],))
+        db.execute("DELETE FROM extraction WHERE id = %s", (x["id"],))
+    db.commit()
+
+
+def died(db: psycopg.Connection, x: dict) -> str:
+    """The job that read `x` (under the names) died before its last part; its dedupe key."""
+    key = f"canon:{x['rid']}:{x['window_hash'].split(':')[2]}:{x['extractor_key']}"
+    assert db.execute("UPDATE job SET status = 'dead' WHERE dedupe_key = %s", (key,)).rowcount == 1
+    db.commit()
+    return key
+
+
+def retried(db: psycopg.Connection, key: str) -> None:
+    """The owner retries a dead job."""
+    db.execute("UPDATE job SET status = 'queued', attempts = 0, run_after = now(), locked_at = NULL"
+               " WHERE dedupe_key = %s", (key,))
+    db.commit()
+
+
+def persona(got: list[tuple]) -> set[tuple]:
+    return {r for r in got if r[0] == "persona"}
+
+
+def test_a_complete_plain_read_serves_beside_a_partial_names_read(migrated, db):
+    model = Model()
+    chat, named = two_parts(migrated, db, "carry-one-partial", model)
+    conv = conv_of(db, chat)
+    drop(db, named[1:])  # the names read stopped after its first part
+    job = died(db, named[0])
+    assert persona(served(migrated, chat)) == PLAIN_READ  # nothing vanishes, and nothing is served twice
+    nothing_wanted(migrated, conv)
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        key = active_generation(conn, "canon").key
+        rid = named[0]["rid"]
+        # the read in force is the `plain` one: its window suffix for the worker, the input it fingerprints, coverage
+        assert canonfacts._source(conn, rid, key)["wtag"] == "plain"
+        cov = canonfacts.coverage(conn, key, conv)
+        assert cov["keys"]["persona"] == {"calls": 2, "job": None} and cov["failed"] == 0
+    # the dead names job retried by the owner: it reads nothing, as the read in force is complete
+    retried(db, job)
+    tag = named[0]["window_hash"].split(":")[2]
+    drain(migrated, model)
+    assert len(model.canon_calls()) == 3
+    assert sorted(x["window_hash"].split(":")[1:] for x in reads(db, chat, "persona")) == sorted([
+        ["0", "plain"], ["0", tag], ["1", "plain"]])
+    assert persona(served(migrated, chat)) == PLAIN_READ
+
+
+def test_a_complete_names_read_serves_alone_beside_a_plain_one(migrated, db):
+    model = Model()
+    chat, _ = two_parts(migrated, db, "carry-both-complete", model)
+    assert persona(served(migrated, chat)) == NAMES_READ
+    nothing_wanted(migrated, conv_of(db, chat))
+    drain(migrated, model)
+    assert len(model.canon_calls()) == 3
+
+
+def test_a_partial_names_read_without_a_plain_one_goes_on_under_the_names(migrated, db):
+    model = Model()
+    chat, named = two_parts(migrated, db, "carry-names-partial", model)
+    conv = conv_of(db, chat)
+    drop(db, [x for x in reads(db, chat, "persona") if x["window_hash"].endswith(":plain")] + named[1:])
+    job = died(db, named[0])
+    assert persona(served(migrated, chat)) == {("persona", "Taku", "night walker")}  # as before the review
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        key = active_generation(conn, "canon").key
+        assert canonfacts.schedule(conn, key, conv) == 0  # a dead job waits for the owner, as before
+        cov = canonfacts.coverage(conn, key, conv)
+        assert cov["keys"]["persona"] == {"calls": 1, "job": "dead"} and cov["failed"] == 1
+    retried(db, job)
+    drain(migrated, model)
+    calls = model.canon_calls()
+    assert len(calls) == 4 and "TEXT (part 2 of 2)" in calls[-1]
+    assert persona(served(migrated, chat)) == NAMES_READ
+    nothing_wanted(migrated, conv)
+
+
+def test_a_partial_plain_read_beside_a_partial_names_read_goes_on_plain(migrated, db):
+    model = Model()
+    chat, named = two_parts(migrated, db, "carry-both-partial", model)
+    conv = conv_of(db, chat)
+    plain = sorted((x for x in reads(db, chat, "persona") if x["window_hash"].endswith(":plain")),
+                   key=lambda x: x["window_hash"])
+    drop(db, [plain[1], named[1]])  # each stopped after its first part
+    died(db, named[0])
+    assert persona(served(migrated, chat)) == {("persona", "Taku", "plain walker")}
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        key = active_generation(conn, "canon").key
+        assert canonfacts.schedule(conn, key, conv) == 1
+        conn.commit()
+        jobs = conn.execute("SELECT dedupe_key FROM job WHERE kind = 'canon' AND status = 'queued'"
+                            " AND conversation_id = %s", (conv,)).fetchall()
+    assert [j["dedupe_key"].split(":")[2] for j in jobs] == ["plain"]
+    drain(migrated, model)
+    calls = model.canon_calls()
+    assert len(calls) == 4 and "TEXT (part 2 of 2)" in calls[-1]
+    assert persona(served(migrated, chat)) == {("persona", "Taku", "plain walker"), ("persona", "Taku", "map maker")}
+    nothing_wanted(migrated, conv)

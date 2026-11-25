@@ -138,6 +138,7 @@ def host_allowed(header: str, allowed: tuple[str, ...]) -> bool:
 def create_app(settings: Settings | None = None, pool: ConnectionPool | None = None,
                embedder: Embedder | None = None) -> FastAPI:
     settings = settings or Settings()
+    normtext.use(settings.normalizer)  # before any generation key is made (PHASE-66 part 3)
 
     # Runtime-editable part (plugin settings UI): effective settings, parser rules, recall options.
     rt: dict[str, Any] = {}
@@ -303,7 +304,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             rebuild(runtime.stored(conn))
             normalized = normtext.backfill(conn)
             if normalized:
-                log.info("normalized text written for %d revisions (%s)", normalized, normtext.NORMALIZER_VERSION)
+                log.info("normalized text written for %d revisions (%s)", normalized, normtext.active())
             if pruned := retention.prune_text(conn):
                 log.info("normalized text of older normalizers pruned: %d rows (ADR 0015)", pruned)
             if turned := ledger.refresh_turns(conn, settings.extract_turns):

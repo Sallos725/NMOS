@@ -340,6 +340,7 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
                    "note": RERANK_NOTE},
         "extraction": {"backfill": settings.extract_backfill, "summaries": settings.summaries,
                        "canon_facts": settings.canon_facts,
+                       "normalizer": settings.normalizer,  # NMOS_NORMALIZER, read at startup only (PHASE-66 part 3)
                        # PHASE-67: a plain boolean; the plugin syncs after a reply only when this is true
                        "on_output": settings.extract_on_output},
         "parsers": {"rules": overrides.get(PARSERS_KEY) if PARSERS_KEY in overrides else None,
