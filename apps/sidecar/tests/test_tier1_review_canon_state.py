@@ -268,3 +268,72 @@ def test_an_empty_reply_fails_the_job_and_an_empty_summary_covers_nothing(migrat
         assert summaries.current(conn, cid, head, gen.key)["scenes"][0]["summary"]["text"] == ""
         cov = coverage.read(conn, cid, head, gen.key, extractor_key=active_generation(conn, "extract").key)
     assert cov.recorded_through_turn == 15 and cov.covered_through_turn is None
+
+
+# --- items 6–8: a pin or watch covers only a prefix the parser added for a character; consecutive windows -----------
+
+def _window(position: int, values: dict[str, str]) -> dict[str, Any]:
+    return {"position": position, "turn": position, "host_logical_id": f"m{position}", "values": values}
+
+
+def test_a_bare_pin_covers_a_characters_key_and_not_a_key_with_a_dot_of_its_own():
+    from nmos_sidecar import statechange
+
+    own = {"P.ATK": "10", "Max.HP": "100", "HP": "80", "Mr. Kim": "우호"}
+    assert statechange.entity_prefixes(own) == frozenset()
+    for key in ("P.ATK", "Max.HP", "Mr. Kim"):
+        assert not statechange.covered(key, {"ATK", "HP", "Kim"}, statechange.entity_prefixes(own)), key
+    assert not statechange.covered("Mr. Kim", {"Kim"})  # a spaced dot is no separator, with or without a window
+    two = {"서연.HP": "80", "민지.HP": "50", "서연.P.ATK": "10", "민지.P.ATK": "7"}
+    prefixes = statechange.entity_prefixes(two)
+    assert prefixes == {"서연", "민지"}
+    assert statechange.covered("서연.HP", {"HP"}, prefixes) and statechange.covered("민지.P.ATK", {"P.ATK"}, prefixes)
+    assert not statechange.covered("서연.P.ATK", {"ATK"}, prefixes)  # its key is `P.ATK`, not `ATK`
+    # a rule that declares its dotted keys keeps them whole, even beside a partner that shares a part
+    assert statechange.entity_prefixes({"P.ATK": "1", "M.ATK": "2"}, declared={"P.ATK", "M.ATK"}) == frozenset()
+    assert statechange.entity_prefixes({"P.ATK": "1", "M.ATK": "2"}, declared_prefixes={"P.", "M."}) == frozenset()
+    windows = [_window(1, own), _window(2, own)]
+    assert {t.key for t in statechange.tell(windows, frozenset({"ATK", "HP"}))} == {"HP"}
+
+
+def _entry(value: str, position: int, last: int | None = None) -> dict[str, Any]:
+    return {"value": value, "position": position, "last_position": position if last is None else last,
+            "turn": position, "rule_id": "s", "revision_id": position, "redone": False}
+
+
+def test_a_watch_compares_only_consecutive_windows_of_a_key():
+    from nmos_sidecar.statewatch import detect
+
+    quiet = {2: "둘은 말없이 걸었다.", 3: "둘은 말없이 걸었다."}
+    # bare at 1, two characters at 2, bare again at 3: HP 80 → 60 spans a window without `HP`
+    gap = {"HP": [_entry("80", 1), _entry("60", 3)], "서연.HP": [_entry("70", 2)], "민지.HP": [_entry("50", 2)]}
+    assert detect(gap, {"s": frozenset({"HP"})}, quiet) == []
+    # the same values in consecutive windows are flagged as before
+    flagged = detect({"HP": [_entry("80", 1), _entry("60", 2)]}, {"s": frozenset({"HP"})}, quiet)
+    assert [(f["key"], f["old"], f["new"]) for f in flagged] == [("HP", "80", "60")]
+    # a key with a dot of its own is not watched by its last part
+    assert detect({"Max.HP": [_entry("100", 1), _entry("90", 2)]}, {"s": frozenset({"HP"})}, quiet) == []
+
+
+def test_flags_of_reads_only_the_watched_keys_by_their_last_part(migrated, monkeypatch, tmp_path):
+    import json
+
+    from nmos_sidecar import statewatch
+
+    rules = tmp_path / "rules.json"
+    rules.write_text(json.dumps({"rules": [{"card": "세라", "id": "s", "kind": "shape", "role": "char",
+                                            "keys": ["HP", "MP", "기분"], "watch": ["HP"]}]}), encoding="utf-8")
+    chat = SimChat()
+    for hp in (80, 60):
+        chat.user("계속.")
+        chat.reply(f"둘은 말없이 걸었다.\n[서연 | HP: {hp} | MP: 30 | 기분: 맑음]\n[민지 | HP: 50 | MP: 10 | 기분: 흐림]")
+    chat.user("다음.")
+    asked: list[Any] = []
+    real = statewatch.history
+    monkeypatch.setattr(statewatch, "history", lambda *a, **k: asked.append(k.get("keys")) or real(*a, **k))
+    with make_client(migrated, parsers_file=str(rules), packet_policy="packet-v18") as c:
+        sync(c, chat, character_name="세라")
+        conv = c.get("/v1/conversations").json()[0]["id"]
+        html = c.get(f"/v1/inspector/c/{conv}?lang=en").json()["html"]
+    assert "서연.HP: 80 → 60" in html and "민지.HP" not in html.split("state_dismiss:")[0][-200:]
+    assert asked and all(sorted(k) == ["민지.HP", "서연.HP"] for k in asked)  # never the whole history
