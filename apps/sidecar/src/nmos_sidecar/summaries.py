@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -334,9 +335,11 @@ def packet_lines(conn: psycopg.Connection, head: UUID, key: str, secrets: list[d
                  present: frozenset[str] = frozenset(),
                  hidden_entries: list[dict[str, Any]] | None = None) -> list[Line]:
     """What a request offers <Story> (ADR 0043): the story so far, and the scene summary the message is about among
-    windows older than the prompt's own messages (`in_context`, host ids). A summary that repeats a secret still kept
-    from someone is never offered (PHASE-12 Q3). The same choice as `current`, made for the request path: one query
-    finds the current summaries, and only what it would offer is checked against the secrets."""
+    windows that begin before the prompt's own messages (`in_context`, host ids): one the prompt holds only in part
+    counts too, since a trim's cut can fall inside a window and its earlier turns are told nowhere else. A summary
+    that repeats a secret still kept from someone is never offered (PHASE-12 Q3). The same choice as `current`, made
+    for the request path: one query finds the current summaries, and only what it would offer is checked against the
+    secrets."""
     rows = conn.execute(_CURRENT, {"w": WINDOW, "lag": LAG, "head": head, "key": key, "at": known_at, "upto": upto,
                                    "ctx": list(in_context), "fallback": True}).fetchall()
     scenes = [x for x in rows if x["level"] == "scene"]
@@ -361,7 +364,8 @@ def packet_lines(conn: psycopg.Connection, head: UUID, key: str, secrets: list[d
     if query.strip() and scenes:
         asked, grams = _grams(query), _scene_grams(conn, scenes)
         scored = sorted(((_overlap(asked, grams[x["id"]]), x["last_turn"], x) for x in scenes
-                         if grams.get(x["id"]) and (before_turn is None or x["window_last"] < before_turn)),
+                         if grams.get(x["id"]) and (before_turn is None
+                                                    or x["window_last"] - WINDOW + 1 < before_turn)),
                         key=lambda t: (t[0], t[1]), reverse=True)
         for score, _, x in scored:
             if score < SCENE_MIN:
@@ -544,10 +548,24 @@ def reply_text(parsed: dict[str, Any], cap: int) -> str:
     return _cut(text, cap)
 
 
+# Predicates whose secret line has no value, only an object ("김하나 possesses 은열쇠"): its content is the object, so
+# a summary in the chat's language that names it is compared with it, not with the English predicate.
+VALUELESS = ("possesses", "located in", "member of")
+_VALUELESS = re.compile(r"^(?P<subject>.+?) (?:" + "|".join(VALUELESS) + r") (?P<object>.+)$", re.DOTALL)
+
+
 def content(secret: dict[str, Any]) -> str:
-    """What a secret says, without its head ("하나 knows: …" → "…")."""
+    """What a secret says, without its head ("하나 knows: …" → "…"; "김하나 possesses 은열쇠" → "은열쇠")."""
     head, sep, body = secret["text"].partition(": ")
-    return body if sep else head
+    if sep:
+        return body
+    subject, predicate = secret.get("subject"), str(secret.get("predicate") or "").replace("_", " ")
+    if subject and predicate in VALUELESS:
+        prefix = f"{subject} {predicate} "
+        if head.startswith(prefix) and head[len(prefix):].strip():
+            return head[len(prefix):]
+    m = _VALUELESS.match(head) if not predicate or predicate in VALUELESS else None
+    return m["object"] if m and m["object"].strip() else head
 
 
 def window_secrets(secrets: list[dict[str, Any]], last_turn: int, limit: int = OPEN_SECRETS) -> list[dict[str, Any]]:
@@ -562,12 +580,19 @@ def secret_key(secret: dict[str, Any]) -> str:
     return " ".join(content(secret).casefold().split())
 
 
+def _legacy_key(secret: dict[str, Any]) -> str:
+    """The key a summary listed a valueless secret by before `content` dropped its head (its whole line)."""
+    head, sep, body = secret["text"].partition(": ")
+    return " ".join((body if sep else head).casefold().split())
+
+
 def unlisted(row: dict[str, Any], secrets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The secrets a summary must keep that its prompt did not list: stated after it was written. Until it is written
     again with them listed, no packet may use it."""
     listed = (row.get("coverage") or {}).get("secrets")
     listed = set(listed) if isinstance(listed, list) else set()
-    return [s for s in window_secrets(secrets, row["last_turn"]) if secret_key(s) not in listed]
+    return [s for s in window_secrets(secrets, row["last_turn"])
+            if secret_key(s) not in listed and _legacy_key(s) not in listed]
 
 
 def held(row: dict[str, Any], secrets: list[dict[str, Any]], present: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
@@ -698,7 +723,11 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
     kept = window_secrets(secrets, scenes[-1]["last_turn"])
     # A scene that repeats a secret gives the story nothing of its text (it would pass the secret on); its turns stay
     # in the story's range, told by the scenes around them.
-    told = [{**s, "text": "(left out: it repeats a secret)"} if leaks(s["text"], secrets) else s for s in scenes]
+    # The bar is LEAK_NEAR, as a scene is checked where one it is kept from is present: the story is read in every
+    # scene, so a secret its scene told in other words would reach it.
+    everyone = frozenset(norm(n) for s in secrets if s.get("open") for n in s["open"])
+    told = [{**s, "text": "(left out: it repeats a secret)"} if leaks(s["text"], secrets, everyone) else s
+            for s in scenes]
     parsed, raw, usage = metered(complete, STORY_PROMPT, story_prompt(told, kept))
     text = reply_text(parsed, STORY_CHARS)
     with conn.transaction():

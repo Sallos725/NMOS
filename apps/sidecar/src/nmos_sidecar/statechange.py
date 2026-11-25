@@ -98,8 +98,9 @@ class Told:
 def tell(windows: list[dict[str, Any]], pins: frozenset[str] | set[str] = frozenset(),
          asked: frozenset[str] | set[str] = frozenset(), by_turn: bool = True) -> list[Told]:
     """The status as core values and changes: core keys' current values; other keys only when the last window changed
-    them (or first set them); a list's whole value only when the message asked about it. With one window there is
-    nothing to compare: every key is new and told. Keys absent from the last window are left out."""
+    them (or first set them) or the message asked about them (`asked`, whole); a list's whole value only when the
+    message asked about it. With one window there is nothing to compare: every key is new and told. Keys absent from
+    the last window are left out."""
     if not windows:
         return []
     last = windows[-1]
@@ -110,7 +111,7 @@ def tell(windows: list[dict[str, Any]], pins: frozenset[str] | set[str] = frozen
     for key, value in last["values"].items():
         before = None if prev is None else prev.get(key)
         changed = prev is None or before != value
-        if key not in core and not changed:
+        if key not in core and not changed and key not in asked:
             continue
         mark = change(before, value)
         listed = _items(value) is not None

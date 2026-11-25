@@ -15,8 +15,10 @@ NMOS had by then, as facts from before turn 0: turn -1, positions below every me
 
 What a read of a text depends on besides the text and the generation: the names the host's name macros stand for, when
 the text has them (the card's name and the persona's, as the manifest gives them). They are part of the window
-(`canon:<part>:<names>`, `plain` for a text without the macros), so a renamed card or persona is read again, and a read
-takes only the windows of its manifest's names. A text counts as read once every part of it is.
+(`canon:<part>:<names>`, `plain` for a lorebook entry or the note without the macros), so a renamed card or persona is
+read again, and a read takes only the windows of its manifest's names. The persona and the card's fields always have
+the names (a persona names USER without the macro, and the model is told who CHARACTER and USER are): another chat's
+read of them under other names is never theirs. A text counts as read once every part of it is.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from .config import Settings
 from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
+from .packet import clean_text
 from .predicates import REGISTRY, registry_prompt, stored_knowledge
 
 log = logging.getLogger("nmos.canon")
@@ -136,6 +139,10 @@ NAMES_TAG = """left(encode(sha256(convert_to(
     'UTF8')), 'hex'), 12)"""
 # Whether a stored canon revision has the name macros (recorded at sync since this step; older ones are checked).
 NAMED = "coalesce((sr.metadata->>'named')::boolean, sr.content ~* %(macro)s)"
+# The window suffix of a read of entry `e` (its key) of revision `sr`: the manifest's names for the persona, the card's
+# fields and a text with the macros; `plain` otherwise. `wtag` is the same in Python.
+WTAG = ("CASE WHEN e.key = 'persona' OR e.key LIKE 'card:%%' OR " + NAMED
+        + " THEN e.tag ELSE 'plain' END AS wtag")
 
 # The revisions a canon generation reads, of each chat's canon in force: the card's fields, the note and the persona,
 # and each lorebook entry some recorded request's prompt held; with the window suffix a read of it has now.
@@ -155,7 +162,7 @@ held AS (
     CROSS JOIN LATERAL jsonb_array_elements_text(t.canon_held) k(key)
     WHERE t.canon_held <> '[]'::jsonb AND k.key LIKE 'lore:%%'
 )
-SELECT e.conv, e.key, sr.id AS rid, CASE WHEN """ + NAMED + """ THEN e.tag ELSE 'plain' END AS wtag
+SELECT e.conv, e.key, sr.id AS rid, """ + WTAG + """
 FROM e
 JOIN source_object so ON so.conversation_id = e.conv AND so.host_logical_id = 'canon:' || e.key
                      AND so.source_kind = 'canon'
@@ -215,6 +222,32 @@ def requeue(conn: psycopg.Connection, conv: UUID) -> int:
                         " WHERE kind = 'canon' AND conversation_id = %s", (conv,)).rowcount
 
 
+def name_dependent(key: str, named_: bool) -> bool:
+    """Whether a read of entry `key` depends on the manifest's names (WTAG in SQL): the persona and the card's fields
+    always; any other text when it has the name macros."""
+    return key == "persona" or key.startswith("card:") or named_
+
+
+def wtag(key: str, named_: bool, entries: list[dict[str, Any]]) -> str:
+    return names_tag(entries) if name_dependent(key, named_) else "plain"
+
+
+def manifest_names(conn: psycopg.Connection, conv: UUID,
+                   entries: list[dict[str, Any]]) -> tuple[str | None, str | None]:
+    """The names a manifest gives the host's name macros: the card's name (its revision's text) and the persona's."""
+    by = {e["key"]: e for e in entries}
+    name = by.get("card:name")
+    character = None
+    if name is not None:
+        found = conn.execute(
+            "SELECT sr.content FROM source_object so JOIN source_revision sr ON sr.source_object_id = so.id"
+            " WHERE so.conversation_id = %s AND so.host_logical_id = 'canon:card:name' AND sr.revision_hash = %s",
+            (conv, name["hash"])).fetchone()
+        character = found["content"].strip() if found else None
+    user = ((by.get("persona") or {}).get("metadata") or {}).get("name")  # the manifest's, so reads are its own
+    return character, user or None
+
+
 def named(text: str, character: str | None, user: str | None) -> str:
     """The host's name macros replaced by the names they stand for (the host does the same in a prompt)."""
     return MACRO.sub(lambda m: (user if m[1].lower() == "user" else character) or m[0], text)
@@ -271,27 +304,20 @@ def _source(conn: psycopg.Connection, rid: UUID) -> dict[str, Any] | None:
     entry = entries.get(key)
     if entry is None or entry["hash"] != row["revision_hash"]:
         return None
-    name = entries.get("card:name")
-    character = None
-    if name is not None:
-        found = conn.execute(
-            "SELECT sr.content FROM source_object so JOIN source_revision sr ON sr.source_object_id = so.id"
-            " WHERE so.conversation_id = %s AND so.host_logical_id = 'canon:card:name' AND sr.revision_hash = %s",
-            (row["conversation_id"], name["hash"])).fetchone()
-        character = found["content"].strip() if found else None
-    user = ((entries.get("persona") or {}).get("metadata") or {}).get("name")  # the manifest's, so reads are its own
+    character, user = manifest_names(conn, row["conversation_id"], row["entries"])
     named_ = (row["metadata"] or {}).get("named")
     if named_ is None:
         named_ = bool(MACRO.search(row["content"]))
     return {"id": row["id"], "key": key, "conversation_id": row["conversation_id"],
-            "metadata": entry.get("metadata") or {}, "character": character, "user": user if user else None,
-            "wtag": names_tag(row["entries"]) if named_ else "plain"}
+            "metadata": entry.get("metadata") or {}, "character": character, "user": user,
+            "wtag": wtag(key, bool(named_), row["entries"])}
 
 
 def input_of(src: dict[str, Any], piece: str, part: int, count: int) -> str:
     """The fingerprint of what a part's read sends the model besides the generation's own system prompt (PHASE-57 A1):
-    the source line, the part, its text with the macros replaced, and the names only when the text uses the macros
-    (`wtag`), as a chat already keeps a `plain` text's read when its persona is renamed (ADR 0047)."""
+    the source line, the part, its text with the macros replaced, and the names whenever the read depends on them
+    (`wtag`: the persona, the card's fields, a text with the macros), as a chat already keeps a `plain` text's read
+    when its persona is renamed (ADR 0047)."""
     named_ = src["wtag"] != "plain"
     fields = [describe(src["key"], src["metadata"]), str(part), str(count),
               (src["character"] or "") if named_ else "", (src["user"] or "") if named_ else "", piece]
@@ -413,7 +439,7 @@ e AS (
     FROM m CROSS JOIN LATERAL jsonb_array_elements(m.entries) WITH ORDINALITY AS t(x, ord)
 ),
 r AS (
-    SELECT e.key, e.ord, sr.id AS rid, CASE WHEN """ + NAMED + """ THEN e.tag ELSE 'plain' END AS wtag
+    SELECT e.key, e.ord, sr.id AS rid, """ + WTAG + """
     FROM e JOIN source_object so ON so.conversation_id = %(conv)s AND so.host_logical_id = 'canon:' || e.key
                                 AND so.source_kind = 'canon'
     JOIN source_revision sr ON sr.source_object_id = so.id AND sr.revision_hash = e.hash
@@ -447,11 +473,15 @@ ORDER BY l.ord, l.window_hash, a.id
 TAG = re.compile(r"\{\{#([^{}]*)(\}\})?|\{\{/(?!/)[^{}]*\}\}")  # an opener's head (to a brace), or a closer
 CHUNK = 12  # characters of evidence (spaces removed) looked for at a time
 CACHED = 4096
-# Per revision: its raw text without spaces (casefolded), where each of those characters stands, and its conditional
-# spans; None for a text without them. Per revision and evidence: the verdict. A revision's content never changes.
+# Per revision and the names its manifest gives the macros: its text as the model read it (cleaned, the macros
+# replaced) without spaces (casefolded), where each of those characters stands, and its conditional spans; None for a
+# text without them. Per revision, names and evidence: the verdict. A revision's content never changes.
 Blocks = tuple[str, list[int], list[tuple[int, int]]]
-_texts: dict[UUID, Blocks | None] = {}
-_verdicts: dict[tuple[UUID, str], bool] = {}
+Names = tuple[str | None, str | None]
+_texts: dict[tuple[UUID, str | None, str | None], Blocks | None] = {}
+_verdicts: dict[tuple[UUID, str | None, str | None, str], bool] = {}
+_blockless: set[UUID] = set()  # revisions without a block tag, whatever the names
+_names: dict[tuple[UUID, str], Names] = {}  # per chat and manifest (a manifest's entries never change)
 
 
 def _opens(head: str, whole: bool) -> bool | None:
@@ -500,30 +530,57 @@ def blocks_of(text: str) -> Blocks | None:
     return "".join(flat), index, spans
 
 
-def _blocks(conn: psycopg.Connection, rids: set[UUID]) -> dict[UUID, Blocks | None]:
-    """The blocks of each revision in `rids`, read once per process. The raw content is read, not a normalized text,
-    so a verdict does not depend on the normalizer (a replay of an older generation reads the same)."""
-    known = {r: _texts[r] for r in rids if r in _texts}
-    missing = [r for r in rids if r not in known]
+def _marks(text: str) -> list[bool | str | None]:
+    """The block tags of a text as the host reads them, in order: what each opener does, and each closer."""
+    return [_opens(m[1], m[2] is not None) if m[1] is not None else "/" for m in TAG.finditer(text)]
+
+
+def read_blocks(content: str, character: str | None, user: str | None) -> Blocks | None:
+    """The blocks of a canon revision's raw `content` in the text its extraction read: cleaned as the normalizer
+    cleans it (markup dropped) and the name macros replaced, so evidence the model quoted with the names in place
+    and without the markup is found where it stands. When the cleaning changed the block tags themselves, the raw
+    text with the macros replaced is used."""
+    text, whole = named(clean_text(content), character, user), named(content, character, user)
+    return blocks_of(text if _marks(text) == _marks(whole) else whole)
+
+
+def _blocks(conn: psycopg.Connection, rids: set[UUID],
+            names: Callable[[], Names] = lambda: (None, None)) -> dict[UUID, Blocks | None]:
+    """The blocks of each revision in `rids` under its manifest's names (`names`, asked only when a revision with a
+    block tag is not cached yet), read once per process."""
+    out: dict[UUID, Blocks | None] = {r: None for r in rids if r in _blockless}
+    missing = [r for r in rids if r not in out]
+    if not missing:
+        return out
+    character, user = names()
+    for r in missing:
+        if (r, character, user) in _texts:
+            out[r] = _texts[(r, character, user)]
+    missing = [r for r in missing if r not in out]
     if missing:
-        found = {row["id"]: blocks_of(row["content"]) for row in conn.execute(
+        found = {row["id"]: row["content"] for row in conn.execute(
             "SELECT id, content FROM source_revision WHERE id = ANY(%s) AND content LIKE '%%{{#%%'",
             (missing,)).fetchall()}
-        fresh = {r: found.get(r) for r in missing}
-        _texts.update(fresh)  # published whole: another request sees a revision's blocks or nothing
-        known.update(fresh)
+        for r in missing:  # published whole: another request sees a revision's blocks or nothing
+            if r in found:
+                out[r] = _texts[(r, character, user)] = read_blocks(found[r], character, user)
+            else:
+                out[r] = None
+                _blockless.add(r)
         for old in list(_texts)[:max(0, len(_texts) - CACHED)]:
             _texts.pop(old, None)
-    return known
+        while len(_blockless) > CACHED * 4:
+            _blockless.pop()
+    return out
 
 
-def shown(blocks: Blocks | None, rid: UUID, evidence: str | None) -> bool:
+def shown(blocks: Blocks | None, rid: UUID, evidence: str | None, names: Names = (None, None)) -> bool:
     """Whether a canon fact is served: its text has no conditional block, or its evidence is found outside them at
-    least as often as only inside (in pieces of CHUNK characters, spaces and case ignored, since the model quotes the
-    text with names in place of the macros). Evidence found nowhere is not served (fail closed)."""
+    least as often as only inside (in pieces of CHUNK characters, spaces and case ignored), in the text as the model
+    read it (`read_blocks` under `names`). Evidence found nowhere is not served (fail closed)."""
     if blocks is None:
         return True
-    verdict = _verdicts.get((rid, evidence or ""))
+    verdict = _verdicts.get((rid, *names, evidence or ""))
     if verdict is None:
         flat, index, spans = blocks
         quote = "".join((evidence or "").split()).casefold()
@@ -540,10 +597,23 @@ def shown(blocks: Blocks | None, rid: UUID, evidence: str | None) -> bool:
             else:
                 inside += 1
         verdict = outside > 0 and outside >= inside
-        _verdicts[(rid, evidence or "")] = verdict
+        _verdicts[(rid, *names, evidence or "")] = verdict
         for old in list(_verdicts)[:max(0, len(_verdicts) - CACHED * 4)]:
             _verdicts.pop(old, None)
     return verdict
+
+
+def _manifest_names(conn: psycopg.Connection, conv: UUID, mid: str) -> Names:
+    """`manifest_names` of manifest `mid`, read once per process."""
+    got = _names.get((conv, mid))
+    if got is None:
+        row = conn.execute("SELECT entries FROM canon_manifest WHERE conversation_id = %s AND id = %s",
+                           (conv, mid)).fetchone()
+        got = manifest_names(conn, conv, row["entries"]) if row else (None, None)
+        _names[(conv, mid)] = got
+        for old in list(_names)[:max(0, len(_names) - CACHED)]:
+            _names.pop(old, None)
+    return got
 
 
 def rows(conn: psycopg.Connection, conv: UUID, mid: str | None, key: str | None,
@@ -555,8 +625,21 @@ def rows(conn: psycopg.Connection, conv: UUID, mid: str | None, key: str | None,
     # Prepared at its first use on a connection: planning it takes longer than running it (PHASE-14 step 6).
     out = conn.execute(ROWS, {"conv": conv, "mid": mid, "gen": key, "macro": MACRO_SQL,
                               "at": known_at}, prepare=True).fetchall()
-    blocks = _blocks(conn, {a["rid"] for a in out})
-    out = [a for a in out if shown(blocks[a["rid"]], a.pop("rid"), a["evidence"])]
+    names: list[Names] = []
+
+    def manifest() -> Names:
+        if not names:
+            names.append(_manifest_names(conn, conv, mid))
+        return names[0]
+
+    blocks = _blocks(conn, {a["rid"] for a in out}, manifest)
+    kept = []
+    for a in out:
+        rid = a.pop("rid")
+        b = blocks[rid]
+        if shown(b, rid, a["evidence"], manifest() if b is not None else (None, None)):
+            kept.append(a)
+    out = kept
     for i, a in enumerate(out):
         a.update(position=POSITION_BASE + i, turn=-1, turn_hash=f"canon:{a['canon']}",
                  host_logical_id=f"canon:{a['canon']}", listed_hash=None, participants=None)

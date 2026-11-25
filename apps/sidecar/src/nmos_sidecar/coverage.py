@@ -16,6 +16,7 @@ from uuid import UUID
 import psycopg
 
 from . import facts, summaries
+from .entities import norm
 
 _SERVED_TURNS = """
 SELECT DISTINCT am.turn
@@ -114,8 +115,11 @@ def read(
         if have:
             if secrets is None and extractor_key:
                 secrets = facts.memory_view(conn, head, extractor_key, upto, known_at)["secrets"]
+            # At LEAK_NEAR, as a scene with one a secret is kept from holds it: a turn its summary may not tell in
+            # such a scene is not covered, so a trim does not cut it away.
+            everyone = frozenset(norm(n) for s in secrets or () if s.get("open") for n in s["open"])
             for x in have:
-                if not secrets or not summaries.held(x["summary"], secrets):
+                if not secrets or not summaries.held(x["summary"], secrets, everyone):
                     w = x["window"]
                     summarized.update(range(w.first_turn, w.last_turn + 1))
     covered = frozenset(served & summarized)
