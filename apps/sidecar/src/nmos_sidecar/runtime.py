@@ -37,6 +37,7 @@ EDITABLE: dict[str, type] = {
     "events_limit": int, "threads_limit": int,
     "extract_backfill": int, "summaries": bool, "canon_facts": bool,
     "pin_at_mentions": bool,  # PHASE-60 S8: `@name` pins a character for the request
+    "extract_on_output": bool,  # PHASE-67: an output sync extracts the newest reply's turn early
     # PHASE-60 S5 (ADR 0084): the optional reranker; its key is a credential like the other two
     "rerank_url": str, "rerank_model": str, "rerank_api_key": str, "rerank_timeout_ms": int, "rerank_format": str,
 }
@@ -337,7 +338,9 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
                    "note": RERANK_NOTE},
         "extraction": {"backfill": settings.extract_backfill, "summaries": settings.summaries,
                        "canon_facts": settings.canon_facts,
-                       "normalizer": settings.normalizer},  # NMOS_NORMALIZER, read at startup only (PHASE-66 part 3)
+                       "normalizer": settings.normalizer,  # NMOS_NORMALIZER, read at startup only (PHASE-66 part 3)
+                       # PHASE-67: a plain boolean; the plugin syncs after a reply only when this is true
+                       "on_output": settings.extract_on_output},
         "parsers": {"rules": overrides.get(PARSERS_KEY) if PARSERS_KEY in overrides else None,
                     "spec": parser_spec(settings, overrides), "presets": overrides.get(PRESETS_KEY, []),
                     "source": "ui" if PARSERS_KEY in overrides else ("file" if settings.parsers_file else "none"),

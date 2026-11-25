@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:c228ef49152e".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:582c51d7d767".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -395,6 +395,10 @@
       const chunks = v.tune.embedChunks?.trim() ?? "";
       if (known.embedChunks && chunks !== "" && chunks !== (base?.tune.embedChunks?.trim() ?? "")) {
         body.embed_max_chunks = num(chunks);
+      }
+      const early = v.tune.extractOnOutput;
+      if (known.extractOnOutput && early !== void 0 && early !== Boolean(base?.tune.extractOnOutput)) {
+        body.extract_on_output = early;
       }
     }
     return body;
@@ -1364,6 +1368,12 @@
       "\uC8FC\uC758: \uC7A5\uBA74 \uC694\uC57D \uB9CC\uB4E4\uAE30\uAC00 \uAEBC\uC838 \uC788\uC5B4\uC11C, \uCF1C\uAE30 \uC804\uAE4C\uC9C0\uB294 \uC544\uBB34\uAC83\uB3C4 \uBE7C\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
       "Note: Scene summaries are off, so nothing is left out until they are on."
     ],
+    // extracting a reply right after it (PHASE-67)
+    "tune.extract_on_output": ["\uB2F5\uBCC0 \uC9C1\uD6C4 \uCD94\uCD9C", "Extract right after a reply"],
+    "tune.extract_on_output_hint": [
+      "\uCF1C\uBA74 \uB2F5\uC7A5\uC774 \uB05D\uB098\uACE0 20\uCD08\uCBE4 \uB4A4\uC5D0 \uADF8 \uB2F5\uC7A5\uC744 \uBC14\uB85C \uCD94\uCD9C\uD569\uB2C8\uB2E4(\uAEBC\uC838 \uC788\uC73C\uBA74 \uB2E4\uC74C \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0BC \uB54C \uCD94\uCD9C\uD569\uB2C8\uB2E4). \uADF8\uB798\uC11C \uB2E4\uC74C \uBA54\uC2DC\uC9C0 \uB54C \uADF8 \uB2F5\uC7A5\uC758 \uAE30\uC5B5\uC774 \uC774\uBBF8 \uC900\uBE44\uB418\uC5B4 \uC788\uACE0, \uC138\uC158\uC758 \uB9C8\uC9C0\uB9C9 \uB2F5\uC7A5\uB3C4 \uAE30\uC5B5\uC5D0\uC11C \uBE60\uC9C0\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uB300\uC2E0 \uADF8 20\uCD08\uAC00 \uC9C0\uB09C \uB4A4\uC5D0 \uB9AC\uB864\uD558\uAC70\uB098 \uACE0\uCE58\uBA74, \uBC84\uB824\uC9C0\uB294 \uCD94\uCD9C \uD55C \uBC88 \uAC12(\uCD94\uCD9C \uBAA8\uB378 \uD638\uCD9C 1\uD68C)\uC744 \uB0C5\uB2C8\uB2E4. \uC774 \uC124\uC815\uC774 \uC5C6\uB294 \uC0AC\uC774\uB4DC\uCE74\uC5D0\uC11C\uB294 \uBC14\uAFC0 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.",
+      "On: a reply is extracted about 20 seconds after it finishes instead of when you answer it, so memory of it is ready for your next message and the last reply of a session is not lost. A reroll or edit after those 20 seconds pays for one extraction that is thrown away (one call to the extraction model). A sidecar without this setting cannot change it."
+    ],
     // pinning a character (PHASE-60 S8)
     "tune.pin_at": ["\uBA54\uC2DC\uC9C0\uC5D0\uC11C @\uC774\uB984\uC73C\uB85C \uC778\uBB3C \uACE0\uC815", "Pin a character with @name in a message"],
     "tune.pin_at_hint": [
@@ -2195,6 +2205,21 @@ ${GUARD_LINE}` : "";
   var OUTPUT_SYNC_MS = 2e4;
   var OUTPUT_SYNC_TIMEOUT_MS = 3e4;
   var OUTPUT_SYNC_WAIT_MS = 1e3;
+  var CONFIG_REFRESH_MS = 5 * 6e4;
+  var CONFIG_TIMEOUT_MS = 5e3;
+  function outputSwitchOf(config) {
+    const on = config?.extraction?.on_output;
+    return on === true;
+  }
+  var COVERAGE_PATH = /^\/v1\/conversations\/([^/?]+)\/coverage(?:\?.*)?$/;
+  function memoryMark(answer) {
+    const a = answer ?? {};
+    const parts = [a.extraction?.compiled, a.embeddings?.embedded, a.canon?.read, a.produced?.facts, a.produced?.summaries].map((v) => typeof v === "number" ? v : null);
+    return parts.every((v) => v === null) ? null : JSON.stringify(parts);
+  }
+  function sidecarKey(settings) {
+    return settings.sidecarUrl.replace(/\/+$/, "");
+  }
   function defaultSetTimer(run, ms) {
     const handle = setTimeout(run, ms);
     handle.unref?.();
@@ -2221,6 +2246,12 @@ ${GUARD_LINE}` : "";
     let outputTimer = null;
     let turnSeq = 0;
     let outputRunning = null;
+    let outputSwitch = null;
+    const setRefreshTimer = options.setRefreshTimer ?? defaultSetTimer;
+    let refreshing = false;
+    let dropSeq = 0;
+    const droppedAt = /* @__PURE__ */ new Map();
+    const coverageMarks = /* @__PURE__ */ new Map();
     function invalidate() {
       epoch++;
       cache.clear();
@@ -2622,6 +2653,7 @@ ${GUARD_LINE}` : "";
           outputRunning.done,
           Math.min(OUTPUT_SYNC_WAIT_MS, (deadline - host.now()) / 2)
         );
+        const dropsBefore = dropSeq;
         const t1 = host.now();
         const synced = await sync(settings, request, bodies, deadline);
         const syncMs = host.now() - t1;
@@ -2673,18 +2705,20 @@ ${GUARD_LINE}` : "";
           done = finishPrompt(got.packet, got.decision);
         }
         const { packet, memory, vectors, decision, coverage } = got;
-        remember(
-          key,
-          packet,
-          packet ? SUCCESS_TTL_MS : EMPTY_TTL_MS,
-          false,
-          memory,
-          vectors,
-          canonKey,
-          decision,
-          coverage,
-          chat.id
-        );
+        if ((droppedAt.get(chat.id) ?? 0) <= dropsBefore) {
+          remember(
+            key,
+            packet,
+            packet ? SUCCESS_TTL_MS : EMPTY_TTL_MS,
+            false,
+            memory,
+            vectors,
+            canonKey,
+            decision,
+            coverage,
+            chat.id
+          );
+        }
         host.debug("[NMOS] request done", {
           ms: Math.round(host.now() - started),
           manifestMs: Math.round(manifestMs),
@@ -2784,7 +2818,7 @@ ${GUARD_LINE}` : "";
       const live = () => turnSeq === seen;
       try {
         const settings = await host.settings();
-        if (!live() || !settings.enabled || !settings.sidecarUrl || settings.offChats?.includes(chatId) || !secureContext()) return;
+        if (!live() || !settings.enabled || !settings.sidecarUrl || settings.offChats?.includes(chatId) || !secureContext() || !outputOn(settings)) return;
         const chat = await host.currentChat();
         if (!live() || !chat?.id || chat.id !== chatId) return;
         const messages = Array.isArray(chat.message) ? chat.message : [];
@@ -2818,6 +2852,49 @@ ${GUARD_LINE}` : "";
     }
     function dropChatPackets(chatId) {
       for (const [k, entry] of cache) if (entry.chatId === chatId) cache.delete(k);
+      droppedAt.delete(chatId);
+      droppedAt.set(chatId, ++dropSeq);
+      while (droppedAt.size > CACHE_LIMIT) droppedAt.delete(droppedAt.keys().next().value);
+    }
+    function noteCoverage(conversationId, answer) {
+      const mark = memoryMark(answer);
+      if (mark === null || coverageMarks.get(conversationId) === mark) return;
+      coverageMarks.delete(conversationId);
+      coverageMarks.set(conversationId, mark);
+      while (coverageMarks.size > CACHE_LIMIT) coverageMarks.delete(coverageMarks.keys().next().value);
+      for (const [chatId, id] of conversations) if (id === conversationId) dropChatPackets(chatId);
+    }
+    function outputOn(settings) {
+      return outputSwitch?.url === sidecarKey(settings) && outputSwitch.on === true;
+    }
+    function noteConfig(settings, config) {
+      outputSwitch = { url: sidecarKey(settings), on: config === null ? null : outputSwitchOf(config) };
+    }
+    async function readConfig() {
+      let settings = null;
+      try {
+        settings = await host.settings();
+        if (!settings.enabled || !settings.sidecarUrl) return;
+        noteConfig(settings, await call(settings, "/v1/config", void 0, host.now() + CONFIG_TIMEOUT_MS, "GET"));
+      } catch (error) {
+        if (settings?.sidecarUrl) noteConfig(settings, null);
+        host.debug("[NMOS] sidecar settings not read:", error instanceof Error ? error.message : error);
+      }
+    }
+    function warmConfig() {
+      if (refreshing) return;
+      refreshing = true;
+      const next = () => {
+        try {
+          setRefreshTimer(() => {
+            void readConfig().finally(next);
+          }, CONFIG_REFRESH_MS);
+        } catch (error) {
+          refreshing = false;
+          host.debug("[NMOS] sidecar settings refresh not scheduled:", error instanceof Error ? error.message : error);
+        }
+      };
+      void readConfig().finally(next);
     }
     function onOutput(arg2) {
       const seen = ++turnSeq;
@@ -2825,7 +2902,7 @@ ${GUARD_LINE}` : "";
       void (async () => {
         const settings = await host.settings();
         if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id || settings.offChats?.includes(arg2.chat.id)) return;
-        if (turnSeq === seen) scheduleOutputSync(arg2.chat.id, seen);
+        if (turnSeq === seen && outputOn(settings)) scheduleOutputSync(arg2.chat.id, seen);
         for (const [k, entry] of cache) if (entry.chatId === arg2.chat.id && !entry.packet && !entry.failed) cache.delete(k);
         adviseOnce(settings.language);
         reachOnce(settings.language, settings.sidecarUrl);
@@ -2884,9 +2961,17 @@ ${GUARD_LINE}` : "";
     async function api(method, path, body, timeoutMs = 9e4) {
       const settings = await host.settings();
       const change = method !== "GET";
+      const config = path === "/v1/config" && (method === "GET" || method === "PUT");
+      const covered = method === "GET" ? COVERAGE_PATH.exec(path)?.[1] : void 0;
       if (change) invalidate();
       try {
-        return await call(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : void 0);
+        const out = await call(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : void 0);
+        if (config) noteConfig(settings, out);
+        if (covered) noteCoverage(covered, out);
+        return out;
+      } catch (error) {
+        if (config) noteConfig(settings, null);
+        throw error;
       } finally {
         if (change) invalidate();
       }
@@ -2903,7 +2988,7 @@ ${GUARD_LINE}` : "";
       }
       return res.bytes;
     }
-    return { beforeRequest, onOutput, status, api, file, warmPersonas };
+    return { beforeRequest, onOutput, status, api, file, warmPersonas, warmConfig };
   }
   var CARD_FIELDS = ["card:desc", "card:personality", "card:scenario"];
   function firstSaying(messages) {
@@ -6618,6 +6703,8 @@ html,body{margin:0;background:${PALETTE.bg}}
     const canonFacts = el("input", { type: "checkbox" });
     const pinAt = el("input", { type: "checkbox", disabled: true });
     let pinAtKnown = false;
+    const extractOnOutput = el("input", { type: "checkbox", disabled: true });
+    let extractOnOutputKnown = false;
     const embedChunks = el("input", {
       type: "number",
       min: MIN_EMBED_MAX_CHUNKS,
@@ -6658,6 +6745,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("p", { class: "sub", text: L("tune.summaries_hint") }),
       el("div", { class: "check" }, canonFacts, el("span", { text: L("tune.canon_facts") })),
       el("p", { class: "sub", text: L("tune.canon_facts_hint") }),
+      el("div", { class: "check" }, extractOnOutput, el("span", { text: L("tune.extract_on_output") })),
+      el("p", { class: "sub", text: L("tune.extract_on_output_hint") }),
       el("div", { class: "check" }, pinAt, el("span", { text: L("tune.pin_at") })),
       el("p", { class: "sub", text: L("tune.pin_at_hint") })
     ));
@@ -6998,7 +7087,8 @@ html,body{margin:0;background:${PALETTE.bg}}
           summaries: summaries.checked,
           canonFacts: canonFacts.checked,
           pinAt: pinAt.checked,
-          embedChunks: embedChunks.value
+          embedChunks: embedChunks.value,
+          extractOnOutput: extractOnOutput.checked
         },
         trim: { on: trimOn.checked, keep: trimKeep.value }
       };
@@ -7058,6 +7148,9 @@ html,body{margin:0;background:${PALETTE.bg}}
       embedChunksKnown = typeof cfg.embeddings.max_chunks === "number";
       embedChunks.value = embedChunksKnown ? String(cfg.embeddings.max_chunks) : "";
       embedChunks.disabled = !embedChunksKnown;
+      extractOnOutputKnown = typeof cfg.extraction.on_output === "boolean";
+      extractOnOutput.checked = cfg.extraction.on_output === true;
+      extractOnOutput.disabled = !extractOnOutputKnown;
       showEmbedChunks();
       fillParsers(cfg);
     }
@@ -7149,7 +7242,12 @@ html,body{margin:0;background:${PALETTE.bg}}
           deadline.value = String(args.deadline_ms);
           baseline = { ...baseline, conn: values().conn };
         }
-        const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown, embedChunks: embedChunksKnown }, baseline);
+        const body = configBody(d, v, {
+          pinAt: pinAtKnown,
+          rerank: rerankKnown,
+          embedChunks: embedChunksKnown,
+          extractOnOutput: extractOnOutputKnown
+        }, baseline);
         const tight = (d.includes("tune") || d.includes("conn")) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline) ? ` ${L("tune.embed_wait_tight", { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : "";
         if (!Object.keys(body).length) {
           fillServer(await deps.api("GET", "/v1/config", void 0, 5e3));
@@ -8663,6 +8761,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       hud
     );
     adapter.warmPersonas();
+    adapter.warmConfig();
     console.log("[NMOS] adapter loaded", { version: "0.6.0" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();

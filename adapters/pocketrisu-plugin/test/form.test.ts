@@ -279,3 +279,17 @@ describe('embedding chunks per message (ADR 0062, Tier 4 E8)', () => {
     for (const bad of ['0', '65', '2.5', '', 'x']) expect(embedChunkChars(bad)).toBeNull();
   });
 });
+
+describe('extract right after a reply (PHASE-67, extract_on_output)', () => {
+  const tune = (extractOnOutput?: boolean) => ({ ...structuredClone(base), tune: { ...base.tune, pinAt: false, extractOnOutput } });
+
+  it('sends extract_on_output only when the sidecar reports it and it changed', () => {
+    expect(configBody(['tune'], tune(true), { extractOnOutput: true }, tune(false))).toMatchObject({ extract_on_output: true });
+    expect(configBody(['tune'], tune(false), { extractOnOutput: true }, tune(true))).toMatchObject({ extract_on_output: false });
+    expect(configBody(['tune'], tune(true), { extractOnOutput: true }, tune(true))).not.toHaveProperty('extract_on_output');
+    expect(configBody(['tune'], tune(true), {}, tune(false))).not.toHaveProperty('extract_on_output');
+    expect(configBody(['tune'], tune(undefined), { extractOnOutput: true }, tune(false))).not.toHaveProperty('extract_on_output');
+    expect(configBody(['llm'], tune(true), { extractOnOutput: true }, tune(false))).not.toHaveProperty('extract_on_output');
+    expect(dirtySections(tune(false), tune(true))).toEqual(['tune']);
+  });
+});

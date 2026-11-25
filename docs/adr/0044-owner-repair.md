@@ -158,3 +158,15 @@ loss rate).
     the turn's other rows, while the turn reads the same (its hash on the head), so the folds and a later statement of
     the story treat it as any fact of that turn (Q4). When the turn's rows state it again (item 16's levels), it applies
     to that row and adds nothing; after an edit of the turn it matches nothing. Undo as every repair.
+
+## Amendment 4 (2026-11-25, PHASE-65 S2, audit D6, D7, F2)
+
+- `match_fact` tells story, canon and carried facts apart: `fact_target` records `canon` or `carried`, a `canon:` or
+  `carried:` turn hash counts, and a target stored before with only turn -1 stays canon's.
+- `_restates` (amendment 2) needs equal polarity at every level and, at level 2, a similar value (≥ 0.5) for a
+  predicate that takes many values.
+- An exclusion (`entity_exclude`) never hides the persona, including a name the story later joins to it.
+- Thread folding takes the rows the fact repairs left: a retracted opening opens nothing, a restored one opens.
+- The extraction's hint lists apply the repairs in force before the target turn (PHASE-65 S1).
+- A `secret_keep` or `secret_found_out` repair, made or taken back, queues the chat's stale summaries.
+- `name_split` accepts a derived persona name (ADR 0095 item 4).

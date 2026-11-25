@@ -134,3 +134,12 @@ NMO-35's alias confirmation. Tests: `tests/test_part_alias_resolution.py`, throu
 - Knowledge marks (`known_by`, `hidden_from`) are resolved for display in the Inspector only. Packet
   semantics stay as ADR 0007 until principal identity is authorized (Track B, B5).
 - Branches are separate conversations (D14), so entity identity never crosses chats.
+
+## Amendment (2026-11-25, PHASE-65, ADR 0095): an alias has a direction (`resolve-v6`)
+
+Item 3's ambiguity reads who named whom: a name that is the subject of every alias counted for it is one person, a
+target two names share stays ambiguous, and a name with aliases both ways keeps the undirected rule of the 2026-10-03
+amendment. A `?` description never makes a name ambiguous; an owner link on an ambiguous name drops only the aliases
+by which other names claimed it. Item 3's "transliteration or similarity alone never links names" no longer holds for
+the persona: its derived names (given and first names, spellings) are links the owner can split (ADR 0095 item 4). For
+item 2, a composite host persona name is several primary names. `RESOLVER_VERSION` is `resolve-v6`.

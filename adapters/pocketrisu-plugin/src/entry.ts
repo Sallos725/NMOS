@@ -26,6 +26,8 @@ import type { PromptMessage } from './types';
   // After the hooks: the host shows its "db" permission dialog (if it has not been answered) after the
   // replacer one, at load rather than during a request.
   adapter.warmPersonas();
+  // Whether the sidecar extracts a reply right after it (G6): read now and every few minutes, never on a request.
+  adapter.warmConfig();
   console.log('[NMOS] adapter loaded', { version: __NMOS_VERSION__ });
 })().catch((error) => console.error('[NMOS] adapter failed to load', error));
 

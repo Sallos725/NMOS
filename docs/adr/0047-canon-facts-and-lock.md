@@ -139,3 +139,22 @@ a block. The rendered text is also never "held" by the 80 % line test (item 5), 
   which branch is live. The host sends that branch's text whenever it holds the entry.
 - A lock on a canon fact read inside a block matches nothing and is listed as such (item 4).
 - A request recorded before this change that served such a fact replays without it and reports `reproduced: false`.
+
+## Amendment 3 — a block judged on the text read; persona and card texts under the chat's names (2026-11-25, PHASE-65 S4)
+
+- **Amendment 2's verdict** is taken on the text the model read: cleaned, with the name macros replaced
+  (`named(clean_text(...))`), cached per revision and names; when cleaning changes the block tags, on the raw text. One
+  `{{#if}}` no longer drops unconditional facts that quote `{{char}}` or `{{user}}` (B6).
+- **The read window.** A `persona` or `card:*` text is read under the chat's names (`wtag()`, `WTAG`), not `plain`, so
+  another chat's read under other names is never copied (ADR 0079) and a rename reads it again (B7). Lorebook entries
+  and the note keep `plain` when they hold no macro.
+- **Earlier reads carried forward** (owner, 2026-11-25): a persona or card text without name macros that a canon
+  generation read `plain` keeps that read. Per generation, its read under the chat's names serves if one exists, else
+  its `plain` one; a text a generation has not read is read under the names. The same rule is used by `IN_FORCE`
+  (via `GTAG`), `READ_ANY`, `ROWS` and the worker's window (`carried_tag`). A deploy queues no canon job for those
+  reads; a new chat of an existing bot and persona pays once for those texts, then later chats with the same names copy
+  it. A carried read is served even when the names it was read under differ from the chat's now; the owner can count
+  such reads read-only (`CARRIED_NAMES` in `tests/test_tier1_canon_carry_forward.py`).
+- Known edge (being fixed on the branch after `361130c`): within one generation a names-tagged read that exists only in
+  part outranks a complete `plain` one, so the unread parts' facts are missing until it completes. The carry-forward
+  rule never schedules such a read; only a build with B7 and without the carry-forward could have started one.

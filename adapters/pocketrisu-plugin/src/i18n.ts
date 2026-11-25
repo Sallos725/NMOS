@@ -692,6 +692,10 @@ const STRINGS = {
   'trimset.keep': ['항상 보내는 최근 턴 수', 'Recent turns always sent'],
   'trimset.needs_summaries': ['주의: 장면 요약 만들기가 꺼져 있어서, 켜기 전까지는 아무것도 빼지 않습니다.',
     'Note: Scene summaries are off, so nothing is left out until they are on.'],
+  // extracting a reply right after it (PHASE-67)
+  'tune.extract_on_output': ['답변 직후 추출', 'Extract right after a reply'],
+  'tune.extract_on_output_hint': ['켜면 답장이 끝나고 20초쯤 뒤에 그 답장을 바로 추출합니다(꺼져 있으면 다음 메시지를 보낼 때 추출합니다). 그래서 다음 메시지 때 그 답장의 기억이 이미 준비되어 있고, 세션의 마지막 답장도 기억에서 빠지지 않습니다. 대신 그 20초가 지난 뒤에 리롤하거나 고치면, 버려지는 추출 한 번 값(추출 모델 호출 1회)을 냅니다. 이 설정이 없는 사이드카에서는 바꿀 수 없습니다.',
+    'On: a reply is extracted about 20 seconds after it finishes instead of when you answer it, so memory of it is ready for your next message and the last reply of a session is not lost. A reroll or edit after those 20 seconds pays for one extraction that is thrown away (one call to the extraction model). A sidecar without this setting cannot change it.'],
   // pinning a character (PHASE-60 S8)
   'tune.pin_at': ['메시지에서 @이름으로 인물 고정', 'Pin a character with @name in a message'],
   'tune.pin_at_hint': ['켜면 "@세라 어디 있어?"처럼 메시지에 @이름으로 쓴 인물은, 장면에 이름이 나오지 않아도 그 답장의 기억에 들어갑니다. 단어 안의 @(이메일 주소, 아이디)나 이 채팅의 인물이 아닌 이름 앞의 @는 아무 일도 하지 않습니다.',
