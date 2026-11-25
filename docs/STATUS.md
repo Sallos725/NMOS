@@ -1,12 +1,8 @@
 # NMOS Status
 
-## Phase 65–67 on the Tier 1–4 branch — built & audited (Wave 5), not merged, not deployed — 2026-11-25
+## Phase 65–67 (Tier 1–4) on production & 6113 — 2026-11-25
 
-**Phases 65, 66, and 67 (the Tier 1–4 remediation run of the 52-gap audit, built over Phase 64 / PR #343) are complete
-and Wave 5 independently audited on `Sallos725/audit-conditional-address-terms`. Nothing is pushed, merged to `main`,
-deployed or measured on a live host; no paid model call was made.** Production still runs Phase 64's image
-(`exp-phase64-cdf2c9a`); the 1.0 gate's quiet weeks (earliest end 2026-12-09) are untouched until deployment. What the
-branch holds:
+**Deployed 2026-11-25 18:48 KST (6113 test) and 18:49 KST (6003 production) after owner approval ("6003 및 6113에 반영하고 PR 올려줘"), 6113 first.** Local image `exp-tier14-0fefb4c` built from `Sallos725/audit-conditional-address-terms` (`0fefb4c`), over Phase 64's `exp-phase64-cdf2c9a`. Additive nullable migrations `0041_extract_v21_ontology.sql`, `0042_branch_inherit.sql`, `0043_repair_anchor.sql`, and `0044_turn_persona.sql` applied cleanly with no backfill. Existing runtime settings were preserved unchanged (`NMOS_EXTRACT_COMPILER=extract-v20`, `NMOS_PACKET_POLICY=packet-v20` on prod, `NMOS_EXTRACT_TARGET_CHARS=36000`, `NMOS_EMBED_MAX_CHUNKS=52`, `clean-v3` default). After fresh `pg_dump -Fc` and `.env`/`docker-compose.yml` backups (`chmod 600`, `/home/grantkim725/nmos-eval/tier14-backup-20261125-1846/`) and isolated throwaway rehearsals on both dumps, each install was upgraded with its worker held: startup activated 4 `carry` generations (`canon`, `extract`, `reveal`, `summarize` at `revision=1`), left `embed` unchanged, queued **0 jobs of any kind**, and left all six row fingerprints identical before starting the worker. `/v1/health` reports `ok: true`, `plugin.expected: "789b1c4e237c"` (verified directly on 6113 and from the `pocketrisu` container on 6003, 1.8 ms, `rerank.configured: true`); the owner re-imports `adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js` (`789b1c4e237c`, 478 KB) in PocketRisu to pick up the new plugin build. The 1.0 gate's quiet weeks restart from this deploy (earliest end 2026-12-09). What the branch holds:
 - **PHASE-65 (Tier 1–2)**: Tier 1 bug fixes under every packet policy (extraction post-processing and worker story order,
   secret matching and carried secrets, `resolve-v6` identity with composite persona names, canon read under the chat's
   names with earlier `plain` reads carried forward, carry and regression, status questions and clock keys, plugin prompt
@@ -21,18 +17,18 @@ branch holds:
   snapshot guards and `onUnload` teardown), branch memory inheritance (migration `0042_branch_inherit.sql`,
   `branch_inherit` preview/confirm UI), message-anchored owner repairs and new kinds (`fact_add`, `told_retract`,
   `fact_hidden`, `attention_dismiss`; migration `0043_repair_anchor.sql`, ADR 0044 Amendment 5), per-turn persona
-  attribution (audit B4.3, migration `0044_turn_persona.sql`,
-  `PERSONA_TTL_MS` 5 s), and Wave 5 iPhone Safari / WebKit memory & speed hardening (manifest 12 M-char cap, streaming
-  retry digest, LRU card/canon caches, single prompt scan per request, HUD/adapter `dispose()` + panel close cleanup;
-  plugin build `789b1c4e237c`, 478 KB) plus the `/v1/conversations/{id}/messages` `disabled = 'allBefore'` SQL fix.
+  attribution (audit B4.3, migration `0044_turn_persona.sql`, `PERSONA_TTL_MS` 5 s), and Wave 5 iPhone Safari / WebKit
+  memory & speed hardening (manifest 12 M-char cap, streaming retry digest, LRU card/canon caches, single prompt scan
+  per request, HUD/adapter `dispose()` + panel close cleanup; plugin build `789b1c4e237c`, 478 KB) plus the
+  `/v1/conversations/{id}/messages` `disabled = 'allBefore'` SQL fix.
 - **Checks (all zero-call, 2026-11-25)**: full sidecar suite **3,737 passed / 0 failed** across all 223 test files (3
   parallel batches against PostgreSQL); plugin `typecheck`, `build`, and `vitest` **37 files / 554 passed / 0 failed**;
-  `test_docs_consistency.py` and `test_plugin_build.py` green; zero-cost deploy over production keys verified (0 jobs
-  queued); public-repo scrub verified (0 synthetic/local-name leaks in code/tests). Not yet met: zero-call replay of
-  `packet-v21` beside `packet-v20` (`AGENTS.md §7` item 6), real-host checks (`onUnload`, `output` payload, iPhone
-  Safari live check), and live extraction gate (not planned under the no-spend rule). A deploy re-imports the plugin and
-  applies additive nullable migrations `0041`, `0042`, `0043`, `0044` (no backfill). [Spec](phases/PHASE-65.md),
-  ADRs [0092](adr/0092-packet-v21.md)–[0095](adr/0095-resolve-v6.md).
+  `test_docs_consistency.py` and `test_plugin_build.py` green; zero-cost deploy over production keys verified on both
+  6113 and 6003 (0 jobs queued); public-repo scrub verified (0 synthetic/local-name leaks in code/tests). Not yet met:
+  zero-call replay of `packet-v21` beside `packet-v20` (`AGENTS.md §7` item 6), real-host checks (`onUnload`, `output`
+  payload, iPhone Safari live check), and live extraction gate (not planned under the no-spend rule). Rollback scripts:
+  `/home/grantkim725/nmos-eval/tier14-backup-20261125-1846/6113/rollback-6113.sh` and `rollback-prod.sh`.
+  [Spec](phases/PHASE-65.md), ADRs [0092](adr/0092-packet-v21.md)–[0095](adr/0095-resolve-v6.md).
 
 ## Phase 64 on production — 2026-11-25
 
