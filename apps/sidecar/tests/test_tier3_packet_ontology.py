@@ -68,7 +68,8 @@ def test_a_later_status_never_ungones_the_dead_nor_makes_the_living_gone():
     dead = v21row(10, "세라", "vital_status", None, "사망", **C)
     asleep = v21row(15, "세라", "has_status", None, "잠듦", **C)
     seen = v21row(16, "세라", "located_in", "광장", None, **C, object_type="place")
-    assert gone([dead, asleep, seen]) == ["세라"]  # only a later vital_status brings her back
+    assert gone([dead, asleep]) == ["세라"]  # a later status never brings her back
+    assert gone([dead, asleep, seen]) == []  # a narrated presence does, as for any gone character
     alive = v21row(10, "세라", "vital_status", None, "생존", **C)
     said_dead = v21row(15, "세라", "has_status", None, "사망", **C)
     assert gone([alive, said_dead]) == []
@@ -262,6 +263,8 @@ def test_a_v21_request_with_beliefs_and_forgettings_replays_to_the_same_ledger(m
         text = out["packet"]["text"]
     assert "<Belief " in text and "하나 believes: 도윤이 범인이다" in text
     assert "<Forgot " in text and "북쪽 다리의 암호" in text
+    private = text.split("<Private>", 1)[1].split("</Private>", 1)[0]
+    assert "<Forgot " in private  # what only 하나 knew is never said in the open
     with psycopg.connect(migrated, row_factory=dict_row) as conn:
         again = audit.replay(conn, UUID(out["trace_id"]), RecallOptions(), policy=None)
         v20 = audit.replay(conn, UUID(out["trace_id"]), RecallOptions(), policy="packet-v20")
@@ -274,7 +277,8 @@ def test_forgetting_a_fact_only_some_knew_stays_as_private_as_that_fact():
     w = [{"id": 5, "turn": 3, "predicate": "knows", "text": "하나 knows: 북쪽 다리의 암호", "how": "fact"}]
     view = view_of(forgotten=[forgetting(9, "하나", w)], assertions=[known])
     _, lines = forgets(view, ["하나", "도윤"])
-    assert lines[0].private and 'known_by="하나"' in lines[0].xml  # 도윤 never knew it: not said before him
+    assert lines[0].private  # 도윤 never knew it: not said before him
+    assert 'known_by="하나"' not in lines[0].xml  # and the one who forgot it is not listed as knowing it
     r = res([row(98, n, "event", None, "x", **C) for n in ("하나", "도윤")])
     g = Gathered()
     g.cast = scene_of(r, "하나", "도윤")
@@ -293,3 +297,41 @@ def test_a_conditioned_fact_with_a_slot_private_here_stays_out_of_cast():
     plain = v21row(3, "하나", "feels_toward", "{{user}}", "신뢰", **CC)  # no condition: as packet-v20 shows it
     groups = dict(cast_groups(view_of([plain]), cast, r, "", V21, shown_v21=Shown())[0])
     assert [line.ref["assertion"] for line in groups["하나"]] == [3]
+
+
+def test_the_situational_cap_holds_whoever_selected_the_slots():
+    sits = [cond(3 + i, f"사이 {i}", "situational", f"상황 {i}") for i in range(5)]
+    got = with_slot_siblings(sits, sits, set(), res(sits))
+    assert len(got) == 3
+
+
+def test_a_group_with_no_condition_is_no_bundle():
+    a = v21row(1, "하나", "identity", None, "기사", **C)
+    b = v21row(2, "하나", "identity", None, "왕녀", **C)
+    lines = bundled([fact_entry(a), fact_entry(b)], [a, b], res([a, b]))
+    assert not any(SLOT_BUNDLE in line.marks for line in lines)
+
+
+def test_a_vital_gone_character_returns_by_a_narrated_presence_not_by_a_status():
+    missing = v21row(10, "세라", "vital_status", None, "실종", **C)
+    back = v21row(14, "세라", "located_in", "광장", None, **C, object_type="place")
+    asleep = v21row(14, "세라", "has_status", None, "잠듦", **C)
+    assert gone([missing, back]) == []
+    assert gone([missing, asleep]) == ["세라"]
+
+
+def test_a_belief_kept_from_someone_in_the_scene_is_private_and_strict_withholds_it(migrated):
+    from test_sidecar_integration import recall
+    from test_tier3_read_ontology import Chat, a
+    script = {"t0": [a("하나", "believes", None, "도윤이 범인이다", knowledge="limited", known_by=["하나"],
+                       hidden_from=["도윤"]), a("도윤", "located_in", "광장", None, ot="place")]}
+    v21 = Chat(migrated, script, name="w4-belief-secret")
+    with v21.client() as c:
+        v21.run(c)
+        text = recall(c, v21.chat, "하나랑 도윤은 뭐 해?", budget=1500)["packet"]["text"]
+        assert "도윤이 범인이다" in text.split("<Private>", 1)[1].split("</Private>", 1)[0]
+        outside = text.split("<Private>", 1)[0] + text.split("</Private>", 1)[1]
+        assert "도윤이 범인이다" not in outside
+        assert c.put(f"/v1/conversations/{v21.cid}/memory-mode", json={"strict": True}).status_code == 200
+        strict = recall(c, v21.chat, "하나랑 도윤은 뭐 해?", budget=1500)["packet"]["text"]
+    assert "도윤이 범인이다" not in strict and "<Secret " in strict

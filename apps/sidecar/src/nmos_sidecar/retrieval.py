@@ -1308,8 +1308,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 g.facts = bundled(g.facts, facts, r)
                 g.named |= named_cousins(facts, query, r, aliases)
                 # what a character believes and what they no longer remember, after the facts and claims (PHASE-66)
-                g.facts += belief_lines(g, view, r, query, previous_ai, in_context, options, aliases)
-                forgot = forgot_lines(g, view, r, options)
+                g.facts += belief_lines(g, view, r, query, previous_ai, in_context, options, aliases, rest)
+                forgot = forgot_lines(g, view, r, options, in_context, rest)
                 g.lead += [line for line in forgot if line.marks.get("class") == "lead"]
                 g.facts += [line for line in forgot if line.marks.get("class") != "lead"]
             # packet-v20 (PHASE-60 S8): who told whom, after the ordinary facts and claims; chosen after them, so it
@@ -1851,12 +1851,19 @@ def with_slot_siblings(selected: list[dict[str, Any]], rows: list[dict[str, Any]
     its private "lover" would mislead), none whose message the prompt holds; nothing else changes."""
     out: list[dict[str, Any]] = []
     seen: set[int] = set()
+    situational: dict[Any, int] = {}  # per (subject, predicate, object), whoever selected it
     live = [x for x in rows if x.get("host_logical_id") not in in_context or x.get("held_off")]
     for f in selected:
         for x in slot_siblings(f, live) if id(f) not in seen else ():
-            if id(x) not in seen:
-                seen.add(id(x))
-                out.append(x)
+            if id(x) in seen:
+                continue
+            k = slot_key(x)
+            if k is not None and condition_slot(x)[0] == "situational":
+                if situational.get(k, 0) >= SITUATIONAL_ADDRESS_MAX:
+                    continue
+                situational[k] = situational.get(k, 0) + 1
+            seen.add(id(x))
+            out.append(x)
     return out
 
 
@@ -1867,11 +1874,14 @@ def bundled(lines: list[Line], rows: list[dict[str, Any]], r: Any) -> list[Line]
     keys = [slot_key(by_id[line.ref.get("assertion")]) if line.ref.get("assertion") in by_id else None
             for line in lines]
     counts: dict[Any, int] = {}
-    for k in keys:
+    conditioned: set[Any] = set()  # a group none of whose lines holds in a condition is no bundle
+    for line, k in zip(lines, keys):
         if k is not None:
             counts[k] = counts.get(k, 0) + 1
+            if condition_slot(by_id[line.ref.get("assertion")]) != ("default",):
+                conditioned.add(k)
     return [dataclasses.replace(line, marks={**line.marks, SLOT_BUNDLE: f"slot:{k}"})
-            if k is not None and counts[k] > 1 else line for line, k in zip(lines, keys)]
+            if k in conditioned and counts[k] > 1 else line for line, k in zip(lines, keys)]
 
 
 COUSINS = frozenset({"vital_status", "lives_in", "holds_rank", "cover_identity", "disguised_as", "contained_in"})
@@ -1900,7 +1910,8 @@ def belief_line(b: dict[str, Any]) -> str:
 
 
 def belief_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_ai: str, in_context: set[str],
-                 options: RecallOptions, aliases: dict[str, frozenset[str]] | None = None) -> list[Line]:
+                 options: RecallOptions, aliases: dict[str, frozenset[str]] | None = None,
+                 rest: frozenset[tuple[str, str]] = frozenset()) -> list[Line]:
     """packet-v21: at most BELIEFS_MAX held beliefs (`view["beliefs"]`, `status == "held"`; an ended one never) of a
     character in the scene or named, ranked as facts are, then the newest. Each is a <Belief> line: what that
     character believes, never narration. Private as a fact of that character's mind is (a strict chat keeps one kept
@@ -1914,6 +1925,7 @@ def belief_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous
             and b.get("subject") and b.get("host_logical_id") not in in_context]
     held = [b for b in held if scene.key(r, b["subject"]) in keys
             or any(n in norm(query) for n in _side_names(b, "subject", r, aliases))]
+    held = _rested(held, "belief", rest, g, v21=True)  # supportive: a tired one rests as a fact does
     if not held:
         return []
     ranked = relevant_facts(held, query, previous_ai, in_context, len(held), persona=r.persona_names, present=present,
@@ -1936,7 +1948,8 @@ def belief_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous
     return _moded(lines, picked, g, r, options)
 
 
-def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptions) -> list[Line]:
+def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptions,
+                 in_context: Collection[str] = (), rest: frozenset[tuple[str, str]] = frozenset()) -> list[Line]:
     """packet-v21: what a character in the scene no longer remembers (`view["forgotten"]`, each entry's `withdrew`),
     at most FORGOT_MAX lines, the newest first, as <Forgot> lines. Each takes the budget class of the fact it withdrew
     (`marks["class"]`: lead for how two stand, facts otherwise). A withdrawn text that repeats a secret kept from
@@ -1947,11 +1960,12 @@ def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptio
     out: list[Line] = []
     rows: list[dict[str, Any]] = []
     stored = {x["id"]: x for x in (view.get("assertions") or view["facts"])}
-    for e in view["forgotten"]:
+    for e in _rested(list(view["forgotten"]), "forgot", rest, g, v21=True):
         if len(out) >= FORGOT_MAX:
             break
         who = e.get("who") or e.get("subject")
-        if not who or e.get("carried") or scene.key(r, who) not in g.cast:
+        if (not who or e.get("carried") or scene.key(r, who) not in g.cast
+                or (e.get("host_logical_id") in in_context and not e.get("held_off"))):  # D3: the prompt says it
             continue
         for w in e.get("withdrew") or ():
             if len(out) >= FORGOT_MAX:
@@ -1970,6 +1984,10 @@ def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptio
             src = stored.get(w.get("id")) or {}
             marked = ({**e, **{k: src.get(k) for k in ("knowledge", "known_by", "hidden_from", "knowledge_scope")}}
                       if src.get("knowledge") == "limited" else e)
+            if marked.get("known_by"):  # whoever forgot it no longer knows it: never listed as knowing
+                gone_from = {scene.key(r, n) for n in (who, *(src.get("forgotten_by") or ()))}
+                marked = {**marked, "known_by": [n for n in marked["known_by"]
+                                                 if scene.key(r, n) not in gone_from] or None}
             xml = (f"    <Forgot by={quoteattr(who)} turn=\"{turn}\"{_knowledge_attrs(marked)}>"
                    f"{xml_escape(who + ' does not remember: ' + text)}</Forgot>")
             ref = {**assertion_ref(e), "withdrew": w.get("id")}
@@ -2198,6 +2216,8 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
             return False
         if row.get("carried"):  # an earlier chat's (ADR 0085): not where a character stands in this one's scene
             return False
+        if v21 and public_except(row):
+            return not options.narrator or narrator_knows_v21(row, options.narrator, r)
         return not options.narrator or scene.narrator_knows(row, options.narrator, r)
 
     mine: dict[str, list[dict[str, Any]]] = {}
@@ -2318,8 +2338,9 @@ def gone_rows(view: dict[str, Any], r: Any, now: int | None, *, v21: bool = Fals
     mourner's feeling toward them, a dream, a rumour or a flashback does not) brings them back, at any turn after the
     gone fact's up to the one before `now`: a resurrection told more than CAST_TURNS turns ago still holds. A current
     `vital_status` (extract-v21) is the first-class source: a character it says lives is never gone by a `has_status`
-    or a place, one it says is dead is gone by it whatever a later `has_status` says (asleep, disguised), and only a
-    later `vital_status` brings them back (it replaces the dead one in the view)."""
+    or a place, and one it says is gone stays gone whatever a later `has_status` says (asleep, disguised); a later
+    `vital_status` (it replaces the gone one in the view) or a narrated presence that is not a status brings them
+    back, as for any gone character."""
     if r is None:
         return []
     persona = scene.key(r, scene.PERSONA)
@@ -2357,9 +2378,9 @@ def gone_rows(view: dict[str, Any], r: Any, now: int | None, *, v21: bool = Fals
             if id(x) in gone_ids or (x.get("id"), x["turn"]) in gone_keys or x["turn"] > until:
                 continue
             k = scene.key(r, x["subject"])
-            if (k in newest and newest[k]["predicate"] != "vital_status" and x["turn"] > newest[k]["turn"]
-                    and not says_gone(x)):
-                back.add(k)
+            if (k in newest and x["turn"] > newest[k]["turn"] and not says_gone(x)
+                    and not (newest[k]["predicate"] == "vital_status" and x["predicate"] == "has_status")):
+                back.add(k)  # a later has_status (asleep, disguised) never brings back one vital_status calls gone
         kept = [f for k, f in newest.items() if k not in back]
         kept.sort(key=lambda f: (f["turn"], f["position"]), reverse=True)
         return kept[:GONE_MAX]
