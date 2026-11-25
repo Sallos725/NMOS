@@ -42,6 +42,7 @@ FACT_KEYS: tuple[str, ...] = (
     "epistemic", "confidence", "knowledge", "known_by", "hidden_from",
     "polarity", "modality", "source", "asserted_by", "salience", "participants",
     "outcome", "because", "feeling", "when_happened", "address_condition", "turn", "position", "compiler",
+    "condition", "guise", "item_kind", "knowledge_scope",  # extract-v21's (PHASE-66): only on rows that have them
 )
 THREAD_KEYS: tuple[str, ...] = (
     "kind", "by", "to", "text", "status", "horizon", "turn", "position",

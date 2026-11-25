@@ -23,7 +23,7 @@ Pure: no database here, except `repairs_of`.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
 from typing import Any
@@ -32,7 +32,8 @@ from uuid import UUID
 import psycopg
 
 from .entities import Resolution, norm
-from .predicates import OUTCOMES, REGISTRY, address_slot
+from .predicates import (CONDITIONED_PREDICATES, EXTENSIONS, OUTCOMES, REGISTRY, V21_ONTOLOGY, V21_PREDICATES, Predicate,
+                         address_slot, is_address_all)
 from .secrets import secret_text
 from .statewatch import target as flag_target
 from .threads import MATCH_MIN, similarity
@@ -85,6 +86,82 @@ def repairs_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime 
 IN_FORCE = {False: "r.removed_at IS NULL",
             True: "r.created_at <= %(at)s AND (r.removed_at IS NULL OR r.removed_at > %(at)s)"}
 REPAIR_COLUMNS = ("id", "kind", "target", "value", "note", "created_at")
+
+
+# The predicates a read folds (PHASE-66): REGISTRY's, and extract-v21's own for a row of extract-v21. One dict, built
+# once: `predicates.registry_for` merges on every call. `believes` and `forgot` are kinds of their own (`EPISTEMIC`), never
+# facts about the world; `told` stays out (PHASE-60 S8: its own list).
+READ_REGISTRY: dict[str, Predicate] = {**REGISTRY, **{p.name: p for p in V21_ONTOLOGY}}
+EPISTEMIC = frozenset({"believes", "forgot"})
+_V21_COMPILERS = frozenset(c for c, ext in EXTENSIONS.items() if V21_PREDICATES <= ext.keys())
+
+
+def is_v21(row: Mapping[str, Any]) -> bool:
+    """Whether a row was written by extract-v21 (PHASE-66): its compiler, or its `knowledge_scope`, which extract-v21
+    sets on every row and no earlier generation has. The mark survives the rows that are not served: a carried row
+    (`carry.FACT_KEYS`), a restored one (`restore_target`) and an owner's correction (a copy of the row)."""
+    return row.get("knowledge_scope") is not None or row.get("compiler") in _V21_COMPILERS
+
+
+def read_predicate(row: Mapping[str, Any]) -> bool:
+    """Whether a read folds this row as a fact: a REGISTRY predicate, or one of extract-v21's own (but `believes` and
+    `forgot`, `EPISTEMIC`) on an extract-v21 row; a stored row of an earlier generation can never be one."""
+    p = row.get("predicate")
+    return p in REGISTRY or (p in V21_PREDICATES and p not in EPISTEMIC and is_v21(row))
+
+
+def epistemic(row: Mapping[str, Any]) -> bool:
+    """An extract-v21 `believes` or `forgot` row (PHASE-66): a kind of its own in the view, never a fact."""
+    return row.get("predicate") in EPISTEMIC and is_v21(row)
+
+
+def cardinality(row: Mapping[str, Any]) -> str | None:
+    """How a row's facts accumulate: its predicate's cardinality (READ_REGISTRY), but an extract-v21 `role_toward`
+    accumulates (PHASE-66: several roles toward one counterpart, each ended by its own denial). None for a predicate
+    no read folds."""
+    if row.get("predicate") == "role_toward" and is_v21(row):
+        return "multi"
+    pred = READ_REGISTRY.get(str(row.get("predicate") or ""))
+    return pred.cardinality if pred is not None else None
+
+
+def fungible(row: Mapping[str, Any]) -> bool:
+    """An extract-v21 `possesses` of an item one of many alike (`item_kind = fungible`): each holder's own, never
+    exclusive (PHASE-66); `unique` or none keeps one holder per item (ADR 0011)."""
+    return row.get("predicate") == "possesses" and row.get("item_kind") == "fungible"
+
+
+def slotted(predicate: str | None) -> bool:
+    """Whether a predicate's facts hold in condition slots: `addresses` by its `address_condition` (PHASE-64, ADR
+    0091), extract-v21's conditioned predicates by their `condition` (PHASE-66)."""
+    return predicate == "addresses" or predicate in CONDITIONED_PREDICATES
+
+
+def slot(row: Mapping[str, Any]) -> tuple[str, ...]:
+    """A row's condition slot: an address's (`predicates.address_slot`), a conditioned predicate's read from its
+    `condition` the same way (its scope and `when`; `audience` and `as_guise` ride along), `("default",)` otherwise:
+    for a row without a condition, of every earlier generation, every slot is the default one."""
+    if row.get("predicate") == "addresses":
+        return address_slot(row)
+    cond = row.get("condition")
+    if row.get("predicate") in CONDITIONED_PREDICATES and isinstance(cond, Mapping):
+        return address_slot({"address_condition": cond})
+    return ("default",)
+
+
+def unifies(row: Mapping[str, Any]) -> bool:
+    """Whether a row explicitly unifies an earlier split of its slots (`scope="all"`): an address's `address_condition`
+    or a conditioned predicate's `condition`."""
+    if row.get("predicate") == "addresses":
+        return is_address_all(row)
+    cond = row.get("condition")
+    return row.get("predicate") in CONDITIONED_PREDICATES and isinstance(cond, Mapping) and cond.get("scope") == "all"
+
+
+def conditional(row: Mapping[str, Any]) -> bool:
+    """Whether a row states a condition at all (an `address_condition`, or a conditioned predicate's `condition`)."""
+    return bool(row.get("address_condition")) or (row.get("predicate") in CONDITIONED_PREDICATES
+                                                   and bool(row.get("condition")))
 
 
 def _key(r: Resolution | None, name: str | None) -> str:
@@ -290,6 +367,8 @@ def fact_target(f: dict[str, Any]) -> dict[str, Any]:
            **({"canon": f["canon"]} if f.get("canon") else {}), **({"carried": f["carried"]} if f.get("carried") else {})}
     if f.get("address_condition"):
         out["address_condition"] = f["address_condition"]
+    if f.get("condition"):  # PHASE-66: a conditional fact names its slot as an address does
+        out["condition"] = f["condition"]
     return out
 
 
@@ -312,7 +391,7 @@ def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution
     subject = _ekey(r, target.get("subject_type"), target.get("subject"))
     obj = _ekey(r, target.get("object_type"), target.get("object"))
     before = _before_story(target)
-    target_slot = address_slot(target) if target.get("predicate") == "addresses" else None
+    target_slot = slot(target) if slotted(target.get("predicate")) else None
 
     def where(a: dict[str, Any]) -> str | None:
         return "canon" if a.get("canon") else "carried" if a.get("carried") else None
@@ -322,7 +401,7 @@ def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution
                 and (a.get("source") or "narration") == (target.get("source") or "narration")
                 and _ekey(r, a.get("subject_type"), a["subject"]) == subject
                 and _ekey(r, a.get("object_type"), a.get("object")) == obj
-                and (target_slot is None or address_slot(a) == target_slot))
+                and (target_slot is None or slot(a) == target_slot))
     return (_closest(target, [a for a in rows if _same_turn(target, a) and same(a)], secret_text)
             or (_by_quote(target, rows, same, lambda a: a.get("evidence")) if quote else None))
 
@@ -352,10 +431,9 @@ def _restates(level: int, a: dict[str, Any], b: dict[str, Any], r: Resolution | 
         return quoted(a.get("evidence"), b.get("evidence"))
     if _ekey(r, a.get("object_type"), a.get("object")) != _ekey(r, b.get("object_type"), b.get("object")):
         return False
-    if a["predicate"] == "addresses" and address_slot(a) != address_slot(b):
+    if slotted(a["predicate"]) and slot(a) != slot(b):
         return False
-    pred = REGISTRY.get(a["predicate"])
-    if pred is not None and pred.cardinality == "single":
+    if cardinality(a) == "single":
         return True
     same = norm(a.get("value")) == norm(b.get("value"))
     return same or (level == 2 and similarity(a.get("value"), b.get("value")) >= RESTATE_VALUE_MIN)
@@ -438,9 +516,8 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
             continue
         own = rep["target"].get("turn", a.get("turn"))  # the fact's turn when the repair was made
         at = value.get("turn", own)
-        pred = REGISTRY.get(a["predicate"])
         # at the fact's own turn: in place, at the turn the (maybe new generation's) fact is stated now
-        in_place = at == own or (pred is not None and pred.cardinality == "multi")
+        in_place = at == own or cardinality(a) == "multi"
         new = {k: v for k, v in a.items() if k not in ANNOTATIONS}
         new.update({"id": _owner_id(rep), "host_logical_id": None, "object": value.get("object", a.get("object")),
                     "value": value.get("value", a.get("value")), "source": "narration", "asserted_by": None,
@@ -479,6 +556,8 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
     return out, retracted
 
 
+ONTOLOGY_MARKS = ("condition", "guise", "item_kind", "knowledge_scope")  # extract-v21's (PHASE-66), = facts.ONTOLOGY_MARKS
+
 # A restored fact's columns, as the fact read serves a row (`facts.ACTIVE_ASSERTIONS`) and a restore's target stores them.
 RESTORED = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic", "confidence",
             "evidence", "knowledge", "known_by", "hidden_from", "polarity", "modality", "source", "asserted_by",
@@ -493,7 +572,8 @@ def restore_target(f: dict[str, Any]) -> dict[str, Any]:
             "fact": ({k: f.get(k) for k in RESTORED}
                      | ({"feeling": f["feeling"]} if f.get("feeling") else {})
                      | ({"when_happened": f["when_happened"]} if f.get("when_happened") else {})
-                     | ({"address_condition": f["address_condition"]} if f.get("address_condition") else {}))}
+                     | ({"address_condition": f["address_condition"]} if f.get("address_condition") else {})
+                     | {k: f[k] for k in ONTOLOGY_MARKS if f.get(k)})}
 
 
 def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied: dict[str, str | None],
@@ -518,6 +598,9 @@ def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied:
         new["when_happened"] = fact["when_happened"]
     if fact.get("address_condition"):  # PHASE-64: a restored conditional address keeps its condition
         new["address_condition"] = fact["address_condition"]
+    for k in ONTOLOGY_MARKS:  # PHASE-66: a restored extract-v21 fact keeps its marks (and so reads as v21's)
+        if fact.get(k):
+            new[k] = fact[k]
     new.update({"id": _owner_id(rep), "turn": t["turn"], "turn_hash": t["turn_hash"], "position": at[0],
                 "host_logical_id": None, "generation": None, "compiler": None, "listed_hash": None,
                 "source": "narration", "owner": True, "repair": str(rep["id"])})
@@ -730,6 +813,9 @@ def pins(repairs: list[dict[str, Any]], r: Resolution | None) -> list[dict[str, 
 def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None, new_object: str | None,
                new_value: str | None, turn: int | None, version_key: Callable[..., tuple] | None = None) -> tuple[dict, dict]:
     f = next((f for f in view["facts"] if str(f["id"]) == item), None)
+    if f is None:  # PHASE-66: a belief or a forgetting the view lists apart is repaired as a fact is
+        f = next((b for b in (*(view.get("beliefs") or ()), *(view.get("forgotten") or ())) if str(b["id"]) == item),
+                 None)
     if f is None and kind in ("fact_retract", "fact_lock", "fact_correct"):
         # a canon fact the story superseded: the owner keeps the story's (retract) or canon's (lock) (PHASE-14 Q4), or
         # canon's as corrected (PHASE-57 B2: the correction is locked with it)
@@ -747,7 +833,7 @@ def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None
         raise RepairError("the fact cannot be told apart from another one of its turn")
     if kind == "fact_retract":
         return target, {}
-    pred = REGISTRY.get(f["predicate"])
+    pred = READ_REGISTRY.get(f["predicate"])
     if new_object and new_object.strip() and pred is not None and pred.object_types is None:
         raise RepairError(f"a {f['predicate']} fact has no object: correct its value")
     if new_value and new_value.strip() and pred is not None and not pred.needs_value and not f.get("value"):
@@ -772,6 +858,8 @@ def _plan_lock(f: dict[str, Any], view: dict[str, Any], r: Resolution | None) ->
     """A lock (PHASE-14 Q7): a canon fact or the owner's correction, as a fact (narrated, actual), not locked yet."""
     if not (f.get("canon") or f.get("owner")):
         raise RepairError("only a canon fact or the owner's correction can be locked")
+    if epistemic(f):  # PHASE-66: a belief is no statement about the world a later one could replace
+        raise RepairError("a belief or a forgetting is not locked: correct or retract it")
     if f.get("locked"):
         raise RepairError("the fact is locked already")
     if (f.get("source") or "narration") != "narration" or f.get("modality", "actual") != "actual":
