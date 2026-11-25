@@ -657,6 +657,12 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
           conversationId: conversations.get(chat.id) ?? null });
         return prompt;
       }
+      // A main request of this chat (a send, a reroll, a Continue) syncs it itself: the background sync after the last
+      // reply is not needed, and one already running stops before its next step (G6). Only once its turn is found: an
+      // auxiliary call in `model` mode (a script's own model call) leaves it.
+      turnSeq++;
+      cancelOutputSync();
+
       // `[NMOS.memory]` that a chat message itself holds (it mentions the placeholder) is not the preset's: placement
       // looks past it. Found again in a trimmed prompt, whose indices (and a copied message) differ.
       const chatMarkers = historyMarkerIndices(prompt, messages);
@@ -863,13 +869,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
   /** Every path out of `beforeRequest` strips any remaining `[NMOS.memory]` literal (ADR 0083). */
   async function beforeRequest(prompt: PromptMessage[], mode: unknown): Promise<PromptMessage[]> {
-    // A main request (a send, a reroll, a Continue) syncs the chat itself: the background sync after the last reply is
-    // not needed, and one already running stops before its next step (G6). An auxiliary request (Auto Suggest runs
-    // after every reply) leaves it.
-    if (mode === 'model') {
-      turnSeq++;
-      cancelOutputSync();
-    }
+    // The background sync after the last reply (G6) is cancelled in `prepare`, once the request's turn is found.
     try {
       return stripMarkers(await prepare(prompt, mode));
     } catch {

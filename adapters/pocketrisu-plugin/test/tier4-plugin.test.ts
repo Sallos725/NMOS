@@ -148,6 +148,22 @@ describe('background sync after a reply (G6)', () => {
     expect(h.calls.length).toBe(before);
   });
 
+  it("an auxiliary call in `model` mode (a script's own model call) leaves it; the chat's own request clears it", async () => {
+    const h = harness();
+    const adapter = await h.start();
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    await adapter.beforeRequest([{ role: 'user', content: 'Summarize the weather in one line.' }], 'model');
+    expect(h.pending()).toHaveLength(1);  // no turn of the chat in it: the sync still waits (review finding 6)
+    await h.fire();
+    expect(h.paths().filter((p) => p === '/v1/sync/reconcile')).toHaveLength(1);
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    h.setChat(structuredClone(baseChat));
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(h.pending()).toHaveLength(0);
+  });
+
   it('a sync a main request overtook stops before its next step', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
