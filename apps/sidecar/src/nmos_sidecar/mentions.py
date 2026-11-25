@@ -5,7 +5,7 @@ one trailing Korean particle from `keywords._SOURCE_PARTICLES`) resolves to that
 An `@` inside a word (such as an email address or handle) or before an unknown name does nothing.
 
 Tier 1 (B5): a name may also carry a vocative (`@하람아`, `@세라야`), an honorific written onto it (`@세라님`,
-`@현우씨`), or an honorific and then one particle (`@세라님께서`, `@세라님은`); a name runs to three
+`@기현씨`), or an honorific and then one particle (`@세라님께서`, `@세라님은`); a name runs to three
 words (`@세라 델 모렌`), and an apostrophe inside a word belongs to it (`@O'Connor`). `aliases` (optional, as
 `variants.aliases` gives them) widens each name by the other names its character goes by in this request.
 """
@@ -20,7 +20,7 @@ from .keywords import _SOURCE_PARTICLES
 # Longest particle first so compound particles (e.g. "에서는", "에게는") beat shorter suffixes. A vocative (아, 야, 여) and
 # the honorific subject particles (께서, 께) end a name the way a particle does.
 _PARTICLES: tuple[str, ...] = tuple(sorted({*_SOURCE_PARTICLES, "께서", "께", "아", "야", "여"}, key=len, reverse=True))
-# Honorifics written onto a name; one may come before the particle (세라님께서, 현우씨는).
+# Honorifics written onto a name; one may come before the particle (세라님께서, 기현씨는).
 _HONORIFICS: tuple[str, ...] = ("님", "씨", "군", "양")
 MAX_WORDS = 3  # a name of up to three words (세라 델 모렌)
 

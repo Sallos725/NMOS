@@ -37,12 +37,12 @@ Since `resolve-v6` (Tier 1 identity fixes; owner decisions B1, B2, B4):
   character ("?…") never counts toward a name's ambiguity, though two names revealed as one description still make
   that description ambiguous. An owner's link on an ambiguous name drops only the aliases by which other names
   claimed it, never its own aliases, parts or descriptions.
-- The host's persona name may be composite ("Daniel Park/ 박현우", "A (B)"): every piece of it is a persona name
+- The host's persona name may be composite ("Ronan Voss/ 윤기현", "A (B)"): every piece of it is a persona name
   (`persona_parts`), the only names `node()` folds into `{{user}}`. The names the persona is called by beyond them
-  (its given name 현우, its Western first name Daniel, a Hangul spelling 대니얼 or 다니엘, a full name ending with a
+  (its given name 기현, its Western first name Ronan, a Hangul spelling 로넌 or 로난, a full name ending with a
   persona name as its own word, 아오키 타쿠미 for 타쿠미, not after a title such as 경비병) join the persona in
   `Resolution` as ordinary links: an owner's split separates any of them, and one another character's full name
-  holds (강현우 → 현우) is not the persona's. This is the one place a spelling links names, and only to the persona.
+  holds (강기현 → 기현) is not the persona's. This is the one place a spelling links names, and only to the persona.
 - A lorebook entry whose keys the story mentions under several entities joins them when their names are one
   person's names (a full name and its part or given name, a romanized spelling: 윤하람, 하람, Haram) and no other
   entry names one of them with another known entity; an entry naming unrelated characters (a pair or a group) still joins nothing, and an owner's
@@ -91,8 +91,8 @@ def norm(name: str | None) -> str:
 
 @lru_cache(maxsize=256)
 def _primary(persona: frozenset[str]) -> frozenset[str]:
-    """The persona's names as the host gives them: each name whole, and each piece of a composite one ("daniel park/
-    박현우" → itself, "daniel park", "박현우"; "a (b)" → itself, "a", "b"). Normalized."""
+    """The persona's names as the host gives them: each name whole, and each piece of a composite one ("ronan voss/
+    윤기현" → itself, "ronan voss", "윤기현"; "a (b)" → itself, "a", "b"). Normalized."""
     out: set[str] = set()
     for p in persona:
         n = norm(p)
@@ -110,10 +110,10 @@ def _titled(words: list[str]) -> bool:
 def persona_parts(persona: Iterable[str]) -> tuple[frozenset[str], frozenset[str]]:
     """(primary, derived) normalized persona names. Primary: the host's names and the pieces of a composite one, the
     only names `node()` folds into `{{user}}`. Derived: the names a story calls the persona by that `Resolution`
-    links to it, splittably — the given name of a Hangul full name (박현우 → 현우, 남궁세연 → 세연, 박 현우 → 현우),
-    the first word of a Latin name (daniel park → daniel), and the first and the last word of a Hangul name of several
+    links to it, splittably — the given name of a Hangul full name (윤기현 → 기현, 남궁세연 → 세연, 윤 기현 → 기현),
+    the first word of a Latin name (ronan voss → ronan), and the first and the last word of a Hangul name of several
     words whose first is not a Korean family name (아오키 타쿠미 → 아오키, 타쿠미; 세라 델 모렌 → 세라, 모렌: the
-    order may be either). A title is never a derived name. Spellings across scripts (대니얼 for Daniel) are matched
+    order may be either). A title is never a derived name. Spellings across scripts (로넌 for Ronan) are matched
     in `Resolution`."""
     from .variants import FAMILY, FAMILY_TWO, HANGUL, given  # variants imports this module
 
@@ -125,7 +125,7 @@ def persona_parts(persona: Iterable[str]) -> tuple[frozenset[str], frozenset[str
             if g := given(q):
                 derived.add(g)
             continue
-        if g := given(q):  # 박 현우
+        if g := given(q):  # 윤 기현
             derived.add(g)
         head = [w for w in words if w.rstrip(".") not in TITLES]
         if not head:
@@ -145,7 +145,7 @@ def persona_parts(persona: Iterable[str]) -> tuple[frozenset[str], frozenset[str
 def node(entity_type: str | None, name: str | None, persona: frozenset[str] = frozenset()) -> Node:
     """(type, normalized name). `persona`: the conversation's normalized persona names beyond `USER_NAMES`; a
     composite one counts by each of its pieces (`persona_parts`). Only those exact names fold into `{{user}}`: a
-    full name ending with one (아오키 타쿠미) or a name derived from one (현우 for 박현우) joins the persona in
+    full name ending with one (아오키 타쿠미) or a name derived from one (기현 for 윤기현) joins the persona in
     `Resolution`, where an owner's split can undo it. Pure; cached because every fact read asks for the same few
     names."""
     n = norm(name)
@@ -156,7 +156,7 @@ def node(entity_type: str | None, name: str | None, persona: frozenset[str] = fr
 
 def names_persona(entity_type: str | None, name: str | None, persona: Iterable[str] = ()) -> bool:
     """Whether a name, read without a conversation's resolution, is the persona: a name `node()` folds into
-    `{{user}}`, or one the story calls it by (`_persona_matcher`: 아오키 타쿠미 for 타쿠미, 현우 for 박현우). For callers
+    `{{user}}`, or one the story calls it by (`_persona_matcher`: 아오키 타쿠미 for 타쿠미, 기현 for 윤기현). For callers
     that check one name against the host's persona name (extraction's role check); a read uses `Resolution`, where
     the owner's splits and other characters' full names also count."""
     if node(entity_type, name, frozenset(n for n in map(norm, persona) if n))[1] == PERSONA:
@@ -281,7 +281,7 @@ class Resolution:
             union(a, b)
         # The persona's derived names join it unless the owner split a name they go by from a name the persona goes
         # by, the owner linked them to another name, another name gives one of them as its alias, or another
-        # character's full name holds them (강현우 → 현우 is 강현우's, not 박현우's).
+        # character's full name holds them (강기현 → 기현 is 강기현's, not 윤기현's).
         cut = [tuple(k) for k, v in latest.items() if v == "split" and len(k) == 2 and all(x in parent for x in k)]
         self.persona_links: list[tuple[Node, Node, dict[str, Any]]] = []
         held = [m for m in first if m[0] == "character" and m != persona_node and m not in called]
@@ -294,7 +294,7 @@ class Resolution:
             group = {m for m in first if find(m) == rv}
             if any(m in linked and m not in called for m in group):
                 continue
-            # another name gives one of these as its alias (카이토 → 현우, Daniel Craig → 대니얼): it is that name's
+            # another name gives one of these as its alias (카이토 → 기현, Ronan Pryce → 로넌): it is that name's
             if any(m not in called and m != persona_node and out.get(m, set()) & group for m in group):
                 continue
             if any(_holds(m[1], v[1]) for m in held if find(m) != rp):
@@ -518,8 +518,8 @@ def _splits(n: Node, edges: dict[Node, set[Node]], parts: dict[Node, set[Node]] 
 
 def _holds(full: str, part: str) -> bool:
     """Whether the normalized name `part` is a part of the normalized full name `full` a story calls its bearer by:
-    one of its words (daniel of daniel craig, 현우 of 박 현우), its given name (현우 of 강현우, 세연 of 남궁세연), or
-    the end of a one-word Hangul name (현우 of 도현우)."""
+    one of its words (ronan of ronan pryce, 기현 of 윤 기현), its given name (기현 of 강기현, 세연 of 남궁세연), or
+    the end of a one-word Hangul name (기현 of 모기현)."""
     from .variants import HANGUL, given  # variants imports this module
 
     if not part or full == part:
@@ -544,8 +544,8 @@ def _persona_matcher(primary: frozenset[str], derived: frozenset[str]) -> Any:
     """Whether a normalized character name is one the story calls the persona by beyond its primary names (resolve-v6):
     a derived name (`persona_parts`); a full name ending with a primary name as its own word, not after a title
     (아오키 타쿠미 for 타쿠미, not 경비병 타쿠미; resolve-v5's rule, now splittable); a Hangul word spelling a Latin
-    persona name, by the fixed keys or with its vowels folded (다니엘, 대니얼 for Daniel); and a Latin name spelling
-    a Hangul one (Hyunwoo for 현우)."""
+    persona name, by the fixed keys or with its vowels folded (로난, 로넌 for Ronan); and a Latin name spelling
+    a Hangul one (Kihyun for 기현)."""
     from .variants import HANGUL, LOOSE_MIN, hangul_keys, key, latin_keys, loose
 
     if not primary:
