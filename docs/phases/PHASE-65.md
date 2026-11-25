@@ -236,7 +236,9 @@ part), `test_tier2_status_key_compat.py`. Decision: ADR 0094.
   boundaries kept); dialogue and speech-like values are no window.
 - **Owner decision on keys:** stored keys do not move. A window is keyed `<character>.<key>` only when one reply holds
   windows of two or more different characters sharing a non-scene key; scene keys (clock, place, weather, season) are
-  never prefixed; a place is never an entity; a one-character window keeps its bare keys. A bare pin or watch covers a
+  never prefixed; a one-character window keeps its bare keys. The decision also said a place is never an entity: the
+  build tells a place from a character only by the keys, so two places' windows in one reply that share a non-scene key
+  (`[교실 | 인원 …]` and `[복도 | 인원 …]`) are prefixed like two characters' (K56). A bare pin or watch covers a
   key by its last part (`HP` covers `서연.HP`), a full one only itself. What the earlier rules read is read the same way
   (the one-line `[..]` window wins an overlap; the split falls back to every `|` when that reads more keys).
 - **Status questions:** `retrieval.asked_keys(..., every_window=True)` under `packet-v21` only: a message that names
