@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:2317923399ec".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:2de714cb0720".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -395,6 +395,10 @@
       const chunks = v.tune.embedChunks?.trim() ?? "";
       if (known.embedChunks && chunks !== "" && chunks !== (base?.tune.embedChunks?.trim() ?? "")) {
         body.embed_max_chunks = num(chunks);
+      }
+      const early = v.tune.extractOnOutput;
+      if (known.extractOnOutput && early !== void 0 && early !== Boolean(base?.tune.extractOnOutput)) {
+        body.extract_on_output = early;
       }
     }
     return body;
@@ -1363,6 +1367,12 @@
     "trimset.needs_summaries": [
       "\uC8FC\uC758: \uC7A5\uBA74 \uC694\uC57D \uB9CC\uB4E4\uAE30\uAC00 \uAEBC\uC838 \uC788\uC5B4\uC11C, \uCF1C\uAE30 \uC804\uAE4C\uC9C0\uB294 \uC544\uBB34\uAC83\uB3C4 \uBE7C\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
       "Note: Scene summaries are off, so nothing is left out until they are on."
+    ],
+    // extracting a reply right after it (PHASE-67)
+    "tune.extract_on_output": ["\uB2F5\uBCC0 \uC9C1\uD6C4 \uCD94\uCD9C", "Extract right after a reply"],
+    "tune.extract_on_output_hint": [
+      "\uCF1C\uBA74 \uB2F5\uC7A5\uC774 \uB05D\uB098\uACE0 20\uCD08\uCBE4 \uB4A4\uC5D0 \uADF8 \uB2F5\uC7A5\uC744 \uBC14\uB85C \uCD94\uCD9C\uD569\uB2C8\uB2E4(\uAEBC\uC838 \uC788\uC73C\uBA74 \uB2E4\uC74C \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0BC \uB54C \uCD94\uCD9C\uD569\uB2C8\uB2E4). \uADF8\uB798\uC11C \uB2E4\uC74C \uBA54\uC2DC\uC9C0 \uB54C \uADF8 \uB2F5\uC7A5\uC758 \uAE30\uC5B5\uC774 \uC774\uBBF8 \uC900\uBE44\uB418\uC5B4 \uC788\uACE0, \uC138\uC158\uC758 \uB9C8\uC9C0\uB9C9 \uB2F5\uC7A5\uB3C4 \uAE30\uC5B5\uC5D0\uC11C \uBE60\uC9C0\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uB300\uC2E0 \uADF8 20\uCD08\uAC00 \uC9C0\uB09C \uB4A4\uC5D0 \uB9AC\uB864\uD558\uAC70\uB098 \uACE0\uCE58\uBA74, \uBC84\uB824\uC9C0\uB294 \uCD94\uCD9C \uD55C \uBC88 \uAC12(\uCD94\uCD9C \uBAA8\uB378 \uD638\uCD9C 1\uD68C)\uC744 \uB0C5\uB2C8\uB2E4. \uC774 \uC124\uC815\uC774 \uC5C6\uB294 \uC0AC\uC774\uB4DC\uCE74\uC5D0\uC11C\uB294 \uBC14\uAFC0 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.",
+      "On: a reply is extracted about 20 seconds after it finishes instead of when you answer it, so memory of it is ready for your next message and the last reply of a session is not lost. A reroll or edit after those 20 seconds pays for one extraction that is thrown away (one call to the extraction model). A sidecar without this setting cannot change it."
     ],
     // pinning a character (PHASE-60 S8)
     "tune.pin_at": ["\uBA54\uC2DC\uC9C0\uC5D0\uC11C @\uC774\uB984\uC73C\uB85C \uC778\uBB3C \uACE0\uC815", "Pin a character with @name in a message"],
@@ -6668,6 +6678,8 @@ html,body{margin:0;background:${PALETTE.bg}}
     const canonFacts = el("input", { type: "checkbox" });
     const pinAt = el("input", { type: "checkbox", disabled: true });
     let pinAtKnown = false;
+    const extractOnOutput = el("input", { type: "checkbox", disabled: true });
+    let extractOnOutputKnown = false;
     const embedChunks = el("input", {
       type: "number",
       min: MIN_EMBED_MAX_CHUNKS,
@@ -6708,6 +6720,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("p", { class: "sub", text: L("tune.summaries_hint") }),
       el("div", { class: "check" }, canonFacts, el("span", { text: L("tune.canon_facts") })),
       el("p", { class: "sub", text: L("tune.canon_facts_hint") }),
+      el("div", { class: "check" }, extractOnOutput, el("span", { text: L("tune.extract_on_output") })),
+      el("p", { class: "sub", text: L("tune.extract_on_output_hint") }),
       el("div", { class: "check" }, pinAt, el("span", { text: L("tune.pin_at") })),
       el("p", { class: "sub", text: L("tune.pin_at_hint") })
     ));
@@ -7048,7 +7062,8 @@ html,body{margin:0;background:${PALETTE.bg}}
           summaries: summaries.checked,
           canonFacts: canonFacts.checked,
           pinAt: pinAt.checked,
-          embedChunks: embedChunks.value
+          embedChunks: embedChunks.value,
+          extractOnOutput: extractOnOutput.checked
         },
         trim: { on: trimOn.checked, keep: trimKeep.value }
       };
@@ -7108,6 +7123,9 @@ html,body{margin:0;background:${PALETTE.bg}}
       embedChunksKnown = typeof cfg.embeddings.max_chunks === "number";
       embedChunks.value = embedChunksKnown ? String(cfg.embeddings.max_chunks) : "";
       embedChunks.disabled = !embedChunksKnown;
+      extractOnOutputKnown = typeof cfg.extraction.on_output === "boolean";
+      extractOnOutput.checked = cfg.extraction.on_output === true;
+      extractOnOutput.disabled = !extractOnOutputKnown;
       showEmbedChunks();
       fillParsers(cfg);
     }
@@ -7199,7 +7217,12 @@ html,body{margin:0;background:${PALETTE.bg}}
           deadline.value = String(args.deadline_ms);
           baseline = { ...baseline, conn: values().conn };
         }
-        const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown, embedChunks: embedChunksKnown }, baseline);
+        const body = configBody(d, v, {
+          pinAt: pinAtKnown,
+          rerank: rerankKnown,
+          embedChunks: embedChunksKnown,
+          extractOnOutput: extractOnOutputKnown
+        }, baseline);
         const tight = (d.includes("tune") || d.includes("conn")) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline) ? ` ${L("tune.embed_wait_tight", { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : "";
         if (!Object.keys(body).length) {
           fillServer(await deps.api("GET", "/v1/config", void 0, 5e3));

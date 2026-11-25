@@ -98,7 +98,9 @@ export interface FormValues {
     /** Pin a character with @name in a message (PHASE-60 S8, ADR 0087); sent only when the sidecar has the setting. */
     pinAt: boolean;
     /** Chunks embedded per message (ADR 0062, `embed_max_chunks`), as typed; sent only when the sidecar reports it. */
-    embedChunks?: string };
+    embedChunks?: string;
+    /** Extract a reply right after it (PHASE-67, `extract_on_output`); sent only when the sidecar reports it. */
+    extractOnOutput?: boolean };
   /** Leaving out old dialogue (PHASE-60 S1): the switch and the recent turns always sent, as typed. */
   trim: { on: boolean; keep: string };
 }
@@ -127,7 +129,7 @@ function num(value: string): number | string {
 }
 
 /** Settings a sidecar reports only from the version that has them; one it did not report is never sent. */
-export interface KnownSettings { pinAt?: boolean; rerank?: boolean; embedChunks?: boolean }
+export interface KnownSettings { pinAt?: boolean; rerank?: boolean; embedChunks?: boolean; extractOnOutput?: boolean }
 
 /** Chunks embedded per message (ADR 0062): the sidecar's default, the panel's range, and the characters one covers
  *  (`vectors.CHUNK_CHARS`). A changed cap is a new projection: the chats are embedded again. */
@@ -177,6 +179,12 @@ export function configBody(dirty: Section[], v: FormValues, known: KnownSettings
     const chunks = v.tune.embedChunks?.trim() ?? '';
     if (known.embedChunks && chunks !== '' && chunks !== (base?.tune.embedChunks?.trim() ?? '')) {
       body.embed_max_chunks = num(chunks);
+    }
+    // likewise, and only when it changed: it moves when extraction is paid for (a reroll after the wait pays for one
+    // that is thrown away)
+    const early = v.tune.extractOnOutput;
+    if (known.extractOnOutput && early !== undefined && early !== Boolean(base?.tune.extractOnOutput)) {
+      body.extract_on_output = early;
     }
   }
   return body;

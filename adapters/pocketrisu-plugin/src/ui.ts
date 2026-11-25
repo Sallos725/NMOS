@@ -81,7 +81,8 @@ interface ServerConfig {
     note?: string };
   recall: { threshold: number; vector_min_sim: number; embed_timeout_ms?: number; top_k: number; facts_limit: number;
     pin_at_mentions?: boolean };
-  extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean };
+  /** `on_output` (PHASE-67) only from a sidecar that has the switch. */
+  extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean; on_output?: boolean };
   parsers: { rules: unknown; source: string; active_rules: number; errors: string[];
     spec?: unknown; presets?: ParserPreset[] };
   queued_jobs?: number;
@@ -2164,6 +2165,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const canonFacts = el('input', { type: 'checkbox' });  // facts read from the canon (ADR 0047)
   const pinAt = el('input', { type: 'checkbox', disabled: true });  // @name in a message pins a character for that reply (ADR 0087)
   let pinAtKnown = false;  // the sidecar reported the setting: an older one refuses the key
+  // Extract a reply about 20 s after it instead of when it is answered (PHASE-67): the plugin syncs after a reply only then.
+  const extractOnOutput = el('input', { type: 'checkbox', disabled: true });
+  let extractOnOutputKnown = false;  // likewise
   // Chunks embedded per message (ADR 0062): how much of a long message semantic search reaches, beside extraction's cap.
   const embedChunks = el('input', { type: 'number', min: MIN_EMBED_MAX_CHUNKS, max: MAX_EMBED_MAX_CHUNKS, step: 1,
     disabled: true });
@@ -2189,6 +2193,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('p', { class: 'sub', text: L('tune.summaries_hint') }),
     el('div', { class: 'check' }, canonFacts, el('span', { text: L('tune.canon_facts') })),
     el('p', { class: 'sub', text: L('tune.canon_facts_hint') }),
+    el('div', { class: 'check' }, extractOnOutput, el('span', { text: L('tune.extract_on_output') })),
+    el('p', { class: 'sub', text: L('tune.extract_on_output_hint') }),
     el('div', { class: 'check' }, pinAt, el('span', { text: L('tune.pin_at') })),
     el('p', { class: 'sub', text: L('tune.pin_at_hint') })));
 
@@ -2449,7 +2455,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       llm: { ...llm.values(), ...extraValues() }, emb: emb.values(), rerank: rerank.values(),
       tune: { threshold: threshold.value, minSim: minSim.value, embedWait: embedWait.value, topK: topK.value,
         facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked,
-        pinAt: pinAt.checked, embedChunks: embedChunks.value },
+        pinAt: pinAt.checked, embedChunks: embedChunks.value, extractOnOutput: extractOnOutput.checked },
       trim: { on: trimOn.checked, keep: trimKeep.value },
     };
   }
@@ -2509,6 +2515,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     embedChunksKnown = typeof cfg.embeddings.max_chunks === 'number';
     embedChunks.value = embedChunksKnown ? String(cfg.embeddings.max_chunks) : '';
     embedChunks.disabled = !embedChunksKnown;  // likewise
+    extractOnOutputKnown = typeof cfg.extraction.on_output === 'boolean';
+    extractOnOutput.checked = cfg.extraction.on_output === true;
+    extractOnOutput.disabled = !extractOnOutputKnown;  // likewise
     showEmbedChunks();
     fillParsers(cfg);
   }
@@ -2597,7 +2606,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         deadline.value = String(args.deadline_ms);
         baseline = { ...baseline, conn: values().conn };
       }
-      const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown, embedChunks: embedChunksKnown }, baseline);
+      const body = configBody(d, v, { pinAt: pinAtKnown, rerank: rerankKnown, embedChunks: embedChunksKnown,
+        extractOnOutput: extractOnOutputKnown }, baseline);
       // Said with any save that touches either value; the save itself goes ahead (audit F20).
       const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
         ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
