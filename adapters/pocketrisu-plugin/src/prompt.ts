@@ -291,8 +291,13 @@ export function historyMarkerIndices(prompt: PromptMessage[], hostMessages: Host
  * of the chat in order, so `matchPromptToHost` finds the smallest matched host index and every
  * message from there to the end of `hostMessages` is reported as in context.
  */
-export function inContextIds(prompt: PromptMessage[], hostMessages: HostMessage[], minAnchor = 16, maxMisses = 3): string[] {
-  const matches = matchPromptToHost(prompt, hostMessages, minAnchor, maxMisses);
+export function inContextIds(
+  prompt: PromptMessage[],
+  hostMessages: HostMessage[],
+  minAnchor = 16,
+  maxMisses = 3,
+  matches = matchPromptToHost(prompt, hostMessages, minAnchor, maxMisses),
+): string[] {
   if (matches.size === 0) return [];
   let boundary = hostMessages.length;
   for (const i of matches.keys()) {

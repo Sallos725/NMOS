@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:ae867777cd06".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:789b1c4e237c".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -1659,14 +1659,26 @@ ${revisionHash}`;
     };
   }
   var CACHED_CHATS = 2;
+  var CACHED_CHARS_LIMIT = 12e6;
+  function snapshotChars(s) {
+    const c = s[9];
+    const d = s[10];
+    return (typeof c === "string" ? c.length : 0) + (typeof d === "string" ? d.length : 0);
+  }
   function createManifestBuilder() {
     const chats = /* @__PURE__ */ new Map();
-    return async function build(chat, characterRef, labels = {}) {
+    let totalChars = 0;
+    async function build(chat, characterRef, labels = {}) {
       const messages = Array.isArray(chat.message) ? chat.message : [];
       const chatKey = String(chat.id ?? "");
-      const previous = chats.get(chatKey) ?? /* @__PURE__ */ new Map();
-      chats.delete(chatKey);
+      const prevEntry = chats.get(chatKey);
+      const previous = prevEntry?.map ?? /* @__PURE__ */ new Map();
+      if (prevEntry) {
+        totalChars -= prevEntry.chars;
+        chats.delete(chatKey);
+      }
       const next = /* @__PURE__ */ new Map();
+      let nextChars = 0;
       const entries = new Array(messages.length);
       const snapshots = new Array(messages.length);
       const missing = [];
@@ -1680,6 +1692,7 @@ ${revisionHash}`;
         if (hit && sameSnapshot(hit.snapshot, snapshot)) {
           entries[i] = hit.entry;
           next.set(id, hit);
+          nextChars += snapshotChars(hit.snapshot);
         } else {
           missing.push(i);
         }
@@ -1690,12 +1703,27 @@ ${revisionHash}`;
         const entry = manifestEntry(m, hashes[j]);
         entries[i] = entry;
         const snapshot = snapshots[i];
-        if (snapshot) next.set(m.chatId, { snapshot, entry });
+        if (snapshot) {
+          next.set(m.chatId, { snapshot, entry });
+          nextChars += snapshotChars(snapshot);
+        }
       });
-      chats.set(chatKey, next);
-      while (chats.size > CACHED_CHATS) chats.delete(chats.keys().next().value);
+      chats.set(chatKey, { map: next, chars: nextChars });
+      totalChars += nextChars;
+      while (chats.size > CACHED_CHATS || chats.size > 1 && totalChars > CACHED_CHARS_LIMIT) {
+        const oldestKey = chats.keys().next().value;
+        const evicted = chats.get(oldestKey);
+        chats.delete(oldestKey);
+        if (evicted) totalChars -= evicted.chars;
+      }
       return finish(chat, messages, entries, characterRef, labels, missing.length);
-    };
+    }
+    return Object.assign(build, {
+      clear() {
+        chats.clear();
+        totalChars = 0;
+      }
+    });
   }
 
   // src/prompt.ts
@@ -1885,8 +1913,7 @@ ${revisionHash}`;
     }
     return out;
   }
-  function inContextIds(prompt, hostMessages, minAnchor = 16, maxMisses = 3) {
-    const matches = matchPromptToHost(prompt, hostMessages, minAnchor, maxMisses);
+  function inContextIds(prompt, hostMessages, minAnchor = 16, maxMisses = 3, matches = matchPromptToHost(prompt, hostMessages, minAnchor, maxMisses)) {
     if (matches.size === 0) return [];
     let boundary = hostMessages.length;
     for (const i of matches.keys()) {
@@ -2259,10 +2286,13 @@ ${GUARD_LINE}` : "";
   var RETRY_MEMO_LIMIT = 4;
   var BODY_CHUNK = 250;
   var NAME_TTL_MS = 10 * 6e4;
+  var NAMES_LIMIT = 8;
   var CANON_TIMEOUT_MS = 3e4;
   var CANON_ROUNDS = 20;
   var CANON_BATCH_CHARS = 8e5;
-  var TEXT_HASH_LIMIT = 4e3;
+  var TEXT_HASH_LIMIT = 512;
+  var TEXT_HASH_CHARS_LIMIT = 2e6;
+  var TEXT_HASH_SINGLE_MAX = 2e5;
   var PERSONA_TTL_MS = 5e3;
   function personaOf(chat, host) {
     const list = Array.isArray(host.personas) ? host.personas : [];
@@ -2301,6 +2331,7 @@ ${GUARD_LINE}` : "";
     const canonSent = /* @__PURE__ */ new Map();
     const canonQueue = /* @__PURE__ */ new Map();
     const textHashes = /* @__PURE__ */ new Map();
+    let textHashChars = 0;
     const heldCard = /* @__PURE__ */ new Map();
     const refusedTrim = /* @__PURE__ */ new Map();
     let canonUnsupported = false;
@@ -2337,17 +2368,23 @@ ${GUARD_LINE}` : "";
       } catch {
       }
     }
+    function setName(chatId, entry) {
+      if (disposed) return;
+      names.delete(chatId);
+      names.set(chatId, entry);
+      while (names.size > NAMES_LIMIT) names.delete(names.keys().next().value);
+    }
     function refreshCharacter(chatId) {
       const hit = names.get(chatId);
-      names.set(chatId, { name: hit?.name ?? null, card: hit?.card ?? null, at: host.now() });
+      setName(chatId, { name: hit?.name ?? null, card: hit?.card ?? null, at: host.now() });
       if (host.card) {
         host.card(chatId).then((card) => {
-          if (card) names.set(chatId, { name: card.name?.trim() || null, card, at: host.now() });
+          if (card) setName(chatId, { name: card.name?.trim() || null, card, at: host.now() });
         }).catch(() => {
         });
       } else if (host.characterName) {
         host.characterName(chatId).then((name) => {
-          if (name) names.set(chatId, { name, card: null, at: host.now() });
+          if (name) setName(chatId, { name, card: null, at: host.now() });
         }).catch(() => {
         });
       }
@@ -2385,10 +2422,21 @@ ${GUARD_LINE}` : "";
       if (!character?.card) return { held, snapshot: null };
       const entries = await within(Promise.all(texts.map(async (t2) => {
         let hash = textHashes.get(t2.text);
-        if (!hash) {
-          hash = await canonHash(t2.text);
+        if (hash) {
+          textHashes.delete(t2.text);
           textHashes.set(t2.text, hash);
-          while (textHashes.size > TEXT_HASH_LIMIT) textHashes.delete(textHashes.keys().next().value);
+        } else {
+          hash = await canonHash(t2.text);
+          if (t2.text.length <= TEXT_HASH_SINGLE_MAX) {
+            if (!textHashes.has(t2.text)) textHashChars += t2.text.length;
+            textHashes.delete(t2.text);
+            textHashes.set(t2.text, hash);
+            while (textHashes.size > TEXT_HASH_LIMIT || textHashes.size > 1 && textHashChars > TEXT_HASH_CHARS_LIMIT) {
+              const oldest = textHashes.keys().next().value;
+              textHashes.delete(oldest);
+              textHashChars -= oldest.length;
+            }
+          }
         }
         return { key: t2.key, hash, metadata: t2.metadata };
       })), deadline, "the canon hashes");
@@ -2406,7 +2454,7 @@ ${GUARD_LINE}` : "";
       queue.running = true;
       void (async () => {
         for (let current2 = snapshot; current2; current2 = queue.next, queue.next = null) {
-          if (canonSent.get(key) === current2.id) continue;
+          if (disposed || canonSent.get(key) === current2.id) continue;
           try {
             if (await uploadCanon(settings, chatId, current2)) {
               canonSent.set(key, current2.id);
@@ -2421,6 +2469,7 @@ ${GUARD_LINE}` : "";
         }
         queue.running = false;
         queue.next = null;
+        if (canonQueue.get(key) === queue) canonQueue.delete(key);
       })();
     }
     async function uploadCanon(settings, chatId, snapshot) {
@@ -2461,7 +2510,44 @@ ${GUARD_LINE}` : "";
     function promptSignature(prompt) {
       if (!Array.isArray(prompt)) return null;
       try {
-        return JSON.stringify(prompt.map((m) => [m?.role ?? null, m?.content ?? null]));
+        let h1 = 2166136261;
+        let h2 = 2654435761;
+        let h3 = 2246822507;
+        let h4 = 3266489909;
+        let chars = 0;
+        const mix = (code) => {
+          h1 = Math.imul(h1 ^ code, 16777619) >>> 0;
+          h2 = Math.imul(h2 ^ code + 17, 2246822507) >>> 0;
+          h3 = Math.imul(h3 ^ code * 31 + 7, 3266489909) >>> 0;
+          h4 = Math.imul(h4 ^ (code << 5 ^ code >>> 2), 668265263) >>> 0;
+        };
+        const feed = (s) => {
+          chars += s.length;
+          mix(s.length);
+          for (let i = 0; i < s.length; i++) mix(s.charCodeAt(i));
+        };
+        for (let i = 0; i < prompt.length; i++) {
+          const m = prompt[i];
+          mix(30);
+          if (typeof m?.role === "string") {
+            mix(1);
+            feed(m.role);
+          } else {
+            mix(0);
+          }
+          mix(31);
+          const c = m?.content;
+          if (typeof c === "string") {
+            mix(2);
+            feed(c);
+          } else if (c == null) {
+            mix(0);
+          } else {
+            mix(3);
+            feed(JSON.stringify(c));
+          }
+        }
+        return `${prompt.length}:${chars}:${h1.toString(16)}:${h2.toString(16)}:${h3.toString(16)}:${h4.toString(16)}`;
       } catch {
         return null;
       }
@@ -2616,7 +2702,9 @@ ${GUARD_LINE}` : "";
         turnSeq++;
         cancelOutputSync();
         const scan = createTrimScan(prompt, messages);
-        const chatMarkers = historyMarkerIndices(prompt, messages);
+        scan.turn = turn;
+        const promptMatches = scan.pairs = matchPromptToHost(prompt, messages);
+        const chatMarkers = historyMarkerIndices(prompt, messages, promptMatches);
         const marker = findMarker(prompt, chatMarkers);
         const skipIn = (p) => chatMarkers.size === 0 ? chatMarkers : p === prompt ? chatMarkers : historyMarkerIndices(p, messages);
         const position = settings.injectPosition;
@@ -2682,7 +2770,7 @@ ${GUARD_LINE}` : "";
           { characterName: characterName(chat.id), personaName: personaName(chat) }
         ), deadline, "the manifest");
         const manifestMs = host.now() - t0;
-        const inContext = inContextIds(prompt, messages);
+        const inContext = inContextIds(prompt, messages, void 0, void 0, promptMatches);
         const refusedAt = refusedTrim.get(chat.id);
         if (refusedAt && host.now() - refusedAt.at > REFUSED_TRIM_TTL_MS) refusedTrim.delete(chat.id);
         let askTrim = k > 0 && canTrimPrompt(prompt, messages, scan) && !(refusedAt && host.now() - refusedAt.at <= REFUSED_TRIM_TTL_MS && trimPrompt(prompt, messages, refusedAt.id, scan).reason !== null);
@@ -3031,6 +3119,22 @@ ${GUARD_LINE}` : "";
         }
         refreshHandle = null;
       }
+      cache.clear();
+      returnedMemo.clear();
+      conversations.clear();
+      names.clear();
+      canonSent.clear();
+      canonQueue.clear();
+      textHashes.clear();
+      textHashChars = 0;
+      heldCard.clear();
+      refusedTrim.clear();
+      droppedAt.clear();
+      coverageMarks.clear();
+      syncedLength.clear();
+      buildManifest.clear();
+      personas = null;
+      last = null;
     }
     function onOutput(arg2) {
       const seen = ++turnSeq;
@@ -3418,8 +3522,10 @@ ${GUARD_LINE}` : "";
     let expiryTimer = null;
     let pollErrors = 0;
     let lastPoll = -Infinity;
+    let disposed = false;
     let queue = Promise.resolve();
     function run(task) {
+      if (disposed) return;
       queue = queue.then(task).catch(fail);
     }
     async function fail(error) {
@@ -3430,7 +3536,7 @@ ${GUARD_LINE}` : "";
       });
     }
     async function active() {
-      if (!problem && await deps.enabled()) return true;
+      if (!disposed && !problem && await deps.enabled()) return true;
       stopPolling();
       await erase();
       return false;
@@ -3490,6 +3596,7 @@ ${GUARD_LINE}` : "";
     async function render2() {
       if (expiryTimer !== null) deps.clearTimer(expiryTimer);
       expiryTimer = null;
+      if (disposed) return erase();
       const now = deps.now();
       const v = view(state, now, await deps.lang());
       if (!v) return erase();
@@ -3505,7 +3612,7 @@ ${GUARD_LINE}` : "";
         if (v.fraction !== null) await d.fill.setStyle("width", `${Math.round(v.fraction * 100)}%`);
       }
       const next = nextChange(state, now);
-      if (next !== null) expiryTimer = deps.setTimer(() => {
+      if (next !== null && !disposed) expiryTimer = deps.setTimer(() => {
         expiryTimer = null;
         run(render2);
       }, next - now);
@@ -3519,7 +3626,7 @@ ${GUARD_LINE}` : "";
       stopPolling();
     }
     function startPolling() {
-      if (pollTimer !== null || !conversation) return;
+      if (disposed || pollTimer !== null || !conversation) return;
       pollErrors = 0;
       pollTimer = deps.setTimer(() => run(poll), Math.max(0, lastPoll + MIN_POLL_GAP_MS - deps.now()));
     }
@@ -3548,7 +3655,7 @@ ${GUARD_LINE}` : "";
         again = !/HTTP 404/.test(message) && ++pollErrors < MAX_POLL_ERRORS;
       }
       await render2();
-      if (again) pollTimer = deps.setTimer(() => run(poll), POLL_MS);
+      if (again && !disposed) pollTimer = deps.setTimer(() => run(poll), POLL_MS);
     }
     return {
       /** Request-path activity from core.ts. */
@@ -3586,6 +3693,22 @@ ${GUARD_LINE}` : "";
           stopPolling();
           state = EMPTY;
           await erase();
+        });
+      },
+      /** Plugin unload/re-import: stop timers and remove the pill/listener from the host page. Never throws. */
+      dispose() {
+        disposed = true;
+        conversation = null;
+        where = null;
+        stopPolling();
+        if (expiryTimer !== null) {
+          try {
+            deps.clearTimer(expiryTimer);
+          } catch {
+          }
+          expiryTimer = null;
+        }
+        void erase().catch(() => {
         });
       },
       /** Why the display stopped for this session, if it did. */
@@ -7615,9 +7738,19 @@ html,body{margin:0;background:${PALETTE.bg}}
     revert.addEventListener("click", () => void loadAll());
     let onDocClick = null;
     let onDocKey = null;
-    function shut() {
+    function cleanupPanel() {
+      window.clearTimeout(armTimer);
       if (onDocClick) document.removeEventListener("click", onDocClick);
       if (onDocKey) document.removeEventListener("keydown", onDocKey);
+      closers.clear();
+      bulkGroups.clear();
+      picked.clear();
+      bulkPicked.clear();
+      knownChats = [];
+      lastMeta = null;
+    }
+    function shut() {
+      cleanupPanel();
       root.remove();
       current = null;
       void deps.hide();
@@ -7658,8 +7791,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       const next = langOf(language.value);
       await deps.setArg("language", next);
-      if (onDocClick) document.removeEventListener("click", onDocClick);
-      if (onDocKey) document.removeEventListener("keydown", onDocKey);
+      cleanupPanel();
       root.remove();
       current = await render(deps, next, shown);
     });
@@ -8974,6 +9106,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     });
     const control = {
       event: hud.event,
+      dispose: hud.dispose,
       async enable() {
         if (typeof risuai.requestPluginPermission !== "function" || typeof risuai.getRootDocument !== "function") {
           return "unsupported";
@@ -9106,7 +9239,10 @@ html,body{margin:0;background:${PALETTE.bg}}
     );
     adapter.warmPersonas();
     adapter.warmConfig();
-    onPluginUnload(() => adapter.dispose());
+    onPluginUnload(() => {
+      adapter.dispose();
+      hud.dispose();
+    });
     console.log("[NMOS] adapter loaded", { version: "0.6.0" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();

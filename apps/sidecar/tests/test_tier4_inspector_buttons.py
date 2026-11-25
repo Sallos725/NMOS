@@ -93,3 +93,28 @@ def test_conversation_messages_endpoint_returns_newest_head_messages(migrated: s
         assert rows[0]["position"] > rows[1]["position"]
         assert rows[0]["host_logical_id"] == chat.messages[-1]["chatId"]
         assert "두 번째 응답" in rows[0]["preview"]
+
+
+def test_conversation_messages_handles_all_before_disabled_and_comments(migrated: str):
+    """Wave 5 audit SC-1: `disabled: 'allBefore'` must not crash SQL cast and must exclude itself and earlier rows."""
+    chat = SimChat("w5-msg-allbefore")
+    chat.user("컷 이전 메시지")
+    chat.reply("컷 이전 응답")
+    cut = chat.user("컷 경계")
+    cut["disabled"] = "allBefore"
+    chat.user("컷 이후 정상 메시지")
+    disabled_msg = chat.reply("비활성 응답")
+    disabled_msg["disabled"] = True
+    comment_msg = chat.reply("코멘트 메모")
+    comment_msg["isComment"] = True
+    kept_reply = chat.reply("컷 이후 정상 응답")
+    with make_client(migrated) as c:
+        sync(c, chat)
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            cid = conn.execute("SELECT id FROM conversation WHERE host_chat_ref = %s", (chat.id,)).fetchone()["id"]
+        r = c.get(f"/v1/conversations/{cid}/messages?limit=20", headers={"X-NMOS-Token": "test-token"})
+        assert r.status_code == 200
+        rows = r.json()
+        ids = [row["host_logical_id"] for row in rows]
+        assert ids == [kept_reply["chatId"], chat.messages[3]["chatId"]]
+

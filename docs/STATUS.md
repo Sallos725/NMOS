@@ -1,26 +1,38 @@
 # NMOS Status
 
-## Phase 65 on the Tier 1–4 branch — built, not merged, not deployed — 2026-11-25
+## Phase 65–67 on the Tier 1–4 branch — built & audited (Wave 5), not merged, not deployed — 2026-11-25
 
-**Phase 65 (Tier 1 fixes and Tier 2) is built on `Sallos725/audit-conditional-address-terms` at `361130c`, the
-integration branch of the remediation run of an audit of 52 gaps, with Phase 64 (PR #343) merged in as its base.
-Nothing is pushed, merged to `main`, deployed or measured on a live host; no paid model call was made.** Production
-still runs Phase 64's image (`exp-phase64-cdf2c9a`); the 1.0 gate's quiet weeks (earliest end 2026-12-09) are not
-touched by this branch until it is deployed. What it holds: Tier 1 bug fixes under every packet policy (extraction
-post-processing and the worker's story order, secret matching and carried secrets, `resolve-v6` identity with composite
-persona names, canon read under the chat's names with earlier `plain` reads carried forward, carry and regression,
-status questions and clock keys, the plugin's prompt matching, placement and trimming with the default step 16), the
-reveal check's turn selection, `embed_max_chunks` in the panel (startup refuses more than 64), the author's note in the
-chat's language with a cross-script secret check for English, status windows by more shapes with stored keys unmoved,
-and `packet-v21` (opt-in; `packet-v19` stays the default). High risk; no migration of its own. Checks, all zero-call: the
-full sidecar suite on `7d0ce70` 3,450 passed and 1 failed (a real failure, fixed in `361130c`, after which 557 state,
-replay and audit tests passed; no full run on `361130c`); the plugin's 506 tests at `9ae8c2c`; every generation key
-identical to Phase 64's. Not yet met: the zero-call replay of `packet-v21` beside `packet-v20` (`AGENTS.md §7` item 6),
-the extraction side's live gate (not planned under the no-spend rule). A deploy re-imports the plugin and starts three
-kinds of paid work the owner accepted (re-written summaries in chats with a carried open secret, reveal checks on the
-first "Extract all history", a new chat's persona and card texts). The same branch also holds parts of PHASE-66
-(`clean-v4`, `extract-v21`, migration `0041`) and PHASE-67 (extraction right after a reply, repair anchoring, branch
-inheritance), in progress. [Spec](phases/PHASE-65.md), ADRs [0092](adr/0092-packet-v21.md)–[0095](adr/0095-resolve-v6.md).
+**Phases 65, 66, and 67 (the Tier 1–4 remediation run of the 52-gap audit, built over Phase 64 / PR #343) are complete
+and Wave 5 independently audited on `Sallos725/audit-conditional-address-terms`. Nothing is pushed, merged to `main`,
+deployed or measured on a live host; no paid model call was made.** Production still runs Phase 64's image
+(`exp-phase64-cdf2c9a`); the 1.0 gate's quiet weeks (earliest end 2026-12-09) are untouched until deployment. What the
+branch holds:
+- **PHASE-65 (Tier 1–2)**: Tier 1 bug fixes under every packet policy (extraction post-processing and worker story order,
+  secret matching and carried secrets, `resolve-v6` identity with composite persona names, canon read under the chat's
+  names with earlier `plain` reads carried forward, carry and regression, status questions and clock keys, plugin prompt
+  matching, placement and trimming with default step 16), reveal check turn selection, `embed_max_chunks` in the panel
+  (startup refuses > 64), author's note in the chat's language with cross-script secret check, status windows by more
+  shapes with stored keys unmoved, and `packet-v21` (opt-in; `packet-v19` stays the default).
+- **PHASE-66 (Tier 3)**: `extract-v21` typed ontology (opt-in; migration `0041_extract_v21_ontology.sql`), `clean-v4`
+  normalizer (opt-in; `clean-v3` default) with zero-cost revision marker (`REVISION 1`, classified `carry` → 0 paid jobs
+  queued on deploy over production keys) and query normalization, epistemic/guise/forgetting/secret engine and Inspector
+  views.
+- **PHASE-67 (Tier 4)**: extraction right after a reply (`extraction.on_output`, default on, plugin background sync with
+  snapshot guards and `onUnload` teardown), branch memory inheritance (migration `0042_branch_inherit.sql`,
+  `branch_inherit` preview/confirm UI), message-anchored owner repairs and new kinds (`fact_add`, `told_retract`,
+  `fact_hidden`, `attention_dismiss`; migration `0044_repair_anchor.sql` — `0043` intentionally unused as card-binding
+  needed no DDL; ADR 0044 Amendment 5), per-turn persona attribution (audit B4.3, migration `0045_turn_persona.sql`,
+  `PERSONA_TTL_MS` 5 s), and Wave 5 iPhone Safari / WebKit memory & speed hardening (manifest 12 M-char cap, streaming
+  retry digest, LRU card/canon caches, single prompt scan per request, HUD/adapter `dispose()` + panel close cleanup;
+  plugin build `789b1c4e237c`, 478 KB) plus the `/v1/conversations/{id}/messages` `disabled = 'allBefore'` SQL fix.
+- **Checks (all zero-call, 2026-11-25)**: full sidecar suite **3,737 passed / 0 failed** across all 223 test files (3
+  parallel batches against PostgreSQL); plugin `typecheck`, `build`, and `vitest` **37 files / 554 passed / 0 failed**;
+  `test_docs_consistency.py` and `test_plugin_build.py` green; zero-cost deploy over production keys verified (0 jobs
+  queued); public-repo scrub verified (0 synthetic/local-name leaks in code/tests). Not yet met: zero-call replay of
+  `packet-v21` beside `packet-v20` (`AGENTS.md §7` item 6), real-host checks (`onUnload`, `output` payload, iPhone
+  Safari live check), and live extraction gate (not planned under the no-spend rule). A deploy re-imports the plugin and
+  applies additive nullable migrations `0041`, `0042`, `0044`, `0045` (no backfill). [Spec](phases/PHASE-65.md),
+  ADRs [0092](adr/0092-packet-v21.md)–[0095](adr/0095-resolve-v6.md).
 
 ## Phase 64 on production — 2026-11-25
 

@@ -30,7 +30,10 @@ import type { PromptMessage } from './types';
   adapter.warmConfig();
   // Its timers (and a waiting background sync) go with the plugin when it is unloaded or re-imported, where the host
   // says so; the sandbox frame the host removes then takes them anyway.
-  onPluginUnload(() => adapter.dispose());
+  onPluginUnload(() => {
+    adapter.dispose();
+    hud.dispose();
+  });
   console.log('[NMOS] adapter loaded', { version: __NMOS_VERSION__ });
 })().catch((error) => console.error('[NMOS] adapter failed to load', error));
 

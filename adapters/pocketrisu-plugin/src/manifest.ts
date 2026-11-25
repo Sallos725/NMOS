@@ -171,6 +171,14 @@ export async function buildManifest(chat: HostChat, characterRef: string | null,
 }
 
 const CACHED_CHATS = 2; // ≈24 MB of message text per 10,000-message chat
+// WebKit/iPhone Safari memory cap: keep 2 normal chats warm, but never retain two giant 10k-message chats (~48 MB) at once.
+const CACHED_CHARS_LIMIT = 12_000_000;
+
+function snapshotChars(s: Snapshot): number {
+  const c = s[9];
+  const d = s[10];
+  return (typeof c === 'string' ? c.length : 0) + (typeof d === 'string' ? d.length : 0);
+}
 
 /**
  * `buildManifest` that hashes only new or changed messages (Track A, A2). Per host chat, it keeps each
@@ -178,14 +186,20 @@ const CACHED_CHATS = 2; // ≈24 MB of message text per 10,000-message chat
  * changes stay visible. Output is identical to `buildManifest`.
  */
 export function createManifestBuilder() {
-  const chats = new Map<string, Map<string, Cached>>();
+  const chats = new Map<string, { map: Map<string, Cached>; chars: number }>();
+  let totalChars = 0;
 
-  return async function build(chat: HostChat, characterRef: string | null, labels: Labels = {}): Promise<BuiltManifest> {
+  async function build(chat: HostChat, characterRef: string | null, labels: Labels = {}): Promise<BuiltManifest> {
     const messages = Array.isArray(chat.message) ? chat.message : [];
     const chatKey = String(chat.id ?? '');
-    const previous = chats.get(chatKey) ?? new Map<string, Cached>();
-    chats.delete(chatKey);
+    const prevEntry = chats.get(chatKey);
+    const previous = prevEntry?.map ?? new Map<string, Cached>();
+    if (prevEntry) {
+      totalChars -= prevEntry.chars;
+      chats.delete(chatKey);
+    }
     const next = new Map<string, Cached>();
+    let nextChars = 0;
     const entries: (ManifestMessage | undefined)[] = new Array(messages.length);
     const snapshots: (Snapshot | undefined)[] = new Array(messages.length);
     const missing: number[] = [];
@@ -201,6 +215,7 @@ export function createManifestBuilder() {
       if (hit && sameSnapshot(hit.snapshot, snapshot!)) {
         entries[i] = hit.entry;
         next.set(id as string, hit);
+        nextChars += snapshotChars(hit.snapshot);
       } else {
         missing.push(i);
       }
@@ -211,10 +226,26 @@ export function createManifestBuilder() {
       const entry = manifestEntry(m, hashes[j] as string);
       entries[i] = entry;
       const snapshot = snapshots[i];
-      if (snapshot) next.set(m.chatId as string, { snapshot, entry });
+      if (snapshot) {
+        next.set(m.chatId as string, { snapshot, entry });
+        nextChars += snapshotChars(snapshot);
+      }
     });
-    chats.set(chatKey, next);
-    while (chats.size > CACHED_CHATS) chats.delete(chats.keys().next().value as string);
+    chats.set(chatKey, { map: next, chars: nextChars });
+    totalChars += nextChars;
+    while (chats.size > CACHED_CHATS || (chats.size > 1 && totalChars > CACHED_CHARS_LIMIT)) {
+      const oldestKey = chats.keys().next().value as string;
+      const evicted = chats.get(oldestKey);
+      chats.delete(oldestKey);
+      if (evicted) totalChars -= evicted.chars;
+    }
     return finish(chat, messages, entries as ManifestMessage[], characterRef, labels, missing.length);
-  };
+  }
+
+  return Object.assign(build, {
+    clear(): void {
+      chats.clear();
+      totalChars = 0;
+    },
+  });
 }

@@ -2802,9 +2802,19 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   // --- closing, language, tabs ------------------------------------------------------------------
   let onDocClick: ((e: MouseEvent) => void) | null = null;
   let onDocKey: ((e: KeyboardEvent) => void) | null = null;
-  function shut(): void {
+  function cleanupPanel(): void {
+    window.clearTimeout(armTimer);
     if (onDocClick) document.removeEventListener('click', onDocClick);
     if (onDocKey) document.removeEventListener('keydown', onDocKey);
+    closers.clear();
+    bulkGroups.clear();
+    picked.clear();
+    bulkPicked.clear();
+    knownChats = [];
+    lastMeta = null;
+  }
+  function shut(): void {
+    cleanupPanel();
     root.remove();
     current = null;
     void deps.hide();
@@ -2838,8 +2848,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     const next = langOf(language.value);
     await deps.setArg('language', next);
-    if (onDocClick) document.removeEventListener('click', onDocClick);
-    if (onDocKey) document.removeEventListener('keydown', onDocKey);
+    cleanupPanel();
     root.remove();
     current = await render(deps, next, shown);
   });

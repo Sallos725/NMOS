@@ -177,8 +177,9 @@ export function createRisuHud(link: { coverage(conversationId: string): Promise<
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   });
-  const control: HudControl & { event: typeof hud.event } = {
+  const control: HudControl & { event: typeof hud.event; dispose: typeof hud.dispose } = {
     event: hud.event,
+    dispose: hud.dispose,
     async enable() {
       if (typeof risuai.requestPluginPermission !== 'function' || typeof risuai.getRootDocument !== 'function') {
         return 'unsupported';

@@ -769,11 +769,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 JOIN source_revision sr ON sr.id = am.source_revision_id
                 JOIN source_object so ON so.id = sr.source_object_id
                 WHERE am.commit_id = %s AND am.turn IS NOT NULL AND am.turn >= 0
-                  AND coalesce((sr.metadata->>'disabled')::boolean, false) = false
+                  AND am.position > (
+                      SELECT coalesce(max(am2.position), -1)
+                      FROM active_membership am2
+                      JOIN source_revision sr2 ON sr2.id = am2.source_revision_id
+                      WHERE am2.commit_id = %s AND sr2.metadata->>'disabled' = 'allBefore'
+                  )
+                  AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+                  AND coalesce(sr.metadata->>'isComment', '') <> 'true'
                 ORDER BY am.position DESC
                 LIMIT %s
                 """,
-                (conv["head_commit_id"], limit),
+                (conv["head_commit_id"], conv["head_commit_id"], limit),
             ).fetchall()
         return [
             {

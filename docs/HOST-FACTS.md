@@ -636,6 +636,12 @@ message, the message itself left out), and the plugin since PHASE-65 (`prompt.ac
 match, the query text and the trim). No beforeRequest prompt with a cut was recorded. A runtime observation (S8b with
 the prompt captured) would settle it.
 
+## `output` listener payload and `onUnload` teardown (2026-11-25, Tier 4)
+
+**Source reading only (v1.17.0; not observed at runtime on `a14c911`/v1.13.0).**
+- **`output` payload**: `addRisuChatListener('output', fn)` receives `{ chat, messageIndex }`, where `chat.message[messageIndex]?.chatId` is the new reply's logical id. Because `output` fires while the snapshot is provisional (Q8 item 2), the plugin's background sync waits `OUTPUT_SYNC_MS` (20 s) and re-reads `currentChat()`, refusing to sync if the chat switched, is shorter than last synced, grew past the reply, is streaming, or lacks that `chatId`.
+- **`onUnload` and frame teardown**: PocketRisu v1.17.0 exposes `risuai.onUnload(cb)` (`addPluginUnloadCallback`), called by `unloadV3Plugin` before removing the plugin sandbox iframe. Because the sandbox bridge wraps every property as an async proxy, older hosts without `onUnload` reject the returned Promise asynchronously; `onPluginUnload` attaches a rejection handler so it never surfaces as an unhandled rejection, and calls `adapter.dispose()` and `hud.dispose()` to stop timers, erase the HUD pill/listener, and release cached chat/canon memory.
+
 ## Scenario evidence index
 
 | Scenario | Before fixture | After fixture | Other logs | Done |

@@ -13,8 +13,8 @@ import { t, type Lang, type StringKey } from './i18n';
 import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
 import type { ActivityEvent } from './hud';
 import { findMarker, holdsText, MEMORY_MARKER, resolvePlaceholders, stripMarkers } from './placement';
-import { GUARD_RESERVE_TOKENS, hasPacket, historyMarkerIndices, inContextIds, injectPacket, landsAfterUserTurn, queryTexts,
-  userTurnIndex, withGuard, type InjectPosition } from './prompt';
+import { GUARD_RESERVE_TOKENS, hasPacket, historyMarkerIndices, inContextIds, injectPacket, landsAfterUserTurn,
+  matchPromptToHost, queryTexts, userTurnIndex, withGuard, type InjectPosition } from './prompt';
 import { canTrimPrompt, createTrimScan, trimPrompt } from './trim';
 import type { HostChat, HostMessage, HostPersonas, PromptMessage, ReconcileRequest } from './types';
 import { failureKind, INSECURE_ERROR, secureContext } from './failure';
@@ -213,10 +213,13 @@ export interface StatusInfo {
 }
 
 const NAME_TTL_MS = 10 * 60_000;
+const NAMES_LIMIT = 8; // bounded card + globalLore retention for iPhone Safari/WebKit memory
 const CANON_TIMEOUT_MS = 30_000;
 const CANON_ROUNDS = 20;
 const CANON_BATCH_CHARS = 800_000; // texts per canon call (a lorebook can hold 400k+ characters)
-const TEXT_HASH_LIMIT = 4000;
+const TEXT_HASH_LIMIT = 512;
+const TEXT_HASH_CHARS_LIMIT = 2_000_000; // ≈4 MB UTF-16 max retained canon text keys
+const TEXT_HASH_SINGLE_MAX = 200_000; // skip retaining huge single texts in the hash cache
 
 interface CanonSnapshot {
   id: string;
@@ -302,6 +305,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   const canonSent = new Map<string, string>(); // sidecar + conversation → the manifest id the sidecar has in force
   const canonQueue = new Map<string, { running: boolean; next: CanonSnapshot | null }>(); // one upload per chat at a time
   const textHashes = new Map<string, string>(); // canon text → its hash (texts rarely change: hashed once)
+  let textHashChars = 0;
   const heldCard = new Map<string, string[]>(); // host chat id → the card fields its last prompt held
   const refusedTrim = new Map<string, { id: string; at: number }>(); // host chat id → a boundary its prompt refused
   let canonUnsupported = false; // an older sidecar has no /v1/sync/canon
@@ -359,19 +363,26 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     }
   }
 
+  function setName(chatId: string, entry: { name: string | null; card: HostCard | null; at: number }): void {
+    if (disposed) return;
+    names.delete(chatId);
+    names.set(chatId, entry);
+    while (names.size > NAMES_LIMIT) names.delete(names.keys().next().value as string);
+  }
+
   /** Reads the chat's bot (its name and, with `card`, its card) in the background. */
   function refreshCharacter(chatId: string): void {
     const hit = names.get(chatId);
-    names.set(chatId, { name: hit?.name ?? null, card: hit?.card ?? null, at: host.now() });
+    setName(chatId, { name: hit?.name ?? null, card: hit?.card ?? null, at: host.now() });
     if (host.card) {
       host.card(chatId)
         .then((card) => {
-          if (card) names.set(chatId, { name: card.name?.trim() || null, card, at: host.now() });
+          if (card) setName(chatId, { name: card.name?.trim() || null, card, at: host.now() });
         })
         .catch(() => {});
     } else if (host.characterName) {
       host.characterName(chatId)
-        .then((name) => { if (name) names.set(chatId, { name, card: null, at: host.now() }); })
+        .then((name) => { if (name) setName(chatId, { name, card: null, at: host.now() }); })
         .catch(() => {});
     }
   }
@@ -420,10 +431,21 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     if (!character?.card) return { held, snapshot: null }; // no scope for the entries yet: wait for the card
     const entries: CanonEntry[] = await within(Promise.all(texts.map(async (t) => {
       let hash = textHashes.get(t.text);
-      if (!hash) {
-        hash = await canonHash(t.text);
+      if (hash) {
+        textHashes.delete(t.text);
         textHashes.set(t.text, hash);
-        while (textHashes.size > TEXT_HASH_LIMIT) textHashes.delete(textHashes.keys().next().value as string);
+      } else {
+        hash = await canonHash(t.text);
+        if (t.text.length <= TEXT_HASH_SINGLE_MAX) {
+          if (!textHashes.has(t.text)) textHashChars += t.text.length;
+          textHashes.delete(t.text);
+          textHashes.set(t.text, hash);
+          while (textHashes.size > TEXT_HASH_LIMIT || (textHashes.size > 1 && textHashChars > TEXT_HASH_CHARS_LIMIT)) {
+            const oldest = textHashes.keys().next().value as string;
+            textHashes.delete(oldest);
+            textHashChars -= oldest.length;
+          }
+        }
       }
       return { key: t.key, hash, metadata: t.metadata };
     })), deadline, 'the canon hashes');
@@ -445,7 +467,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     queue.running = true;
     void (async () => {
       for (let current: CanonSnapshot | null = snapshot; current; current = queue.next, queue.next = null) {
-        if (canonSent.get(key) === current.id) continue;
+        if (disposed || canonSent.get(key) === current.id) continue;
         try {
           if (await uploadCanon(settings, chatId, current)) {
             canonSent.set(key, current.id);
@@ -460,6 +482,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       }
       queue.running = false;
       queue.next = null;
+      if (canonQueue.get(key) === queue) canonQueue.delete(key);
     })();
   }
 
@@ -506,10 +529,48 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
+  /** Compact 128-bit streaming digest of a prompt's roles and contents (no full-prompt JSON string retained in RAM). */
   function promptSignature(prompt: PromptMessage[]): string | null {
     if (!Array.isArray(prompt)) return null;
     try {
-      return JSON.stringify(prompt.map((m) => [m?.role ?? null, m?.content ?? null]));
+      let h1 = 0x811c9dc5;
+      let h2 = 0x9e3779b1;
+      let h3 = 0x85ebca6b;
+      let h4 = 0xc2b2ae35;
+      let chars = 0;
+      const mix = (code: number) => {
+        h1 = Math.imul(h1 ^ code, 0x01000193) >>> 0;
+        h2 = Math.imul(h2 ^ (code + 17), 0x85ebca6b) >>> 0;
+        h3 = Math.imul(h3 ^ (code * 31 + 7), 0xc2b2ae35) >>> 0;
+        h4 = Math.imul(h4 ^ ((code << 5) ^ (code >>> 2)), 0x27d4eb2f) >>> 0;
+      };
+      const feed = (s: string) => {
+        chars += s.length;
+        mix(s.length);
+        for (let i = 0; i < s.length; i++) mix(s.charCodeAt(i));
+      };
+      for (let i = 0; i < prompt.length; i++) {
+        const m = prompt[i];
+        mix(0x1e);
+        if (typeof m?.role === 'string') {
+          mix(1);
+          feed(m.role);
+        } else {
+          mix(0);
+        }
+        mix(0x1f);
+        const c = m?.content;
+        if (typeof c === 'string') {
+          mix(2);
+          feed(c);
+        } else if (c == null) {
+          mix(0);
+        } else {
+          mix(3);
+          feed(JSON.stringify(c));
+        }
+      }
+      return `${prompt.length}:${chars}:${h1.toString(16)}:${h2.toString(16)}:${h3.toString(16)}:${h4.toString(16)}`;
     } catch {
       return null;
     }
@@ -676,7 +737,9 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // looks past it. Found again in a trimmed prompt, whose indices (and a copied message) differ.
       // The whole chat is cleaned once for this request, for the trimming pre-flight and the cut alike (finding 5).
       const scan = createTrimScan(prompt, messages);
-      const chatMarkers = historyMarkerIndices(prompt, messages);
+      scan.turn = turn;
+      const promptMatches = (scan.pairs = matchPromptToHost(prompt, messages));
+      const chatMarkers = historyMarkerIndices(prompt, messages, promptMatches);
       const marker = findMarker(prompt, chatMarkers);
       const skipIn = (p: PromptMessage[]): Set<number> => (chatMarkers.size === 0 ? chatMarkers
         : p === prompt ? chatMarkers : historyMarkerIndices(p, messages));
@@ -748,7 +811,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const { request, bodies } = await within(buildManifest(chat, firstSaying(messages),
         { characterName: characterName(chat.id), personaName: personaName(chat) }), deadline, 'the manifest');
       const manifestMs = host.now() - t0;
-      const inContext = inContextIds(prompt, messages);
+      const inContext = inContextIds(prompt, messages, undefined, undefined, promptMatches);
       // Trimming asks the sidecar for a boundary only when the prompt can take a cut (PHASE-60 S1): a packet built for
       // a cut the prompt refuses would leave out of memory dialogue the prompt still holds, or send it twice. A
       // boundary refused before is not asked for again while the prompt still refuses it.
@@ -1068,6 +1131,22 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       try { clearTimer(refreshHandle); } catch { /* the chain finds `disposed` set when it fires */ }
       refreshHandle = null;
     }
+    cache.clear();
+    returnedMemo.clear();
+    conversations.clear();
+    names.clear();
+    canonSent.clear();
+    canonQueue.clear();
+    textHashes.clear();
+    textHashChars = 0;
+    heldCard.clear();
+    refusedTrim.clear();
+    droppedAt.clear();
+    coverageMarks.clear();
+    syncedLength.clear();
+    buildManifest.clear();
+    personas = null;
+    last = null;
   }
 
   /** Output listener: provisional hint only (H7), and the background sync after the reply (G6). Never awaited work,
