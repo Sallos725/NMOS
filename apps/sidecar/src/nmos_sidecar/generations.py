@@ -104,13 +104,52 @@ ADDS_FIELDS = ("compiler", "prompt")
 READS_FIELDS = ("target_chars", "message_chars")
 # Spec fields a change of re-derives nothing a model wrote, each with the values a switch among carries on (None: any
 # value): rows written under the one value stay as good as they were, and what comes due afterwards is written under the
-# other. A change of only these fields is "carry"; one with a compiler or a cap change too is "adds" or "reads".
+# other. A change of only these fields is "carry"; one with a compiler or a cap change too is "adds" or "reads", one
+# with the model "model", one with anything else "version" (the more expensive class wins).
 # - `normalizer` (PHASE-66 part 3, `normtext`): between clean-v3 and clean-v4, what was read from the one normalizer's
 #   text keeps serving and new work reads the other's. Another normalizer is a version.
-# A further zero-cost field is one more entry here (its name, and the values that carry on or None); its spec field must
-# be absent at the values every earlier key was made with, so those keys do not move. An embedding projection is never
-# classified (its activation always queues what it is missing: re-embedding is local).
-CARRY_FIELDS: dict[str, frozenset[Any] | None] = {"normalizer": frozenset({"clean-v3", "clean-v4"})}
+# - `revision` (PHASE-66 part 5, owner decision 2026-11-25): the number of the post-processing rules a projection kind
+#   writes its rows with under one compiler and prompt (`extraction.REVISION`, `reveals.REVISION`,
+#   `summaries.REVISION`, `canonfacts.REVISION`; each lists what its values changed). A bump re-derives nothing (no paid
+#   re-work) yet makes the keys tell the rows written under the earlier rules from the later ones (AGENTS §4, D20,
+#   ADR 0006). Absent from the spec at 0, the production base (Phase 64), so the first bump moves each key once.
+# A further zero-cost field is one more entry here (its name, and the values that carry on or None). Its spec field is
+# absent at the value every earlier key was made with, so adding the entry moves no key; giving it a value moves the
+# keys of its kind once, on purpose. An embedding projection is never classified (its activation always queues what it
+# is missing: re-embedding is local).
+CARRY_FIELDS: dict[str, frozenset[Any] | None] = {"normalizer": frozenset({"clean-v3", "clean-v4"}), "revision": None}
+
+
+def revision(n: int) -> dict[str, int]:
+    """The spec's `revision` field for post-processing rules number `n` (CARRY_FIELDS): none at 0, the production
+    base's rules, so every key made before the field existed stays as it was."""
+    return {"revision": n} if n else {}
+
+
+def _carries(k: str, old: dict[str, Any], new: dict[str, Any]) -> bool:
+    """Whether a difference of spec field `k` between `old` and `new` is one CARRY_FIELDS carries on."""
+    if k not in CARRY_FIELDS:
+        return False
+    values = CARRY_FIELDS[k]
+    return values is None or {old.get(k), new.get(k)} <= values
+
+
+def carry_only(old: dict[str, Any], new: dict[str, Any]) -> bool:
+    """Whether two specs differ, and only in fields CARRY_FIELDS carries on (`classify` would say "carry")."""
+    differ = [k for k in old.keys() | new.keys() if old.get(k) != new.get(k)]
+    return bool(differ) and all(_carries(k, old, new) for k in differ)
+
+
+def peers(conn: psycopg.Connection, key: str) -> list[str]:
+    """`key` and every generation of its kind whose spec differs from its only in CARRY_FIELDS: their rows are as good
+    as its own (a carry-on, `classify`), so a rule asking whether the active generation has done something (a reveal
+    check, PHASE-66 part 5) counts theirs too. Only `key` on a database that never had a carry-on."""
+    rows = conn.execute("SELECT g.key, g.spec FROM projection_generation g JOIN projection_generation k"
+                        " ON k.kind = g.kind AND k.key = %s", (key,)).fetchall()
+    mine = next((r["spec"] for r in rows if r["key"] == key), None)
+    if mine is None:
+        return [key]
+    return sorted({key} | {r["key"] for r in rows if carry_only(r["spec"], mine)})
 
 
 def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) -> str:
@@ -138,8 +177,7 @@ def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) ->
         return "model"
     adds = old.get("compiler") != new.get("compiler") and {old.get("compiler"), new.get("compiler")} <= ADDS
     reads = any(old.get(k) != new.get(k) for k in READS_FIELDS)
-    carried = tuple(k for k, values in CARRY_FIELDS.items() if old.get(k) != new.get(k)
-                    and (values is None or {old.get(k), new.get(k)} <= values))
+    carried = tuple(k for k in CARRY_FIELDS if old.get(k) != new.get(k) and _carries(k, old, new))
     skip = (ADDS_FIELDS if adds else ()) + (READS_FIELDS if reads else ()) + carried
     if skip and rest(old, skip) == rest(new, skip):
         if not all(old.get(k) == new.get(k) for k in MODEL_FIELDS):

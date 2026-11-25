@@ -2402,6 +2402,28 @@ ONTOLOGY_PRINT = "\n" + "|".join(map(str, (
     "hints ranked by the TARGET before the cut; solo secrets; carried rows; ontology rows in the hints")))
 
 
+# The post-processing rules an extractor generation writes its rows with, whatever its compiler (PHASE-66 part 5, owner
+# decision 2026-11-25): in the spec as `revision` (`generations.revision`; a bump alone is a carry-on, `CARRY_FIELDS`:
+# nothing is extracted again, the rows written keep serving, and the turns that come due are written under the new key).
+# Bump it with any change to how a model's answer becomes rows, the hints a turn is shown or which earlier rows they
+# read, under an unchanged compiler and prompt, once a deployed build has written rows under the current value.
+# 0 (no field): the production base, Phase 64 (`cdf2c9a`).
+# 1 (Tier 1 and its review fixes, PHASE-65 Open 1, K58), each rule against the base:
+#   - polarity: "negated", "neg", "false", "no" and JSON false are negative; an unknown word parks the row pending;
+#   - the model's own `listed`, `listed_pair`, `held`, `doubt` markers are stripped; a list or object predicate is no
+#     row (was a failed job); NUL characters are stripped from stored model strings (was a failed job);
+#   - the cap of 40 cuts the model's own rows only, never derived ones (`learned`, role endings, confirmed name pairs);
+#     one `learned` row per (secret, name); a `found_out_by` name counts for the kept-from name it resolves to;
+#   - reveal evidence, same-name quotes and name-pair hints are checked against the TARGET as shown;
+#   - role endings date by `places_later` (a clause dating the change today is not a plan); a free negative
+#     `role_toward` between listed parties is dropped;
+#   - the hint lists fold the owner's repairs in force before the target turn, and list a continue link's carried
+#     secrets under every compiler; a chat's turns are extracted oldest first;
+#   - the story clock (extract-v19/v20): `<prefix>.` stripped, more keys (with a date-time field), fields older than
+#     the newest one's turn left out.
+REVISION = 1
+
+
 def extractor(settings: Settings, compiler: str | None = None) -> Generation | None:
     """The extractor generation the settings describe (credentials excluded), or None when off. `compiler` names one
     of PROMPTS instead of the settings' (a test of a compiler under settings that name another)."""
@@ -2423,6 +2445,7 @@ def extractor(settings: Settings, compiler: str | None = None) -> Generation | N
         json_mode=settings.llm_json_mode, unit="turn", context_turns=settings.extract_turns,
         **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
         target_chars=settings.extract_target_chars, context_chars=CONTEXT_CHARS, hints=settings.extract_hints,
+        **generations.revision(REVISION),
     )
 
 
@@ -2475,7 +2498,9 @@ def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv:
     every older turn at background priority (per-chat "extract all history", D22). A rebuild's discarded
     turns are always queued. Queued jobs of other generations become obsolete; their extractions stay
     for audit and for fallback. With `uncovered` (PHASE-57 A3: a model change carried on, a startup or a save
-    with no generation change), a turn an earlier generation serves is not queued: only what nothing serves.
+    with no generation change), a turn an earlier generation serves is not queued: only what nothing serves. A turn a
+    carry-on peer of `key` extracted (`generations.peers`: only `revision` or `normalizer` differs, PHASE-66 part 5)
+    counts as extracted by `key`, so neither the backfill window nor "extract all history" pays for it again.
     """
     with conn.transaction():
         conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'extract'"
@@ -2489,14 +2514,14 @@ def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv:
             FROM elig e
             WHERE e.turn_hash IS NOT NULL
               AND NOT EXISTS (SELECT 1 FROM extraction x WHERE x.source_revision_id = e.rid
-                                AND x.window_hash = e.turn_hash AND x.extractor_key = %(key)s
-                                AND x.discarded_at IS NULL)
+                                AND x.window_hash = e.turn_hash AND x.extractor_key = ANY(%(peers)s)
+                                AND x.discarded_at IS NULL)  -- a carry-on peer's counts as its own (PHASE-66 part 5)
               AND (e.turn >= e.turns - %(n)s OR %(all)s OR """ + REBUILD_PENDING + """)
               AND NOT (%(uncovered)s AND """ + OLDER_SERVES + """)
             ORDER BY e.conv, e.turn  -- claim() takes backfill in id order: oldest turns first
             """ + REQUEUE,
-            {"conv": conv, "key": key, "n": backfill, "all": history, "recent": RECENT_PRIORITY,
-             "history": HISTORY_PRIORITY, "uncovered": uncovered},
+            {"conv": conv, "key": key, "peers": generations.peers(conn, key), "n": backfill, "all": history,
+             "recent": RECENT_PRIORITY, "history": HISTORY_PRIORITY, "uncovered": uncovered},
         ).rowcount
 
 

@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 import pytest
 
+from base_rules import base_rules  # noqa: F401 -- autouse: the base's keys, without the revision marker (PHASE-66 part 5)
 from nmos_sidecar import canonfacts, extraction, llm, reveals, summaries
 from nmos_sidecar.config import Settings
 

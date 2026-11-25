@@ -57,6 +57,19 @@ or a guess is not finding out, and neither is something found out in CONTEXT. Mo
 Answer with JSON only: {"secrets": [{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}]}"""
 
 
+# The rules a reveal check's answer becomes rows with and what its OPEN SECRETS list (PHASE-66 part 5, owner decision
+# 2026-11-25), as `extraction.REVISION` is for a turn's: `revision` in the spec, a bump alone a carry-on (no turn is
+# checked again: a check of a generation that differs only so counts as this one's, `generations.peers`).
+# 0 (no field): the production base, Phase 64 (`cdf2c9a`).
+# 1 (Tier 1 and its review fixes), against the base:
+#   - one `learned` row per (secret, name) however often repeated; evidence checked against the TARGET as shown; a
+#     `found_out_by` name counts for the kept-from name it resolves to (an alias, the persona's other name);
+#   - OPEN SECRETS lists a continue link's carried secrets, reads earlier turns with the active extractor compiler's
+#     registry, and for extract-v21 its solo secrets; NUL characters are stripped from the stored reply.
+#   Which turns get a check (a reworded secret, an owner's reopen, a link made later) is scheduling, not rows: not here.
+REVISION = 1
+
+
 def generation(settings: Settings) -> Generation | None:
     """The reveal generation the settings describe (credentials excluded), or None when extraction is off. It uses the
     extraction model and endpoint, and the extractor's context settings (PHASE-22 Q2); its key names every part that
@@ -68,7 +81,8 @@ def generation(settings: Settings) -> Generation | None:
         compiler=COMPILER_VERSION, normalizer=normtext.active(),  # its input and its answer's check
         json_mode=settings.llm_json_mode, context_turns=settings.extract_turns,
         **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
-        target_chars=settings.extract_target_chars, context_chars=CONTEXT_CHARS)  # the cap: PHASE-62 S1
+        target_chars=settings.extract_target_chars, context_chars=CONTEXT_CHARS,  # the cap: PHASE-62 S1
+        **generations.revision(REVISION))
 
 
 # A stored secret, as secrets.is_secret reads one.
@@ -80,7 +94,9 @@ IS_SECRET = """s.status = 'valid' AND s.knowledge = 'limited' AND cardinality(s.
 #   could be listed (`seen`: when the turn last looked for reveals). Judged per secret (Tier 2 C5): another extraction of
 #   that earlier turn, of any generation, counts only while it held the same secret, so a re-extraction that found a
 #   new secret B in a turn that already had A (a Phase 62 cap raise) makes the later turns look again;
-# - its check is another reveal generation's (the latest check of a turn is the one served, item 3);
+# - its check is another reveal generation's (the latest check of a turn is the one served, item 3), unless that one
+#   differs from `rkey` only in a carry-on field (`generations.peers`: a `revision` or `normalizer` change, PHASE-66
+#   part 5), whose checks are as good as its own;
 # - its check listed a secret as kept from someone whom an earlier turn found it out for (a reveal served now: of that
 #   turn's serving extraction or of its latest check): two workers checked them at once, in either order, and the
 #   listing may have given one of its at most OPEN_SECRETS slots to that secret. Judged by what the check listed, not by
@@ -118,7 +134,7 @@ cur AS (
 
 UNCHECKED = _SERVING + """
 SELECT t.turn, t.rid, t.turn_hash, t.xid, t.check_id, t.listed, t.read_at, t.seen,
-       (t.check_id IS NOT NULL AND t.rkey <> %(rkey)s)
+       (t.check_id IS NOT NULL AND t.rkey <> ALL(%(rkeys)s))  -- another reveal generation's, not a carry-on peer's
        OR EXISTS (  -- the owner reopened an earlier turn's secret after this turn looked (review F11): kept it again,
            SELECT 1 FROM owner_repair r  -- or took back a found-out in force when it looked
            WHERE r.conversation_id = %(conv)s AND coalesce((r.target->>'turn')::int, -1) < t.turn
@@ -227,7 +243,8 @@ def _carried_since(conn: psycopg.Connection, conv: UUID) -> Any:
 def unchecked(conn: psycopg.Connection, key: str, rkey: str, conv: UUID) -> list[dict[str, Any]]:
     """Turns of the head whose serving extraction (`key`'s first) needs a check of the reveal generation `rkey`
     (UNCHECKED, `_holders`): turn, revision, turn hash and the extraction to check (`xid`)."""
-    params = {"conv": conv, "key": key, "rkey": rkey, "window": WINDOW, "not_secrets": sorted(NOT_SECRETS)}
+    params = {"conv": conv, "key": key, "rkey": rkey, "rkeys": generations.peers(conn, rkey), "window": WINDOW,
+              "not_secrets": sorted(NOT_SECRETS)}
     rows = conn.execute(UNCHECKED, params).fetchall()
     stale: set[UUID] = set()
     if any(r["check_id"] is not None and r["listed"] for r in rows):

@@ -61,7 +61,7 @@ from .models import (
 from .canonical import manifest_hash, manifest_hashes, normalize_text, storable
 from .reconcile import Entry, plan, plan_append
 from .llm import Embedder
-from .packet import DEFAULT_POLICY, POLICIES, SEM_QUERY_POLICIES, clean_text
+from .packet import DEFAULT_POLICY, POLICIES, SEM_QUERY_POLICIES
 from .retrieval import RecallOptions, SEM_QUERY_MAX_CHARS, prefetched, query_prefix, retrieve, sem_query
 from .state import current_state, rebuild_state, reparse_conversation, sync_rules, write_state
 from . import statusshape
@@ -595,7 +595,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     (prev.host_logical_id, prev.revision_hash, body.host, body.chat_id),
                 ).fetchone()
             raw = row["content"] if row is not None else None
-        return clean_text(normalize_text(raw)) if raw else ""
+        return normtext.clean(normalize_text(raw)) if raw else ""  # as the retrieve's query is (PHASE-66 part 5)
 
     def prefetch_query(body: BodiesRequest, conn: psycopg.Connection) -> None:
         """The newest user message's embedding is asked for as soon as its text arrives (ADR 0061 item 7): the
@@ -614,7 +614,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                         and b.revision_hash == last.revision_hash), None)
         if content is None:
             return
-        text = clean_text(normalize_text(content))
+        text = normtext.clean(normalize_text(content))  # the active normalizer, as the retrieve cleans its query
         if not text.strip():
             return
         embed_text = text
@@ -1048,7 +1048,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 turns = [t for t in turns if t["turn"] in set(body.turns)]
             with conn.transaction():
                 discarded = extraction.discard_turns(conn, turns)
-                queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id)
+                # the discarded turns (nothing serves them) and nothing else: no turn an earlier generation still serves
+                queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, uncovered=True)
             log.info("reextract joined turns conversation=%s link=%s turns=%d discarded=%d queued=%d", conv_id,
                      link_id, len(turns), discarded, queued)
             return {"turns": [t["turn"] for t in turns], "discarded": discarded, "queued": queued,
@@ -2090,7 +2091,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                           choice=choice)
                         ex = rt["extractor"]
                         if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
-                            queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)
+                            # what nothing serves, a turn an earlier generation serves left to it (PHASE-66 part 5)
+                            queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill,
+                                                                     uncovered=True)
                         if before["settings"].extract_on_output and not rt["settings"].extract_on_output:
                             extraction.withdraw_early(conn)  # PHASE-67: off means no early call starts from now on
                         prepared = dict(rt)
