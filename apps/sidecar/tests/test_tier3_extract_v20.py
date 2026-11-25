@@ -521,3 +521,139 @@ def test_the_v20_worker_stores_the_marks_and_the_migration_guards_them(migrated)
     assert by["possesses"]["item_kind"] == "fungible" and by["possesses"]["knowledge"] == "limited"
     assert by["possesses"]["knowledge_scope"] == "public_except"
     assert UUID(cid)
+
+
+# --- the ontology's own rows through the hint lists, repairs, reveals and role endings ------------------------------
+
+def guise_rows() -> list[dict[str, Any]]:
+    return [
+        row(2, "하나", "disguised_as", "카이", "남장", turn_hash="h2", knowledge="limited", known_by=["하나"],
+            hidden_from=["카이토"], **CHAR),
+        row(3, "세라", "vital_status", value="실종", subject_type="character", turn_hash="h3"),
+        row(4, "열쇠", "contained_in", "보석함", subject_type="item", object_type="item", turn_hash="h4"),
+        row(5, "백은 길드", "role_toward", "하나", "고용주", subject_type="group", object_type="character",
+            turn_hash="h5"),
+    ]
+
+
+@pytest.mark.parametrize("note", ["남장", None])
+def test_a_guise_kept_from_someone_is_a_listed_secret_a_reveal_closes(note):
+    from nmos_sidecar.secrets import fold
+
+    rows = guise_rows()
+    rows[0]["value"] = note
+    text = "카이토는 카이가 하나라는 걸 알아챘다."
+    (listed,) = X.secret_hints(ctx(text), rows, turn_text=text, include_solo=True)
+    assert listed["text"].startswith("하나 disguised as 카이") and listed["kept_from"] == ["카이토"]
+    answer = {"secrets": [{"secret": "S1", "found_out_by": ["카이토"], "evidence": text}]}
+    (learned,) = X.revealed(answer, [listed], text)
+    reveal = {**row(8, "카이토", "learned", value=learned["value"], subject_type="character"), "turn_hash": "h8"}
+    for listed_hash in ("h2", None):  # rule 1 (the listed turn as it was) and rule 2 (a reworded re-extraction)
+        secrets, unmatched, _ = fold([dict(r) for r in rows] + [{**reveal, "listed_hash": listed_hash}], None)
+        assert [s["open"] for s in secrets] == [[]] and unmatched == []
+
+
+def test_ontology_rows_pass_the_hint_lists_and_the_owners_repairs():
+    from nmos_sidecar.repairs import fact_target
+    from test_tier1_extraction_bugs import owner
+
+    rows = guise_rows()
+    text = "카이토와 백은 길드의 하나, 세라는 보석함 속 열쇠를 찾았다."
+    names = [h["name"] for h in X.entity_hints(None, ctx(text), "k", 30, rows)]
+    assert {"하나", "카이", "세라", "열쇠", "보석함", "백은 길드"} <= set(names)
+    assert [s["kept_from"] for s in X.secret_hints(ctx(text), rows)] == [["카이토"]]
+    retract = owner("fact_retract", fact_target(rows[0]), 6)
+    c = ctx(text)
+    c["target"]["repairs"] = [retract]
+    assert X.secret_hints(c, rows, turn_text=text, include_solo=True) == []
+    assert [(r["by"], r.get("by_type")) for r in X.role_hints(c, rows)] == [("백은 길드", "group")]
+
+
+def test_a_listed_group_role_ends_as_the_same_role():
+    from nmos_sidecar.facts import _versions
+
+    roles = X.role_hints(ctx("하나는 백은 길드를 떠났다."), guise_rows(), turn_text="하나는 백은 길드를 떠났다.")
+    assert roles == [{"by": "백은 길드", "to": "하나", "role": "고용주", "turn": 5, "knowledge": None, "known_by": None,
+                      "hidden_from": None, "by_type": "group"}]
+    text = "하나는 길드 계약서를 찢고 백은 길드를 영영 떠났다."
+    answer = {"roles_ended": [{"role": "R1", "when": "now", "evidence": "하나는 길드 계약서를 찢고 백은 길드를 영영 떠났다"}]}
+    (ending,) = X.ended_roles(answer, [], roles, text)
+    assert (ending["subject_type"], ending["object_type"], ending["polarity"]) == ("group", "character", "negative")
+    (stored,) = X.normalize([{k: v for k, v in ending.items() if k != "listed"}], text, compiler=V20)
+    assert stored["status"] == "valid", stored["reason"]
+    held = guise_rows()[3]
+    closed = {**held, **{k: stored[k] for k in ("subject_type", "object_type", "value", "polarity")}, "id": 9,
+              "position": 9, "turn": 9}
+    assert [f["polarity"] for f in _versions([held, closed])] == ["negative"]
+    # a character's role hint is as before: no type keys
+    plain = X.role_hints(ctx("하나는 카이토를 만났다."), [row(1, "하나", "role_toward", "카이토", "조수", turn_hash="h1",
+                                                            **CHAR)])
+    assert set(plain[0]) == {"by", "to", "role", "turn", "knowledge", "known_by", "hidden_from"}
+
+
+GUISE_TURN = "하나는 남장을 하고 카이라는 이름으로 백은 길드에 들어갔다. 세라는 실종됐고 열쇠는 보석함에 있다."
+REVEAL_TURN = "카이토는 카이가 하나라는 걸 알아챘다."
+LATER_TURN = "카이토와 카이는 길드 앞에서 하나의 이야기를 했다."
+
+
+def multi_stub(prompts: dict[str, str]):
+    def complete(system: str, user: str) -> tuple[dict, str, dict]:
+        target = user.split("TARGET turn", 1)[-1]
+        for key in ("guise", "reveal", "later"):
+            if {"guise": GUISE_TURN, "reveal": REVEAL_TURN, "later": LATER_TURN}[key] in target:
+                prompts[key] = user
+        if GUISE_TURN in target:
+            return {"assertions": [
+                {"subject": "하나", "subject_type": "character", "predicate": "disguised_as", "object": "카이",
+                 "object_type": "character", "value": "남장", "modality": "actual", "source": "narration",
+                 "knowledge": "limited", "known_by": ["하나"], "hidden_from": ["카이토"],
+                 "evidence": "하나는 남장을 하고 카이라는 이름으로"},
+                {"subject": "세라", "subject_type": "character", "predicate": "vital_status", "value": "실종",
+                 "modality": "actual", "source": "narration", "evidence": "세라는 실종됐고"},
+                {"subject": "열쇠", "subject_type": "item", "predicate": "contained_in", "object": "보석함",
+                 "object_type": "item", "item_kind": "unique", "modality": "actual", "source": "narration",
+                 "evidence": "열쇠는 보석함에 있다"},
+                {"subject": "백은 길드", "subject_type": "group", "predicate": "role_toward", "object": "하나",
+                 "object_type": "character", "value": "고용주", "modality": "actual", "source": "narration",
+                 "evidence": "백은 길드에 들어갔다"},
+            ]}, "{}", {"calls": 1}
+        if REVEAL_TURN in target and "disguised as" in user.split("TARGET turn", 1)[0]:
+            return {"assertions": [], "secrets": [{"secret": "S1", "found_out_by": ["카이토"],
+                                                    "evidence": REVEAL_TURN}]}, "{}", {"calls": 1}
+        return {"assertions": []}, "{}", {"calls": 1}
+    return complete
+
+
+def test_the_v20_worker_lists_reveals_and_then_closes_a_guise_across_turns(migrated):
+    chat = SimChat()
+    for i, text in enumerate(("장면 0.", GUISE_TURN, REVEAL_TURN, LATER_TURN)):
+        chat.user(f"계속 {i}.")
+        chat.reply(text)
+    chat.user("끝.")
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+    prompts: dict[str, str] = {}
+    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+        gen = X.extractor(Settings(database_url=migrated, **LLM), V20)
+        generations.activate(conn, gen)
+        X.schedule_generation(conn, gen.key, 50)
+        jobs = {"extract": (gen.key, lambda cn, job: X.process_extract(cn, job, multi_stub(prompts), gen,
+                                                                         gen.spec["context_turns"]))}
+        while run_once(conn, jobs):
+            pass
+        stored = {r["predicate"]: r for r in conn.execute(
+            "SELECT a.predicate, a.subject, a.subject_type, a.status, a.item_kind, a.knowledge_scope FROM assertion a"
+            " JOIN extraction x ON x.id = a.extraction_id WHERE x.extractor_key = %s", (gen.key,)).fetchall()}
+        hints = [r["hints"] for r in conn.execute(
+            "SELECT x.hints FROM extraction x WHERE x.extractor_key = %s AND x.hints->'secrets' <> '[]'::jsonb",
+            (gen.key,)).fetchall()]
+        assert conn.execute("SELECT count(*) AS n FROM job WHERE status = 'dead'").fetchone()["n"] == 0
+    assert {p: stored[p]["status"] for p in ("disguised_as", "vital_status", "contained_in", "role_toward",
+                                             "learned")} == dict.fromkeys(
+        ("disguised_as", "vital_status", "contained_in", "role_toward", "learned"), "valid")
+    assert stored["learned"]["subject"] == "카이토" and stored["contained_in"]["item_kind"] == "unique"
+    assert stored["role_toward"]["subject_type"] == "group"
+    assert "S1. 하나 disguised as 카이: 남장" in prompts["reveal"] and "kept from: 카이토" in prompts["reveal"]
+    assert "disguised as" not in prompts["later"].split("TARGET turn", 1)[0]  # found out: no longer listed
+    assert "CURRENT ROLES" in prompts["reveal"] and "R1. 백은 길드 → 하나: 고용주" in prompts["reveal"]
+    assert any(h["secrets"][0]["text"] == "하나 disguised as 카이: 남장" for h in hints)

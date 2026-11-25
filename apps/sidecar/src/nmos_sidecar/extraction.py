@@ -1120,8 +1120,12 @@ def role_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPE
         named, persona = order, []
     # The role's knowledge scope rides along (not shown in the prompt): its ending keeps it (`_ending`), so a secret
     # arrangement does not become public because it ended (Codex review of bcce836).
+    # A party that is not a character (extract-v20: a group) rides along with its type, so its ending (`_ending`) closes
+    # the same role; a character's hint is as before.
     return [{"by": f["subject"], "to": f["object"], "role": f["value"], "turn": f["turn"],
-             "knowledge": f.get("knowledge"), "known_by": f.get("known_by"), "hidden_from": f.get("hidden_from")}
+             "knowledge": f.get("knowledge"), "known_by": f.get("known_by"), "hidden_from": f.get("hidden_from"),
+             **{f"{side}_type": f[f"{role}_type"] for side, role in (("by", "subject"), ("to", "object"))
+                if f.get(f"{role}_type") not in (None, "character")}}
             for f in named + persona][:limit]
 
 
@@ -1596,8 +1600,9 @@ def _ending(listed: dict[str, Any], evidence: str, doubt: str | None) -> dict[st
     hand-made list) ends as public, as before."""
     scope = ({k: listed.get(k) for k in ("knowledge", "known_by", "hidden_from")} if "knowledge" in listed
              else {"knowledge": "public"})
-    return {"subject": listed["by"], "subject_type": "character", "predicate": "role_toward", "object": listed["to"],
-            "object_type": "character", "value": listed["role"], "polarity": "negative", "modality": "actual",
+    return {"subject": listed["by"], "subject_type": listed.get("by_type", "character"), "predicate": "role_toward",
+            "object": listed["to"], "object_type": listed.get("to_type", "character"), "value": listed["role"],
+            "polarity": "negative", "modality": "actual",
             "source": "narration", "evidence": evidence, **scope, "epistemic": "stated",
             "listed": listed, **({"doubt": doubt, "held": f"{HELD}: {doubt}"} if doubt else {})}
 
