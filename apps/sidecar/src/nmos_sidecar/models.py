@@ -60,6 +60,10 @@ class ReconcileRequest(BaseModel):
     plugin_build: str | None = Field(default=None, max_length=40)
     hash_version: Literal[1] = 1
     messages: list[ManifestMessage] = Field(max_length=MAX_MANIFEST_MESSAGES)
+    # Why the plugin synced (PHASE-67): "request" before a main generation (and every older plugin, which sends none);
+    # "output" for its background sync about 20 s after a reply. With `extract_on_output` on, an output sync schedules
+    # the open turn's extraction early (`extraction.enqueue_open_turn`); off, it is only recorded.
+    trigger: Literal["request", "output"] = "request"
 
 
 class RevisionRef(BaseModel):
