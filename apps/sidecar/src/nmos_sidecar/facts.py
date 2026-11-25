@@ -70,6 +70,8 @@ SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
        a.participants::text AS participants, a.outcome, a.because, a.feeling::text AS feeling, a.when_happened,
        a.address_condition::text AS address_condition,
+       -- extract-v21's own marks (PHASE-66, migration 0041); null on every earlier generation's row
+       a.condition::text AS condition, a.guise, a.item_kind, a.knowledge_scope,
        -- a check's rows read as the extraction it checked
        l.position, l.turn, l.host_logical_id, l.chosen AS generation, l.chosen_compiler AS compiler,
        -- the turn's hash: a secret's (ADR 0033 amendment 2) and an owner repair's target (ADR 0044); and the hash a
@@ -127,7 +129,20 @@ def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, 
             r["when_happened"] = when
         if (cond := r.pop("address_condition")) is not None:  # extract-v20 only (PHASE-64): other rows read as before
             r["address_condition"] = _parse_address_condition(cond)
+        ontology_marks(r)
     return rows
+
+
+ONTOLOGY_MARKS = ("condition", "guise", "item_kind", "knowledge_scope")  # extract-v21's columns (PHASE-66, 0041)
+
+
+def ontology_marks(row: dict[str, Any]) -> dict[str, Any]:
+    """extract-v21's four marks of a stored row (PHASE-66), in place: each kept only when set, `condition` parsed from
+    its text, so a row of every earlier generation (all four null) has none of the keys and reads as before."""
+    for k in ONTOLOGY_MARKS:
+        if k in row and (value := row.pop(k)) is not None:
+            row[k] = _parse_address_condition(value) if k == "condition" and isinstance(value, str) else value
+    return row
 
 
 def told_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -297,6 +312,9 @@ def _entry(h: dict[str, Any], outcome: dict[int, str], closer: dict[int, dict[st
         out["when_happened"] = h["when_happened"]
     if h.get("address_condition"):  # PHASE-64: the condition this address held under
         out["address_condition"] = h["address_condition"]
+    for k in ONTOLOGY_MARKS:  # PHASE-66: extract-v21's marks of the statement, only where it has them
+        if h.get(k):
+            out[k] = h[k]
     if h.get("canon"):
         out["canon"] = h["canon"]
     if h.get("carried"):  # ADR 0085: a statement an earlier chat made

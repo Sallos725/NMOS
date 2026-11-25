@@ -290,6 +290,8 @@ def fact_target(f: dict[str, Any]) -> dict[str, Any]:
            **({"canon": f["canon"]} if f.get("canon") else {}), **({"carried": f["carried"]} if f.get("carried") else {})}
     if f.get("address_condition"):
         out["address_condition"] = f["address_condition"]
+    if f.get("condition"):  # PHASE-66: a conditional fact names its slot as an address does
+        out["condition"] = f["condition"]
     return out
 
 
@@ -479,6 +481,8 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
     return out, retracted
 
 
+ONTOLOGY_MARKS = ("condition", "guise", "item_kind", "knowledge_scope")  # extract-v21's (PHASE-66), = facts.ONTOLOGY_MARKS
+
 # A restored fact's columns, as the fact read serves a row (`facts.ACTIVE_ASSERTIONS`) and a restore's target stores them.
 RESTORED = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic", "confidence",
             "evidence", "knowledge", "known_by", "hidden_from", "polarity", "modality", "source", "asserted_by",
@@ -493,7 +497,8 @@ def restore_target(f: dict[str, Any]) -> dict[str, Any]:
             "fact": ({k: f.get(k) for k in RESTORED}
                      | ({"feeling": f["feeling"]} if f.get("feeling") else {})
                      | ({"when_happened": f["when_happened"]} if f.get("when_happened") else {})
-                     | ({"address_condition": f["address_condition"]} if f.get("address_condition") else {}))}
+                     | ({"address_condition": f["address_condition"]} if f.get("address_condition") else {})
+                     | {k: f[k] for k in ONTOLOGY_MARKS if f.get(k)})}
 
 
 def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied: dict[str, str | None],
@@ -518,6 +523,9 @@ def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied:
         new["when_happened"] = fact["when_happened"]
     if fact.get("address_condition"):  # PHASE-64: a restored conditional address keeps its condition
         new["address_condition"] = fact["address_condition"]
+    for k in ONTOLOGY_MARKS:  # PHASE-66: a restored extract-v21 fact keeps its marks (and so reads as v21's)
+        if fact.get(k):
+            new[k] = fact[k]
     new.update({"id": _owner_id(rep), "turn": t["turn"], "turn_hash": t["turn_hash"], "position": at[0],
                 "host_logical_id": None, "generation": None, "compiler": None, "listed_hash": None,
                 "source": "narration", "owner": True, "repair": str(rep["id"])})

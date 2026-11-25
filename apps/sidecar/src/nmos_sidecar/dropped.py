@@ -18,7 +18,7 @@ from uuid import UUID
 import psycopg
 
 from .entities import norm
-from .facts import _parse_feeling
+from .facts import _parse_feeling, ontology_marks
 from .predicates import REGISTRY, address_slot, stored_knowledge
 from .repairs import _ekey, _established, restated
 from .secrets import secret_text
@@ -41,7 +41,8 @@ ORDER BY am.turn
 ROWS = """
 SELECT id, extraction_id, subject, subject_type, predicate, object, object_type, value, epistemic, confidence, evidence,
        knowledge, known_by, hidden_from, polarity, modality, source, asserted_by, salience, participants::text AS participants,
-       outcome, because, when_happened, feeling::text AS feeling, address_condition::text AS address_condition
+       outcome, because, when_happened, feeling::text AS feeling, address_condition::text AS address_condition,
+       condition::text AS condition, guise, item_kind, knowledge_scope
 FROM assertion WHERE extraction_id = ANY(%s) AND status = 'valid' ORDER BY id
 """
 
@@ -71,6 +72,7 @@ def find(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, 
             row["feeling"] = _parse_feeling(detail)
         if (cond := row.pop("address_condition", None)) is not None:  # extract-v20 only (PHASE-64): other rows read as before
             row["address_condition"] = json.loads(cond)
+        ontology_marks(row)  # extract-v21 only (PHASE-66): other rows read as before
         if row["known_by"] or row["hidden_from"]:
             stored_knowledge(row)
         by.setdefault(row["extraction_id"], []).append(row)
