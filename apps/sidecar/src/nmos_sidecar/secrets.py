@@ -34,10 +34,13 @@ from .predicates import REGISTRY, address_label, address_slot
 from .threads import MATCH_MIN, Event, fire, similarity
 
 PREDICATE = "learned"
+# PHASE-66: what a character believes (true or not) or forgot is no fact about the world, so never a secret, and a belief
+# is never knowing: a secret about a matter someone merely believes stays kept from them
+EPISTEMIC = frozenset({"believes", "forgot"})
 NOT_SECRETS = frozenset({PREDICATE, "also_called", "fulfilled",
                          # PHASE-60 S8, owner decision 2026-11-23: a told row keeps its marks, but no reveal check
                          # tracks it; a known limit of this phase
-                         "told"})
+                         "told"}) | EPISTEMIC
 
 
 def secret_text(a: dict[str, Any]) -> str:
@@ -235,14 +238,165 @@ def is_secret(a: dict[str, Any]) -> bool:
             and a.get("modality", "actual") != "dreamed")
 
 
+def kept_from_others(a: dict[str, Any]) -> bool:
+    """extract-v21 (PHASE-66): a fact known by the characters `known_by` names alone, with nobody in `hidden_from`
+    (knowledge `limited` in its own four-way scope, `knowledge_scope`): it is kept from everyone else, a character who
+    first appears later included, and ends for whoever learns it. A secret that names whom it is kept from (`limited`
+    or `public_except` with `hidden_from`) is kept from those alone, as every earlier generation's secret is. A row of
+    an earlier generation has no `knowledge_scope`, so its known-by-only facts are no secrets, as before."""
+    return (a.get("knowledge_scope") == "limited" and a["predicate"] not in NOT_SECRETS
+            and a.get("knowledge") == "limited" and bool(a.get("known_by")) and not a.get("hidden_from")
+            and a.get("modality", "actual") != "dreamed")
+
+
 def reveals(a: dict[str, Any]) -> bool:
     """Whether an assertion reports that its subject found a secret out."""
     return (a["predicate"] == PREDICATE and a.get("modality", "actual") == "actual"
             and a.get("polarity", "positive") != "negative")
 
 
+def _forgets(a: dict[str, Any]) -> bool:
+    """A narrated, actual, positive `forgot` (extract-v21): what `facts._epistemic` reads as one."""
+    return (a["predicate"] == "forgot" and a.get("polarity", "positive") != "negative"
+            and (a.get("source") or "narration") == "narration" and (a.get("modality") or "actual") == "actual")
+
+
 def _ref(a: dict[str, Any]) -> dict[str, Any]:
     return {k: a.get(k) for k in ("id", "position", "turn", "subject", "value", "source", "asserted_by", "evidence")}
+
+
+def _narrated(a: dict[str, Any]) -> bool:
+    return (a.get("source") or "narration") == "narration" and (a.get("modality") or "actual") == "actual"
+
+
+class _Groups:
+    """Who belongs to a group named in a knowledge mark (extract-v21, PHASE-66). A name is a group when the read's
+    resolution knows a `group` entity by it (an entity type, never a spelling): typed so by some row, such as the object
+    of a `member_of`. Its members are the characters whose narrated, actual `member_of` it overlaps the secret's time:
+    a member when the secret is stated, or one who joins later (covered from then on, as the read is of now). One who
+    left before the secret is not covered; one who leaves after it is not un-told what they learned as a member (named
+    in `known_by`), nor told what was kept from them (named in `hidden_from`)."""
+
+    def __init__(self, rows: list[dict[str, Any]], r: Resolution | None):
+        self.r = r
+        self.said: dict[str, list[tuple[int, str, str, bool]]] = {}  # group key -> (turn, character key, name, joined)
+        if r is None:
+            return
+        for a in rows:
+            if a["predicate"] == "member_of" and a.get("object") and _narrated(a):
+                turn = a.get("turn") if a.get("turn") is not None else -1
+                self.said.setdefault(r.key("group", a["object"]), []).append(
+                    (turn, _who(r, a["subject"]), a["subject"], a.get("polarity", "positive") != "negative"))
+
+    def group(self, name: str, *, strict: bool) -> bool:
+        """Whether a mark's name is a group. `strict` (a holder's): not when a character goes by it too, as the doubt
+        then keeps the secret hidden."""
+        if self.r is None or self.r.entity("group", name) is None:
+            return False
+        return not strict or self.r.entity("character", name) is None
+
+    def members(self, name: str, since: int | None) -> dict[str, str]:
+        """{character key: name} of the members whose membership overlaps the secret's time, from turn `since` on."""
+        assert self.r is not None
+        since = since if since is not None else -1
+        state: dict[str, bool] = {}
+        later: set[str] = set()
+        names: dict[str, str] = {}
+        for turn, k, n, joined in self.said.get(self.r.key("group", name), ()):
+            names.setdefault(k, n)
+            if turn <= since:
+                state[k] = joined
+            elif joined:
+                later.add(k)
+        return {k: names[k] for k in names if state.get(k) or k in later}
+
+
+def _everyone(r: Resolution | None) -> dict[str, str]:
+    """{key: name} of every character the read knows, the persona always among them: a secret kept from everyone but its
+    holders is kept from each of them (`kept_from_others`)."""
+    out: dict[str, str] = {}
+    if r is None:
+        return out
+    for e in r.entities():
+        if e["type"] == "character":
+            out.setdefault(e["id"], e["name"])
+    persona = _who(r, "{{user}}")
+    if persona not in out:
+        out[persona] = "{{user}}"
+    return out
+
+
+def _matter(value: str | None, s: dict[str, Any]) -> bool:
+    """Whether a forgetting's named matter is this secret: its content or its line, at least MATCH_MIN alike (the bar
+    `facts._about` reads a forgetting's matter by)."""
+    matter = TURN.sub("", str(value or ""))
+    return bool(matter.strip()) and max(similarity(matter, _split(s["text"])[2]), similarity(matter, s["text"])) >= MATCH_MIN
+
+
+def _forgot(g: dict[str, Any], s: dict[str, Any], who: str, r: Resolution | None) -> None:
+    """A forgetting (`g`) of its subject's: a secret that was ended for them (a reveal, or the owner's found-out) is kept
+    from them again from its turn on, and ends again only when they learn it again. One kept from everyone but its
+    holders is kept from a holder who forgets it too. `forgot_scope`: one matter, "all", or "since turn N" (of when they
+    learned it: the reveal's turn, a holder's the secret's)."""
+    from .facts import forgot_scope  # facts imports this module
+
+    scope, since = forgot_scope(g.get("value"))
+
+    def applies(start: int | None) -> bool:
+        if start is not None and g.get("turn") is not None and start > g["turn"]:
+            return False
+        if scope == "all":
+            return True
+        if scope == "since":
+            return start is not None and since is not None and start >= since
+        return _matter(g.get("value"), s)
+
+    for name in [n for n in s["ended"] if _who(r, n) == who]:
+        if applies(s["ended"][name].get("turn")):
+            s.setdefault("reopened", []).append({"to": name, "forgot": _ref(g), "ended": s["ended"].pop(name)})
+    if s["_others"] and who in s["_holders"] and applies(s["turn"]):
+        name = s["_holders"].pop(who)
+        s["holders"] = [n for n in s["holders"] if _who(r, n) != who]
+        if who not in s["_kept"]:
+            s["_kept"][who] = name
+            s["kept_from"].append(name)
+        s.setdefault("reopened", []).append({"to": s["_kept"][who], "forgot": _ref(g), "held": True})
+
+
+def _secret(a: dict[str, Any], r: Resolution | None, groups: _Groups | None) -> dict[str, Any]:
+    kept: dict[str, str] = {}
+    for name in a.get("hidden_from") or ():
+        kept.setdefault(_who(r, name), name)
+    holders = list(a.get("known_by") or [])
+    out = {"id": a["id"], "text": secret_text(a), "turn": a.get("turn"), "turn_hash": a.get("turn_hash"),
+           "subject": a["subject"], "predicate": a["predicate"], "object": a.get("object"),
+           "position": a["position"],
+           "host_logical_id": a.get("host_logical_id"), "holders": holders,
+           "kept_from": [], "ended": {}, "_kept": kept, "_others": False, "_holders": {},
+           "_evidence": a.get("evidence"),  # for a repair's quote (repairs.match_secret)
+           "_slot": address_slot(a) if a["predicate"] == ADDRESSES else None}
+    if groups is not None:  # extract-v21 (PHASE-66): its marks name groups, its `limited` is kept from everyone else
+        held = {_who(r, n): n for n in holders}
+        for name in a.get("known_by") or ():
+            if groups.group(name, strict=True):
+                for k, n in groups.members(name, a.get("turn")).items():
+                    if k not in held:
+                        held[k] = n
+                        holders.append(n)
+        for name in a.get("hidden_from") or ():
+            if groups.group(name, strict=False):
+                for k, n in groups.members(name, a.get("turn")).items():
+                    if k not in held:
+                        kept.setdefault(k, n)
+        if kept_from_others(a):
+            out["_others"] = True
+            out["solo"] = True
+            for k, n in _everyone(r).items():
+                if k not in held:
+                    kept.setdefault(k, n)
+        out["_holders"] = held
+    out["kept_from"] = list(kept.values())
+    return out
 
 
 def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
@@ -253,39 +407,52 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
     secret: id, text, turn, position, holders (known_by), kept_from (every name it was kept from), ended
     ({name: the revealing assertion}), open (the names it is still kept from). `events` happen after every row of
     their turn, so a later reveal still ends a secret: the owner's repairs (ADR 0044).
+
+    extract-v21 (PHASE-66), on its own rows only (`knowledge_scope`), so an earlier generation's read is as it was: a
+    fact known by its holders alone is kept from every other character (`kept_from_others`, marked `solo`), one the read
+    meets later included, and ends for whoever learns it; a group in
+    a mark stands for its members (`_Groups`); a `believes` or `forgot` is never a secret nor a reveal (`EPISTEMIC`);
+    and a `forgot` (any generation's secret) keeps a secret from its subject again (`_forgot`; `reopened`).
     """
     secrets: list[dict[str, Any]] = []
     unmatched: list[dict[str, Any]] = []
     used: set[int] = set()
     pending = sorted(events or [], key=lambda e: (e[0], e[1]))
+    groups: _Groups | None = None
     for a in rows:
         if a.get("turn") is not None:
             fire(pending, secrets, a["turn"])
-        if is_secret(a):
-            kept = {}
-            for name in a["hidden_from"]:
-                kept.setdefault(_who(r, name), name)
-            secrets.append({"id": a["id"], "text": secret_text(a), "turn": a.get("turn"), "turn_hash": a.get("turn_hash"),
-                            "subject": a["subject"], "predicate": a["predicate"], "object": a.get("object"),
-                            "position": a["position"],
-                            "host_logical_id": a.get("host_logical_id"), "holders": list(a.get("known_by") or []),
-                            "kept_from": list(kept.values()), "ended": {}, "_kept": kept,
-                            "_evidence": a.get("evidence"),  # for a repair's quote (repairs.match_secret)
-                            "_slot": address_slot(a) if a["predicate"] == ADDRESSES else None})
+        v21 = a.get("knowledge_scope") is not None
+        if is_secret(a) or (v21 and kept_from_others(a)):
+            if v21 and groups is None:
+                groups = _Groups(rows, r)
+            secrets.append(_secret(a, r, groups if v21 else None) | {"_row": a})
         elif reveals(a):
             used.add(a["id"])
             who = _who(r, a["subject"])
-            hit = _hits([s for s in secrets if who in s["_kept"]], a.get("value"), a.get("listed_hash"), r)
+            hit = _hits([s for s in secrets if who in s["_kept"] or (s["_others"] and who not in s["_holders"])],
+                        a.get("value"), a.get("listed_hash"), r)
             if not hit:
                 unmatched.append(_ref(a))
             for s in hit:  # a secret this character already found out stays ended by the first reveal
+                if who not in s["_kept"]:  # one kept from everyone but its holders: a character the listing did not name
+                    s["_kept"][who] = a["subject"]
+                    s["kept_from"].append(a["subject"])
                 s["ended"].setdefault(s["_kept"][who], _ref(a))
+        elif _forgets(a):
+            who = _who(r, a["subject"])
+            for s in secrets:
+                _forgot(a, s, who, r)
     fire(pending, secrets, None)
     for s in secrets:
         s["open"] = [n for n in s["kept_from"] if n not in s["ended"]]
-        s.pop("_kept")
-        s.pop("_evidence")
-        s.pop("_slot")
+        row = s.pop("_row")
+        if s["ended"] and row.get("hidden_from") is None:
+            # A secret kept from everyone but its holders may name nobody in `hidden_from`; `facts.memory_view` drops a
+            # revealed name from the row's list.
+            row["hidden_from"] = []
+        for k in ("_kept", "_evidence", "_slot", "_others", "_holders"):
+            s.pop(k)
     secrets.sort(key=lambda s: s["position"], reverse=True)
     unmatched.sort(key=lambda u: u["position"], reverse=True)
     return secrets, unmatched, used
