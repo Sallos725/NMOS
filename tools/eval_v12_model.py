@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_extraction_model import ROOT, Line, call, norm  # noqa: E402
 
 from nmos_sidecar.entities import resolve  # noqa: E402
-from nmos_sidecar.extraction import SYSTEM_PROMPT, build_prompt, normalize, revealed  # noqa: E402
+from nmos_sidecar.extraction import SYSTEM_PROMPT, build_prompt, normalize, own_items, revealed  # noqa: E402
 from nmos_sidecar.generations import fingerprint  # noqa: E402
 from nmos_sidecar.llm import parse_json_object  # noqa: E402
 from nmos_sidecar.predicates import DERIVED, registry_prompt  # noqa: E402
@@ -245,7 +245,7 @@ def main() -> None:
             parsed = parse_json_object(reply["text"]) or {}
             text = "\n".join(x for _, _, x in scene.target)
             raw = [a for a in parsed.get("assertions") or [] if not (isinstance(a, dict) and a.get("predicate") in DERIVED)]
-            items = normalize(raw + revealed(parsed, scene.listed(), text), text, scene.hints)
+            items = normalize(own_items(raw) + revealed(parsed, scene.listed(), text), text, scene.hints)
             ok, note = scene.check(items, scene)
             record.update({"assertions": items, "pass": ok, "note": note})
         return record

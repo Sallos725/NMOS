@@ -916,11 +916,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
     # A carried row (ADR 0085) is a secret too: what was kept from someone in the earlier chat still is until this story
     # shows them finding it out, and the summary and excerpt gates keep it.
-    # PHASE-66: a belief or a forgetting is no fact, so no secret either (its knowledge marks stay on its own row)
+    # PHASE-66: a belief or a forgetting is no secret (the fold reads both as `NOT_SECRETS`); a forgetting reaches it
+    # whole, so it reopens a secret revealed to its subject (and a later reveal ends it again)
     believed = [x for x in rows if epistemic(x)]
     secret_rows = [x for x in rows if not x.get("canon")] if canon_rows else rows
-    secrets, unrevealed, reveals = fold_secrets([x for x in secret_rows if not epistemic(x)] if believed else secret_rows,
-                                                r, secret_events(in_force, r, applied))
+    secrets, unrevealed, reveals = fold_secrets(secret_rows, r, secret_events(in_force, r, applied))
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     by_repair = {s["id"]: s["repair"] for s in secrets if s.get("repair")}
     for row in rows:
@@ -929,7 +929,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         if row["id"] in ended:
             # by entity: a reveal to "김하나" also ends the secret for "하나" written beside it
             revealed_to = {r.key("character", n) for n in ended[row["id"]]}
-            row["hidden_from"] = [n for n in row["hidden_from"] if r.key("character", n) not in revealed_to] or None
+            row["hidden_from"] = [n for n in row.get("hidden_from") or () if r.key("character", n) not in revealed_to] or None
             row["known_by"] = list(row.get("known_by") or []) + sorted(ended[row["id"]] - set(row.get("known_by") or []))
             row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
     disguises = _disguises(rows, r) if guise_aliases else []
@@ -1477,8 +1477,10 @@ def fact_text(f: dict[str, Any]) -> str:
     if f.get("object"):
         parts.append(f["object"])
     text = " ".join(parts)
-    if label := address_label(f) or (address_label({"predicate": "addresses", "address_condition": f["condition"]})
-                                     if conditional(f) and f.get("predicate") != "addresses" else None):
+    cond = f.get("condition")  # PHASE-66: only a conditioned predicate's own mark; a stray one is ignored, never raised on
+    if label := address_label(f) or (address_label({"predicate": "addresses", "address_condition": cond})
+                                     if isinstance(cond, Mapping) and slotted(f.get("predicate"))
+                                     and f.get("predicate") != "addresses" else None):
         text = f"{text} [{label}]"  # PHASE-64; PHASE-66: a conditioned fact names its condition the same way
     return f"{text}: {f['value']}" if f.get("value") else text
 
@@ -1535,9 +1537,23 @@ def asked_nouns(query: str) -> tuple[str, ...]:
                                if len(w) == 1 and w not in FUNCTION_SYLLABLES))
 
 
-def asked_predicates(query: str) -> frozenset[str]:
-    """The predicates the question's own words ask for (ASKS)."""
-    return frozenset(p for pattern, preds in ASKS if pattern.search(query) for p in preds)
+def asked_predicates(query: str, ontology: bool = False) -> frozenset[str]:
+    """The predicates the question's own words ask for (ASKS); with `ontology` (packet-v21 over extract-v21's rows,
+    PHASE-66) ASKS_V21 too."""
+    return frozenset(p for pattern, preds in (ASKS + ASKS_V21 if ontology else ASKS) if pattern.search(query)
+                     for p in preds)
+
+
+# PHASE-66 (`relevant_facts(ontology=True)`, packet-v21 only): extract-v21's own predicates. How a character stands now
+# also holds a death or a life, a home, what an item is in and a rank; a question asks for them in its own words.
+NOW_V21 = frozenset({"vital_status", "lives_in", "contained_in", "holds_rank"})
+ASKS_V21: tuple[tuple[re.Pattern[str], frozenset[str]], ...] = (
+    (re.compile(r"살아\s?있|죽었|죽은|생사|행방|\balive\b|\bdead\b|\bmissing\b", re.IGNORECASE), frozenset({"vital_status"})),
+    (re.compile(r"어디\s?살|사는\s?곳|집이\s?어디|거처|\blives?\b|\bhome\b", re.IGNORECASE), frozenset({"lives_in"})),
+    (re.compile(r"직위|계급|직책|지위|\brank\b|\btitle\b", re.IGNORECASE), frozenset({"holds_rank"})),
+    (re.compile(r"정체|위장|신분|\bcover\b|\bwho is\b", re.IGNORECASE), frozenset({"cover_identity"})),
+    (re.compile(r"안에|어디에\s?(넣|두)|\binside\b|\bin which\b", re.IGNORECASE), frozenset({"contained_in"})),
+)
 # Added to the score of a mentioned fact (ADR 0026). Below the gap between a mention in the user's message
 # and one in the previous reply (1.0), so they order facts of equal mention only.
 PRIOR_STANDING = 0.5
@@ -1634,7 +1650,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    persona_query_names: frozenset[str] | None = None,
                    persona_added: set[str] | None = None,
                    pinned: frozenset[str] = frozenset(), pin_named: set[str] | None = None,
-                   _question_facts: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+                   _question_facts: frozenset[str] = frozenset(), ontology: bool = False) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -1692,7 +1708,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     first_person = bool(FIRST_PERSON.search(query))
     why = causes and bool(WHY.search(query))
     oldest = first_cue and bool(FIRST_CUE.search(query))
-    asked = asked_predicates(query) if named_by_words else frozenset()
+    asked = asked_predicates(query, ontology) if named_by_words else frozenset()
+    now = NOW | NOW_V21 if ontology else NOW  # PHASE-66: off, every other policy and chat reads as before
     nouns = asked_nouns(query) if named_by_words else ()
     user = USER_NAMES | persona
     matches: list[dict[str, Any]] = []
@@ -1720,7 +1737,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                                      events_limit, persona=persona, present=present, causes=causes,
                                      first_cue=first_cue, window_start=window_start, marks=marks, aliases=aliases,
                                      named=named, named_by_words=named_by_words, risky=risky, keep=keep,
-                                     _question_facts=frozenset(str(f["id"]) for f in matches))
+                                     _question_facts=frozenset(str(f["id"]) for f in matches), ontology=ontology)
             _question_facts = frozenset(str(f["id"]) for f in targets)
     scored = []
     for f in facts:
@@ -1732,7 +1749,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
         if _question_facts and str(f["id"]) in _question_facts:
             mention = max(mention, 1.5)
-        pin = (bool(pinned) and f["predicate"] in NOW | STANDING and not f.get("carried")  # another chat's: never
+        pin = (bool(pinned) and f["predicate"] in now | STANDING and not f.get("carried")  # another chat's: never
                and any(n in pinned for n in names))
         if pin:  # a pinned character's now and standing facts, as a name in the message brings them
             mention = max(mention, 2.0)
@@ -1740,7 +1757,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
         if named is not None and any(n in q for n in names + hidden) and (  # the question names it (PHASE-34 Q1)
-                not named_by_words or f["predicate"] in NOW | STANDING | asked or f.get("known_by")
+                not named_by_words or f["predicate"] in now | STANDING | asked or f.get("known_by")
                 or f.get("hidden_from") or lexical >= LEXICAL_BAR or any(n in fact_text(f) for n in nouns)):
             named.add(str(f["id"]))
         elif pin and named is not None:

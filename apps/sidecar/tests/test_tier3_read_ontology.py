@@ -792,3 +792,52 @@ def test_a_conditioned_facts_situational_slots_are_capped_per_pair_as_an_address
     picked = facts.relevant_facts(fold(rows), "하나가 도윤을 본다.", "", set(), limit=12)
     sit = [f for f in picked if repairs.slot(f)[0] == "situational"]
     assert len(sit) == facts.SITUATIONAL_ADDRESS_MAX and "기본" in {f["value"] for f in picked}
+
+
+# --- a forgetting reaches the secret fold (w4 secret engine) -------------------------------------------------------
+
+def test_a_forgetting_keeps_a_revealed_secret_from_its_subject_again_until_they_learn_it_again(migrated: str):
+    v21 = Chat(migrated, {"t0": [a("하나", "knows", None, "금고의 암호", knowledge="limited", known_by=["하나"],
+                                   hidden_from=["도윤"])],
+                          "t1": [],
+                          "t2": [a("도윤", "forgot", None, "all")],
+                          "t3": []})
+    with v21.client() as c:
+        v21.run(c)
+        sid = str(next(s["id"] for s in v21.view()["secrets"] if s["text"].endswith("금고의 암호")))
+
+        def state() -> tuple[list[str], list[str] | None]:
+            view = v21.view()
+            s = next(x for x in view["secrets"] if str(x["id"]) == sid)
+            fact = next(f for f in view["facts"] if str(f["id"]) == sid) if any(
+                str(f["id"]) == sid for f in view["facts"]) else None
+            return s["open"], (fact or {}).get("hidden_from")
+
+        assert state() == (["도윤"], ["도윤"])
+        post(c, v21.cid, kind="secret_found_out", item=sid, character="도윤", turn=1)  # he finds out at turn 1 ...
+        opened, hidden = state()
+        assert opened == ["도윤"] and hidden == ["도윤"]  # ... and forgets everything at turn 2: kept from him again
+        post(c, v21.cid, kind="secret_found_out", item=sid, character="도윤", turn=3)  # he learns it again
+        assert state() == ([], None)
+
+
+def test_a_stray_mark_never_raises_in_fact_text():
+    told = row(0, "told", "비밀", subject="하나", obj="도윤", address_condition={"scope": "private", "when": "둘만"})
+    assert facts.fact_text(told) == "하나 told 도윤: 비밀"  # an address's mark on another predicate says nothing
+    odd = row(1, "feels_toward", "설렘", condition="not a mapping")
+    assert facts.fact_text(odd) == "하나 feels toward 도윤: 설렘"
+    assert facts.fact_text(row(2, "feels_toward", "설렘", PRIV)) == "하나 feels toward 도윤 [둘만 있을 때]: 설렘"
+
+
+def test_the_ontologys_predicates_rank_as_now_and_by_their_questions_only_when_asked_for():
+    death = {**row(0, "vital_status", "사망", subject="루카", obj=None), "names": ["루카"]}
+    home = {**row(1, "lives_in", None, subject="루카", obj="저택", object_type="place"), "names": ["루카", "저택"]}
+    trait = {**row(2, "has_trait", "과묵함", subject="루카", obj=None), "names": ["루카"]}
+    for query, wanted in (("루카는 살아 있어?", death), ("루카는 어디 살아?", home)):
+        off, on = set(), set()
+        facts.relevant_facts([death, home, trait], query, "", set(), 5, named=off, named_by_words=True)
+        facts.relevant_facts([death, home, trait], query, "", set(), 5, named=on, named_by_words=True, ontology=True)
+        assert str(wanted["id"]) in on and str(trait["id"]) not in on
+        assert str(trait["id"]) not in off and str(death["id"]) not in off  # unchanged without it: not NOW, not asked
+    assert facts.asked_predicates("루카는 살아 있어?") == frozenset()
+    assert facts.asked_predicates("루카는 살아 있어?", True) == {"vital_status"}

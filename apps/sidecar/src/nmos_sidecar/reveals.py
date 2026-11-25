@@ -28,13 +28,15 @@ from psycopg.types.json import Jsonb
 from . import generations, normtext
 from .config import Settings
 from .entities import norm
-from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY, _resolution,
-                         assertion_values, build_prompt, coverage_of, earlier_assertions, load_context, normalize,
+from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY, ONTOLOGY,
+                         _with_carried, assertion_values, build_prompt, coverage_of, earlier_assertions, load_context,
+                         no_nul, normalize,
                          revealed, secret_hints, shown_target, with_cap)
 from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
-from .secrets import NOT_SECRETS
+from .predicates import registry_for
+from .secrets import NOT_SECRETS, _heads, _split, is_secret, matches, secret_text
 from .secrets import _hits as reveal_hits
 
 log = logging.getLogger("nmos.reveals")
@@ -130,28 +132,32 @@ cur AS (
     FROM serving s LEFT JOIN checked k ON k.turn = s.turn AND k.hints->>'checks' = s.xid::text
 )"""
 
-UNCHECKED = _SERVING + """,
-secret AS (  -- each secret a turn's serving extraction holds now
-    SELECT c.turn, c.rid, c.turn_hash, s.predicate, s.subject, s.object, s.value, s.hidden_from
-    FROM cur c JOIN assertion s ON s.extraction_id = c.xid WHERE """ + IS_SECRET + """
-)
-SELECT t.turn, t.rid, t.turn_hash, t.xid, t.check_id, t.listed, t.read_at,
-       EXISTS (  -- a secret of an earlier turn that no extraction of that turn held when this one looked
-           SELECT 1 FROM secret st
-           WHERE st.turn < t.turn AND NOT EXISTS (
-               SELECT 1 FROM extraction y JOIN assertion s ON s.extraction_id = y.id
-               WHERE y.source_revision_id = st.rid AND y.window_hash = st.turn_hash
-                 AND y.created_at < t.seen AND (y.discarded_at IS NULL OR y.discarded_at > t.seen)
-                 AND """ + IS_SECRET + """ AND s.predicate = st.predicate AND s.subject = st.subject
-                 AND s.object IS NOT DISTINCT FROM st.object AND s.value IS NOT DISTINCT FROM st.value
-                 AND s.hidden_from @> st.hidden_from))
-       OR (t.check_id IS NOT NULL AND t.rkey <> ALL(%(rkeys)s)) AS needs  -- `rkey` or a carry-on peer's
+UNCHECKED = _SERVING + """
+SELECT t.turn, t.rid, t.turn_hash, t.xid, t.check_id, t.listed, t.read_at, t.seen,
+       (t.check_id IS NOT NULL AND t.rkey <> ALL(%(rkeys)s))  -- another reveal generation's, not a carry-on peer's
+       OR EXISTS (  -- the owner reopened an earlier turn's secret after this turn looked (review F11): kept it again,
+           SELECT 1 FROM owner_repair r  -- or took back a found-out in force when it looked
+           WHERE r.conversation_id = %(conv)s AND coalesce((r.target->>'turn')::int, -1) < t.turn
+             AND ((r.kind = 'secret_keep' AND r.created_at > t.seen AND r.removed_at IS NULL)
+                  OR (r.kind = 'secret_found_out' AND r.created_at <= t.seen AND r.removed_at > t.seen))) AS needs
 FROM cur t
 WHERE NOT EXISTS (  -- a turn queued for `key`'s extraction is extracted with what is open by then: no paid check of it
     SELECT 1 FROM job j WHERE j.dedupe_key = 'extract:' || t.rid || ':' || t.turn_hash || ':' || %(key)s
       AND j.status IN ('queued', 'running'))
 ORDER BY t.turn
 """
+
+# Each secret a turn's serving extraction holds now (the columns `secrets.secret_text` reads).
+_FIELDS = "s.subject, s.predicate, s.object, s.value, s.address_condition, s.hidden_from"
+SECRETS_NOW = _SERVING + """
+SELECT c.turn, c.rid, c.turn_hash, """ + _FIELDS + """
+FROM cur c JOIN assertion s ON s.extraction_id = c.xid WHERE """ + IS_SECRET + """ ORDER BY c.turn, s.id"""
+# Every secret any extraction of these turns held, with when that extraction lived.
+SECRETS_HELD = """
+SELECT y.id AS yid, y.source_revision_id AS rid, y.window_hash AS turn_hash, y.created_at, y.discarded_at, """ + _FIELDS + """
+FROM unnest(%(rids)s::uuid[], %(hashes)s::text[]) AS t(rid, h)
+JOIN extraction y ON y.source_revision_id = t.rid AND y.window_hash = t.h
+JOIN assertion s ON s.extraction_id = y.id WHERE """ + IS_SECRET
 
 # Reveals served now, by the turn that made them: the turn's serving extraction and its latest check, each with the
 # hash its listed turn had (as ACTIVE_ASSERTIONS reads `listed_hash`) and when it was stored.
@@ -195,17 +201,68 @@ def _stale(rows: list[dict[str, Any]], found: list[dict[str, Any]]) -> set[UUID]
     return out
 
 
+def _holders(secret: dict[str, Any], held: list[dict[str, Any]], now: list[dict[str, Any]]) -> list[tuple[Any, Any]]:
+    """When the extractions of the secret's turn that held it lived ((created_at, discarded_at) each), as the read
+    side's fold would take a reveal of either for the other (`secrets`' rules, review F10): the same line; the same head
+    with like content (`matches`); or the same head when it is the turn's only secret with that head, now and in that
+    extraction (a re-extraction that reworded its value). Its `hidden_from` must still cover the secret's: someone new
+    it is kept from could not have been listed. Judged once per secret; a turn's look is then a time comparison."""
+    text = secret_text(secret)
+    head = _split(text)[1]
+
+    def same_head(x: dict[str, Any]) -> bool:
+        return _heads(_split(secret_text(x))[1], head) is True
+
+    alone = sum(1 for s in now if s["rid"] == secret["rid"] and same_head(s)) == 1
+    mine = [h for h in held if h["rid"] == secret["rid"] and h["turn_hash"] == secret["turn_hash"]
+            and set(h["hidden_from"] or ()) >= set(secret["hidden_from"] or ())]
+    heads = {}
+    for h in mine:
+        if same_head(h):
+            heads[h["yid"]] = heads.get(h["yid"], 0) + 1
+    out = []
+    for h in mine:
+        other = secret_text(h)
+        if other == text or matches(text, other) or (alone and same_head(h) and heads.get(h["yid"]) == 1):
+            out.append((h["created_at"], h["discarded_at"]))
+    return out
+
+
+def _carried_since(conn: psycopg.Connection, conv: UUID) -> Any:
+    """When the chat's continue link in force was made, if it carries a secret (F7: a turn that looked before it could
+    not have listed one); None otherwise."""
+    from . import carry  # carry imports facts and canonfacts, which import extraction
+
+    link = carry.in_force(conn, conv)
+    if link is None or link.get("mode") != "continue":
+        return None
+    rows = carry.target_rows(link).rows
+    return link["created_at"] if any(is_secret(x) for x in rows if x.get("predicate")) else None
+
+
 def unchecked(conn: psycopg.Connection, key: str, rkey: str, conv: UUID) -> list[dict[str, Any]]:
     """Turns of the head whose serving extraction (`key`'s first) needs a check of the reveal generation `rkey`
-    (UNCHECKED): turn, revision, turn hash and the extraction to check (`xid`)."""
+    (UNCHECKED, `_holders`): turn, revision, turn hash and the extraction to check (`xid`)."""
     params = {"conv": conv, "key": key, "rkey": rkey, "rkeys": generations.peers(conn, rkey), "window": WINDOW,
               "not_secrets": sorted(NOT_SECRETS)}
     rows = conn.execute(UNCHECKED, params).fetchall()
     stale: set[UUID] = set()
     if any(r["check_id"] is not None and r["listed"] for r in rows):
         stale = _stale(rows, conn.execute(FOUND, params).fetchall())
-    return [{k: r[k] for k in ("turn", "rid", "turn_hash", "xid")} for r in rows
-            if r["needs"] or r["check_id"] in stale]
+    now = conn.execute(SECRETS_NOW, params).fetchall() if rows else []
+    pairs = sorted({(s["rid"], s["turn_hash"]) for s in now})  # once each: a turn's second secret doubled every row
+    held = conn.execute(SECRETS_HELD, {"rids": [p[0] for p in pairs], "hashes": [p[1] for p in pairs],
+                                       "not_secrets": params["not_secrets"]}).fetchall() if now else []
+    carried = _carried_since(conn, conv) if rows else None
+    lived = [(s, _holders(s, held, now)) for s in now]
+
+    def needs(t: dict[str, Any]) -> bool:
+        if t["needs"] or t["check_id"] in stale or (carried is not None and t["seen"] < carried):
+            return True
+        seen = t["seen"]
+        return any(s["turn"] < t["turn"] and not any(c < seen and (d is None or d > seen) for c, d in spans)
+                   for s, spans in lived)
+    return [{k: r[k] for k in ("turn", "rid", "turn_hash", "xid")} for r in rows if needs(r)]
 
 
 def schedule(conn: psycopg.Connection, key: str, extractor_key: str, conv: UUID) -> int:
@@ -270,10 +327,17 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
     # The earlier turns as a read serves them now: the active extractor's first (Tier 2 C5). The checked extraction
     # may be an earlier generation's that still serves its turn; preferring its key would list the secrets of
     # earlier turns that generation extracted, not the ones served.
-    earlier = earlier_assertions(conn, ctx, generations.active(conn, "extract") or base["extractor_key"])
-    secrets = secret_hints(ctx, earlier)
+    key = generations.active(conn, "extract") or base["extractor_key"]
+    # Listed as the serving extractor's worker lists them (review F3): its compiler's registry, so a guise kept from
+    # someone (extract-v21) is a secret here too, and for a compiler of ONTOLOGY its solo secrets, ranked by the TARGET.
+    spec = conn.execute("SELECT spec FROM projection_generation WHERE key = %s", (key,)).fetchone()
+    compiler = (spec["spec"] or {}).get("compiler") if spec else None
+    earlier = earlier_assertions(conn, ctx, key, registry_for(compiler))
+    carried = ctx["target"].get("carried") or None  # a carried secret is checked as the worker lists it (F7)
     shown = shown_target(ctx)  # the TARGET as the model is shown it: the evidence check reads this (Tier 1 D2)
-    resolution = _resolution(ctx, earlier) if secrets else None  # who a reveal names (Tier 1 C4)
+    onto = {"turn_text": shown, "include_solo": True} if compiler in ONTOLOGY else {}
+    secrets = secret_hints(ctx, earlier, carried=carried, **onto)
+    resolution = _with_carried(ctx, earlier, carried)[1] if secrets else None  # who a reveal names (Tier 1 C4)
     if not secrets:
         parsed, raw, usage = {"secrets": []}, "", NO_CALL  # nothing open before the turn: checked without a call
     else:
@@ -300,7 +364,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         conn.execute(
             "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
             " coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (check_id, revision_id, window, VERSION, gen.key, gen.model, Jsonb({"reply": raw[:20000]}),
+            (check_id, revision_id, window, VERSION, gen.key, gen.model, Jsonb({"reply": no_nul(raw[:20000])}),
              Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
              Jsonb({"checks": str(checked), "secrets": secrets, "read_at": read_at.isoformat()}),
              Jsonb(usage) if usage is not None else None))

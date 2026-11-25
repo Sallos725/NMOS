@@ -422,7 +422,8 @@ def test_an_old_secret_the_turn_is_about_ranks_first_and_defaults_are_unchanged(
 
 
 def test_a_solo_secret_is_listed_and_can_be_found_out_in_v20():
-    solo = secret(3, "하나는 카이토를 좋아한다", known_by=["하나"])
+    # a v21 row (`knowledge_scope`): the secret fold carries solo secrets of v21 rows only (secrets.kept_from_others)
+    solo = secret(3, "하나는 카이토를 좋아한다", known_by=["하나"], knowledge_scope="limited")
     text = "하나가 카이토를 좋아한다는 걸 유이가 눈치챘다."
     assert X.secret_hints(ctx(text), [solo]) == [] == X.secret_hints(ctx(text), [solo], turn_text=text)
     (listed,) = X.secret_hints(ctx(text), [solo], turn_text=text, include_solo=True)
@@ -431,9 +432,14 @@ def test_a_solo_secret_is_listed_and_can_be_found_out_in_v20():
     answer = {"secrets": [{"secret": "S1", "found_out_by": ["유이", "하나"], "evidence": text}]}
     (learned,) = X.revealed(answer, [listed], text)
     assert learned["subject"] == "유이" and learned["value"] == f"[turn 3] {listed['text']}"
-    # once found out (the worker's own reveal of it), it is not listed again
+    # found out by 유이 (the worker's own reveal of it), it is still kept from the persona, so listed again; once
+    # everyone the chat knows found it out, not (the secret fold ends a solo secret per person; it used to drop it
+    # after the first reveal, w4-secrets-epistemic)
     later = row(5, "유이", "learned", value=learned["value"], subject_type="character")
-    assert X.secret_hints(ctx(text, turn=9), [solo, later], turn_text=text, include_solo=True) == []
+    assert [s["solo"] for s in X.secret_hints(ctx(text, turn=9), [solo, later], turn_text=text,
+                                              include_solo=True)] == [True]
+    persona = row(6, "{{user}}", "learned", value=learned["value"], subject_type="character")
+    assert X.secret_hints(ctx(text, turn=9), [solo, later, persona], turn_text=text, include_solo=True) == []
     # unrelated to the TARGET turn: not listed (a holder's every private feeling would flood the list)
     assert X.secret_hints(ctx("비가 왔다. 유이는 우산을 폈다."), [solo], turn_text="비가 왔다. 유이는 우산을 폈다.",
                           include_solo=True) == []
@@ -443,7 +449,7 @@ def test_a_solo_secret_is_listed_and_can_be_found_out_in_v20():
 
 def test_a_kept_from_secret_outranks_a_solo_one_of_the_same_rank():
     kept = secret(1, "하나는 카이토의 편지를 읽었다", known_by=["하나"], hidden_from=["카이토"])
-    solo = secret(2, "하나는 카이토의 편지를 태웠다", known_by=["하나"])
+    solo = secret(2, "하나는 카이토의 편지를 태웠다", known_by=["하나"], knowledge_scope="limited")  # a v21 row
     text = "하나는 카이토의 편지를 들고 있었다."
     listed = X.secret_hints(ctx(text), [kept, solo], turn_text=text, include_solo=True)
     assert [bool(s.get("solo")) for s in listed] == [False, True]
