@@ -20,8 +20,8 @@ export const MAX_RESERVED_TOKENS = 20_000;
 /** The largest budget the panel saves (ADR 0049): recall grows up to it, and a larger one recalls as it does. */
 export const PANEL_MAX_RESERVED_TOKENS = 8000;
 /** Old-dialogue trimming (PHASE-60 S1, ADR 0083): recent turns always sent, and the step the cut moves by.
- *  20 when the plugin arg is unset (0); kept within 4..200. */
-export const DEFAULT_KEEP_RECENT_TURNS = 20;
+ *  16 when the plugin arg is unset (0), a multiple of the sidecar's 8-turn window; kept within 4..200. */
+export const DEFAULT_KEEP_RECENT_TURNS = 16;
 export const MIN_KEEP_RECENT_TURNS = 4;
 export const MAX_KEEP_RECENT_TURNS = 200;
 /** Optional reranker wait (PHASE-60 S5, ADR 0084): 600 ms default, accepted within 50..5000 ms by the sidecar. */
@@ -187,7 +187,7 @@ export function connArgs(v: FormValues['conn']): Record<string, string | number>
 }
 
 /** Plugin args for leaving out old dialogue (PHASE-60 S1, ADR 0083; stored in PocketRisu, not the sidecar): the switch
- *  as 1 or 0, and the recent turns always sent, a whole number within 4..200 that is 20 when empty or not positive.
+ *  as 1 or 0, and the recent turns always sent, a whole number within 4..200 that is 16 when empty or not positive.
  *  `host.ts` reads every value this returns back as it is. */
 export function trimArgs(v: { on: boolean; keep: string }): { trim_old_turns: 0 | 1; keep_recent_turns: number } {
   const n = Math.floor(Number(v.keep.trim()));

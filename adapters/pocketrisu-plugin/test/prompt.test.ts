@@ -383,7 +383,8 @@ describe('in-context detection (D3)', () => {
   it('exports isActive matching disabled and comment semantics', () => {
     expect(isActive({ role: 'user', data: 'hello' })).toBe(true);
     expect(isActive({ role: 'user', data: 'hello', disabled: false })).toBe(true);
-    expect(isActive({ role: 'user', data: 'hello', disabled: 'allBefore' })).toBe(true);
+    // Tier 1: a "Cut Messages for AI" message is never sent itself (HOST-FACTS S8b; was asserted active before).
+    expect(isActive({ role: 'user', data: 'hello', disabled: 'allBefore' })).toBe(false);
     expect(isActive({ role: 'user', data: 'hello', disabled: true })).toBe(false);
     expect(isActive({ role: 'char', data: 'note', isComment: true })).toBe(false);
   });

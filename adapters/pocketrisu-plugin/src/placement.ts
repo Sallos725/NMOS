@@ -22,10 +22,14 @@ export function isTextPart(part: unknown): part is TextPart {
     && typeof (part as Record<string, unknown>).text === 'string';
 }
 
-/** First occurrence of `[NMOS.memory]`, scanning messages and multipart parts in order. */
-export function findMarker(prompt: unknown): MarkerAt | null {
+const NONE: ReadonlySet<number> = new Set();
+
+/** First occurrence of `[NMOS.memory]`, scanning messages and multipart parts in order. Messages in `skip` (chat
+ *  messages that only mention the placeholder, `historyMarkerIndices`) are not searched. */
+export function findMarker(prompt: unknown, skip: ReadonlySet<number> = NONE): MarkerAt | null {
   if (!Array.isArray(prompt)) return null;
   for (let i = 0; i < prompt.length; i += 1) {
+    if (skip.has(i)) continue;
     const m = prompt[i];
     if (!m || typeof m !== 'object') continue;
     const content = (m as Record<string, unknown>).content;
@@ -53,15 +57,18 @@ function replaceInString(text: string, packet: string, placed: boolean): { text:
 
 /**
  * Replaces the first `[NMOS.memory]` with `packet` (cleaned of any literal markers) and removes every
- * subsequent occurrence. Never mutates inputs; returns the original array reference when no marker is found.
+ * subsequent occurrence. Messages in `skip` are left as they are (their markers are the chat's own text, not a
+ * placeholder). Never mutates inputs; returns the original array reference when no marker is found.
  */
-export function resolvePlaceholders(prompt: PromptMessage[], packet: string): PromptMessage[] {
+export function resolvePlaceholders(prompt: PromptMessage[], packet: string,
+                                    skip: ReadonlySet<number> = NONE): PromptMessage[] {
   if (!Array.isArray(prompt)) return prompt;
   const cleanPacket = typeof packet === 'string' ? packet.split(MEMORY_MARKER).join('') : '';
   let out: PromptMessage[] | null = null;
   let placed = false;
 
   for (let i = 0; i < prompt.length; i += 1) {
+    if (skip.has(i)) continue;
     const m = prompt[i];
     if (!m || typeof m !== 'object') continue;
     const content = m.content;
