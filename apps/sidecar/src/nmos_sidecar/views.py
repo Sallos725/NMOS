@@ -561,6 +561,8 @@ def name_link(cid: str, entities: dict[str, str], name: str | None) -> str:
 
 
 def _named(f: dict[str, Any], side: str) -> str:
+    if side == "object" and f.get("toward_guise"):  # PHASE-66: held toward the guise, named as the guise
+        return str(f.get("object") or "")
     e = f.get(f"{side}_entity") or {}
     return str(e.get("name") or f.get(side) or "")
 
@@ -592,9 +594,9 @@ def carry_href(row: dict[str, Any]) -> str | None:
 
 
 def _is_thread(row: dict[str, Any]) -> bool:
-    if row.get("line") in ("fact", "thread"):
+    if row.get("line") in ("fact", "thread", "belief"):  # a carried belief's own line (PHASE-66) is no thread
         return row["line"] == "thread"
-    if row.get("kind") in ("fact", "thread"):  # the carry line's own mark (`d['carry']['lines']`)
+    if row.get("kind") in ("fact", "thread", "belief"):  # the carry line's own mark (`d['carry']['lines']`)
         return row["kind"] == "thread"
     return "predicate" not in row and ("by" in row or "text" in row)
 

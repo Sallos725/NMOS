@@ -546,6 +546,11 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "fg.all": ("모든 기억", "everything"), "fg.since": ("{n}턴부터의 기억", "everything since turn {n}"),
     "fg.fact": ("사실", "fact"), "fg.known_by": ("아는 인물에서 뺌", "taken from who knows"),
     "fg.none": ("거둬들인 것 없음", "nothing withdrawn"),
+    "tg.toward": ("변장한 모습 {g}({of})를 향해", "toward the guise {g} (of {of})"),
+    "disguises": ("변장 (변장한 모습을 향한 사실)", "Disguises (what is held toward a guise)"),
+    "toc.disguises": ("변장", "Disguises"), "h.guise": ("변장한 모습", "Guise"),
+    "h.revealed": ("알게 된 인물", "Found out"), "h.held_toward": ("변장한 모습을 향한 사실", "Held toward the guise"),
+    "dg.current": ("유지 중", "holds"), "dg.over": ("끝남", "over"),
     "ep.note": ("믿음과 망각은 세계의 사실이 아닙니다: 철회하거나 내용을 정정할 수 있지만 고정할 수는 없습니다.",
                 "A belief or a forgetting is no fact about the world: it can be retracted or its content corrected, "
                 "never locked."),
@@ -1026,6 +1031,8 @@ def _processed(m: dict[str, Any], lang: str) -> str:
 def _named(a: dict[str, Any], side: str) -> str:
     """The subject or object as the story names its entity ("서하늘" for a lorebook's "Seo Ha-neul": the resolver already
     joined them, owner 2026-10-07); the spelling as written when there is no entity or it is a persona placeholder."""
+    if side == "object" and a.get("toward_guise"):  # PHASE-66: held toward the guise, named as the guise, never its wearer
+        return a.get("object") or ""
     ref = a.get(f"{side}_entity") or {}
     name = ref.get("name") if isinstance(ref, dict) else None
     return name if name and norm(name) not in USER_NAMES else (a.get(side) or "")
@@ -1055,9 +1062,41 @@ def cond_extra(row: dict[str, Any], lang: str) -> list[str]:
     cond = row.get("condition")
     if isinstance(cond, dict) and isinstance(cond.get("audience"), list) and cond["audience"]:
         out.append(f"{_t(lang, 'c.audience')}: " + ", ".join(str(n) for n in cond["audience"]))
-    if row.get("predicate") != "disguised_as" and (g := guise(row)):
+    if tg := toward_guise(row, lang):  # the read side placed it toward a guise: that says the guise already
+        out.append(tg)
+    elif row.get("predicate") != "disguised_as" and (g := guise(row)):
         out.append(f"{_t(lang, 'c.guise')}: {g}")
     return out
+
+
+def toward_guise(row: dict[str, Any], lang: str) -> str | None:
+    """"toward the guise G (of X)", raw text, for a fact the read side holds toward a guise (`toward_guise`, PHASE-66):
+    never a separate person, never the wearer's own; None for every other row."""
+    tg = row.get("toward_guise")
+    if not isinstance(tg, dict) or not tg.get("guise"):
+        return None
+    return _t(lang, "tg.toward").format(g=tg["guise"], of=tg.get("of") or "")
+
+
+def _guise_grouped(facts: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], set[int]]:
+    """The facts with each one held toward a guise drawn right under its disguise when the disguise is in the same
+    list (PHASE-66 part 5), and which ones are drawn under one. Unchanged without a `toward_guise` row."""
+    held: dict[str, list[dict[str, Any]]] = {}
+    for f in facts:
+        if isinstance(tg := f.get("toward_guise"), dict) and tg.get("disguise") is not None:
+            held.setdefault(str(tg["disguise"]), []).append(f)
+    if not held:
+        return facts, set()
+    listed = {str(f["id"]) for f in facts}
+    out, under = [], set()
+    for f in facts:
+        if isinstance(tg := f.get("toward_guise"), dict) and str(tg.get("disguise")) in listed:
+            continue  # drawn under its disguise
+        out.append(f)
+        for g in held.get(str(f["id"]), ()):
+            out.append(g)
+            under.add(id(g))
+    return out, under
 
 
 def v21_marks(row: dict[str, Any], lang: str) -> str:
@@ -1372,9 +1411,10 @@ def _facts_rows(facts: list[dict[str, Any]], active: str | None, lang: str, anch
     t = lambda k: _t(lang, k)
     # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
     older = f" <span class=\"chip\">{t('older_gen')}</span>"
+    facts, under = _guise_grouped(facts)  # PHASE-66 part 5: what is held toward a guise, under its disguise
     return table(
         [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.with", "h.knowledge", "h.turn", "h.versions")],
-        [[_named_cell(f, "subject"), chip(lang, "p", f["predicate"]),
+        [[("↳ " if id(f) in under else "") + _named_cell(f, "subject"), chip(lang, "p", f["predicate"]),
           (_named_cell(f, "object") if f.get("object") else _v(f.get("value"))) + v21_marks(f, lang) + _cause(f, lang)
           + ("" if f.get("owner") else _act("fact_retract", f["id"]) + "".join(_act("fact_correct", f["id"], x) for x in _corrections(f)))
           + (_act("fact_lock", f["id"]) if (f.get("canon") or f.get("owner")) and not f.get("locked") else ""),
@@ -1727,6 +1767,21 @@ def _secrets_table(secrets: list[dict[str, Any]], lang: str) -> str:
                   [[_v(s["text"]), _v(", ".join(s["holders"])), _v(", ".join(s["kept_from"])), _turn(s),
                     _secret_status(s, lang)] for s in secrets[:100]])
             + f"<p class=\"muted\">{_v(_t(lang, 'sec.note'))}</p>")
+
+
+def _disguises_table(disguises: list[dict[str, Any]], facts: list[dict[str, Any]], lang: str) -> str:
+    """A character's disguises (`view["disguises"]`, PHASE-66 part 5), newest first: the guise, its turn, whom it is
+    kept from and who found it out, whether it still holds, and the current facts held toward it, grouped under it."""
+    by_id = {str(f["id"]): f for f in facts}
+
+    def held(d: dict[str, Any]) -> str:
+        rows = [by_id[str(i)] for i in d.get("held") or () if str(i) in by_id]
+        return "<br>".join(f"{_turn(f)} {_v(fact_line_text(f))}" for f in rows[:50])
+
+    return table([_t(lang, k) for k in ("h.guise", "h.turn", "h.kept_from", "h.revealed", "h.status", "h.held_toward")],
+                 [[_v(d.get("guise")), _turn(d), _v(", ".join(str(n) for n in d.get("kept_from") or ())),
+                   _v(", ".join(str(x.get("to")) for x in d.get("revealed") or ())),
+                   chip(lang, "dg", "current" if d.get("current") else "over"), held(d)] for d in disguises[:50]])
 
 
 def _epistemic_acts(row: dict[str, Any]) -> str:
@@ -2140,6 +2195,8 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
                       _facts_table(takes_part, active, lang, anchors=not embed), True))
     if knows:
         parts.append(("knows", t("knows"), len(knows), knowledge(knows), True))
+    if worn := [d for d in view.get("disguises") or () if me(d.get("subject_entity"))]:  # PHASE-66 part 5
+        parts.append(("disguises", t("disguises"), len(worn), _disguises_table(worn, facts, lang), True))
     if believes := [b for b in view.get("beliefs") or () if me(b.get("subject_entity"))]:  # PHASE-66 part 5
         parts.append(("beliefs", t("beliefs"), len(believes), _beliefs_table(believes, lang, anchors=not embed), True))
     if forgot := [g for g in view.get("forgotten") or () if me(g.get("subject_entity"))]:

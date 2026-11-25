@@ -118,7 +118,7 @@ from psycopg.rows import dict_row  # noqa: E402
 
 from nmos_sidecar import dropped, readmodel, repairs  # noqa: E402
 from test_extraction import drain  # noqa: E402
-from test_tier3_read_ontology import EPI, ONTO, PRIV, PUB, model_for  # noqa: E402
+from test_tier3_read_ontology import EPI, GUISE, ONTO, PRIV, PUB, model_for  # noqa: E402
 
 COND = {
     "t0": [a("하나", "relationship", "도윤", "동료", condition=PUB),
@@ -272,6 +272,7 @@ def test_the_buttons_on_the_new_predicates_are_accepted_per_slot(migrated: str):
 # --- part 3: every new string is model text, escaped wherever it lands ----------------------------------------------
 
 EVIL_WHEN = ('<img src=x onerror=alert(1)>"\'</textarea><script>alert(2)</script>' * 2)[:60]
+EVIL_GUISE = "<img src=x onerror=alert(8)>"
 EVIL = {
     "t0": [a("하나", "feels_toward", "도윤", "<script>alert(3)</script>",
              condition={"scope": "situational", "when": EVIL_WHEN, "audience": ['"><svg onload=alert(4)>'],
@@ -279,6 +280,9 @@ EVIL = {
            a("하나", "relationship", "도윤", "동료\"'><b>", condition={"scope": "situational", "when": "<i>밤</i>"}),
            a("하나", "has_status", None, "<script>alert(7)</script>", condition={"scope": "situational", "when": EVIL_WHEN}),
            a("하나", "believes", None, "<script>alert(5)</script>\u202e"),
+           a("루카", "disguised_as", EVIL_GUISE, None, knowledge="limited", known_by=["루카"], hidden_from=["유나"],
+             guise=EVIL_GUISE),
+           a("유나", "feels_toward", EVIL_GUISE, "동경"),
            a("하나", "forgot", None, "</textarea><img src=x onerror=alert(6)>")],
 }
 
@@ -484,3 +488,48 @@ def test_a_belief_a_re_extraction_drops_is_offered_for_restore_and_restored(migr
         res = c.post(f"/v1/conversations/{chat.cid}/repairs", json={"kind": "fact_restore", "item": str(listed[0]["id"])})
         assert res.status_code == 200, res.text
         assert "도윤이 배신했다" in {b["value"] for b in chat.view()["beliefs"]}
+
+
+def test_beliefs_and_forgettings_reach_the_chat_page_and_the_panels_screens(migrated: str):
+    chat = Chat(migrated, EPI, name="w4-epi-wired")
+    with chat.client() as c:
+        chat.run(c)
+        for lang in ("ko", "en"):
+            got = screens(c, str(chat.cid), "유나", lang)
+            for name in ("chat", "embed", "memory", "person"):
+                assert 'id="s-beliefs"' in got[name] and 'id="s-forgotten"' in got[name], (name, lang)
+                assert "카이의 정체는 상인" in got[name], (name, lang)
+            # the person sheet holds only this person's: 도윤's belief is on his own
+            assert "보물은 동굴에 있다" not in got["person"].split('id="s-beliefs"', 1)[1].split('id="s-forgotten"')[0]
+            assert 'data-repair="fact_correct:' in got["memory"] and 'data-repair="fact_lock:' not in got["memory"]
+
+
+def test_a_fact_held_toward_a_guise_is_grouped_under_its_disguise(migrated: str):
+    chat = Chat(migrated, GUISE, name="w4-guise")
+    with chat.client() as c:
+        chat.run(c)
+        view = chat.view()
+        luka, yuna = screens(c, str(chat.cid), "루카"), screens(c, str(chat.cid), "유나")
+    disguise = view["disguises"][0]
+    held = {str(f["id"]): f for f in view["facts"] if str(f["id"]) in {str(i) for i in disguise["held"]}}
+    assert held  # 유나's adoration and address toward the knight
+    # the wearer's page: a section of their disguises, with what is held toward each
+    section = luka["character"].split('id="s-disguises"', 1)[1].split("</details>", 1)[0]
+    # 유나 never found out here: her latest feeling toward the knight (배신감 replaced 동경 in the guise's slot) stays
+    # the guise's, named toward the guise as written, never toward its wearer
+    assert ">카이<" in section and "유나 feels toward 카이: 배신감" in section and "feels toward 루카" not in section
+    # the facts list: each held fact right under its disguise row, marked as toward the guise (never as 루카's own)
+    rows = luka["chat"].split('id="s-facts"', 1)[1].split("</table>", 1)[0].split("<tr")
+    at = next(i for i, r in enumerate(rows) if ">변장<" in r)
+    assert all("↳ " in rows[at + 1 + k] for k in range(len(held))), rows[at:at + 1 + len(held)]
+    assert "변장한 모습 카이(루카)를 향해" in rows[at + 1]
+    # plain marks elsewhere: the pairs, the panel
+    assert "변장한 모습 카이(루카)를 향해" in yuna["memory"] and "변장한 모습 카이(루카)를 향해" in yuna["person"]
+    assert "유나→카이" in yuna["memory"]  # the panel names the guise too
+    assert "변장한 모습 카이(루카)를 향해" in yuna["chat"].split('id="s-pairs"', 1)[1]
+
+
+def test_a_carried_belief_line_is_no_thread_in_the_panel():
+    assert not views._is_thread({"line": "belief", "by": "유나", "text": "카이의 정체는 상인"})
+    assert not views._is_thread({"kind": "belief", "text": "카이의 정체는 상인"})
+    assert views._is_thread({"line": "thread", "by": "유나", "text": "약속"})
