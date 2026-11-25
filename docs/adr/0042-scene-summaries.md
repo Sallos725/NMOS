@@ -104,3 +104,10 @@ stricter one would hold (amendment 4).
   story the chat ever had: one is written each time a window is summarized.
 - **The Inspector** shows each summary's state, and marks one that the stricter check of amendment 3 would hold
   while a character a secret is kept from is in the scene ("not used while … is in the scene").
+
+## Amendment 5 — a valueless secret, the story's bar, a window held in part (2026-11-25, PHASE-65 S4, audit C1, C3, G4)
+
+A valueless secret's content is its object (ADR 0033 amendment 4), in what a summary is checked against and what the
+summarizer is shown, with no summarizer version change. The story leaves out scenes at `LEAK_NEAR` (amendment 3's
+stricter bar for everyone). A scene whose window the prompt holds only in part can be offered (`window_last − WINDOW +
+1 < before_turn`); a summary held at `LEAK_NEAR` does not count as coverage for the trim.

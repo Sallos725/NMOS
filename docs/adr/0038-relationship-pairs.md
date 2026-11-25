@@ -80,3 +80,8 @@ printed under its public current line in every packet.
 Measured on replays (vectors off): no case of any set changes (M0 main 7/10, the synthetic sets 23, 24 and 5/15, the
 restored copies' probes 5/5, 7/8 and 7/7, 4/4); every M0 main packet names one version fewer (the feeling above); the
 synthetic sets' packets change in 2–5 of 15–25 (other versions named, none fewer).
+
+## Amendment 2 (2026-11-25, PHASE-65 S2, audit A3): which words are symmetric
+
+Item 2's head noun 적 counts as symmetric only on its own or in 숙적 (일방적, 적대적 … are not relationships). An English
+value with a possessive (`friend's`) or a one-way modifier (ex-, former, fake, unrequited, one-sided) is not symmetric.

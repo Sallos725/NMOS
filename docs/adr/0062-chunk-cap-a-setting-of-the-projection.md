@@ -54,3 +54,11 @@ could change without a build.
   recall gaps are not here.
 - Recorded requests replay as they were: a replay searches the trace's projection (ADR 0027), and when that projection's
   vectors were pruned, the replay says so, as after any projection change.
+
+## Amendment (2026-11-25, PHASE-65 S6): the cap in the panel, and an upper bound
+
+`embed_max_chunks` is also a panel setting (`GET /v1/config` `embeddings.max_chunks`, `PUT` `embed_max_chunks`, 1 to
+64, a stored override of the environment); a change is a new embedding projection, re-embedded with no extraction
+call, as item 1 says for the environment. Startup refuses a value above 64 (`config.EMBED_MAX_CHUNKS`: 64 × 700 =
+44,800 normalized characters, past the extraction cap's upper bound). `vectors.chunks(..., overlap=…)` exists with
+`CHUNK_OVERLAP` = 100; no projection uses it, and 0 cuts exactly as `chunk-v1`.

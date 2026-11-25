@@ -78,3 +78,17 @@ A review after the merge (AGE-25, two static findings) showed two gaps in items 
    and the read serves a turn's latest check by `created_at`, not by its generation's `activated_at`: an
    activation changes, so a reveal generation taken back would have changed what a recorded request replays. A press
    checks again a turn whose check is another generation's than the active one.
+
+## Amendment 2 (2026-11-25, PHASE-65 S6): which turns are checked, and how
+
+- Item 4's "a turn that needs a check" reads the turn's **serving** extraction as the fact read chooses it (a fallback
+  generation after a carry-on or a cap change included), not only the active generation's.
+- A turn whose active-generation extraction is queued or running gets no check: it is about to be replaced. Its
+  secrets still count for later turns.
+- "Already listed" is judged per secret: a re-extraction that adds a secret makes later turns look again. A stale
+  listing is matched with the read side's fold when the reveal was stored after the check read.
+- `process` passes `shown_target` and the resolution to `revealed`, as the turn worker does, and lists earlier turns as
+  the active extractor serves them.
+- No reveal version change: the key is the same, so checks stored before and after differ in how they were made (PHASE-65
+  Open question 1). After a deploy, the first press in a chat queues a paid check for each turn served by an earlier
+  generation's extraction with no check of it (accepted by the owner, 2026-11-25).

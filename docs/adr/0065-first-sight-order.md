@@ -44,3 +44,12 @@ extraction runs, so extracting them first served little.
 - Rejected: the newest K turns first and again at the end (a second call per turn, a discarded extraction, a K to
   tune); a second pass over the whole window (twice the cost); live turns first and re-extracted afterwards (the same
   costs).
+
+## Amendment (2026-11-25, PHASE-65 S1, audit D5): a chat's turns in story order, also live
+
+`claim` holds an extract job while an earlier job of its chat and generation, in its lane or a more urgent one, is
+running or queued, so item 2's live turns run oldest first too (they ran newest first) and item 4's gap closes for one
+chat: a turn is not extracted while an earlier turn of its chat is still running. A live job in retry backoff does
+not hold a later live turn; a history job never holds a live one. `discard_turns` locks the active jobs of the turns
+it obsoletes. Cost: about 50 → 110 ms per claim at 25,000 active extract jobs (no new index). The worker's order is an
+extraction-side change (`AGENTS.md §7` item 6); no live gate was run.
