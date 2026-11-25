@@ -827,3 +827,17 @@ def test_a_stray_mark_never_raises_in_fact_text():
     odd = row(1, "feels_toward", "설렘", condition="not a mapping")
     assert facts.fact_text(odd) == "하나 feels toward 도윤: 설렘"
     assert facts.fact_text(row(2, "feels_toward", "설렘", PRIV)) == "하나 feels toward 도윤 [둘만 있을 때]: 설렘"
+
+
+def test_the_ontologys_predicates_rank_as_now_and_by_their_questions_only_when_asked_for():
+    death = {**row(0, "vital_status", "사망", subject="루카", obj=None), "names": ["루카"]}
+    home = {**row(1, "lives_in", None, subject="루카", obj="저택", object_type="place"), "names": ["루카", "저택"]}
+    trait = {**row(2, "has_trait", "과묵함", subject="루카", obj=None), "names": ["루카"]}
+    for query, wanted in (("루카는 살아 있어?", death), ("루카는 어디 살아?", home)):
+        off, on = set(), set()
+        facts.relevant_facts([death, home, trait], query, "", set(), 5, named=off, named_by_words=True)
+        facts.relevant_facts([death, home, trait], query, "", set(), 5, named=on, named_by_words=True, ontology=True)
+        assert str(wanted["id"]) in on and str(trait["id"]) not in on
+        assert str(trait["id"]) not in off and str(death["id"]) not in off  # unchanged without it: not NOW, not asked
+    assert facts.asked_predicates("루카는 살아 있어?") == frozenset()
+    assert facts.asked_predicates("루카는 살아 있어?", True) == {"vital_status"}

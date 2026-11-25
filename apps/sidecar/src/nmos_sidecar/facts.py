@@ -1537,9 +1537,23 @@ def asked_nouns(query: str) -> tuple[str, ...]:
                                if len(w) == 1 and w not in FUNCTION_SYLLABLES))
 
 
-def asked_predicates(query: str) -> frozenset[str]:
-    """The predicates the question's own words ask for (ASKS)."""
-    return frozenset(p for pattern, preds in ASKS if pattern.search(query) for p in preds)
+def asked_predicates(query: str, ontology: bool = False) -> frozenset[str]:
+    """The predicates the question's own words ask for (ASKS); with `ontology` (packet-v21 over extract-v21's rows,
+    PHASE-66) ASKS_V21 too."""
+    return frozenset(p for pattern, preds in (ASKS + ASKS_V21 if ontology else ASKS) if pattern.search(query)
+                     for p in preds)
+
+
+# PHASE-66 (`relevant_facts(ontology=True)`, packet-v21 only): extract-v21's own predicates. How a character stands now
+# also holds a death or a life, a home, what an item is in and a rank; a question asks for them in its own words.
+NOW_V21 = frozenset({"vital_status", "lives_in", "contained_in", "holds_rank"})
+ASKS_V21: tuple[tuple[re.Pattern[str], frozenset[str]], ...] = (
+    (re.compile(r"살아\s?있|죽었|죽은|생사|행방|\balive\b|\bdead\b|\bmissing\b", re.IGNORECASE), frozenset({"vital_status"})),
+    (re.compile(r"어디\s?살|사는\s?곳|집이\s?어디|거처|\blives?\b|\bhome\b", re.IGNORECASE), frozenset({"lives_in"})),
+    (re.compile(r"직위|계급|직책|지위|\brank\b|\btitle\b", re.IGNORECASE), frozenset({"holds_rank"})),
+    (re.compile(r"정체|위장|신분|\bcover\b|\bwho is\b", re.IGNORECASE), frozenset({"cover_identity"})),
+    (re.compile(r"안에|어디에\s?(넣|두)|\binside\b|\bin which\b", re.IGNORECASE), frozenset({"contained_in"})),
+)
 # Added to the score of a mentioned fact (ADR 0026). Below the gap between a mention in the user's message
 # and one in the previous reply (1.0), so they order facts of equal mention only.
 PRIOR_STANDING = 0.5
@@ -1636,7 +1650,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    persona_query_names: frozenset[str] | None = None,
                    persona_added: set[str] | None = None,
                    pinned: frozenset[str] = frozenset(), pin_named: set[str] | None = None,
-                   _question_facts: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+                   _question_facts: frozenset[str] = frozenset(), ontology: bool = False) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -1694,7 +1708,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     first_person = bool(FIRST_PERSON.search(query))
     why = causes and bool(WHY.search(query))
     oldest = first_cue and bool(FIRST_CUE.search(query))
-    asked = asked_predicates(query) if named_by_words else frozenset()
+    asked = asked_predicates(query, ontology) if named_by_words else frozenset()
+    now = NOW | NOW_V21 if ontology else NOW  # PHASE-66: off, every other policy and chat reads as before
     nouns = asked_nouns(query) if named_by_words else ()
     user = USER_NAMES | persona
     matches: list[dict[str, Any]] = []
@@ -1722,7 +1737,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                                      events_limit, persona=persona, present=present, causes=causes,
                                      first_cue=first_cue, window_start=window_start, marks=marks, aliases=aliases,
                                      named=named, named_by_words=named_by_words, risky=risky, keep=keep,
-                                     _question_facts=frozenset(str(f["id"]) for f in matches))
+                                     _question_facts=frozenset(str(f["id"]) for f in matches), ontology=ontology)
             _question_facts = frozenset(str(f["id"]) for f in targets)
     scored = []
     for f in facts:
@@ -1734,7 +1749,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
         if _question_facts and str(f["id"]) in _question_facts:
             mention = max(mention, 1.5)
-        pin = (bool(pinned) and f["predicate"] in NOW | STANDING and not f.get("carried")  # another chat's: never
+        pin = (bool(pinned) and f["predicate"] in now | STANDING and not f.get("carried")  # another chat's: never
                and any(n in pinned for n in names))
         if pin:  # a pinned character's now and standing facts, as a name in the message brings them
             mention = max(mention, 2.0)
@@ -1742,7 +1757,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
         if named is not None and any(n in q for n in names + hidden) and (  # the question names it (PHASE-34 Q1)
-                not named_by_words or f["predicate"] in NOW | STANDING | asked or f.get("known_by")
+                not named_by_words or f["predicate"] in now | STANDING | asked or f.get("known_by")
                 or f.get("hidden_from") or lexical >= LEXICAL_BAR or any(n in fact_text(f) for n in nouns)):
             named.add(str(f["id"]))
         elif pin and named is not None:
