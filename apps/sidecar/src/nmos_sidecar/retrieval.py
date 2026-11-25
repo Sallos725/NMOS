@@ -1249,7 +1249,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                           else (lambda f: bool(_rested([f], "fact", rest, g)))) if rest else None,
                                     persona_questions=persona_questions, persona_entity=persona_entity,
                                     persona_query_names=question_names, persona_added=persona_added,
-                                    pinned=pinned, pin_named=g.pin_named)
+                                    pinned=pinned, pin_named=g.pin_named,
+                                    **({"ontology": True} if v21 else {}))  # packet-v21: extract-v21's NOW and ASKS
             ranked = [pooled.get(id(f), f) for f in ranked] if pooled else ranked
             # packet-v19 (PHASE-46): a question that names no one and shares no fact's words gets no added fact or
             # claim slots; the configured limits still choose (small talk took 30 facts and 8 claims at 4,000 tokens).
@@ -1282,7 +1283,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     aliases=aliases, named=g.named, named_by_words=options.policy in NAMED_POLICIES,
                                     risky=contradicted, persona_questions=persona_questions,
                                     persona_entity=persona_entity, persona_query_names=question_names,
-                                    persona_added=persona_added)
+                                    persona_added=persona_added, **({"ontology": True} if v21 else {}))
             ranked = [pooled.get(id(f), f) for f in ranked] if pooled else ranked
             ranked = _rested(ranked, "claim", rest, g, v21=True) if v21 else _rested(ranked, "claim", rest, g)
             if options.policy in LABEL_POLICIES:
@@ -1936,7 +1937,7 @@ def belief_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous
     if not held:
         return []
     ranked = relevant_facts(held, query, previous_ai, in_context, len(held), persona=r.persona_names, present=present,
-                            aliases=aliases, named=g.named)
+                            aliases=aliases, named=g.named, ontology=True)
     chosen = {id(b) for b in ranked}
     ranked += sorted((b for b in held if id(b) not in chosen), key=lambda b: b["position"], reverse=True)
     picked: list[dict[str, Any]] = []
@@ -2637,7 +2638,7 @@ def told_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_a
     names = scene.names(g.cast, r, aliases)
     ranked = relevant_facts(candidates, query, previous_ai, in_context, len(candidates), persona=r.persona_names,
                             present=names, aliases=aliases, named=g.named,
-                            named_by_words=options.policy in NAMED_POLICIES)
+                            named_by_words=options.policy in NAMED_POLICIES, **({"ontology": True} if v21 else {}))
     chosen = {id(t) for t in ranked}
     ranked += sorted((t for t in candidates if id(t) not in chosen and t["host_logical_id"] not in in_context),
                      key=lambda t: t["position"], reverse=True)
@@ -2675,11 +2676,13 @@ def regression_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, prev
     persona = r.persona_names
     facts = relevant_facts([x for x in rows if x["line"] == "fact"], query, previous_ai, in_context, len(rows),
                            options.events_limit, persona, scene.names(g.cast, r, aliases),
-                           causes=options.policy in CAUSE_POLICIES, aliases=aliases)
+                           causes=options.policy in CAUSE_POLICIES, aliases=aliases,
+                           **({"ontology": True} if options.policy in V21_POLICIES else {}))
     thread_rows = [x for x in rows if x["line"] == "thread"]
     # packet-v21: what the rememberers believed in that timeline, as beliefs (`line: "belief"`), never as facts
     believed = (relevant_facts([x for x in rows if x["line"] == "belief"], query, previous_ai, in_context, len(rows),
-                               persona=persona, present=scene.names(g.cast, r, aliases), aliases=aliases)
+                               persona=persona, present=scene.names(g.cast, r, aliases), aliases=aliases,
+                               ontology=True)
                 if options.policy in V21_POLICIES else [])
     if options.policy in V21_POLICIES:  # packet-v21: a promise kept or broken in that timeline is remembered too
         threads = carry.regression_threads(thread_rows, query, previous_ai, in_context, len(rows), persona,

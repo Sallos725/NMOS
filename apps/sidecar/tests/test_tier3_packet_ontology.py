@@ -414,3 +414,35 @@ def test_a_guise_held_feeling_renders_in_private_before_the_unaware_one(migrated
     private = text.split("<Private>", 1)[1].split("</Private>", 1)[0] if "<Private>" in text else ""
     outside = text.replace(private, "")
     assert 'toward_guise="카이"' in private and 'wearer="루카"' not in outside
+
+
+def test_packet_v21_ranks_with_the_ontology_and_older_policies_call_as_before(migrated, monkeypatch):
+    from conftest import make_client
+    from test_generations import LLM
+    from test_phase60_gone import ask, story
+    seen: list[dict] = []
+    real = retrieval.relevant_facts
+    monkeypatch.setattr(retrieval, "relevant_facts", lambda *a, **kw: seen.append(kw) or real(*a, **kw))
+    for policy in ("packet-v21", "packet-v20"):
+        seen.clear()
+        with make_client(migrated, packet_policy=policy, **LLM) as c:
+            chat = story(c, migrated, "세라의 상태: 전투 중 전사.")
+            ask(c, migrated, chat, "하나는 등불을 들고 있어?")
+        assert seen, policy
+        if policy == "packet-v21":
+            assert all(kw.get("ontology") is True for kw in seen)
+        else:
+            assert not any("ontology" in kw for kw in seen)  # the call packet-v20 always made
+
+
+def test_a_name_alone_brings_a_v21_vital_status_under_v21(migrated):
+    from test_sidecar_integration import recall
+    from test_tier3_read_ontology import Chat, a
+    script = {"t0": [a("세라", "vital_status", None, "생존"), a("세라", "located_in", "광장", None, ot="place")]}
+    v21 = Chat(migrated, script, name="w5-onto-rank")
+    with v21.client() as c:
+        v21.run(c)
+        out = recall(c, v21.chat, "세라는?", budget=1500)
+        trace = c.get(f"/v1/trace/{out['trace_id']}").json()
+    vital = [e for e in trace["lines"] if "vital status" in (e.get("text") or "")]
+    assert vital and vital[0]["placed"] and vital[0]["label"] == "required"
