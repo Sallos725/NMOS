@@ -42,3 +42,10 @@ production must not pay to re-extract history for it (ADR 0081 item 4).
 - A switch back from `extract-v19` queues nothing only on code that knows `extract-v19` (its `ADDS`); an image from
   before this phase reads it as a version change. A rollback therefore changes the compiler before it changes the
   image (PHASE-60 C3).
+
+## Amendment (2026-11-25, PHASE-65 S1, audit G2): the clock line
+
+Item 3's clock strips a `<prefix>.` from a key, reads 현재 시간 / 현재 시각 / 일차 / day / 요일 / 계절 as their own
+categories, and never shows a field more than one turn older than the newest one, so a date of one turn and a time
+of another are no longer stitched into one clock. It stays a recorded input, not part of validity or of the key, so
+rows of one generation written before and after differ in the clock they were shown.

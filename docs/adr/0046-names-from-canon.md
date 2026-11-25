@@ -51,3 +51,12 @@ The step's Codex review found three defects, all confirmed and fixed with tests:
 - A lorebook whose keys are not names (the longest measured chat's) changes nothing.
 - A key that is a common word ("시장") becomes an alias only of the one character its entry names, and a message
   that uses the word mentions that character. The owner splits it if it misleads.
+
+## Amendment (2026-11-25, PHASE-65, ADR 0095 item 2): canon may join one person's names
+
+Item 2's "a canon alias joins no two entities" has one exception: a lorebook entry joins character roots the story
+keeps apart when their names are one person's (a word of the other name, its given name, a romanized spelling).
+Refused when the entry names the persona, a key names an entity of another type, another entry names one of the roots
+with a different known entity, or the owner split any pair of them. An entry naming unrelated characters still joins
+nothing. The plugin sends an entry's `secondkey` (the host's trigger words) as `metadata.trigger_keys`, never as keys,
+so they are not aliases.

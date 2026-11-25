@@ -41,3 +41,16 @@ moves every turn would also defeat the provider's prompt cache, which keys on th
   that holds still.
 - The marker in a lorebook entry is canon text like the rest of the entry; the normalizer is unchanged, so no
   generation moves.
+
+## Amendment (2026-11-25, PHASE-65 S7, audit G3, G4)
+
+- Item 7: a dropped message may also carry `name`, `removable` and `cachePoint` (the keys the host's `OpenAIChat` type
+  allows, a source reading, `HOST-FACTS.md`); a cache point on a dropped message moves to the first kept message;
+  unmatched system blocks between dropped turns are kept.
+- Item 6: the plugin decides before `/v1/retrieve` whether the prompt can take a cut (`canTrimPrompt`) and asks for a
+  trim only then. When it still refuses the boundary, the packet is fetched once more without trim inside the same
+  deadline instead of placing the pre-cut packet, and the refusal is remembered for 10 minutes (one extra call, not a
+  retry loop); if that fetch fails, the request fails open.
+- The default `keep_recent_turns` and `step` are 16 (were 20), a multiple of the 8-turn summary window, in the plugin
+  and in the sidecar's `TrimRequest`.
+- A `disabled: 'allBefore'` message and everything before it are not part of the prompt the trim reads.

@@ -619,10 +619,22 @@ allows `name`, `removable` and `cachePoint`. `requestChatData` passes that list 
 `beforeRequest` replacer (`src/ts/process/request/request.ts`).
 
 Used for: the trim (PHASE-60 S1) drops a prompt message only when its keys are within `role`, `content`, `memo`,
-`attr`, `thoughts`; anything else (`multimodals`, `name`, tool calls, a cache point) refuses the whole trim as
-`format`. Allowing the three bookkeeping keys is safe whether or not the host sends them: a message is dropped
-together with its own bookkeeping. Not used: `memo` as the message's identity (the pointer match of `inContextIds`
-still matches by text); that needs a runtime observation first.
+`attr`, `thoughts` and, since PHASE-65 (S7), `name`, `removable` and `cachePoint`, the other keys the type allows;
+anything else (`multimodals`, tool calls) refuses the whole trim as `format`. Allowing these keys is safe whether or
+not the host sends them: a message is dropped together with its own bookkeeping. A cache point on a dropped message
+moves to the first message kept after the dropped run, on the reading (source only, not observed) that the host's
+cache-point setting marks messages counted from the end, so the prompt keeps a cache point where the host put one. Not
+used: `memo` as the message's identity (the pointer match of `inContextIds` still matches by text); that needs a
+runtime observation first.
+
+## "Cut Messages for AI": what is sent (2026-11-25, PHASE-65)
+
+**Not observed at runtime.** S8b records only the flag: the message the owner cuts at gets `disabled: 'allBefore'`
+under the same id. That the host then sends neither that message nor any message before it is NMOS's reading: the
+sidecar's active view has read it that way since the turn model (`facts.py`: messages after the newest `allBefore`
+message, the message itself left out), and the plugin since PHASE-65 (`prompt.activeStartIndex`, used by the prompt
+match, the query text and the trim). No beforeRequest prompt with a cut was recorded. A runtime observation (S8b with
+the prompt captured) would settle it.
 
 ## Scenario evidence index
 

@@ -83,3 +83,9 @@ A `shape` rule names a status window by its key set instead of a regex; the dete
 and 60 % of the set. Detection is offered per chat and never configures by itself; tracking binds the key set to the
 card beside its other rules (PHASE-39 amendment 2's explicit binding, now one confirmation). Pins per card are kept in
 `app_config.status_pins`, outside the rules, so pinning does not change the rules' version or rebuild state.
+
+## Amendment 3 — more shapes, and keys that stay (PHASE-65 S9, owner 2026-11-25; ADR 0094)
+
+Windows read in more shapes (nested `|`, 【】《》『』, multi-line, Markdown tables, HTML cards); a reply with windows of
+two or more characters sharing a non-scene key keys them `<character>.<key>`, any other window keeps bare keys; a bare
+pin or watch covers a key by its last part. The rules version is unchanged. ADR 0094.

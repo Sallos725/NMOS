@@ -108,3 +108,19 @@ main chat 34 narrated facts left the chat's memory after one press). "Extract al
 extraction and asks a reveal check: the same OPEN SECRETS, CONTEXT and TARGET, answered with `secrets` only, its
 `learned` rows served with the turn while the extraction it checked serves it (ADR 0057). Which turns qualify is
 unchanged, except that a check counts as having looked. Rebuild is unchanged.
+
+## Amendment 4 (2026-11-25, PHASE-65 S2): a belonging is its own secret; heads by entity; carried secrets
+
+- A secret line of a predicate that takes no value (`possesses`, `located_in`, `member_of`) splits as head "subject
+  predicate" and content the object (`_split`), so revealing one belonging of a holder no longer reveals the others.
+  `secret_text` is unchanged, so stored reveals and traces still read.
+- Heads compare by subject, predicate and object, by entity where the resolution knows both names, else by similarity
+  per part (`HEAD_MIN`), so near-identical names do not collide.
+- Rule 1 (amendment 2) needs a score above 0 when two or more same-head secrets of the listed turn compete, and for a
+  valueless head even alone; the one same-head secret of a valued turn still ends at any score, as amendment 2 pins.
+  Residual: two same-head valued secrets of which a re-extraction dropped one still end the survivor at 0.0.
+- `hidden_from` drops a revealed character under every name it goes by.
+- Rows carried by a `continue` link (ADR 0085) fold as secrets of the target (`[turn -1]` parses). They are not listed
+  to the extractor as OPEN SECRETS, so only the owner's `secret_found_out` ends one (K53).
+- `summaries.content` gives a valueless secret's object as its content; summaries listed under the older whole-line key
+  stay valid.
