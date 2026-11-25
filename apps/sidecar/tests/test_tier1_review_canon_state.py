@@ -174,3 +174,22 @@ def test_the_note_reads_threads_and_facts_while_every_summary_is_held():
     assert out["held"] == 1 and out["newest"] == [] and out["early"] is True and out["now"] and out["shown"]
     story, spans, held = divergence.story_input([{**now, "polarity": "positive"}], told, [secret], False)
     assert held == 1 and spans == [(12, 12)] and "[t12]" in story
+
+
+# --- item 2: a block that restates an unconditional sentence and adds one of its own ---------------------------------
+
+def test_evidence_partly_only_inside_a_block_is_not_served():
+    import uuid
+
+    from nmos_sidecar import canonfacts
+
+    text = ("{{char}} is a loyal knight who serves the crown.\n"
+            "{{#if {{getvar::route}}}}{{char}} is a loyal knight who serves the crown. A spy.{{/if}}")
+    names = ("Hana", None)
+    blocks = canonfacts.read_blocks(text, *names)
+    served = {ev: canonfacts.shown(blocks, uuid.uuid4(), ev, names) for ev in (
+        "Hana is a loyal knight who serves the crown.",  # unconditional: every piece is outside
+        "Hana is a loyal knight who serves the crown. A spy.",  # the restated sentence and the branch's own
+        "A spy.")}
+    assert served == {"Hana is a loyal knight who serves the crown.": True,
+                      "Hana is a loyal knight who serves the crown. A spy.": False, "A spy.": False}
