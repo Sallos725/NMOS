@@ -32,14 +32,18 @@ def test_a_full_name_with_its_given_name_and_a_nickname_is_one_person():
     assert a == b == c and r.status("character", "윤하람") == "resolved"
 
 
-@pytest.mark.parametrize(("second", "status"), [(("윤하람", "람이"), "resolved"), (("람이", "윤하람"), "ambiguous")],
-                         ids=["as-stored", "reversed"])
-def test_extract_v15_rows_resolve_as_before(second, status):
-    """resolve-v6 (Tier 1 B1, owner decision): a name that is the subject of every alias (윤하람 → 하람, 윤하람 → 람이)
-    is one person's names, under any compiler; before, it read as ambiguous. A name that is also another's alias
-    (람이 → 윤하람) keeps the undirected rule, as before."""
+@pytest.mark.parametrize("second", [("윤하람", "람이"), ("람이", "윤하람")], ids=["as-stored", "reversed"])
+def test_extract_v15_rows_resolve_as_before(second):
+    """resolve-v6 reads a direction only on rows of a compiler whose prompt states it (extract-v16 on; coordinator's
+    decision on review finding 8), so extract-v15's rows resolve as before either way."""
     r = resolve(uuid.uuid4(), [alias(33, "윤하람", "하람", **C), alias(182, *second, **C)])
-    assert r.status("character", "윤하람") == status
+    assert r.status("character", "윤하람") == "ambiguous"
+
+
+def test_a_v16_name_that_is_the_subject_of_every_alias_is_one_person():
+    """resolve-v6 (Tier 1 B1): under extract-v16 a name that is the subject of every alias is one person's names."""
+    r = resolve(uuid.uuid4(), [alias(33, "윤하람", "라미", **V16), alias(182, "윤하람", "람이", **V16)])
+    assert r.status("character", "윤하람") == "resolved" and len(set(keys(r, "윤하람", "라미", "람이"))) == 1
 
 
 def test_a_letter_s_addressee_taken_for_its_writer_stays_ambiguous_and_the_pair_holds():

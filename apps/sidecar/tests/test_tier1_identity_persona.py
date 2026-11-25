@@ -27,6 +27,11 @@ def alias(subject, value, **kw):
     return fact(subject, "also_called", value, **kw)
 
 
+def dalias(subject, value, **kw):
+    """An alias from a compiler whose prompt states the direction (extract-v16 on; `entities.DIRECTED`)."""
+    return alias(subject, value, compiler="extract-v16", **kw)
+
+
 def key(r, name, kind="character"):
     return r.key(kind, name)
 
@@ -46,12 +51,23 @@ def link(name, same_as, at=NOW):
 # --- B1: an alias has a direction ------------------------------------------------------------------------------------
 
 def test_a_name_with_two_aliases_of_its_own_is_one_person_and_stays_listed():
-    r = resolve(CONV, [fact("세라"), alias("세라", "?은발의 기사"), alias("세라", "별빛")])
+    r = resolve(CONV, [fact("세라"), dalias("세라", "?은발의 기사"), dalias("세라", "별빛")])
     assert r.status("character", "세라") == "resolved" and one(r, "세라", "?은발의 기사", "별빛")
     assert r.entity("character", "세라")["name"] == "세라"
     assert "세라" in {e["name"] for e in r.entities()}
-    r = resolve(CONV, [fact("세라"), alias("세라", "Sera"), alias("세라", "별빛")])
+    r = resolve(CONV, [fact("세라"), dalias("세라", "Sera"), dalias("세라", "별빛")])
     assert r.status("character", "세라") == "resolved" and one(r, "세라", "Sera", "별빛")
+
+
+def test_rows_of_a_compiler_that_states_no_direction_keep_the_undirected_rule():
+    """Coordinator's decision (review finding 8): a direction the model was never asked for must not merge two
+    characters, so rows before extract-v16 resolve as under resolve-v5."""
+    r = resolve(CONV, [fact("세라"), alias("세라", "Sera"), alias("세라", "별빛")])
+    assert r.status("character", "세라") == "ambiguous"
+    r = resolve(CONV, [alias("별빛", "세라"), alias("별빛", "카일")])
+    assert r.status("character", "별빛") == "ambiguous" and key(r, "세라") != key(r, "카일")
+    r = resolve(CONV, [fact("세라"), alias("?은발의 기사", "세라"), alias("세라", "별빛")])
+    assert r.status("character", "세라") == "ambiguous"  # a description counts, as before
 
 
 def test_a_nickname_two_people_give_is_ambiguous_not_the_people():
@@ -69,28 +85,38 @@ def test_an_alias_with_an_alias_of_its_own_keeps_the_undirected_rule():
 
 def test_a_description_never_makes_a_name_ambiguous():
     # the description written as the subject (reversed): it is still a placeholder for the one person
-    r = resolve(CONV, [fact("세라"), alias("?은발의 기사", "세라"), alias("세라", "별빛")])
+    r = resolve(CONV, [fact("세라"), dalias("?은발의 기사", "세라"), dalias("세라", "별빛")])
     assert r.status("character", "세라") == "resolved" and one(r, "세라", "?은발의 기사", "별빛")
     # a nickname of the name, and the name revealed as a description
-    r = resolve(CONV, [alias("카일", "세라"), alias("세라", "?은발의 기사")])
+    r = resolve(CONV, [dalias("카일", "세라"), dalias("세라", "?은발의 기사")])
     assert r.status("character", "세라") == "resolved" and one(r, "카일", "세라", "?은발의 기사")
 
 
 @pytest.mark.parametrize("rows", [
-    [alias("세라", "?검은 망토"), alias("카일", "?검은 망토")],
+    [dalias("세라", "?검은 망토"), dalias("카일", "?검은 망토")],
+    [dalias("?검은 망토", "세라"), dalias("?검은 망토", "카일")],
     [alias("?검은 망토", "세라"), alias("?검은 망토", "카일")],
-], ids=["as-written", "reversed"])
+], ids=["as-written", "reversed", "undirected"])
 def test_one_description_revealed_as_two_names_is_ambiguous_either_way(rows):
     r = resolve(CONV, rows)
     assert r.status("character", "?검은 망토") == "ambiguous" and key(r, "세라") != key(r, "카일")
 
 
-def test_an_owner_link_on_an_ambiguous_name_keeps_its_own_aliases():
-    rows = [fact("세라"), fact("카일"), alias("세라", "별빛"), alias("카일", "별빛"), alias("별빛", "별빛이"),
-            alias("별빛", "?노래하는 소녀")]
+def test_an_owner_link_settles_a_shared_name_and_keeps_its_descriptions():
+    """Review finding 8: an owner's link always settles a shared name. It drops every alias of the linked name
+    except, on a directed row, a description (or a part) of it."""
+    rows = [fact("세라"), fact("카일"), dalias("세라", "별빛"), dalias("카일", "별빛"), dalias("별빛", "별빛이"),
+            dalias("별빛", "?노래하는 소녀")]
     r = resolve(CONV, rows, links=[link("별빛", "세라")])
-    assert one(r, "세라", "별빛", "별빛이", "?노래하는 소녀") and key(r, "카일") != key(r, "세라")
-    assert r.status("character", "별빛") == "resolved"
+    assert one(r, "세라", "별빛", "?노래하는 소녀") and key(r, "카일") != key(r, "세라")
+    assert key(r, "별빛이") != key(r, "세라") and r.status("character", "별빛") == "resolved"
+
+
+@pytest.mark.parametrize("make", [alias, dalias], ids=["undirected", "directed"])
+def test_an_owner_link_to_one_of_a_shared_subjects_names_keeps_the_others_apart(make):
+    """The review's sharper variant: the shared name written as the subject, and the owner's link picking one."""
+    r = resolve(CONV, [make("별빛", "세라"), make("별빛", "카일")], links=[link("별빛", "세라")])
+    assert one(r, "별빛", "세라") and key(r, "카일") != key(r, "세라")
 
 
 def test_an_owner_link_on_a_shared_description_drops_every_other_name_it_was_revealed_as():
@@ -100,13 +126,13 @@ def test_an_owner_link_on_a_shared_description_drops_every_other_name_it_was_rev
 
 
 def test_an_owner_link_elsewhere_leaves_a_characters_aliases_alone():
-    rows = [fact("세라"), alias("세라", "Sera"), alias("세라", "별빛"), fact("붉은 마녀")]
+    rows = [fact("세라"), dalias("세라", "Sera"), dalias("세라", "별빛"), fact("붉은 마녀")]
     r = resolve(CONV, rows, links=[link("붉은 마녀", "세라")])
     assert one(r, "세라", "Sera", "별빛", "붉은 마녀")
 
 
 def test_an_owner_split_still_cuts_a_direct_alias():
-    rows = [fact("세라"), alias("세라", "Sera"), alias("세라", "별빛")]
+    rows = [fact("세라"), dalias("세라", "Sera"), dalias("세라", "별빛")]
     r = resolve(CONV, rows, splits=[split("세라", "별빛")])
     assert one(r, "세라", "Sera") and key(r, "별빛") != key(r, "세라")
 
@@ -161,13 +187,13 @@ def test_persona_parts_of_a_composite_name():
 
 
 def test_a_composite_bilingual_persona_is_one_entity_under_every_name_it_is_called():
-    names = ["Ronan Voss", "윤기현", "Ronan", "기현", "로넌", "로난", "{{user}}"]
+    names = ["Ronan Voss", "윤기현", "Ronan", "기현", "로난", "{{user}}"]
     rows = [fact(n) for n in names] + [fact("카이토")]
     r = resolve(CONV, rows, persona=["Ronan Voss/ 윤기현"])
-    assert one(r, *names) and r.is_persona("character", "로넌")
+    assert one(r, *names) and r.is_persona("character", "로난")
     e = r.entity("character", "기현")
     assert e["persona"] and e["id"] == str(uuid5(entities._NS, f"{CONV}:{RESOLVER_VERSION}:character:{PERSONA}"))
-    assert {"ronan voss", "윤기현", "ronan", "기현", "로넌", "로난"} <= r.persona_names
+    assert {"ronan voss", "윤기현", "ronan", "기현", "로난"} <= r.persona_names
     assert not r.is_persona("character", "카이토") and "카이토" not in r.persona_names
     # the pieces fold into {{user}} wherever node() is asked with the host's raw name
     raw = frozenset({"ronan voss/ 윤기현"})
@@ -216,13 +242,13 @@ def test_a_titled_name_is_not_the_persona_and_a_full_name_ending_with_it_is_but_
 
 
 def test_the_owners_link_or_split_outranks_a_derived_name():
-    rows = [fact("윤기현"), fact("기현"), fact("카이토"), fact("로넌")]
+    rows = [fact("윤기현"), fact("기현"), fact("카이토"), fact("로난")]
     linked = resolve(CONV, rows, persona=["윤기현"], links=[link("기현", "카이토")])
     assert one(linked, "기현", "카이토") and not linked.is_persona("character", "기현")
     # a split between two names the persona would go by keeps the later one off it
-    apart = resolve(CONV, rows, persona=["Ronan Voss/ 윤기현"], splits=[split("기현", "로넌")])
-    assert key(apart, "기현") != key(apart, "로넌")
-    assert apart.is_persona("character", "기현") != apart.is_persona("character", "로넌")
+    apart = resolve(CONV, rows, persona=["Ronan Voss/ 윤기현"], splits=[split("기현", "로난")])
+    assert key(apart, "기현") != key(apart, "로난")
+    assert apart.is_persona("character", "기현") != apart.is_persona("character", "로난")
 
 
 def test_a_full_name_mentioned_first_keeps_the_personas_id():
@@ -318,8 +344,8 @@ def test_a_derived_name_another_name_gives_as_its_alias_is_that_names():
     """Self-review: guard (b) for story aliases that do not contain the derived name."""
     r = resolve(CONV, [fact("윤기현"), alias("카이토", "기현")], persona=["윤기현"])
     assert not r.is_persona("character", "카이토") and not r.is_persona("character", "기현")
-    r = resolve(CONV, [fact("Ronan Voss"), alias("Ronan Pryce", "로넌")], persona=["Ronan Voss"])
-    assert not r.is_persona("character", "Ronan Pryce") and not r.is_persona("character", "로넌")
+    r = resolve(CONV, [fact("Ronan Voss"), alias("Ronan Pryce", "로난")], persona=["Ronan Voss"])
+    assert not r.is_persona("character", "Ronan Pryce") and not r.is_persona("character", "로난")
     # the persona's own derived name with an alias of its own still joins
     r = resolve(CONV, [fact("윤기현"), alias("기현", "기현형")], persona=["윤기현"])
     assert r.is_persona("character", "기현형")
@@ -337,7 +363,7 @@ def test_the_persona_introducing_itself_under_another_of_its_names():
 @pytest.mark.parametrize(("persona", "names", "a", "b"), [
     (["Smith"], ["Smith", "John Smith"], "Smith", "John Smith"),
     (["윤기현"], ["윤기현", "기현"], "윤기현", "기현"),
-    (["Ronan Voss/ 윤기현"], ["{{user}}", "로넌"], "{{user}}", "로넌"),
+    (["Ronan Voss/ 윤기현"], ["{{user}}", "로난"], "{{user}}", "로난"),
 ])
 def test_the_owner_can_plan_a_split_of_a_derived_persona_name(persona, names, a, b):
     """The brief's symptom: a name folded into {{user}} by node() could not be split ("the two names are the same",
