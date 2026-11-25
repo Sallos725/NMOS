@@ -3,7 +3,8 @@
 `api.view_of` reads the link only with `carried=True`: the read-only lists (`/facts`, `/entities`, `/threads`,
 `/secrets`), the panel's memory screen and a person's sheet, and since Tier 1 (owner-agreed, C5/F2) the join, split and
 exclusion previews, repairs (`/repairs` among the lists) and the author's note, so a carried row can be pinned, left
-out, joined and noted. The Inspector's pages, the hub, the map and every other reader keep the chat's own memory. Stub extractor, summarizer and note model only; synthetic names 세라, 카이토, 하나, 유나, 도현, 유찬."""
+out, joined and noted, and since Tier 2 (owner-agreed, C/15) the memory map, which draws what the memory screen lists.
+The Inspector's pages, the hub and every other reader keep the chat's own memory. Stub extractor, summarizer and note model only; synthetic names 세라, 카이토, 하나, 유나, 도현, 유찬."""
 
 from __future__ import annotations
 
@@ -127,8 +128,6 @@ def _plain_routes(tgt: str, people: list[str]) -> list[str]:
         f"/v1/views/hub?conversation={tgt}", f"/v1/views/hub?conversation={tgt}&map=true",
         f"/views/hub?conversation={tgt}",
         f"/v1/views/c/{tgt}/working", f"/views/c/{tgt}/working",
-        f"/v1/views/c/{tgt}/map", f"/v1/views/c/{tgt}/map/graph", f"/v1/views/c/{tgt}/map/graph?all=true",
-        f"/views/c/{tgt}/map", f"/views/c/{tgt}/map?all=true",
         f"/v1/conversations/{tgt}/memory-mode", f"/v1/conversations/{tgt}/replies-only",
         f"/v1/conversations/{tgt}/dropped",
         f"/v1/conversations/{tgt}/coverage", f"/v1/conversations/{tgt}/state", f"/v1/conversations/{tgt}/traces",
@@ -136,8 +135,7 @@ def _plain_routes(tgt: str, people: list[str]) -> list[str]:
     ]
     for eid in people:
         out += [f"/inspector/c/{tgt}/e/{eid}", f"/v1/inspector/c/{tgt}/e/{eid}",
-                f"/v1/inspector/c/{tgt}/e/{eid}?timeline=lazy", f"/v1/inspector/c/{tgt}/e/{eid}?part=timeline",
-                f"/v1/views/c/{tgt}/map?focus={eid}", f"/v1/views/c/{tgt}/map/graph?focus={eid}"]
+                f"/v1/inspector/c/{tgt}/e/{eid}?timeline=lazy", f"/v1/inspector/c/{tgt}/e/{eid}?part=timeline"]
     return out
 
 
@@ -147,9 +145,13 @@ def _carried_routes(tgt: str, people: list[str]) -> list[str]:
            f"/v1/conversations/{tgt}/entities", f"/v1/conversations/{tgt}/threads",
            f"/v1/conversations/{tgt}/secrets",
            f"/v1/conversations/{tgt}/repairs",  # Tier 1: a repair of a carried row applies to it
-           f"/v1/views/c/{tgt}/memory", f"/v1/views/c/{tgt}/memory?map=true", f"/views/c/{tgt}/memory"]
+           f"/v1/views/c/{tgt}/memory", f"/v1/views/c/{tgt}/memory?map=true", f"/views/c/{tgt}/memory",
+           # Changed in Tier 2 (C/15, owner-agreed): the map was among `_plain_routes`; it now reads the link in force
+           f"/v1/views/c/{tgt}/map", f"/v1/views/c/{tgt}/map/graph", f"/v1/views/c/{tgt}/map/graph?all=true",
+           f"/views/c/{tgt}/map", f"/views/c/{tgt}/map?all=true"]
     for eid in people:
-        out += [f"/v1/views/c/{tgt}/person/{eid}", f"/views/c/{tgt}/person/{eid}"]
+        out += [f"/v1/views/c/{tgt}/person/{eid}", f"/views/c/{tgt}/person/{eid}",
+                f"/v1/views/c/{tgt}/map?focus={eid}", f"/v1/views/c/{tgt}/map/graph?focus={eid}"]
     return out
 
 
