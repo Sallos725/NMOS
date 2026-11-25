@@ -819,3 +819,11 @@ def test_a_forgetting_keeps_a_revealed_secret_from_its_subject_again_until_they_
         assert opened == ["도윤"] and hidden == ["도윤"]  # ... and forgets everything at turn 2: kept from him again
         post(c, v21.cid, kind="secret_found_out", item=sid, character="도윤", turn=3)  # he learns it again
         assert state() == ([], None)
+
+
+def test_a_stray_mark_never_raises_in_fact_text():
+    told = row(0, "told", "비밀", subject="하나", obj="도윤", address_condition={"scope": "private", "when": "둘만"})
+    assert facts.fact_text(told) == "하나 told 도윤: 비밀"  # an address's mark on another predicate says nothing
+    odd = row(1, "feels_toward", "설렘", condition="not a mapping")
+    assert facts.fact_text(odd) == "하나 feels toward 도윤: 설렘"
+    assert facts.fact_text(row(2, "feels_toward", "설렘", PRIV)) == "하나 feels toward 도윤 [둘만 있을 때]: 설렘"

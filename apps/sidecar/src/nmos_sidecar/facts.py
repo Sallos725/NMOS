@@ -1477,8 +1477,10 @@ def fact_text(f: dict[str, Any]) -> str:
     if f.get("object"):
         parts.append(f["object"])
     text = " ".join(parts)
-    if label := address_label(f) or (address_label({"predicate": "addresses", "address_condition": f["condition"]})
-                                     if conditional(f) and f.get("predicate") != "addresses" else None):
+    cond = f.get("condition")  # PHASE-66: only a conditioned predicate's own mark; a stray one is ignored, never raised on
+    if label := address_label(f) or (address_label({"predicate": "addresses", "address_condition": cond})
+                                     if isinstance(cond, Mapping) and slotted(f.get("predicate"))
+                                     and f.get("predicate") != "addresses" else None):
         text = f"{text} [{label}]"  # PHASE-64; PHASE-66: a conditioned fact names its condition the same way
     return f"{text}: {f['value']}" if f.get("value") else text
 
