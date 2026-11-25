@@ -278,8 +278,10 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
                      "status": "open", "closed_by": None, "restated": [], "horizon": horizon_of(a),
                      # PHASE-60 S7: when the opening assertion says it happens (a promise's appointed day), else None
                      "when_happened": a.get("when_happened"),
-                     # PHASE-66: when an extract-v21 promise holds (`condition`: scope, `when`), only when it says
+                     # PHASE-66: when an extract-v21 promise holds (`condition`: scope, `when`), and its four-way
+                     # knowledge scope (`scene.private` reads public_except by it), each only when set
                      **({"condition": a["condition"]} if a.get("condition") else {}),
+                     **({"knowledge_scope": a["knowledge_scope"]} if a.get("knowledge_scope") else {}),
                      "_slot": _slot(a), "_maker": _maker(a, r), "_recipient": _recipient(a, r), "_norm": norm(a.get("value"))}
                 threads.append(t)
                 open_by_maker.setdefault(t["_maker"], []).append(t)

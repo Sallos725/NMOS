@@ -249,3 +249,62 @@ def test_the_unconditioned_ones_end_never_closes_the_conditioned_promise():
 
 def test_with_no_unconditioned_promise_open_the_end_reaches_the_conditioned_one_as_before():
     assert by_slot(threads_of([promise(1, PRIVATE), kept_promise(3)])) == {"private": "kept"}
+
+
+def test_a_public_except_promise_keeps_its_scope_for_the_scene():
+    t = threads_of([promise(1, scope="public_except", knowledge="limited", hidden_from=["노엘"])])[0]
+    assert t["knowledge_scope"] == "public_except"
+    assert "knowledge_scope" not in threads.fold([row(1, "루카", "promised", "노엘", "x", subject_type=C)])[0][0]
+
+
+# --- 2 (scene). public_except is known by everyone it does not name -----------------------------------------------------
+
+def cast_rows() -> list[dict[str, Any]]:
+    return [here(1, "노엘"), here(1, "아델라"), here(1, "미라"), here(1, "루카")]
+
+
+def test_a_public_except_fact_is_private_only_when_one_it_is_kept_from_is_in_the_scene():
+    rows = cast_rows()
+    r = resolve(uuid.uuid4(), rows)
+    f = kept(1, hidden=("노엘",), known=())
+    with_noel = {scene.key(r, n): n for n in ("노엘", "아델라")}
+    without = {scene.key(r, n): n for n in ("아델라", "미라")}  # 미라 is not named anywhere in its marks
+    assert scene.private(f, with_noel, r) and not scene.private(f, without, r)
+    assert scene.narrator_knows(f, "미라", r) and not scene.narrator_knows(f, "노엘", r)
+    assert scene.missing(f, with_noel, r) == (["아델라"], ["노엘"])
+    # the same marks read as limited (as extract-v20 stores them) stay private to everyone not in known_by
+    old = kept(1, hidden=("노엘",), known=(), scope=None)
+    assert scene.private(old, without, r) and not scene.narrator_knows(old, "미라", r)
+    # a group it is kept from, whose members the fact does not give, keeps it private as limited does
+    grp = kept(1, hidden=("기사단",), known=())
+    rg = resolve(uuid.uuid4(), rows + [member(0, "노엘")])
+    assert scene.private(grp, {scene.key(rg, "미라"): "미라"}, rg)
+
+
+# --- 7. scene: a character the story says is gone ----------------------------------------------------------------------
+
+def dead(pos: int, who: str = "노엘", value: str = "사망", **kw: Any) -> dict[str, Any]:
+    return v21(pos, who, "vital_status", None, value, **kw)
+
+
+def mourned(pos: int, who: str = "노엘") -> dict[str, Any]:
+    return v21(pos, "아델라", "feels_toward", who, "그리움", object_type=C)
+
+
+def test_a_character_the_story_says_is_dead_is_not_in_the_scene_for_being_named():
+    rows = [here(1, "노엘"), here(1, "아델라"), dead(2), mourned(3)]
+    r = resolve(uuid.uuid4(), rows)
+    k = scene.key(r, "노엘")
+    assert k not in scene.cast(rows, r, query="노엘이 보고 싶어", now=4)
+    assert scene.key(r, "아델라") in scene.cast(rows, r, query="노엘이 보고 싶어", now=4)
+    # before the death, and once the story shows them there again, they are
+    assert k in scene.cast(rows, r, query="노엘", now=2)
+    for more in ([here(4, "노엘", "광장")], [dead(4, value="살아 있음")]):
+        rr = rows + more
+        ra = resolve(uuid.uuid4(), rr)
+        assert scene.key(ra, "노엘") in scene.cast(rr, ra, query="노엘", now=5)
+    # a claim or a dream of a death removes no one
+    for x in (dead(2, source="character_claim", asserted_by="아델라"), dead(2, modality="dreamed")):
+        rr = [here(1, "노엘"), here(1, "아델라"), x, mourned(3)]
+        ra = resolve(uuid.uuid4(), rr)
+        assert scene.key(ra, "노엘") in scene.cast(rr, ra, "노엘", now=4)

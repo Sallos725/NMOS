@@ -8,6 +8,10 @@ Characters compare by entity (ADR 0012), and every name the persona goes by is t
 
 A limited fact is private in this scene when someone in the cast is not among the characters shown to know
 it (`known_by`); with nobody in the cast, nothing is. Public, unknown and unmarked facts are never private.
+
+extract-v21 (PHASE-66): a fact everyone knows but those `hidden_from` names (`knowledge_scope = public_except`) is
+private only when one of them is in the cast; a character the story says is dead or gone (`vital_status`) is in the cast
+only when the story shows them there again, never because someone named them.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from collections.abc import Collection, Iterable, Mapping
 from typing import Any
 
 from .entities import USER_NAMES, Resolution, names_persona, norm
+from .gone import is_gone_vital
 from .variants import widened
 
 CAST_TURNS = 2
@@ -120,24 +125,75 @@ def cast(rows: list[dict[str, Any]], r: Resolution | None, query: str = "", prev
                 out.setdefault(e["id"], e["name"])
             else:
                 add(name)
+    if gone := _gone(rows, r, until):
+        out = {k: v for k, v in out.items() if k not in gone}
     add(PERSONA)
     if excluded:
         out = {k: v for k, v in out.items() if str(k) not in excluded}
     return out
 
 
+# packet-v21's presence rule (`retrieval.PRESENCE_PREDICATES`, `presence_rows`): what shows a character there
+PRESENCE = frozenset({"located_in", "event", "has_status", "possesses", "destroyed", "vital_status"})
+
+
+def _narrated(row: Mapping[str, Any]) -> bool:
+    return (row.get("source") == "narration" and (row.get("modality") or "actual") == "actual"
+            and row.get("subject_type") == "character" and (row.get("polarity") or "positive") == "positive"
+            and not row.get("canon") and row.get("turn") is not None and bool(row.get("subject")))
+
+
+def _gone(rows: list[dict[str, Any]], r: Resolution, until: int) -> set[str]:
+    """Keys of the characters the story says are dead or gone (extract-v21's `vital_status`, PHASE-66) by the turn
+    before the current one, read as the gone logic reads one (`retrieval.says_gone`, `gone.is_gone_vital`): narrated,
+    actual and positive, of the story (a row carried from the chat this one continues counts; canon does not), the
+    newest per character; not when a later one of theirs says otherwise, nor when a row that shows them present
+    (`retrieval.presence_rows`: never a claim, a dream, a feeling toward them nor a dated flashback) comes after it.
+    Only extract-v21 stores `vital_status`, so no earlier chat has one."""
+    vital: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if row["predicate"] == "vital_status" and _narrated(row) and row["turn"] <= until:
+            vital[key(r, row["subject"])] = row
+    out = set()
+    for k, row in vital.items():
+        if not is_gone_vital(row.get("value")):
+            continue
+        if not any(x["predicate"] in PRESENCE and _narrated(x) and not x.get("carried") and not x.get("when_happened")
+                   and row["turn"] < x["turn"] <= until and key(r, x["subject"]) == k
+                   and not (x["predicate"] == "vital_status" and is_gone_vital(x.get("value"))) for x in rows):
+            out.add(k)
+    return out - {key(r, PERSONA)}
+
+
+def _except(f: dict[str, Any], r: Resolution | None) -> set[str] | None:
+    """extract-v21 (PHASE-66): the keys of those a fact everyone else knows is kept from (`knowledge_scope =
+    public_except`), or None to read it as limited: a fact of another scope, or one whose `hidden_from` names a group,
+    whose members the fact does not give (the doubt keeps it private)."""
+    if f.get("knowledge_scope") != "public_except" or f.get("knowledge") != "limited":
+        return None
+    names = list(f.get("hidden_from") or ())
+    if r is not None and any(r.entity("group", n) is not None for n in names):
+        return None
+    return {key(r, n) for n in names} if r is not None else {norm(n) for n in names}
+
+
 def private(f: dict[str, Any], scene: dict[str, str], r: Resolution | None) -> bool:
     """Whether a fact (or promise) only some of the scene's characters know."""
     if not scene or r is None or f.get("knowledge") != "limited":
         return False
+    if (hidden := _except(f, r)) is not None:
+        return bool(set(scene) & hidden)
     known = {key(r, n) for n in f.get("known_by") or ()}
     return bool(set(scene) - known)
 
 
 def narrator_knows(f: dict[str, Any], narrator: str, r: Resolution | None) -> bool:
-    """First person (ADR 0035): the narrator knows public and unmarked facts and limited ones that list them."""
+    """First person (ADR 0035): the narrator knows public and unmarked facts and limited ones that list them; a
+    public-except one unless it is kept from them."""
     if f.get("knowledge") != "limited":
         return True
+    if (hidden := _except(f, r)) is not None:
+        return (key(r, narrator) if r is not None else norm(narrator)) not in hidden
     if r is None:
         return norm(narrator) in {norm(n) for n in f.get("known_by") or ()}
     return key(r, narrator) in {key(r, n) for n in f.get("known_by") or ()}
@@ -150,7 +206,10 @@ def display(r: Resolution, name: str) -> str:
 
 
 def missing(f: dict[str, Any], scene: dict[str, str], r: Resolution) -> tuple[list[str], list[str]]:
-    """(holders, characters in the scene not shown to know it), display names, for a withheld line."""
+    """(holders, characters in the scene not shown to know it), display names, for a withheld line. A public-except
+    one's are the scene's characters it is not kept from, and those it is."""
+    if (hidden := _except(f, r)) is not None:
+        return ([name for k, name in scene.items() if k not in hidden], [name for k, name in scene.items() if k in hidden])
     known = {key(r, n) for n in f.get("known_by") or ()}
     holders = list(dict.fromkeys(scene.get(key(r, n)) or display(r, n) for n in f.get("known_by") or ()))
     return holders, [name for k, name in scene.items() if k not in known]
