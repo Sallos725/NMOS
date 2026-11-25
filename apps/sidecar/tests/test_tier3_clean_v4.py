@@ -286,6 +286,55 @@ def test_a_request_replays_as_the_normalizer_it_was_served_from(migrated, db):
         assert normtext.active() == "clean-v3"
 
 
+class Counting(FakeEmbedder):
+    def __init__(self):
+        super().__init__()
+        self.texts: list[str] = []
+
+    def embed(self, texts, timeout_s):
+        self.texts += texts
+        return super().embed(texts, timeout_s)
+
+
+QUESTION = "<신탁: 북쪽 등대> 그 열쇠 어디다 숨겼더라?"  # clean-v3 drops the bracketed prose, clean-v4 keeps it
+
+
+def test_the_query_the_prefetch_and_a_probe_are_cleaned_by_the_active_normalizer(migrated, db, monkeypatch):
+    """PHASE-66 part 5: the request's query and previous reply, the sync's prefetched query embedding and a replay's
+    probe read through the active normalizer (the base's `clean_text` under the default, byte for byte); the trace
+    records the query as cleaned, so a replay reads it as the request did."""
+    assert clean_text(QUESTION) != clean_text_v4(QUESTION) and "신탁" in clean_text_v4(QUESTION)
+    probes: list[str] = []
+    real = audit.gather
+    monkeypatch.setattr(audit, "gather", lambda conn, head, query, *a, **k: probes.append(query) or real(
+        conn, head, query, *a, **k))
+    served = {}
+    for name, over in (("clean-v3", {}), ("clean-v4", V4)):
+        emb, chat = Counting(), oracle_chat(3)
+        with make_client(migrated, embedder=emb, **EMB, **over) as c:
+            sync(c, chat)
+            drain_embeddings(migrated)
+            before = len(emb.texts)
+            chat.user(QUESTION)
+            sync(c, chat)  # the bodies carry the question: its embedding is asked for now, cleaned as the retrieve will
+            out = recall(c, chat, QUESTION, previous_ai=QUESTION)
+            assert out["vectors"] == "on" and len(emb.texts) == before + 1  # the retrieve took the prefetched one
+            row = db.execute("SELECT query, previous_ai FROM retrieval_trace WHERE id = %s",
+                             (out["trace_id"],)).fetchone()
+            cleaned = normtext.CLEANERS[name](QUESTION)
+            assert emb.texts[-1].endswith(cleaned) and (row["query"], row["previous_ai"]) == (cleaned, cleaned)
+            served[name] = (UUID(out["trace_id"]), active_generation(db, "embed").key, emb)
+            probes.clear()
+            audit.replay(db, served[name][0], RecallOptions(embedder=emb, embed_projection=served[name][1]),
+                         query=QUESTION)
+            assert probes == [cleaned]
+    assert normtext.active() == "clean-v4"
+    trace, key, emb = served["clean-v3"]  # a clean-v3 request's probe, while clean-v4 is active: cleaned as it was
+    probes.clear()
+    audit.replay(db, trace, RecallOptions(embedder=emb, embed_projection=key), query=QUESTION)
+    assert probes == [clean_text(QUESTION)]
+
+
 def test_excerpts_and_quotes_come_from_the_active_normalizers_text(migrated, db):
     chat = SimChat()
     chat.user("하나가 등대에 왔다.")

@@ -40,7 +40,7 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
-                     StateItem, anchor_rank, clean_text, compile_lines, coverage_note, cut_lines, excerpt, fill,
+                     StateItem, anchor_rank, compile_lines, coverage_note, cut_lines, excerpt, fill,
                      fits_at, kept_counts, hidden_entry, secret_line,
                      secret_text)
 from .state import CARD_SQL, current_state, history as state_history, windows as state_windows
@@ -3176,10 +3176,11 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     fresh = (request.active_commit is None or request.active_commit == head) and (
         request.manifest_hash is None or request.manifest_hash == snap["head_manifest_hash"]
     )
-    # The query side is normalized like the corpus: reasoning blocks in the previous AI turn must not
-    # steer lexical scores, fact relevance or excerpt focus either.
-    query = clean_text(request.query or "")
-    previous_ai = clean_text(request.previous_ai or "")
+    # The query side is normalized like the corpus, by the active normalizer (PHASE-66 part 5): reasoning blocks in the
+    # previous AI turn must not steer lexical scores, fact relevance or excerpt focus either. The trace records them as
+    # cleaned, so a replay reads them as this request did.
+    query = normtext.clean(request.query or "")
+    previous_ai = normtext.clean(request.previous_ai or "")
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator,
                                   replies_only=conv.replies_only,
                                   state_pins=dict(options.pins_by_card).get(snap["card"] or "", ()))

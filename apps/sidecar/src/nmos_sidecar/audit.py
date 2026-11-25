@@ -38,7 +38,7 @@ import psycopg
 from . import carry, normtext, overuse, spans
 from .carry import Carried
 from .facts import LIVE
-from .packet import CARRY_POLICIES, POLICIES, REST_POLICIES, V21_POLICIES, clean_text
+from .packet import CARRY_POLICIES, POLICIES, REST_POLICIES, V21_POLICIES
 from .retrieval import RECORDED, RecallOptions, compile_gathered, filled, gather, rested
 
 echo, echoed = spans.reuse, spans.reused
@@ -235,7 +235,7 @@ def _replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, po
         notes.append("options changed: " + ", ".join(sorted(overrides)))
     opts = dataclasses.replace(opts, reranker=None)  # ADR 0084 item 5: a replay never calls a reranker
     if query is not None:
-        query = clean_text(query)  # as the live request normalizes it
+        query = normtext.clean(query)  # as the live request normalizes it: the trace's normalizer (`replay`)
         notes.append("query replaced")
     if recent is None and policy in REST_POLICIES and policy in V21_POLICIES:
         # packet-v21 (PHASE-65): as the live request reads them, rerolls as one request and none of its own attempts
