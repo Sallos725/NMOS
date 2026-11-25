@@ -308,3 +308,29 @@ def test_a_character_the_story_says_is_dead_is_not_in_the_scene_for_being_named(
         rr = [here(1, "노엘"), here(1, "아델라"), x, mourned(3)]
         ra = resolve(uuid.uuid4(), rr)
         assert scene.key(ra, "노엘") in scene.cast(rr, ra, "노엘", now=4)
+
+
+# --- end to end: memory_view ---------------------------------------------------------------------------------------------
+
+def test_a_solo_secret_is_a_secret_of_the_view_and_the_owners_found_out_reaches_it(migrated: str):
+    from test_tier3_read_ontology import Chat, a
+    from nmos_sidecar import repairs
+
+    chat = Chat(migrated, {
+        "t0": [a("노엘", "located_in", "정원", ot="place"), a("아델라", "located_in", "정원", ot="place")],
+        "t1": [a("루카", "feels_toward", "노엘", "짝사랑", knowledge="limited", known_by=["루카"])],
+        "t2": [a("루카", "located_in", "정원", ot="place")],
+    }, name="w4-solo")
+    with chat.client() as c:
+        chat.run(c)
+        view = chat.view()
+        (s,) = [s for s in view["secrets"] if s["text"].startswith("루카 feels toward 노엘")]
+        assert s["solo"] is True and {"노엘", "아델라"} <= set(s["open"]) and "루카" not in s["open"]
+        target, value = repairs.plan("secret_found_out", str(s["id"]), view, 2, character="아델라", turn=2)
+        found = chat.view(what_if={"add_repairs": [{"id": "0193e3c0-0000-7000-8000-0000000000a1",
+                                                    "kind": "secret_found_out", "target": target, "value": value,
+                                                    "note": None, "created_at": None}]})
+        (s,) = [s for s in found["secrets"] if s["id"] == s["id"] and s["text"].startswith("루카 feels toward")]
+        assert "아델라" in s["ended"] and "노엘" in s["open"]  # still kept from everyone else
+        fact = next(f for f in found["facts"] if f["predicate"] == "feels_toward")
+        assert fact["known_by"] == ["루카", "아델라"] and fact["hidden_from"] is None
