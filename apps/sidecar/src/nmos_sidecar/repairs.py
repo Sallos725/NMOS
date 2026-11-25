@@ -23,6 +23,7 @@ Pure: no database here, except `repairs_of`.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
@@ -74,10 +75,10 @@ def repairs_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime 
     """The owner's repairs in force for a conversation, oldest first; with `known_at`, those in force at that time
     (ADR 0027), as `facts.links_of`. (A memory read fetches them with its conversation, in one query: `IN_FORCE`.)"""
     if known_at is None:
-        return conn.execute("SELECT id, kind, target, value, note, created_at FROM owner_repair"
+        return conn.execute("SELECT id, kind, target, value, note, created_at, anchor, anchored_at FROM owner_repair"
                             " WHERE conversation_id = %s AND removed_at IS NULL ORDER BY created_at, id",
                             (conversation,)).fetchall()
-    return conn.execute("SELECT id, kind, target, value, note, created_at FROM owner_repair"
+    return conn.execute("SELECT id, kind, target, value, note, created_at, anchor, anchored_at FROM owner_repair"
                         " WHERE conversation_id = %s AND created_at <= %s AND (removed_at IS NULL OR removed_at > %s)"
                         " ORDER BY created_at, id", (conversation, known_at, known_at)).fetchall()
 
@@ -85,7 +86,274 @@ def repairs_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime 
 # A repair `r` in force now, or at `%(at)s` (ADR 0027), for SQL that joins owner_repair.
 IN_FORCE = {False: "r.removed_at IS NULL",
             True: "r.created_at <= %(at)s AND (r.removed_at IS NULL OR r.removed_at > %(at)s)"}
-REPAIR_COLUMNS = ("id", "kind", "target", "value", "note", "created_at")
+REPAIR_COLUMNS = ("id", "kind", "target", "value", "note", "created_at", "anchor", "anchored_at")
+
+
+# --- The anchor (PHASE-67 part 4, audit D7, owner decision 11b) ---------------------------------------------------
+#
+# A repair is anchored to the message it was made on, not to a turn number. Host message ids (`host_logical_id`, the
+# message `chatId`) are unique within a chat, a reroll and a continuation are new messages and a swipe is a new
+# revision of the same one (HOST-FACTS Q3), so a message with its revision in the head is on a worldline that holds
+# it: no commit ancestry or chain of earlier ids is needed (a rewind is a delete commit, a child of the old head, so
+# ancestry cannot tell the continuations apart; a chain of earlier ids would detach repairs next to a deleted message).
+#
+# - `target`: the target turn's anchor message (its last reply, whose extraction stated the item), its revision hash,
+#   and the hash of its own turn's revisions (`turn_revisions`; not the K-turn window). The repair applies while that
+#   message is in the head with that revision and its turn reads as it did; renumbering and edits of other turns do
+#   not matter, an edit of its own turn detaches it exactly as the turn hash did (and its quote with it).
+# - `apply`: the first and last message of the turn it applies from (`value.turn`), matched by id only: the turn is
+#   where the first of them is now. A reroll of the turn's reply (a new id) keeps its user message, a typo fix keeps
+#   both ids; a new continuation after a rewind has neither, so the repair does not fire there.
+#
+# A read maps each anchored repair onto the head's numbering (`rebase`): target turn and turn hash, and the apply turn,
+# as the head has them now, so every matcher below reads it as a repair made on this head. A repair without an anchor
+# (written before migration 0044) keeps the legacy rule; a live read records its anchor the first time it matches the
+# head (`legacy_anchors`). A replay as of a time before `anchored_at` reads the legacy target (ADR 0027).
+
+# The kinds whose target names an item of a story turn, and so get a target anchor (a canon or carried target, at
+# turn -1, never does); the kinds that take effect from a turn carry an apply anchor when `value.turn` is set.
+TARGET_ANCHORED = frozenset({"thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract",
+                             "fact_correct", "fact_restore", "fact_add", "told_retract", "fact_hidden",
+                             "attention_dismiss"})
+
+
+def turn_revisions(revisions: list[str]) -> str:
+    """The hash of one turn's own revisions, in order (not the K-turn window the turn hash covers)."""
+    return hashlib.sha256(("own\n" + ",".join(revisions)).encode()).hexdigest()[:32]
+
+
+class Members:
+    """The head members a set of repairs names: each message by id ((position, turn, revision)), and each turn's
+    members in order with its hash (the anchor's), from `members_of`."""
+
+    def __init__(self, rows: list[Mapping[str, Any]]) -> None:
+        self.messages: dict[str, tuple[int, int | None, str]] = {}
+        self.turns: dict[int, list[Mapping[str, Any]]] = {}
+        self.hashes: dict[int, str | None] = {}
+        seen: set[int] = set()
+        for x in sorted(rows, key=lambda x: x["position"]):
+            if x["position"] in seen:
+                continue
+            seen.add(x["position"])
+            self.messages[x["host_logical_id"]] = (x["position"], x["turn"], x["revision_hash"])
+            if x["turn"] is not None:
+                self.turns.setdefault(x["turn"], []).append(x)
+                if x.get("turn_hash"):
+                    self.hashes[x["turn"]] = x["turn_hash"]
+
+    def turn_of(self, message: str | None) -> int | None:
+        hit = self.messages.get(message or "")
+        return hit[1] if hit else None
+
+    def own(self, turn: int) -> str | None:
+        rows = self.turns.get(turn)
+        return turn_revisions([x["revision_hash"] for x in rows]) if rows else None
+
+    def target_anchor(self, turn: int | None) -> dict[str, Any] | None:
+        """The anchor of an item stated in this turn: its anchor message (the one with the turn's hash, else its last)."""
+        rows = self.turns.get(turn) if isinstance(turn, int) and turn >= 0 else None
+        if not rows:
+            return None
+        at = next((x for x in reversed(rows) if x.get("turn_hash")), rows[-1])
+        return {"message": at["host_logical_id"], "revision": at["revision_hash"], "turn_revisions": self.own(turn)}
+
+    def message_anchor(self, message: str) -> dict[str, Any] | None:
+        """The anchor of an item the owner states on this message (`fact_add`)."""
+        hit = self.messages.get(message)
+        if hit is None or hit[1] is None:
+            return None
+        return {"message": message, "revision": hit[2], "turn_revisions": self.own(hit[1])}
+
+    def apply_anchor(self, turn: int | None) -> dict[str, Any] | None:
+        rows = self.turns.get(turn) if isinstance(turn, int) else None
+        if not rows:
+            return None
+        return {"messages": list(dict.fromkeys([rows[0]["host_logical_id"], rows[-1]["host_logical_id"]]))}
+
+
+_MEMBER = ("SELECT am.position, am.turn, am.turn_hash, so.host_logical_id, sr.revision_hash FROM active_membership am"
+           " JOIN source_revision sr ON sr.id = am.source_revision_id JOIN source_object so ON so.id = sr.source_object_id")
+
+
+def members_of(conn: psycopg.Connection, head: UUID, messages: list[str], turns: list[int]) -> Members:
+    """The head members of these messages, and every member of these turns and of the turns those messages are in now
+    (by index: source_object by (conversation, id), membership by revision, membership by (commit, turn))."""
+    rows: list[Mapping[str, Any]] = []
+    if messages:
+        rows = conn.execute(
+            "SELECT am.position, am.turn, am.turn_hash, so.host_logical_id, sr.revision_hash FROM worldline_commit w"
+            " JOIN source_object so ON so.conversation_id = w.conversation_id AND so.host_logical_id = ANY(%s)"
+            " JOIN source_revision sr ON sr.source_object_id = so.id"
+            " JOIN active_membership am ON am.source_revision_id = sr.id AND am.commit_id = w.id WHERE w.id = %s",
+            (list(messages), head)).fetchall()
+    want = sorted(set(turns) | {x["turn"] for x in rows if x["turn"] is not None})
+    if want:
+        rows = list(rows) + conn.execute(_MEMBER + " WHERE am.commit_id = %s AND am.turn = ANY(%s)", (head, want)).fetchall()
+    return Members(rows)
+
+
+def _message_ids(repairs: list[dict[str, Any]]) -> list[str]:
+    out: list[str] = []
+    for rep in repairs:
+        a = rep.get("anchor") or {}
+        if (t := a.get("target")) and t.get("message"):
+            out.append(t["message"])
+        out.extend((a.get("apply") or {}).get("messages") or ())
+    return sorted(set(out))
+
+
+def anchored(rep: Mapping[str, Any], known_at: datetime | None = None) -> bool:
+    """Whether a read takes this repair by its anchor: it has one, recorded by the read's time (a replay as of an
+    earlier time reads the legacy target it had then, ADR 0027)."""
+    if not rep.get("anchor"):
+        return False
+    at = rep.get("anchored_at")
+    return known_at is None or at is None or at <= known_at
+
+
+DETACHED = {"gone": "its message is not in the chat now (deleted, or a continuation the chat left)",
+            "edited": "its turn was edited since",
+            "turn_gone": "the turn it applies from is not in the chat now (deleted, or a continuation the chat left)"}
+
+
+def rebase(repairs: list[dict[str, Any]], members: Members, known_at: datetime | None = None) -> list[dict[str, Any]]:
+    """Each anchored repair as a repair made on this head (pure): its target's turn and turn hash, and the turn it
+    applies from, where its messages are now. One whose message is gone or whose turn was edited is `detached` (the
+    reason, `DETACHED`): a read leaves it out and reports it, as a legacy repair that matches nothing. Others as given."""
+    out = []
+    for rep in repairs:
+        if not anchored(rep, known_at):
+            out.append(rep)
+            continue
+        a = rep["anchor"]
+        target, value, why = dict(rep.get("target") or {}), dict(rep.get("value") or {}), None
+        if t := a.get("target"):
+            hit = members.messages.get(t.get("message") or "")
+            if hit is None or hit[1] is None:
+                why = "gone"
+            elif hit[2] != t.get("revision") or (t.get("turn_revisions") and members.own(hit[1]) != t["turn_revisions"]):
+                why = "edited"
+            else:
+                target["turn"], target["turn_hash"] = hit[1], members.hashes.get(hit[1])
+        if why is None and (ap := a.get("apply")):
+            turn = next((members.turn_of(m) for m in ap.get("messages") or () if members.turn_of(m) is not None), None)
+            if turn is None:
+                why = "turn_gone"
+            else:
+                value["turn"] = turn
+        out.append({**rep, "target": target, "value": value, **({"detached": why} if why else {})})
+    return out
+
+
+def _legacy_turns(rep: Mapping[str, Any]) -> tuple[int | None, int | None]:
+    """A legacy repair's story target turn (None for a canon, carried or nameless target) and its apply turn."""
+    t, v = rep.get("target") or {}, rep.get("value") or {}
+    turn = t.get("turn") if rep["kind"] in TARGET_ANCHORED and _before_story(t) is None else None
+    turn = turn if isinstance(turn, int) and turn >= 0 else None
+    at = v.get("turn") if isinstance(v.get("turn"), int) else None
+    return turn, at
+
+
+def anchor_for(kind: str, target: Mapping[str, Any], value: Mapping[str, Any], members: Members,
+               message: str | None = None) -> dict[str, Any] | None:
+    """The anchor of a repair as it stands on this head (None when it has nothing to anchor): its target's turn (or
+    the message the owner named, `message`) and the turn it applies from. A target whose turn no longer reads as it did
+    (its stored hash differs from the head's) gets none: it matches nothing, and an anchor must not revive it."""
+    out: dict[str, Any] = {}
+    turn, at = _legacy_turns({"kind": kind, "target": target, "value": value})
+    if message is not None:
+        if (ta := members.message_anchor(message)) is None:
+            return None
+        out["target"] = ta
+    elif turn is not None:
+        if target.get("turn_hash") is not None and members.hashes.get(turn) != target["turn_hash"]:
+            return None
+        if (ta := members.target_anchor(turn)) is None:
+            return None
+        out["target"] = ta
+    if at is not None:
+        if (ap := members.apply_anchor(at)) is None:
+            return None
+        out["apply"] = ap
+    return out or None
+
+
+def anchor_turns(kind: str, target: Mapping[str, Any], value: Mapping[str, Any]) -> list[int]:
+    """The head turns `anchor_for` reads for a repair."""
+    return [x for x in _legacy_turns({"kind": kind, "target": target, "value": value}) if x is not None]
+
+
+def anchor_now(conn: psycopg.Connection, head: UUID, kind: str, target: Mapping[str, Any],
+               value: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The anchor a new repair stores, from the head it is made on (`anchor_for`); a `fact_add` is anchored to the
+    message the owner named (`target["message"]`)."""
+    message = target.get("message") if kind == "fact_add" else None
+    turns = anchor_turns(kind, target, value)
+    if message is None and not turns:
+        return None
+    return anchor_for(kind, target, value, members_of(conn, head, [message] if message else [], turns), message)
+
+
+def legacy_anchors(repairs: list[dict[str, Any]], members: Members) -> dict[str, dict[str, Any]]:
+    """{repair id: its anchor} for each repair without one that matches this head now (`anchor_for`): recorded once by
+    a live read (`record_anchors`), so it survives the next renumbering."""
+    out = {}
+    for rep in repairs:
+        if rep.get("anchor") or rep.get("detached"):
+            continue
+        if (a := anchor_for(rep["kind"], rep.get("target") or {}, rep.get("value") or {}, members)) is not None:
+            out[str(rep["id"])] = a
+    return out
+
+
+def record_anchors(conn: psycopg.Connection, anchors: Mapping[str, Mapping[str, Any]]) -> int:
+    """Record legacy repairs' anchors (one write a repair, only where none is recorded yet; a row another read is
+    recording is skipped, never waited for). In a savepoint and failing open: a read that cannot write (a read-only
+    transaction) reads as before and a later read records them. Returns how many were recorded."""
+    if not anchors:
+        return 0
+    from psycopg.types.json import Jsonb
+    try:
+        with conn.transaction():
+            return conn.execute(
+                "UPDATE owner_repair r SET anchor = v.anchor, anchored_at = now()"
+                " FROM jsonb_to_recordset(%s) AS v(id uuid, anchor jsonb)"
+                " WHERE r.id = v.id AND r.anchor IS NULL AND r.id IN ("
+                "  SELECT id FROM owner_repair WHERE id = ANY(%s::uuid[]) AND anchor IS NULL FOR UPDATE SKIP LOCKED)",
+                (Jsonb([{"id": k, "anchor": dict(v)} for k, v in anchors.items()]), list(anchors))).rowcount
+    except psycopg.Error:
+        return 0
+
+
+def anchors_needed(repairs: list[dict[str, Any]], legacy: bool) -> tuple[list[str], list[int]]:
+    """The message ids and turns a read must look up: every anchored repair's messages, and with `legacy` (a live read
+    that may record anchors) every legacy repair's turns."""
+    turns: set[int] = set()
+    if legacy:
+        for rep in repairs:
+            if not rep.get("anchor"):
+                turns.update(anchor_turns(rep["kind"], rep.get("target") or {}, rep.get("value") or {}))
+    return _message_ids(repairs), sorted(turns)
+
+
+def reanchor(anchor: Mapping[str, Any] | None, messages: Mapping[str, str]) -> dict[str, Any] | None:
+    """An anchor moved onto other messages (for a branch the host made, PHASE-67 part 2): `messages` maps each of the
+    origin's message ids to the branch's message of the same content (same revision, same turn layout: the branch's
+    prefix copy matched them). None when the anchor names a message the map lacks (outside the branch's prefix: the
+    repair is not inherited) or there is no anchor (a legacy repair: copy its legacy target as it is)."""
+    if not anchor:
+        return None
+    out: dict[str, Any] = {}
+    if t := anchor.get("target"):
+        if t.get("message") not in messages:
+            return None
+        out["target"] = {**t, "message": messages[t["message"]]}
+    if ap := anchor.get("apply"):
+        moved = [messages[m] for m in ap.get("messages") or () if m in messages]
+        if not moved or (ap.get("messages") and moved[0] != messages.get(ap["messages"][0])):
+            return None
+        out["apply"] = {**ap, "messages": moved}
+    return out or None
 
 
 # The predicates a read folds (PHASE-66): REGISTRY's, and extract-v21's own for a row of extract-v21. One dict, built

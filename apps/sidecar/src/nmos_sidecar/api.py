@@ -1140,10 +1140,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         applied = {str(x["id"]): x["applied"] for x in live}
         hidden = {str(x["id"]): x["hidden"] for x in live if "hidden" in x}  # an exclusion's (PHASE-47)
         raised = {f["id"] for f in flags or ()}
-        rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at, batch_id FROM owner_repair"
-                            " WHERE conversation_id = %s ORDER BY created_at DESC, id DESC", (conv_id,)).fetchall()
+        # PHASE-67 part 4: why an anchored repair applies to nothing (its message gone, its turn edited)
+        detached = {str(x["id"]): x["detached"] for x in live if x.get("detached")}
+        rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at, batch_id, anchor, anchored_at"
+                            " FROM owner_repair WHERE conversation_id = %s ORDER BY created_at DESC, id DESC",
+                            (conv_id,)).fetchall()
         return [{**row, "applied": ((row["target"] or {}).get("id") if (row["target"] or {}).get("id") in raised else None)
                  if row["kind"] == "state_dismiss" else applied.get(str(row["id"])),
+                 **({"detached": detached[str(row["id"])]} if str(row["id"]) in detached else {}),
                  **({"hidden": hidden.get(str(row["id"]), 0)} if row["kind"] == "entity_exclude" else {})} for row in rows]
 
     def state_flags(conn, conv: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1245,7 +1249,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 if body.kind == "entity_exclude":
                     expect_same(conn, conv_id, body.expect, "exclude", entity_type=body.entity_type, name=body.item,
                                 scope=body.scope)
-                row = insert_repair(conn, conv_id, body.kind, target, value, body.note)
+                row = insert_repair(conn, conv_id, body.kind, target, value, body.note, head=head)
                 if body.lock:  # the corrected canon is kept against the story (PHASE-57 B2)
                     later = view_of(conn, head, carried=True)
                     # the owner's version, current or held off by the story's later statement
@@ -1306,11 +1310,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             raise HTTPException(status_code=422, detail=str(e)) from e
 
     def insert_repair(conn, conv_id: UUID, kind: str, target: dict, value: dict, note: str | None,
-                      batch: UUID | None = None) -> dict[str, Any]:
+                      batch: UUID | None = None, head: UUID | None = None) -> dict[str, Any]:
+        """One repair, anchored to the messages of the head it is made on (PHASE-67 part 4, `repairs.anchor_now`)."""
+        anchor = repairs.anchor_now(conn, head, kind, target, value) if head is not None else None
         return conn.execute(
-            "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note, batch_id)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id, kind, target, value, note, created_at, batch_id",
-            (uuid7(), conv_id, kind, Jsonb(target), Jsonb(value), (note or "").strip() or None, batch)).fetchone()
+            "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note, batch_id, anchor, anchored_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CASE WHEN %s THEN now() END)"
+            " RETURNING id, kind, target, value, note, created_at, batch_id, anchor",
+            (uuid7(), conv_id, kind, Jsonb(target), Jsonb(value), (note or "").strip() or None, batch,
+             Jsonb(anchor) if anchor else None, anchor is not None)).fetchone()
 
     @app.post("/v1/conversations/{conv_id}/repairs/batch", dependencies=[Depends(auth)])
     def add_repairs(conv_id: UUID, body: BatchRepairRequest, request: Request):
@@ -1374,7 +1382,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             batch = uuid7()
             with conn.transaction():
                 for item, target, value in planned:
-                    insert_repair(conn, conv_id, item.kind, target, value, item.note, batch)
+                    insert_repair(conn, conv_id, item.kind, target, value, item.note, batch, head)
                 if undone:
                     conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s"
                                  " AND id = ANY(%s) AND removed_at IS NULL", (conv_id, undone))

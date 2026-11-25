@@ -23,9 +23,10 @@ from .keywords import keywords
 from .predicates import (EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, address_label,
                          stored_knowledge, whereabouts)
 from . import canon, canonfacts
-from .repairs import (IN_FORCE, READ_REGISTRY, REPAIR_COLUMNS, apply_facts, apply_locks, cardinality, conditional,
-                      epistemic, exclusions, fungible, is_v21, live, pins, quoted_turns, read_predicate, secret_events,
-                      slot, slotted, splits_of, thread_events, unedited_quotes, unifies)
+from .repairs import (IN_FORCE, READ_REGISTRY, REPAIR_COLUMNS, anchors_needed, apply_facts, apply_locks, cardinality,
+                      conditional, epistemic, exclusions, fungible, is_v21, legacy_anchors, live, members_of, pins,
+                      quoted_turns, read_predicate, rebase, record_anchors, secret_events, slot, slotted, splits_of,
+                      thread_events, unedited_quotes, unifies)
 from .secrets import secret_text
 from .secrets import fold as fold_secrets
 from .threads import MATCH_MIN, PREDICATES as THREAD_PREDICATES, fold as fold_threads, similarity
@@ -809,7 +810,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # The conversation, the owner's repairs as of the read (ADR 0044) and the read's last turn, in one query.
     found = conn.execute(
         "SELECT w.conversation_id, c.host_persona_name, c.canon_manifest_id, r.id, r.kind, r.target, r.value, r.note,"
-        " r.created_at,"
+        " r.created_at, r.anchor, r.anchored_at,"
         " (SELECT max(turn) FROM active_membership WHERE commit_id = %(head)s"
         "  AND (%(upto)s::int IS NULL OR position <= %(upto)s::int)) AS last_turn"
         " FROM worldline_commit w JOIN conversation c ON c.id = w.conversation_id"
@@ -820,8 +821,18 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if what_if:
         repairs = [x for x in repairs if str(x["id"]) not in what_if.get("drop_repairs", ())] + list(
             what_if.get("add_repairs", ()))
+    # PHASE-67 part 4 (D7): an anchored repair as made on this head (`rebase`: its message's turn now, or detached and
+    # reported); a live read records the anchor of a legacy repair that matches the head, once (`legacy_anchors`).
+    live_read = known_at is None and not what_if
+    if repairs:
+        need_messages, need_turns = anchors_needed(repairs, live_read)
+        if need_messages or need_turns:
+            members = members_of(conn, head, need_messages, need_turns)
+            repairs = rebase(repairs, members, known_at)
+            if live_read:
+                record_anchors(conn, legacy_anchors(repairs, members))
     last_turn = conv["last_turn"] if repairs else None
-    in_force = live(repairs, last_turn)
+    in_force = live([x for x in repairs if not x.get("detached")], last_turn)
     # Names from canon (PHASE-14 Q6): the request's own manifest, else the canon in force at the read.
     canon_names, canon_used = (canon.names(conn, conv["conversation_id"], known_at, canon_manifest, canon_exact)
                                if conv["canon_manifest_id"] or canon_manifest else ([], None))
