@@ -66,7 +66,7 @@ from .retrieval import RecallOptions, SEM_QUERY_MAX_CHARS, prefetched, query_pre
 from .state import current_state, rebuild_state, reparse_conversation, sync_rules, write_state
 from . import statusshape
 from .parsers import _clean as clean_value, needs_card, parse as parse_rules, watched
-from .state import history as state_history
+from .state import CARD_SQL, card_before_sync, card_of, history as state_history, resolve_card
 
 log = logging.getLogger("nmos.sidecar")
 
@@ -256,7 +256,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     rebuild({})
 
-    def view_of(conn, head: UUID, told: bool = False, carried: bool = False) -> dict[str, Any]:
+    def view_of(conn, head: UUID, told: bool = False, carried: bool = False, open_turn: bool = False) -> dict[str, Any]:
         """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047). `told`: with who told
         whom (`view["told"]`, PHASE-60 S8), for the pages that draw chains. `carried`: with the chat's carry link in
         force (ADR 0085): the read-only lists and screens that show carried memory, and (Tier 1, owner-agreed) the
@@ -265,9 +265,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         (PHASE-60 S6)."""
         link = carried_of(conn, head) if carried else None
         if link is None:
-            return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told)
+            return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told,
+                               include_open_turn=open_turn)
         return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told,
-                           carried=link)
+                           carried=link, include_open_turn=open_turn)
 
     def with_told(out: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
         """A page's data with `told` (PHASE-60 S8) only when there is some: a chat without told rows keeps its data as
@@ -470,9 +471,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     def do_reconcile(conn, body: ReconcileRequest) -> ReconcileResponse:
         plugins.saw(body.plugin_build)
+        card = card_before_sync(conn, body.host, body.chat_id, body.character_ref, body.character_name)
         conv = ledger.lock_conversation(conn, body.host, body.chat_id, body.character_ref, body.character_name,
                                         body.chat_name, body.persona_name)
-        if conv.card_renamed and needs_card(rt["rules"]):  # rules bound to a card read this chat by its new name
+        if needs_card(rt["rules"]) and card_of(conn, conv.id) != card:  # G7.2: its card changed, not just its name
             reparse_conversation(conn, rt["rules"], conv.id)
         if settings.append_fast_path and conv.head_commit_id is not None:
             fast = append_reconcile(conn, conv, body)
@@ -1148,7 +1150,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         """A chat's status flags (PHASE-39 Q4), every one, dismissed or not; none without a watched key."""
         if not watched(rt["rules"]) or conv["head_commit_id"] is None:
             return []
-        return statewatch.flags_of(conn, conv["head_commit_id"], rt["rules"], conv.get("host_character_name"))
+        return statewatch.flags_of(conn, conv["head_commit_id"], rt["rules"], card_of(conn, conv["id"]))
 
     def head_turn(conn, head: UUID) -> int | None:
         return conn.execute("SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s", (head,)).fetchone()["t"]
@@ -1579,7 +1581,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
-            view = view_of(conn, head, carried=True)  # carried facts and threads in the note too (Tier 1)
+            # carried facts and threads in the note too (Tier 1); and the open turn's finished early extraction (PHASE-67,
+            # owner decision 2026-11-25: the note and carry read the finale, a request never does)
+            view = view_of(conn, head, carried=True, open_turn=True)
             last = head_turn(conn, head)
             key = rt.get("active_summarizer")
             # the parts that read summaries and call a model
@@ -1769,6 +1773,20 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with config_lock:
             return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
 
+    def card_target(conn, body: dict[str, Any], card: str) -> str:
+        """The card a write from the panel or Settings lands on (G7.2). With the optional `conversation_id`, the card
+        that chat is read under (its card ref's binding); otherwise the name sent, as `state.resolve_card` reads it (a
+        renamed card's chats are still read under the name it was bound under)."""
+        if body.get("conversation_id") is None:
+            return resolve_card(conn, card)
+        try:
+            found = card_of(conn, UUID(str(body["conversation_id"])))
+        except ValueError:
+            found = None
+        if not found:
+            raise HTTPException(status_code=422, detail="conversation_id: unknown chat, or one without a card yet")
+        return found
+
     @app.put("/v1/parsers/card", dependencies=[Depends(auth)])
     def put_parser_card(body: dict[str, Any], request: Request):
         card = body.get("card")
@@ -1781,6 +1799,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             with request.app.state.pool.connection() as conn:
                 runtime.lock_config(conn)
                 overrides = runtime.stored(conn)
+                card = card_target(conn, body, card)
                 try:
                     spec = runtime.bind_card(runtime.parser_spec(settings, overrides, strict=True), card, body["rules"])
                 except ValueError as exc:
@@ -1797,13 +1816,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     CANDIDATE_REPLIES = 30  # the head's last replies a chat's status windows are looked for in
     _BOUND_ID = re.compile(r"^(?:card-[0-9a-f]{16}:\d+:)+")
 
-    def apply_card_rules(request: Request, card: str, change) -> dict[str, Any]:
+    def apply_card_rules(request: Request, card: str, change, body: dict[str, Any]) -> dict[str, Any]:
         """Rewrite one card's bound rules with `change(rules) -> rules` (template form, ids without their binding prefix),
         as the card Apply does: saved, state rebuilt, published after the commit."""
         with config_lock:
             with request.app.state.pool.connection() as conn:
                 runtime.lock_config(conn)
                 overrides = runtime.stored(conn)
+                card = card_target(conn, body, card)
                 try:
                     spec = runtime.parser_spec(settings, overrides, strict=True)
                     if not isinstance(spec, dict) or not isinstance(spec.get("rules"), list):
@@ -1829,15 +1849,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         """The status windows found by their shape in the chat's last replies, at least twice with the same keys
         (PHASE-43 S1/S2). Read only: nothing is tracked until the owner confirms one (Q1)."""
         with request.app.state.pool.connection() as conn:
-            conv = conn.execute("SELECT head_commit_id, host_character_name FROM conversation WHERE id = %s",
-                                (conversation_id,)).fetchone()
+            conv = conn.execute(f"SELECT head_commit_id, host_character_name, {CARD_SQL} AS card FROM conversation c"
+                                " WHERE id = %s", (conversation_id,)).fetchone()
             if conv is None:
                 raise HTTPException(status_code=404, detail="unknown conversation")
             rows = conn.execute(
                 "SELECT sr.content FROM active_membership am JOIN source_revision sr ON sr.id = am.source_revision_id"
                 " WHERE am.commit_id = %s AND sr.lifecycle = 'accepted' AND sr.metadata->>'role' = 'char'"
                 " ORDER BY am.position DESC LIMIT %s", (conv["head_commit_id"], CANDIDATE_REPLIES)).fetchall()
-        card = conv["host_character_name"]
+        card = conv["card"]  # G7.2: the card its rules and pins are under (its ref's binding), sent back on a write
         groups: dict[frozenset[str], dict[str, Any]] = {}
         for r in reversed(rows):  # oldest first: the last example and values win
             for block in statusshape.blocks(r["content"] or ""):
@@ -1857,7 +1877,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                         "tracked": statusshape.covers(frozenset(read), keys), "rule_id": shape})
         out.sort(key=lambda c: -c["count"])
         pins = dict(runtime.pins_by_card(rt["overrides"])).get(card or "", ())
-        return {"card": card, "candidates": out, "pins": list(pins)}
+        return {"card": card, "card_name": conv["host_character_name"], "candidates": out, "pins": list(pins)}
 
     @app.post("/v1/parsers/card/track", dependencies=[Depends(auth)])
     def track_status(body: dict[str, Any], request: Request):
@@ -1871,7 +1891,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if any(r.get("kind") == "shape" and set(r.get("keys") or []) == set(keys or []) for r in rules):
                 return rules
             return rules + [{"id": "status", "kind": "shape", "role": "char", "keys": keys}]
-        return apply_card_rules(request, card, add)
+        return apply_card_rules(request, card, add, body)
 
     @app.post("/v1/parsers/card/untrack", dependencies=[Depends(auth)])
     def untrack_status(body: dict[str, Any], request: Request):
@@ -1881,7 +1901,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             raise HTTPException(status_code=422, detail="card and rule_id are required")
         short = _BOUND_ID.sub("", rule_id)
         return apply_card_rules(request, card, lambda rules: [
-            r for r in rules if not (r.get("kind") == "shape" and r.get("id") == short)])
+            r for r in rules if not (r.get("kind") == "shape" and r.get("id") == short)], body)
 
     @app.put("/v1/parsers/card/pins", dependencies=[Depends(auth)])
     def put_status_pins(body: dict[str, Any], request: Request):
@@ -1894,6 +1914,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             with request.app.state.pool.connection() as conn:
                 runtime.lock_config(conn)
                 overrides = runtime.stored(conn)
+                card = card_target(conn, body, card)
                 pins = dict(overrides.get(runtime.STATUS_PINS_KEY) or {})
                 if keys:
                     pins[card] = list(dict.fromkeys(k.strip() for k in keys))

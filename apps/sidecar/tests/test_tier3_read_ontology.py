@@ -578,7 +578,7 @@ def test_a_carried_death_is_a_current_carried_fact_and_the_marks_survive_every_l
     from nmos_sidecar import retrieval
     src = Chat(migrated, {"t0": [a("루카", "vital_status", None, "사망"),
                                  a("하나", "feels_toward", "도윤", "그리움", condition=PRIV),
-                                 a("하나", "believes", None, "루카이 살아 있다")]}, name="w3-carry-src")
+                                 a("하나", "believes", None, "루카가 살아 있다")]}, name="w3-carry-src")
     with src.client() as c:
         src.run(c)
         src.view()
@@ -604,7 +604,7 @@ def test_a_carried_death_is_a_current_carried_fact_and_the_marks_survive_every_l
             assert death["carried"] == links[n].link and death["value"] == "사망" and death["knowledge_scope"]
             assert retrieval.says_gone(death)  # the gone rule's word list reads it (the gone pin: report)
             assert current(view, "feels_toward")[0]["condition"] == PRIV
-            assert "beliefs" not in view  # a belief is not carried (left for the next wave: report)
+            assert {b["value"] for b in view["beliefs"]} == {"루카가 살아 있다"} and view["beliefs"][0]["carried"]
         lines = {x.get("predicate"): x for x in links["reg"].regression if x["line"] == "fact"}
         assert lines["feels_toward"]["condition"] == PRIV and lines["feels_toward"]["knowledge_scope"] == "public"
 
@@ -661,3 +661,134 @@ def test_a_conditional_role_and_cover_fold_per_slot_within_their_value(migrated:
     assert [(f["value"], repairs.slot(f)) for f in current(view, "role_toward")] == [("비서", ("default",))]
     assert {(f["value"], repairs.slot(f)) for f in current(view, "cover_identity")} == {
         ("꽃집 주인", ("public",)), ("학생", ("default",))}
+
+
+# --- PHASE-66 guise scoping (soft) ----------------------------------------------------------------------------------
+
+GUISE = {
+    "t0": [a("루카", "disguised_as", "카이", None, knowledge="limited", known_by=["루카", "세라"], hidden_from=["유나"],
+             guise="카이"),
+           a("유나", "feels_toward", "루카", "무관심"),
+           a("유나", "addresses", "루카", "반말, '루카'")],
+    "t1": [a("유나", "feels_toward", "카이", "동경"),
+           a("유나", "addresses", "카이", "존댓말, '기사님'"),
+           a("세라", "feels_toward", "카이", "걱정"),  # 세라 knows: an ordinary feeling toward 루카
+           a("카이", "has_status", None, "부상"),
+           a("하나", "relationship", "루카", "친구", condition={"scope": "private", "when": "둘만", "as_guise": "카이"})],
+    "t2": [],  # 유나 finds out here (the owner's secret_found_out at this turn, below)
+    "t3": [a("유나", "feels_toward", "카이", "배신감")],
+}
+
+
+def test_what_someone_unaware_holds_toward_a_guise_stays_the_guises(migrated: str):
+    v21 = Chat(migrated, GUISE)
+    with v21.client() as c:
+        v21.run(c)
+        before = v21.view()
+        # before she finds out, her later feeling toward the knight is still the guise's
+        assert {(f["value"], bool(f.get("toward_guise"))) for f in current(before, "feels_toward", "유나")} == {
+            ("무관심", False), ("배신감", True)}
+        secret = next(s for s in before["secrets"] if "disguised as" in s["text"])
+        post(c, v21.cid, kind="secret_found_out", item=str(secret["id"]), character="유나", turn=2)
+        view = v21.view()
+    feelings = {(f["subject"], f["value"], (f.get("toward_guise") or {}).get("guise"))
+                for f in current(view, "feels_toward")}
+    # 유나 adored the knight 카이 while she did not know: that stays the guise's; once she knows (turn 2), her feeling
+    # toward 카이 is toward 루카 and replaces her old one in his slot
+    assert ("유나", "동경", "카이") in feelings and ("유나", "배신감", None) in feelings
+    assert ("유나", "무관심", None) not in feelings
+    # 세라 knows: her feeling toward the guise is toward 루카, an ordinary one
+    assert ("세라", "걱정", None) in feelings
+    # one body: the guise's wound is 루카's (one entity), and recall knows the guise's name
+    hurt = current(view, "has_status")[0]
+    assert hurt["subject_entity"]["id"] == next(e["id"] for e in view["entities"] if e["name"] in ("루카", "카이"))
+    assert {"루카", "카이"} <= set(next(e for e in view["entities"] if e["id"] == hurt["subject_entity"]["id"])["names"])
+    # an explicit as_guise holds toward the guise whoever states it
+    tie = current(view, "relationship")[0]
+    assert tie["toward_guise"]["guise"] == "카이"
+    # the address toward the guise keeps its own slot
+    assert {(f["value"], bool(f.get("toward_guise"))) for f in current(view, "addresses")} == {
+        ("반말, '루카'", False), ("존댓말, '기사님'", True)}
+    disguise = view["disguises"][0]
+    assert (disguise["subject"], disguise["guise"], disguise["current"]) == ("루카", "카이", True)
+    assert {f["id"] for f in view["facts"] if f.get("toward_guise", {}).get("disguise") == disguise["id"]} == set(
+        disguise["held"])
+
+
+def test_once_she_learns_the_truth_her_later_rows_fold_into_the_wearer():
+    rows = [row(0, "disguised_as", None, obj="카이", subject="루카", turn=0, hidden_from=["유나"]),
+            row(1, "feels_toward", "동경", subject="유나", obj="카이", turn=1),
+            row(2, "feels_toward", "배신감", subject="유나", obj="카이", turn=3)]
+    rows[0]["revealed"] = [{"to": "유나", "turn": 2}]
+    from nmos_sidecar.entities import resolve
+    r = resolve("00000000-0000-0000-0000-000000000000", rows + facts._guise_aliases(rows), [], [], [], [])
+    facts._hold_toward_guise(rows, facts._disguises(rows, r), r)
+    assert rows[1]["toward_guise"]["guise"] == "카이" and "toward_guise" not in rows[2]
+
+
+def test_a_chat_without_a_disguise_has_no_disguises_key(migrated: str):
+    v21 = Chat(migrated, ONTO | {"t9": []})
+    with v21.client() as c:
+        v21.run(c)
+        view = v21.view()
+    assert "disguises" in view  # ONTO has one
+    plain = Chat(migrated, COND, name="w3-plain")
+    with plain.client() as c:
+        plain.run(c)
+        assert "disguises" not in plain.view()
+
+
+# --- part 3: beliefs across a link, the item edges, the situational cap ------------------------------------------
+
+def test_a_carried_belief_is_a_belief_in_the_target_and_apart_from_the_facts_of_a_regression(migrated: str):
+    src = Chat(migrated, {"t0": [a("하나", "believes", None, "도윤이 범인이다"), a("하나", "located_in", "항구", None, ot="place")]},
+               name="w3-belief-src")
+    with src.client() as c:
+        src.run(c)
+        src.view()
+        cont, reg = Chat(migrated, {"d0": []}, name="w3-belief-cont"), Chat(migrated, {"r0": []}, name="w3-belief-reg")
+        cont.run(c)
+        reg.run(c)
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            keys = carry.Keys(extractor=src.key)
+            carry.link(conn, cont.cid, src.cid, "continue", None, keys)
+            carry.link(conn, reg.cid, src.cid, "regression", ["하나"], keys)
+            conn.commit()
+            links = {n: carry.target_rows(carry.in_force(conn, x.cid)) for n, x in (("cont", cont), ("reg", reg))}
+        view = cont.view(carried=links["cont"])
+        assert not current(view, "believes")  # never a fact
+        belief = view["beliefs"][0]
+        assert (belief["value"], belief["status"], belief["carried"]) == ("도윤이 범인이다", "held", links["cont"].link)
+        assert belief["carried_from"]["revision"]
+        lines = {x["line"] for x in reg.view(carried=links["reg"])["regression"]}
+        assert lines == {"fact", "belief"}  # a reader of regression lines takes "fact" and "thread" only
+        assert [x["kind"] for x in carry.panel_lines(view) if x["predicate"] == "believes"] == ["belief"]
+
+
+def test_an_end_of_a_fungible_item_ends_its_holders_only():
+    potion = dict(obj="물약", object_type="item", item_kind="fungible")
+    rows = [row(0, "possesses", None, turn=0, **potion), row(1, "possesses", None, subject="도윤", turn=1, **potion),
+            row(2, "destroyed", "마심", subject="물약", obj=None, turn=2, subject_type="item", item_kind="fungible",
+                participants=({"name": "하나", "type": "character"},))]
+    out = fold(rows)
+    assert {(f["predicate"], f["subject"]) for f in out} == {("possesses", "도윤"), ("destroyed", "물약")}
+    # a later potion of hers is another one: her possession then stands
+    again = fold(rows + [row(3, "possesses", None, turn=3, **potion)])
+    assert ("possesses", "하나") in {(f["predicate"], f["subject"]) for f in again}
+
+
+def test_an_end_closes_what_the_item_was_in():
+    box = [row(0, "contained_in", None, subject="편지", subject_type="item", obj="상자", object_type="item", turn=0),
+           row(1, "destroyed", "불탐", subject="편지", subject_type="item", obj=None, turn=1)]
+    out = facts._ended_containers(fold(box), None)
+    assert [f["predicate"] for f in out] == ["destroyed"]
+    kept = facts._ended_containers(fold(box[:1]), None)
+    assert [f["predicate"] for f in kept] == ["contained_in"]
+
+
+def test_a_conditioned_facts_situational_slots_are_capped_per_pair_as_an_addresss_are():
+    rows = [row(i, "feels_toward", f"감정 {i}", {"scope": "situational", "when": f"상황 {i}"}) for i in range(5)]
+    rows.append(row(5, "feels_toward", "기본"))
+    picked = facts.relevant_facts(fold(rows), "하나가 도윤을 본다.", "", set(), limit=12)
+    sit = [f for f in picked if repairs.slot(f)[0] == "situational"]
+    assert len(sit) == facts.SITUATIONAL_ADDRESS_MAX and "기본" in {f["value"] for f in picked}

@@ -13,17 +13,74 @@ from .parsers import RuleSet, needs_card, parse
 _UNSET: Any = object()
 STATE_BACKFILL_BATCH = 500
 
+# Tier 4 G7.2: {host character ref: the card name its status rules and pins are filed under}, in `app_config`. A ref is
+# bound the first time a chat with that ref and a name is seen, to the name it had then, and never rebound: a rename in
+# the host changes the chat's label, not the card its rules, history and pins are under. A chat without a ref is read
+# by its name, as before. Rules and pins stay keyed by name (their documents, ids and `rules_version` are unchanged).
+CARD_BINDINGS_KEY = "card_bindings"
+# The card a chat's status rules and pins are read under (alias `c` for `conversation`).
+CARD_SQL = ("coalesce((SELECT b.value->>c.host_character_ref FROM app_config b WHERE b.key = 'card_bindings'),"
+            " c.host_character_name)")
+
+
+def card_of(conn: psycopg.Connection, conv_id: UUID) -> str | None:
+    """The card a chat's status rules and pins are read under: its card ref's binding, else its character name."""
+    with conn.cursor(row_factory=tuple_row) as cur:
+        return (cur.execute(f"SELECT {CARD_SQL} FROM conversation c WHERE c.id = %s", (conv_id,)).fetchone()
+                or (None,))[0]
+
+
+def bind_ref(conn: psycopg.Connection, ref: str, card: str) -> None:
+    """Bind a card ref to `card` unless it is bound already (the first binding wins; nothing is ever rebound)."""
+    conn.execute(
+        "INSERT INTO app_config (key, value, updated_at) VALUES (%(key)s, jsonb_build_object(%(ref)s::text, %(card)s::text),"
+        " now()) ON CONFLICT (key) DO UPDATE SET value = CASE WHEN jsonb_typeof(app_config.value) = 'object'"
+        " THEN app_config.value ELSE '{}'::jsonb END || EXCLUDED.value, updated_at = now()"
+        " WHERE jsonb_typeof(app_config.value) IS DISTINCT FROM 'object' OR NOT app_config.value ? %(ref)s",
+        {"key": CARD_BINDINGS_KEY, "ref": ref, "card": card})
+
+
+def card_before_sync(conn: psycopg.Connection, host: str, chat_ref: str, character_ref: str | None,
+                     character_name: str | None) -> str | None:
+    """Before a sync's lock writes the chat's labels: bind its card ref (the one it keeps, else the one sent) to the
+    name it had before this sync (else the one sent), and return the card its observations were read under (None for
+    a chat not seen yet). The caller reads the chat again when `card_of` then differs (a chat without a ref renamed, a
+    ref arriving for a card bound under another name), never for a rename alone."""
+    with conn.cursor(row_factory=tuple_row) as cur:
+        row = cur.execute(
+            f"SELECT c.host_character_ref, c.host_character_name, {CARD_SQL},"
+            " coalesce((SELECT b.value ? coalesce(c.host_character_ref, %(ref)s) FROM app_config b"
+            " WHERE b.key = 'card_bindings' AND jsonb_typeof(b.value) = 'object'), false)"
+            " FROM conversation c WHERE c.host = %(host)s AND c.host_chat_ref = %(chat)s",
+            {"host": host, "chat": chat_ref, "ref": character_ref or None}).fetchone()
+        bound = row[3] if row else bool(character_ref) and bool(cur.execute(
+            "SELECT 1 FROM app_config WHERE key = 'card_bindings' AND jsonb_typeof(value) = 'object' AND value ? %s",
+            (character_ref,)).fetchone())
+    ref = (row[0] if row else None) or character_ref or None
+    name = (row[1] if row else None) or (character_name or "").strip() or None
+    if ref and name and not bound:
+        bind_ref(conn, ref, name)
+    return row[2] if row else None
+
+
+def resolve_card(conn: psycopg.Connection, card: str) -> str:
+    """The card a write by name lands on (the panel and Settings send names): `card` itself when some chat is read
+    under it; otherwise, when every chat now labelled `card` is read under one other card (a card bound under its
+    earlier name), that card; otherwise `card`. A label shared by chats read under different cards is taken as
+    written, so no card's rules or pins move to another card."""
+    with conn.cursor(row_factory=tuple_row) as cur:
+        under = {r[0] for r in cur.execute(f"SELECT DISTINCT {CARD_SQL} FROM conversation c"
+                                           f" WHERE c.host_character_name = %(card)s OR {CARD_SQL} = %(card)s",
+                                           {"card": card}).fetchall()} - {None}
+    return next(iter(under)) if len(under) == 1 else card
+
 
 def write_state(conn: psycopg.Connection, ruleset: RuleSet, conv_id: UUID, revision_id: UUID,
                 content: str, meta: dict[str, Any], card: str | None = _UNSET) -> int:
     if not ruleset.rules:
         return 0
-    if card is _UNSET:  # a rule bound to a card (PHASE-39 Q2) reads the chat's character name
-        card = None
-        if needs_card(ruleset):
-            with conn.cursor(row_factory=tuple_row) as cur:
-                card = (cur.execute("SELECT host_character_name FROM conversation WHERE id = %s",
-                                    (conv_id,)).fetchone() or (None,))[0]
+    if card is _UNSET:  # a rule bound to a card (PHASE-39 Q2) reads the chat's card (its ref's binding, G7.2)
+        card = card_of(conn, conv_id) if needs_card(ruleset) else None
     pairs = parse(ruleset, content, meta.get("role"), meta.get("saying"), card)
     with conn.cursor() as cur:
         cur.executemany(
@@ -48,7 +105,7 @@ def sync_rules(conn: psycopg.Connection, ruleset: RuleSet) -> int:
     after: UUID | None = None
     while True:
         rows = conn.execute(
-            "SELECT sr.id, sr.content, sr.metadata, so.conversation_id, c.host_character_name FROM source_revision sr"
+            f"SELECT sr.id, sr.content, sr.metadata, so.conversation_id, {CARD_SQL} AS card FROM source_revision sr"
             " JOIN source_object so ON so.id = sr.source_object_id JOIN conversation c ON c.id = so.conversation_id"
             " WHERE so.source_kind = 'message' AND (%s::uuid IS NULL OR sr.id > %s)"
             " AND NOT EXISTS (SELECT 1 FROM state_observation st WHERE st.source_revision_id = sr.id"
@@ -57,33 +114,39 @@ def sync_rules(conn: psycopg.Connection, ruleset: RuleSet) -> int:
         ).fetchall()
         for row in rows:
             total += write_state(conn, ruleset, row["conversation_id"], row["id"], row["content"], row["metadata"],
-                                 row["host_character_name"])
+                                 row["card"])
         if len(rows) < STATE_BACKFILL_BATCH:
             return total
         after = rows[-1]["id"]
 
 
 def reparse_conversation(conn: psycopg.Connection, ruleset: RuleSet, conv_id: UUID) -> int:
-    """Read one chat's messages again, as when its character name changed under rules bound to a card (PHASE-39)."""
-    conn.execute("DELETE FROM state_observation WHERE conversation_id = %s", (conv_id,))
-    return _parse(conn, ruleset, "so.conversation_id = %s", (conv_id,)) if ruleset.rules else 0
+    """Read one chat's messages again, when the card its rules read changed (PHASE-39; G7.2: a chat without a card ref
+    renamed, or a ref arriving bound under another name; never a rename alone). One transaction (a savepoint inside
+    the caller's): no reader sees the chat without its state between the delete and the rewrite, and a failure keeps
+    the old rows."""
+    with conn.transaction():
+        conn.execute("DELETE FROM state_observation WHERE conversation_id = %s", (conv_id,))
+        return _parse(conn, ruleset, "so.conversation_id = %s", (conv_id,)) if ruleset.rules else 0
 
 
 def _parse(conn: psycopg.Connection, ruleset: RuleSet, where: str, params: tuple) -> int:
     total = 0
     rows = conn.execute(
-        "SELECT sr.id, sr.content, sr.metadata, so.conversation_id, c.host_character_name FROM source_revision sr"
+        f"SELECT sr.id, sr.content, sr.metadata, so.conversation_id, {CARD_SQL} AS card FROM source_revision sr"
         " JOIN source_object so ON so.id = sr.source_object_id JOIN conversation c ON c.id = so.conversation_id"
         f" WHERE so.source_kind = 'message' AND {where}", params).fetchall()  # not canon (ADR 0045)
     for r in rows:
         total += write_state(conn, ruleset, r["conversation_id"], r["id"], r["content"], r["metadata"],
-                             r["host_character_name"])
+                             r["card"])
     return total
 
 
 def rebuild_state(conn: psycopg.Connection, ruleset: RuleSet) -> int:
-    conn.execute("DELETE FROM state_observation")
-    return _parse(conn, ruleset, "true", ())
+    """Read every message again under new rules, in one transaction (a savepoint inside the caller's)."""
+    with conn.transaction():
+        conn.execute("DELETE FROM state_observation")
+        return _parse(conn, ruleset, "true", ())
 
 
 def history(conn: psycopg.Connection, head_commit_id: UUID, rules_version: str, upto: int | None = None,
