@@ -32,7 +32,8 @@ from uuid import UUID
 import psycopg
 
 from .entities import Resolution, norm
-from .predicates import CONDITIONED_PREDICATES, OUTCOMES, REGISTRY, address_slot, is_address_all
+from .predicates import (CONDITIONED_PREDICATES, EXTENSIONS, OUTCOMES, REGISTRY, V21_ONTOLOGY, V21_PREDICATES, Predicate,
+                         address_slot, is_address_all)
 from .secrets import secret_text
 from .statewatch import target as flag_target
 from .threads import MATCH_MIN, similarity
@@ -85,6 +86,44 @@ def repairs_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime 
 IN_FORCE = {False: "r.removed_at IS NULL",
             True: "r.created_at <= %(at)s AND (r.removed_at IS NULL OR r.removed_at > %(at)s)"}
 REPAIR_COLUMNS = ("id", "kind", "target", "value", "note", "created_at")
+
+
+# The predicates a read folds (PHASE-66): REGISTRY's, and extract-v21's own for a row of extract-v21. One dict, built
+# once: `predicates.registry_for` merges on every call. `believes` and `forgot` are kinds of their own (`EPISTEMIC`), never
+# facts about the world; `told` stays out (PHASE-60 S8: its own list).
+READ_REGISTRY: dict[str, Predicate] = {**REGISTRY, **{p.name: p for p in V21_ONTOLOGY}}
+EPISTEMIC = frozenset({"believes", "forgot"})
+_V21_COMPILERS = frozenset(c for c, ext in EXTENSIONS.items() if V21_PREDICATES <= ext.keys())
+
+
+def is_v21(row: Mapping[str, Any]) -> bool:
+    """Whether a row was written by extract-v21 (PHASE-66): its compiler, or its `knowledge_scope`, which extract-v21
+    sets on every row and no earlier generation has. The mark survives the rows that are not served: a carried row
+    (`carry.FACT_KEYS`), a restored one (`restore_target`) and an owner's correction (a copy of the row)."""
+    return row.get("knowledge_scope") is not None or row.get("compiler") in _V21_COMPILERS
+
+
+def read_predicate(row: Mapping[str, Any]) -> bool:
+    """Whether a read folds this row as a fact: a REGISTRY predicate, or one of extract-v21's own (but `believes` and
+    `forgot`, `EPISTEMIC`) on an extract-v21 row; a stored row of an earlier generation can never be one."""
+    p = row.get("predicate")
+    return p in REGISTRY or (p in V21_PREDICATES and p not in EPISTEMIC and is_v21(row))
+
+
+def cardinality(row: Mapping[str, Any]) -> str | None:
+    """How a row's facts accumulate: its predicate's cardinality (READ_REGISTRY), but an extract-v21 `role_toward`
+    accumulates (PHASE-66: several roles toward one counterpart, each ended by its own denial). None for a predicate
+    no read folds."""
+    if row.get("predicate") == "role_toward" and is_v21(row):
+        return "multi"
+    pred = READ_REGISTRY.get(str(row.get("predicate") or ""))
+    return pred.cardinality if pred is not None else None
+
+
+def fungible(row: Mapping[str, Any]) -> bool:
+    """An extract-v21 `possesses` of an item one of many alike (`item_kind = fungible`): each holder's own, never
+    exclusive (PHASE-66); `unique` or none keeps one holder per item (ADR 0011)."""
+    return row.get("predicate") == "possesses" and row.get("item_kind") == "fungible"
 
 
 def slotted(predicate: str | None) -> bool:
@@ -389,8 +428,7 @@ def _restates(level: int, a: dict[str, Any], b: dict[str, Any], r: Resolution | 
         return False
     if slotted(a["predicate"]) and slot(a) != slot(b):
         return False
-    pred = REGISTRY.get(a["predicate"])
-    if pred is not None and pred.cardinality == "single":
+    if cardinality(a) == "single":
         return True
     same = norm(a.get("value")) == norm(b.get("value"))
     return same or (level == 2 and similarity(a.get("value"), b.get("value")) >= RESTATE_VALUE_MIN)
@@ -473,9 +511,8 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
             continue
         own = rep["target"].get("turn", a.get("turn"))  # the fact's turn when the repair was made
         at = value.get("turn", own)
-        pred = REGISTRY.get(a["predicate"])
         # at the fact's own turn: in place, at the turn the (maybe new generation's) fact is stated now
-        in_place = at == own or (pred is not None and pred.cardinality == "multi")
+        in_place = at == own or cardinality(a) == "multi"
         new = {k: v for k, v in a.items() if k not in ANNOTATIONS}
         new.update({"id": _owner_id(rep), "host_logical_id": None, "object": value.get("object", a.get("object")),
                     "value": value.get("value", a.get("value")), "source": "narration", "asserted_by": None,
@@ -788,7 +825,7 @@ def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None
         raise RepairError("the fact cannot be told apart from another one of its turn")
     if kind == "fact_retract":
         return target, {}
-    pred = REGISTRY.get(f["predicate"])
+    pred = READ_REGISTRY.get(f["predicate"])
     if new_object and new_object.strip() and pred is not None and pred.object_types is None:
         raise RepairError(f"a {f['predicate']} fact has no object: correct its value")
     if new_value and new_value.strip() and pred is not None and not pred.needs_value and not f.get("value"):

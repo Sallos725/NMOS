@@ -23,8 +23,9 @@ from .keywords import keywords
 from .predicates import (EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, address_label,
                          stored_knowledge, whereabouts)
 from . import canon, canonfacts
-from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, conditional, exclusions, live, pins,
-                      quoted_turns, secret_events, slot, slotted, splits_of, thread_events, unedited_quotes, unifies)
+from .repairs import (IN_FORCE, READ_REGISTRY, REPAIR_COLUMNS, apply_facts, apply_locks, cardinality, conditional,
+                      exclusions, fungible, is_v21, live, pins, quoted_turns, read_predicate, secret_events, slot,
+                      slotted, splits_of, thread_events, unedited_quotes, unifies)
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -198,13 +199,20 @@ def _item(a: dict[str, Any], r: Resolution | None) -> str:  # possesses: the obj
 
 
 def version_key(a: dict[str, Any], r: Resolution | None = None) -> tuple:
-    """Subject and object are entity ids where the resolver links them (ADR 0012), text otherwise."""
+    """Subject and object are entity ids where the resolver links them (ADR 0012), text otherwise.
+
+    extract-v21's own predicates (PHASE-66) take their registry entry (`READ_REGISTRY`): `vital_status`, `lives_in`,
+    `disguised_as` and `contained_in` one each per subject (apart from `has_status`, `located_in` and `identity`),
+    `holds_rank` one per (character, group), `cover_identity` beside `identity`. A fungible item's `possesses` is each
+    holder's own, and an extract-v21 `role_toward` accumulates (`repairs.cardinality`)."""
     if a["predicate"] == "relationship":  # one history per pair, both directions (ADR 0038)
         return ("relationship",) + tuple(sorted((_subject(a, r), _object(a, r))))
+    if fungible(a):  # PHASE-66: one of many alike, each holder's own; giving one away empties no one else's
+        return ("possesses", _subject(a, r), _object(a, r))
     if whereabouts(a):  # one current holder per item (ADR 0011), one whereabouts with its place (PHASE-6)
         return ("whereabouts", _item(a, r))
-    pred = REGISTRY[a["predicate"]]
-    if pred.cardinality == "single":
+    pred = READ_REGISTRY[a["predicate"]]
+    if cardinality(a) == "single":
         return (a["predicate"], _subject(a, r)) + ((_object(a, r),) if pred.per_object else ())
     return (a["predicate"], _subject(a, r), _object(a, r), _norm(a["value"]))
 
@@ -219,8 +227,8 @@ def relation(a: dict[str, Any], r: Resolution | None = None) -> tuple:
         return (a["predicate"],)
     if whereabouts(a):
         return (a["predicate"], _object(a, r))
-    pred = REGISTRY[a["predicate"]]
-    if pred.cardinality == "single":
+    pred = READ_REGISTRY[a["predicate"]]
+    if cardinality(a) == "single":
         return ((_norm(a["value"]),) if pred.per_object else (_object(a, r), _norm(a["value"])))
     return ()
 
@@ -595,6 +603,8 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
         if slot and a["polarity"] == "positive":
             for other, held in list(slots.items()):
                 if other != slot and held is not None and _unit(held) != _unit(a):
+                    if other == "possesses" and slot == "located_in" and is_v21(a):
+                        continue  # PHASE-66: where a thing is kept is not who owns it (an extract-v21 statement)
                     close(held, "ended" if slot == "destroyed" else "superseded", a)
                     slots[other] = None
         close(current, "ended" if a["polarity"] == "negative" else "superseded", a)
@@ -680,7 +690,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                 "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "repairs": [],
                 "assertions": [], "resolution": None, **({"told": []} if told else {})}
     served = served_assertions(conn, head, extractor_key, upto, known_at)
-    rows = [r for r in served if r["predicate"] in REGISTRY]
+    rows = [r for r in served if read_predicate(r)]  # PHASE-66: extract-v21's own predicates on its own rows
     # The conversation, the owner's repairs as of the read (ADR 0044) and the read's last turn, in one query.
     found = conn.execute(
         "SELECT w.conversation_id, c.host_persona_name, c.canon_manifest_id, r.id, r.kind, r.target, r.value, r.note,"
@@ -734,7 +744,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     for row in canon_rows:
         _annotate(row, r)
     # Carried rows (ADR 0085): after the canon, before every row of the story; their openings open threads first.
-    carried_rows = [x for x in carried_all if x["predicate"] in REGISTRY and x["predicate"] != "also_called"]
+    carried_rows = [x for x in carried_all if read_predicate(x) and x["predicate"] != "also_called"]
     for row in carried_rows:
         _annotate(row, r)
     carried_openings = [x for x in carried_rows if x["predicate"] in THREAD_PREDICATES]

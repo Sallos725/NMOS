@@ -300,3 +300,113 @@ def test_retract_claims_dropped_restore_and_carry_work_per_slot(migrated: str):
         res = c.post(f"/v1/conversations/{v21.cid}/repairs", json={"kind": "fact_restore", "item": str(lost[0]["id"])})
         assert res.status_code == 200 and res.json()["applied"], res.text
         assert by_slot(current(v21.view(), "feels_toward", "하나"))[("private",)] == "사랑"
+
+
+# --- 3. the ontology's own slots ----------------------------------------------------------------------------------
+
+G, I, PL = "group", "item", "place"
+ONTO = {
+    "t0": [a("리안", "vital_status", None, "사망"),
+           a("하나", "lives_in", "저택", None, ot=PL),
+           a("하나", "possesses", "마검", None, ot=I, item_kind="unique"),
+           a("하나", "possesses", "물약", None, ot=I, item_kind="fungible"),
+           a("하나", "holds_rank", "기사단", "부단장", ot=G),
+           a("하나", "holds_rank", "길드", "회원", ot=G),
+           a("하나", "role_toward", "도윤", "제자"),
+           a("하나", "role_toward", "기사단", "후원자", ot=G),
+           a("하나", "identity", None, "암살자")],
+    "t1": [a("리안", "has_status", None, "부상"),
+           a("하나", "located_in", "시장", None, ot=PL),
+           a("마검", "located_in", "무기고", None, st=I, ot=PL),
+           a("도윤", "possesses", "물약", None, ot=I, item_kind="fungible"),
+           a("하나", "role_toward", "도윤", "비서"),
+           a("하나", "cover_identity", None, "꽃집 주인"),
+           a("리안", "disguised_as", "카이", None, knowledge="limited", hidden_from=["아리아"], guise="카이")],
+    "t2": [a("리안", "vital_status", None, "생존"),
+           a("마검", "contained_in", "상자", None, st=I, ot=I, item_kind="unique"),
+           a("하나", "possesses", "물약", None, ot=I, item_kind="fungible", polarity="negative"),
+           a("하나", "holds_rank", "기사단", "단장", ot=G),
+           a("하나", "role_toward", "도윤", "제자", polarity="negative")],
+}
+
+
+def values(view: dict[str, Any], predicate: str, subject: str | None = None) -> set:
+    return {(f["subject"], f.get("object"), f.get("value"), f["polarity"]) for f in current(view, predicate, subject)}
+
+
+def test_the_ontology_folds_in_its_own_slots(migrated: str):
+    v21 = Chat(migrated, ONTO)
+    with v21.client() as c:
+        v21.run(c)
+        view = v21.view()
+    # a death has its own slot: a later wound does not overwrite it, a later state of being alive does
+    assert values(view, "vital_status") == {("리안", None, "생존", "positive")}
+    assert values(view, "has_status", "리안") == {("리안", None, "부상", "positive")}
+    # a home is not where one is now
+    assert values(view, "lives_in") == {("하나", "저택", None, "positive")}
+    assert values(view, "located_in", "하나") == {("하나", "시장", None, "positive")}
+    # where a unique thing is kept (a place, a container) is not who owns it
+    assert ("하나", "마검", None, "positive") in values(view, "possesses")
+    assert values(view, "located_in", "마검") == {("마검", "무기고", None, "positive")}
+    assert values(view, "contained_in") == {("마검", "상자", None, "positive")}
+    # a fungible item is each holder's own: giving hers away empties no one else's
+    potions = {(f["subject"], f["polarity"]) for f in current(view, "possesses") if f["object"] == "물약"}
+    assert potions == {("하나", "negative"), ("도윤", "positive")}
+    # a rank per group; several roles toward one counterpart, each ended by its own denial; a group counterpart
+    assert values(view, "holds_rank") == {("하나", "기사단", "단장", "positive"), ("하나", "길드", "회원", "positive")}
+    assert values(view, "role_toward") == {("하나", "도윤", "비서", "positive"), ("하나", "도윤", "제자", "negative"),
+                                           ("하나", "기사단", "후원자", "positive")}
+    # a cover beside the true identity; a guise as a fact with its guise and knowledge marks
+    assert values(view, "identity") == {("하나", None, "암살자", "positive")}
+    assert values(view, "cover_identity") == {("하나", None, "꽃집 주인", "positive")}
+    guise = current(view, "disguised_as")[0]
+    assert (guise["object"], guise["guise"], guise["hidden_from"]) == ("카이", "카이", ["아리아"])
+    # the item timeline of the unique item keeps its holder current beside its place
+    blade = next(i for i in view["items"] if i["item"] == "마검")
+    assert {(e["predicate"], e["outcome"]) for e in blade["history"]} == {("possesses", "current"),
+                                                                       ("located_in", "current")}
+
+
+def test_an_item_placed_by_an_earlier_generation_still_ends_its_holder(migrated: str):
+    v20 = Chat(migrated, {"t0": [a("하나", "possesses", "마검", None, ot=I)],
+                          "t1": [a("마검", "located_in", "무기고", None, st=I, ot=PL)]}, compiler="extract-v20")
+    with v20.client() as c:
+        v20.run(c)
+        view = v20.view()
+    assert not current(view, "possesses")  # as before PHASE-66: the newer whereabouts closes the holder
+    assert values(view, "located_in") == {("마검", "무기고", None, "positive")}
+
+
+def test_only_an_extract_v21_row_is_read_as_one_of_its_predicates():
+    old = row(0, "vital_status", "사망", obj=None, compiler="extract-v20", knowledge_scope=None)
+    new = row(1, "vital_status", "사망", obj=None)
+    assert not repairs.read_predicate(old) and repairs.read_predicate(new)
+    assert not repairs.read_predicate(row(2, "believes", "x", obj=None))  # its own kind (item 4)
+    assert not repairs.read_predicate(row(3, "told", "x"))  # its own list (PHASE-60 S8)
+    assert repairs.cardinality(row(4, "role_toward", "제자")) == "multi"
+    assert repairs.cardinality(row(5, "role_toward", "제자", compiler="extract-v20", knowledge_scope=None)) == "single"
+
+
+@pytest.mark.parametrize("policy", ["packet-v19", "packet-v20", "packet-v21"])
+def test_every_reader_of_the_view_serves_a_chat_with_the_ontology(migrated: str, policy: str):
+    """The readers outside the four files (packet, Inspector, panel, author's note, timeline, memory map) take the
+    ontology's rows without failing; what they render of them is the next wave's."""
+    from test_sidecar_integration import recall
+    v21 = Chat(migrated, {**ONTO, **COND})
+    with make_client(migrated, **LLM, extract_compiler="extract-v21", packet_policy=policy) as c:
+        v21.run(c)
+        view = v21.view()
+        out = recall(c, v21.chat, "리안은 살아 있어? 하나는 도윤을 어떻게 생각해?", budget=1500)
+        assert out["packet"] is not None
+        ents = {e["name"]: e["id"] for e in view["entities"]}
+        for path in ("facts", "entities", "threads", "secrets", "dropped", "repairs", "state"):
+            res = c.get(f"/v1/conversations/{v21.cid}/{path}")
+            assert res.status_code == 200, (path, res.text[:300])
+        for path in (f"/v1/inspector/c/{v21.cid}", f"/v1/inspector/c/{v21.cid}/e/{ents['하나']}",
+                     f"/v1/inspector/c/{v21.cid}/t/1", f"/v1/views/c/{v21.cid}/working",
+                     f"/v1/views/c/{v21.cid}/memory", f"/v1/views/c/{v21.cid}/person/{ents['리안']}",
+                     f"/v1/views/c/{v21.cid}/map", f"/v1/views/c/{v21.cid}/map/graph"):
+            res = c.get(path)
+            assert res.status_code == 200, (path, res.text[:300])
+        res = c.post(f"/v1/conversations/{v21.cid}/notes", json={"sections": ["changed", "address"]})
+        assert res.status_code == 200, res.text[:300]

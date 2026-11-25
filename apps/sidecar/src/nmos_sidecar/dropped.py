@@ -19,8 +19,8 @@ import psycopg
 
 from .entities import norm
 from .facts import _parse_feeling, ontology_marks
-from .predicates import REGISTRY, stored_knowledge
-from .repairs import _ekey, _established, restated, slot, slotted
+from .predicates import stored_knowledge
+from .repairs import _ekey, _established, cardinality, read_predicate, restated, slot, slotted
 from .secrets import secret_text
 
 NOT_FACTS = frozenset({"learned", "also_called"})  # a reveal and a name link are not facts (ADR 0033, 0012)
@@ -49,7 +49,7 @@ FROM assertion WHERE extraction_id = ANY(%s) AND status = 'valid' ORDER BY id
 
 def _fact(a: dict[str, Any]) -> bool:
     """A fact memory keeps: narrated (legacy rows without a source count as narration) and actual (ADR 0013)."""
-    return (a["predicate"] in REGISTRY and a["predicate"] not in NOT_FACTS and (a.get("source") or "narration") == "narration"
+    return (read_predicate(a) and a["predicate"] not in NOT_FACTS and (a.get("source") or "narration") == "narration"
             and (a.get("modality") or "actual") == "actual")
 
 
@@ -82,8 +82,7 @@ def find(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, 
         """What memory must hold for a fact not to be dropped: the same predicate, subject, object (as entities) and
         polarity, and for a predicate that accumulates the same value: one other event of a character does not hold
         the event a re-extraction left out. An address, or a conditioned fact, holds only its own condition slot (PHASE-64, PHASE-66)."""
-        pred = REGISTRY.get(a["predicate"])
-        value = norm(a.get("value")) if pred is not None and pred.cardinality == "multi" else None
+        value = norm(a.get("value")) if cardinality(a) == "multi" else None
         base = (a["predicate"], _ekey(r, a.get("subject_type"), a["subject"]), _ekey(r, a.get("object_type"), a.get("object")),
                 a.get("polarity") or "positive", value)
         return base + (slot(a),) if slotted(a["predicate"]) else base
