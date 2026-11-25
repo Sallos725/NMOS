@@ -49,7 +49,9 @@ from .vectors import vector_candidates
 from .keywords import keywords, particle_lookup
 from . import carry
 from .carry import Carried
-from .packet import CARRY_POLICIES
+from .packet import CARRY_POLICIES, CAST_EXTRA
+from .predicates import address_slot
+from .facts import SITUATIONAL_ADDRESS_MAX, earlier, first as first_version
 from xml.sax.saxutils import escape as xml_escape
 
 CANDIDATE_LIMIT = 50
@@ -101,7 +103,11 @@ def asked_keys(query: str, keys: list[str]) -> list[str]:
     for key in keys:
         entity, _, name = key.rpartition(".")
         where = first(name)
-        if where >= 0 and (not entity or at(entity) >= 0):
+        # a character's key ("하나.HP") is asked when the message names that character, or when it names no
+        # character any key is prefixed with ("HP 얼마야?" asks every window's HP; status windows are prefixed only
+        # when one reply holds two characters' windows)
+        if where >= 0 and (not entity or at(entity) >= 0
+                           or not any(at(k.rpartition(".")[0]) >= 0 for k in keys if "." in k)):
             found.append((where, -len(name), key))
     return [k for _, _, k in sorted(found)]
 
@@ -1085,7 +1091,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     view under CARRY_POLICIES only; every other policy reads as if there were none."""
     started = time.perf_counter()
     g = Gathered()
-    v21 = options.policy in V21_POLICIES  # packet-v21 (PHASE-63): every addition below is gated on it
+    v21 = options.policy in V21_POLICIES  # packet-v21 (PHASE-65): every addition below is gated on it
     carried = carried if options.policy in CARRY_POLICIES else None
     # packet-v14 (PHASE-34 Q2, Q3): the supportive lines overused in the requests before this one rest
     # A question about the past or how it started asks for old memory: nothing rests then
@@ -1665,13 +1671,16 @@ CAST_TURNS_V21 = 4  # packet-v21: the turns before the current one whose rows pu
 
 def _scene_cast(view: dict[str, Any], r: Any, query: str, previous_ai: str, now: int | None,
                 aliases: dict[str, frozenset[str]] | None, options: RecallOptions) -> dict[str, str]:
-    """The scene's cast (`scene.cast`). packet-v21 reads CAST_TURNS_V21 turns instead of `scene.CAST_TURNS`, and never
-    puts in it an entity the owner marked not a character (`excluded_ids`), so no line is private for one."""
+    """The scene's cast (`scene.cast`), never with an entity the owner marked not a character (`excluded_ids`), so no
+    line is private for one. packet-v21 reads CAST_TURNS_V21 turns instead of `scene.CAST_TURNS`."""
     rows = view["facts"] + view["claims"] + view["other"]
+    # every policy: an entity the owner marked not a character is never in the cast (PHASE-47 S2; a bug fix, PHASE-65:
+    # the cast was the one reader that still counted one, so a line could be private for it)
     if options.policy in V21_POLICIES:
         return scene.cast(rows, r, query, previous_ai, now, turns=CAST_TURNS_V21, aliases=aliases,
                           marks=_thread_marks(view, aliases), excluded=excluded_ids(view))
-    return scene.cast(rows, r, query, previous_ai, now, aliases=aliases, marks=_thread_marks(view, aliases))
+    return scene.cast(rows, r, query, previous_ai, now, aliases=aliases, marks=_thread_marks(view, aliases),
+                      excluded=excluded_ids(view))
 
 
 def _thread_marks(view: dict[str, Any], aliases: dict[str, frozenset[str]] | None) -> list[str]:
@@ -1814,6 +1823,9 @@ def entry_v21(f: dict[str, Any], private: bool, before: bool, cause: bool, marks
             drop["disputed_by"] = None
         if drop:
             row = {**f, **drop}
+        if before and any(present_leaks(fact_text(h), shown.secrets, shown.present)
+                          for h in (earlier(f, marks), first_version(f, marks)) if h):
+            before = False  # its `before` and `first` clauses would say the secret: the line names neither
     line = fact_entry(row, private, before, cause, marks, gone=gone, happened=happened)
     if inline := feeling_inline(f):
         line = dataclasses.replace(line, xml=fact_line(row, before, cause, marks, gone, happened,
@@ -1826,29 +1838,47 @@ CAST_PREDICATES_V21 = (*CAST_PREDICATES, "addresses")
 
 
 def cast_facts_v21(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, Any]], bool],
-                   to_cast: Callable[[dict[str, Any]], bool]) -> list[dict[str, Any]]:
-    """packet-v21's <Cast> group: `cast_facts` (the Inspector's rule, unchanged), then the character's newest feeling
-    toward each other scene character (`to_cast`, not the persona) and how they address the persona and each other
-    scene character, newest first, at most CAST_PEERS each."""
+                   to_cast: Callable[[dict[str, Any]], bool]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """packet-v21's <Cast> group, as (what `cast_facts` picks: the Inspector's rule and packet-v20's group, unchanged;
+    the extra lines): the character's newest feeling toward each other scene character (`to_cast`, not the persona), at
+    most CAST_PEERS of them, and how they address the persona and each other scene character, at most CAST_PEERS + 1
+    of them, newest first. A form of address is one line per condition slot (PHASE-64, `predicates.address_slot`): a
+    pair's public and private forms both show, each with its label, and its situational ones at most
+    `facts.SITUATIONAL_ADDRESS_MAX`, the newest, as everywhere else."""
     pick = cast_facts(facts, to_persona)
     newest = sorted((f for f in facts if f.get("polarity") != "negative" and f.get("object")
                      and f.get("subject_type") in (None, "character")), key=lambda f: f["position"], reverse=True)
+    extra: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for f in newest:
+        if f["predicate"] == "feels_toward" and to_cast(f) and not to_persona(f) and norm(f["object"]) not in seen \
+                and len(seen) < CAST_PEERS:
+            seen.add(norm(f["object"]))
+            extra.append(f)
+    whom: list[str] = []
+    slots: dict[str, dict[tuple[str, ...], dict[str, Any]]] = {}
+    for f in newest:
+        if f["predicate"] != "addresses" or not (to_persona(f) or to_cast(f)):
+            continue
+        k = norm(f["object"])
+        if k not in slots:
+            if len(whom) >= CAST_PEERS + 1:
+                continue
+            whom.append(k)
+            slots[k] = {}
+        held = slots[k]
+        slot = address_slot(f)
+        situational = sum(1 for x in held if x[0] == "situational")
+        if slot not in held and (slot[0] != "situational" or situational < SITUATIONAL_ADDRESS_MAX):
+            held[slot] = f
+    extra += [f for k in whom for f in slots[k].values()]
+    return pick, extra
 
-    def per_object(rows: Iterable[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        for f in rows:
-            k = norm(f["object"])
-            if k not in seen and len(out) < limit:
-                seen.add(k)
-                out.append(f)
-        return out
 
-    pick += per_object((f for f in newest if f["predicate"] == "feels_toward" and to_cast(f) and not to_persona(f)),
-                       CAST_PEERS)
-    pick += per_object((f for f in newest if f["predicate"] == "addresses" and (to_persona(f) or to_cast(f))),
-                       CAST_PEERS + 1)
-    return pick
+def _extra(line: Line, bundle: Any = True) -> Line:
+    """packet-v21: a <Cast> line packet-v20's group never had, marked so the compiler places it after the others and
+    within its bound (`packet.CAST_EXTRA`); lines of one `bundle` (a pair's forms of address) are placed together."""
+    return dataclasses.replace(line, marks={**line.marks, CAST_EXTRA: bundle})
 
 
 PERSONA_CAST_PREDICATES = ("located_in", "has_status", "possesses")
@@ -1929,8 +1959,9 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
         if k not in order:  # a group only a pin brings: never from rows carried from another chat (PHASE-60 S8)
             own = [f for f in own if not f.get("carried")]
         to_persona = lambda f: scene.key(r, f["object"]) == persona  # noqa: E731
+        more: list[dict[str, Any]] = []
         if v21:
-            pick = cast_facts_v21(own, to_persona, lambda f: scene.key(r, f["object"]) in others - {k})
+            pick, more = cast_facts_v21(own, to_persona, lambda f: scene.key(r, f["object"]) in others - {k})
         else:
             pick = cast_facts(own, to_persona)
         named = any(n in said for n in scene.names({k: cast[k]}, r, aliases))
@@ -1938,7 +1969,10 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
                  and scene.key(r, t["by"]) == k and shown(t)]
         goals.sort(key=lambda t: (similarity(query, t.get("text")) if query else 0.0, t["position"]), reverse=True)
         return [entry_v21(f, False, before, cause, options.history_marks, shown_v21, happened=happened)
-                for f in pick] + [thread_entry(t, happened=happened) for t in goals[:CAST_GOALS]]
+                for f in pick] + [thread_entry(t, happened=happened) for t in goals[:CAST_GOALS]] + [
+            _extra(entry_v21(f, False, before, cause, options.history_marks, shown_v21, happened=happened),
+                   f"addresses:{norm(f['object'])}" if f["predicate"] == "addresses" else True)
+            for f in more]
 
     extra = 0
     for k in [*order, *(k for k in pins if k not in order)]:
@@ -1947,15 +1981,15 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
         lines = lines_of(k)
         if lines:
             groups.append((cast[k], lines))
-            used |= {line.ref.get("assertion") for line in lines}
+            used |= {line.ref.get("assertion") for line in lines if not line.marks.get(CAST_EXTRA)}
             extra += k not in order
     if v21 and persona in cast:  # packet-v21: the persona's own group, after the others
         own = [f for f in mine.get(persona, []) if not f.get("carried")]
-        lines = [entry_v21(f, False, before, cause, options.history_marks, shown_v21, happened=happened)
+        lines = [_extra(entry_v21(f, False, before, cause, options.history_marks, shown_v21, happened=happened))
                  for f in persona_cast_facts(own)]
         if lines:
             groups.append((cast[persona], lines))
-            used |= {line.ref.get("assertion") for line in lines}
+            used |= {line.ref.get("assertion") for line in lines if not line.marks.get(CAST_EXTRA)}
     return groups, used
 
 
@@ -2401,6 +2435,14 @@ def gate_excerpts_v21(g: Gathered, secrets: list[dict[str, Any]], present: froze
     g.ranked = kept
 
 
+STATE_GATE_LETTERS = 3  # packet-v21: a status value with fewer letters ("30", "우물") says too little to repeat a secret
+
+
+def _letters(text: str) -> int:
+    """The letters of `text`: no digit, space or sign (a number alone shares a trigram with any secret holding it)."""
+    return sum(1 for ch in text if ch.isalpha())
+
+
 def gate_state_v21(g: Gathered, secrets: list[dict[str, Any]], present: frozenset[str], options: RecallOptions) -> None:
     """packet-v21: a <State> item or <StateHistory> line whose value repeats a secret still kept from someone is left
     out (`secret_gate`), as a recalled excerpt's source clock is: against the scene (`present`), or in a strict or
@@ -2410,7 +2452,7 @@ def gate_state_v21(g: Gathered, secrets: list[dict[str, Any]], present: frozense
     kept: list[StateItem] = []
     for item in g.state:
         values = [item.value, item.since_previous or "", *(v for _, v in item.history)]
-        if any(len(v.strip()) >= 2 and summaries.leaks(v, secrets, who) for v in values if v):
+        if any(_letters(v) >= STATE_GATE_LETTERS and summaries.leaks(v, secrets, who) for v in values if v):
             g.state_withheld += 1
             if options.policy in LABEL_POLICIES:
                 g.hidden_entries.append(hidden_entry("state_history" if item.history else "state", {"key": item.key},

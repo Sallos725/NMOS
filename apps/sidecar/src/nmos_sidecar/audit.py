@@ -38,7 +38,7 @@ import psycopg
 from . import carry, overuse, spans
 from .carry import Carried
 from .facts import LIVE
-from .packet import CARRY_POLICIES, POLICIES, REST_POLICIES, clean_text
+from .packet import CARRY_POLICIES, POLICIES, REST_POLICIES, V21_POLICIES, clean_text
 from .retrieval import RECORDED, RecallOptions, compile_gathered, filled, gather, rested
 
 echo, echoed = spans.reuse, spans.reused
@@ -220,7 +220,11 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     if query is not None:
         query = clean_text(query)  # as the live request normalizes it
         notes.append("query replaced")
-    if recent is None and policy in REST_POLICIES:  # the requests before it, as it read them (PHASE-34 Q5)
+    if recent is None and policy in REST_POLICIES and policy in V21_POLICIES:
+        # packet-v21 (PHASE-65): as the live request reads them, rerolls as one request and none of its own attempts
+        recent = overuse.recent(conn, t["conversation_id"], t["head_commit_id"], before=t["created_at"],
+                                n=opts.rest_after + 1, dedupe_positions=True, exclude_position=t["upto_position"])
+    elif recent is None and policy in REST_POLICIES:  # the requests before it, as it read them (PHASE-34 Q5)
         recent = overuse.recent(conn, t["conversation_id"], t["head_commit_id"], before=t["created_at"],
                                 n=opts.rest_after + 1)
     recorded_coverage = (t.get("recall_options") or {}).get("coverage")

@@ -1,4 +1,4 @@
-"""PHASE-63 Wave 2: `packet-v21`, every addition gated on V21_POLICIES, and `clean_text_v4` (clean-v4, unused yet).
+"""PHASE-65: `packet-v21`, every addition gated on V21_POLICIES, and `clean_text_v4` (clean-v4, unused yet).
 
 Each test checks the packet-v21 behaviour and, beside it, that packet-v20 (and earlier) still does what it did: the
 replay invariant (ADR 0027). Synthetic names and text only.
@@ -214,7 +214,8 @@ def test_cast_holds_peer_feelings_addresses_and_the_persona_under_v21():
     persona_group = [g for name, g in v21 if name not in ("하나", "카이토")]
     assert [[line.ref["assertion"] for line in g] for g in persona_group] == [[4, 5]]
     assert [line.ref["assertion"] for line in dict(v20)["하나"]] == [3]  # v20: place only, no persona group
-    assert used20 == {3} and used21 == {1, 2, 3, 4, 5}
+    assert used20 == used21 == {3}  # extras are not taken from lead: one left out of <Cast> is still offered there
+    assert all(line.marks.get("cast_extra") for name, g in v21 for line in g if line.ref["assertion"] != 3)
 
 
 # --- gone and appearances ------------------------------------------------------------------------------------------------
@@ -497,7 +498,7 @@ def test_the_v21_scene_reads_four_turns_and_never_an_excluded_entity():
     v21 = set(retrieval._scene_cast(view, r, "", "", 20, None, V21).values())
     v20 = set(retrieval._scene_cast(view, r, "", "", 20, None, V20).values())
     assert "하나" in v21 and "카이토" in v21 and "등대" not in v21
-    assert "하나" not in v20 and "등대" in v20
+    assert "하나" not in v20 and "등대" not in v20  # PHASE-65: the exclusion holds for every policy
 
 
 def test_a_closed_regression_thread_is_remembered_under_v21_only():
@@ -537,3 +538,161 @@ def test_a_v21_request_hands_its_options_to_the_v21_readers(migrated, monkeypatc
     assert seen["keywords"] and all(kw == {"v21": True} for kw in seen["keywords"])
     assert seen["recent"] and seen["recent"][-1]["dedupe_positions"] is True
     assert seen["recent"][-1]["exclude_position"] is not None
+
+
+# --- PHASE-65 on the Phase 64 base -------------------------------------------------------------------------------------
+
+
+def _addr(n, value, cond=None, obj="도윤", **kw):
+    f = row(n, "하나", "addresses", obj, value, **CC, **kw)
+    if cond is not None:
+        f["address_condition"] = cond
+    return f
+
+
+PUBLIC = {"scope": "public", "when": None}
+PRIVATE = {"scope": "private", "when": "둘만 있을 때"}
+
+
+def test_conditional_addresses_render_under_v21_as_under_v20():
+    from nmos_sidecar import facts
+    rows = [_addr(1, "존댓말, '과장님'", PUBLIC), _addr(2, "반말, '오빠'", PRIVATE),
+            _addr(3, "별명 A", {"scope": "situational", "when": "변장했을 때"}),
+            _addr(4, "별명 B", {"scope": "situational", "when": "화났을 때"}),
+            _addr(5, "별명 C", {"scope": "situational", "when": "임무 중"}),
+            _addr(6, "별명 D", {"scope": "situational", "when": "편지할 때"})]
+    folded = facts._versions(rows)
+    for f in folded:  # the same line, label included, whatever the policy
+        assert entry_v21(f, False, True, True, True, Shown(SECRETS, frozenset({"카이토"}))).xml == \
+            fact_entry(f, False, True, True, True).xml
+    assert "[in public]" in fact_entry(folded[0]).xml or any("[" in fact_entry(f).xml for f in folded)
+    r = res(folded + [row(9, "도윤", "event", None, "x", **C)])
+    cast = {r.key("character", n): n for n in ("하나", "도윤")}
+    groups = dict(cast_groups(view_of(folded), cast, r, "", V21, shown_v21=Shown())[0])
+    shown_lines = [line.xml for line in groups["하나"]]
+    v20_lines = {fact_entry(f, False, True, True, True).xml for f in folded}
+    assert set(shown_lines) <= v20_lines  # every <Cast> line is the line packet-v20 prints
+    values = [line.content for line in groups["하나"]]
+    assert "존댓말, '과장님'" in values and "반말, '오빠'" in values  # both slots of the pair, never one winning
+    assert {"별명 B", "별명 C", "별명 D"} <= set(values) and "별명 A" not in values  # the situational cap, newest
+    unified = facts._versions(rows + [_addr(7, "반말, '도윤아'", {"scope": "all", "when": None})])
+    groups = dict(cast_groups(view_of(unified), cast, r, "", V21, shown_v21=Shown())[0])
+    assert [line.content for line in groups["하나"]] == ["반말, '도윤아'"]  # `all` is the one current form
+
+
+def test_a_private_address_slot_stays_out_of_cast_under_v21():
+    from nmos_sidecar import facts
+    rows = [_addr(1, "존댓말, '과장님'", PUBLIC),
+            _addr(2, "반말, '오빠'", PRIVATE, knowledge="limited", known_by=["하나", "도윤"])]
+    folded = facts._versions(rows)
+    r = res(folded + [row(9, "카이토", "event", None, "x", **C)])
+    cast = {r.key("character", n): n for n in ("하나", "도윤", "카이토")}
+    groups = dict(cast_groups(view_of(folded), cast, r, "", V21, shown_v21=Shown())[0])
+    assert [line.content for line in groups["하나"]] == ["존댓말, '과장님'"]  # private to 카이토 here: its own section
+
+
+def test_replaced_address_handling_is_the_same_under_v21():
+    from nmos_sidecar import facts
+    rows = [_addr(1, "반말, '도윤아'", turn=1), _addr(2, "존댓말, '서도윤'", turn=10),
+            _addr(3, "반말, '도윤아'", {"scope": "situational", "when": "격해질 때"}, turn=10)]
+    folded = facts._versions(rows)
+    r = res(folded)
+    view = view_of(folded, resolution=r)
+    for q in ("하나는 도윤을 뭐라고 불러?", "오늘 뭐 해?"):
+        judged = [retrieval._replaced_judge(view, folded, q, "", opts, {}) for opts in (V20, V21)]
+        for text in ("하나가 '도윤아' 하고 불렀다.", "하나가 '서도윤 씨'라고 불렀다."):
+            got = [j(text, 5) if j else None for j in judged]
+            assert got[0] == got[1], (q, text)
+
+
+def test_asked_keys_with_two_characters_windows():
+    keys = ["하나.HP", "카이토.HP", "하나.MP"]
+    assert set(retrieval.asked_keys("HP 얼마야?", keys)) == {"하나.HP", "카이토.HP"}  # names no one: every window's
+    assert retrieval.asked_keys("하나 HP 얼마야?", keys) == ["하나.HP"]
+    assert retrieval.asked_keys("카이토 HP 얼마야?", keys) == ["카이토.HP"]
+    assert retrieval.asked_keys("HP 얼마야?", ["HP", "MP"]) == ["HP"]  # one window, unprefixed: as before
+
+
+def test_the_cast_extras_yield_first_and_never_into_lead_and_private():
+    core = [_line("fact", f'    <Fact kind="located_in" turn="{n}">인물{n} located in 광장{n}</Fact>', n) for n in range(4)]
+    extra = [dataclasses.replace(_line("fact", f'    <Fact kind="feels_toward" turn="{n}">인물{n} feels toward 동료: '
+                                       + "깊은 신뢰와 오래된 우정 " * 3 + "</Fact>", n), marks={"cast_extra": True})
+             for n in range(10, 16)]
+    cast = [(f"인물{n}", [core[n], extra[n]]) for n in range(4)] + [("나", extra[4:])]
+    out = compile_lines([], 900, cast=cast, facts=[SECRET], lead=[LEAD], policy="packet-v21")
+    placed = {e["ref"]["assertion"] for e in out.ledger if e["placed"]}
+    assert {0, 1, 2, 3} <= placed and {3, 4} <= placed  # every core line, then lead and Private
+    cast_tok = sum(e["tok"] for e in out.ledger if e.get("section") == "cast" and e["placed"]
+                   and e["ref"]["assertion"] >= 10)
+    assert cast_tok <= int(900 * packet.CAST_EXTRA_SHARE)
+    assert any(e["why"] == "cast_cap" for e in out.ledger)
+    bare = [(name, [line for line in lines if not line.marks.get("cast_extra")]) for name, lines in cast]
+    for budget in range(400, 1000, 20):  # the extras never take what lead and Private would have without them
+        def kept(c):
+            out = compile_lines([], budget, state=STATUS, cast=c, facts=[SECRET], lead=[LEAD], policy="packet-v21")
+            return {e["ref"].get("assertion") for e in out.ledger if e["placed"] and e["ref"].get("assertion") in (3, 4)}
+        assert kept(cast) == kept(bare), budget
+
+
+def test_before_and_first_clauses_that_say_a_secret_are_dropped():
+    first = row(1, "하나", "addresses", "카이토", "열쇠는 우물 속에 숨겨져 있다고 속삭이며 부름", **CC)
+    was = row(2, "하나", "addresses", "카이토", "존댓말", **CC)
+    f = {**row(10, "하나", "addresses", "카이토", "반말", **CC), "history": [first, was]}
+    present = frozenset({"카이토", "하나"})
+    assert "before," not in entry_v21(f, False, True, False, False, Shown(SECRETS, present)).xml
+    assert "before," in entry_v21(f, False, True, False, False, Shown(SECRETS, frozenset({"하나"}))).xml
+    assert "before," in fact_entry(f, False, True).xml
+
+
+def test_a_short_status_value_is_not_taken_for_a_secret():
+    secrets = [{"holders": ["하나"], "open": ["카이토"], "text": "하나 knows: 카일은 30년 전 우물에 열쇠를 숨겼다"}]
+    g = Gathered(state=[StateItem("HP", "30", 3), StateItem("위치", "우물", 3),
+                        StateItem("메모", "카일은 30년 전 우물에 열쇠를 숨겼다", 3)])
+    gate_state_v21(g, secrets, frozenset({"카이토"}), V21)
+    assert [i.key for i in g.state] == ["HP", "위치"]
+
+
+def test_an_excluded_entity_is_never_in_the_cast_under_any_policy():
+    rows = [row(18, "등대", "event", None, "z", **C), row(19, "하나", "event", None, "x", **C)]
+    r = res(rows)
+    view = view_of(rows, excluded={str(r.key("character", "등대")): {"scope": "cast"}})
+    for opts in (V20, RecallOptions(policy="packet-v19"), V21):
+        assert "등대" not in retrieval._scene_cast(view, r, "등대 앞에서", "", 20, None, opts).values()
+
+
+def test_a_v21_replay_reads_rerolls_as_the_live_request_did(migrated, monkeypatch):
+    from test_phase60_gone import ask, story
+    from test_generations import LLM
+    from nmos_sidecar import overuse
+    with make_client(migrated, packet_policy="packet-v21", **LLM) as c:
+        chat = story(c, migrated, "세라의 상태: 전투 중 전사.")
+        ask(c, migrated, chat, "하나는 등불을 들고 있어?")
+        from test_sidecar_integration import recall
+        for _ in range(3):  # rerolls of one turn: one request to the rest rule
+            last = recall(c, chat, "하나는 등불을 들고 있어?", in_context=[m["chatId"] for m in chat.messages[-4:]],
+                          budget=1500)
+    calls: list[dict] = []
+    real = overuse.recent
+    monkeypatch.setattr(overuse, "recent", lambda *a, **kw: calls.append(kw) or real(*a, **kw))
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        again = audit.replay(conn, UUID(last["trace_id"]), RecallOptions(), policy=None)
+        v20 = audit.replay(conn, UUID(last["trace_id"]), RecallOptions(), policy="packet-v20")
+    assert again["status"] == "ok" and again["reproduced"] is True and again["text"] == last["packet"]["text"]
+    assert calls[0]["dedupe_positions"] is True and calls[0]["exclude_position"] is not None
+    assert "dedupe_positions" not in calls[1] and v20["status"] == "ok"  # packet-v20 replays read as before
+
+
+def test_a_pairs_address_slots_enter_cast_together_and_a_cut_one_stays_in_lead():
+    pub = _line("fact", '    <Fact kind="addresses" turn="1">하나 addresses 도윤 [in public]: 존댓말, \'과장님\'</Fact>', 1)
+    priv = _line("fact", '    <Fact kind="addresses" turn="2">하나 addresses 도윤 [둘만 있을 때]: 반말, \'오빠\'</Fact>', 2)
+    bundle = [dataclasses.replace(x, marks={"cast_extra": "addresses:도윤"}) for x in (pub, priv)]
+    place = _line("fact", '    <Fact kind="located_in" turn="3">하나 located in 광장</Fact>', 3)
+    for budget in range(300, 1200, 10):
+        out = compile_lines([], budget, cast=[("하나", [place, *bundle])], lead=[pub, priv], policy="packet-v21")
+        in_cast = {e["ref"]["assertion"] for e in out.ledger if e["placed"] and e.get("section") == "cast"}
+        assert in_cast & {1, 2} in (set(), {1, 2}), budget  # both slots, or neither
+        placed = [e["ref"]["assertion"] for e in out.ledger if e["placed"]]
+        assert placed.count(1) <= 1 and placed.count(2) <= 1, budget  # never said twice
+        if not in_cast & {1, 2} and out.text:  # left out of <Cast>: lead still offers them as packet-v20 does
+            lead_only = compile_lines([], budget, cast=[("하나", [place])], lead=[pub, priv], policy="packet-v20")
+            assert ("오빠" in out.text) == ("오빠" in lead_only.text), budget

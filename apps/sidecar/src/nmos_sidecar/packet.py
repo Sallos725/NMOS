@@ -203,7 +203,7 @@ def _unclosed_reasoning(content: str) -> str:
 
 
 def clean_text_v4(content: str) -> str:
-    """clean-v4 (PHASE-63 D3): `clean_text` with Unicode angle-bracket prose kept (`_TAG_V4`), table cells kept apart,
+    """clean-v4 (PHASE-65 D3): `clean_text` with Unicode angle-bracket prose kept (`_TAG_V4`), table cells kept apart,
     more reasoning blocks dropped (`_DROP_NAMES_V4`, and an unclosed leading one, `_unclosed_reasoning`) and more of
     NMOS's own markup dropped (`_MEMORY_MARKUP_V4`). Raw evidence is untouched."""
     text = _drop_blocks(_unclosed_reasoning(content), _DROP_OPEN_V4, _DROP_CLOSE_V4)
@@ -406,7 +406,7 @@ SEM_QUERY_POLICIES = frozenset({"packet-v20", "packet-v21"})  # a short message 
 HAPPENED_POLICIES = frozenset({"packet-v20", "packet-v21"})  # when it happened, beside the turn that told it (PHASE-60 S7, ADR 0086)
 TOLD_POLICIES = frozenset({"packet-v20", "packet-v21"})  # at most two lines of who told whom (PHASE-60 S8, ADR 0086)
 CARRY_POLICIES = frozenset({"packet-v20", "packet-v21"})  # a request reads the chat's carry link and records it (PHASE-60 S6, ADR 0085)
-# packet-v21 (PHASE-63, Wave 2): packet-v20 plus what only it does; every addition is gated on this set, so packet-v20
+# packet-v21 (PHASE-65): packet-v20 plus what only it does; every addition is gated on this set, so packet-v20
 # and every earlier policy compile exactly as they did (ADR 0027). Not the default until a replay measures it.
 V21_POLICIES = frozenset({"packet-v21"})
 # The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
@@ -713,6 +713,93 @@ def _priority_cost(lead: list[Line], rest: list[Line], skip: int, folded: dict[i
     return cost
 
 
+CAST_EXTRA_SHARE = 0.15  # packet-v21: <Cast>'s extra lines may take at most this share of the budget inside the frame
+CAST_EXTRA = "cast_extra"  # packet-v21: the mark (`Line.marks`) of a <Cast> line packet-v20 never had
+
+
+def _cast_v21(cast: list[tuple[str, list[Line]]], ledger: list[dict[str, Any]], offset: int, used: int, limit: int,
+              held_back: int, inner: int, cast_marks: dict[str, str], pinned: list[Any], admitted: set[int],
+              needed_notes: Callable[[str], list[str]], extras: list[str],
+              est: Callable[[str], int], in_cast: set[Any]) -> tuple[list[str], int, int]:
+    """packet-v21's <Cast>: first every line packet-v20 would hold (marked lines aside), across all groups, as the
+    budget allows; then the extra lines (`marks[CAST_EXTRA]`: feelings toward and forms of address for other scene
+    characters, the persona's own group), within CAST_EXTRA_SHARE of the budget and never into the room held back for
+    lead and Private lines (`held_back`). So the wider <Cast> yields first, and it yields its extras before any group
+    loses a line v20 had. Extra lines that share a mark value other than True (one pair's forms of address, one per
+    condition slot) are placed together or not at all, so one slot never shows without the others. A placed extra's
+    assertion goes to `in_cast`: the same line offered to lead or facts is not said again; one left out here is still
+    offered there. Groups and their lines are emitted in the order given. Returns (the <Cast> body, the ledger offset
+    after it, the tokens used)."""
+    items = []
+    for gi, (_, lines) in enumerate(cast):
+        for li, line in enumerate(lines):
+            items.append((gi, li, line, offset))
+            offset += 1
+    openings = [f"    <Character name={quoteattr(name)}"
+                + (f" back_after={quoteattr(cast_marks[name])}" if name in cast_marks else "") + ">"
+                for name, _ in cast]
+    placed: dict[int, list[tuple[int, str]]] = {}
+    extra_cap = used + int(inner * CAST_EXTRA_SHARE)
+    def cost_of(gi: int, line: Line, opened: bool, any_placed: bool) -> tuple[int, list[str]]:
+        xml = "  " + line.xml
+        needed = needed_notes(xml + openings[gi])
+        return (est(xml + "\n") + (0 if opened else est(openings[gi] + "\n    </Character>\n"))
+                + (0 if any_placed else est("  <Cast>\n  </Cast>\n")) + sum(est(t) for t in needed)), needed
+
+    for gi, li, line, n in items:  # first pass: what packet-v20's groups hold
+        if line.marks.get(CAST_EXTRA):
+            continue
+        entry = ledger[n]
+        cost, needed = cost_of(gi, line, gi in placed, bool(placed))
+        entry["tok"], entry["section"] = cost, "cast"
+        if pinned and line.marks.get("gone") and id(line) not in admitted:
+            entry["why"] = "gone_cap"
+            continue
+        if used + cost <= limit:
+            placed.setdefault(gi, []).append((li, "  " + line.xml))
+            extras.extend(needed)
+            used += cost
+            entry["placed"], entry["why"] = True, "placed"
+    bound = min(limit - held_back, extra_cap)
+    bundles: list[list[tuple[int, int, Line, int]]] = []  # second pass: the extras, a pair's slots as one bundle
+    for item in items:
+        mark = item[2].marks.get(CAST_EXTRA)
+        if not mark:
+            continue
+        if mark is not True and bundles and bundles[-1][0][0] == item[0] and bundles[-1][0][2].marks.get(CAST_EXTRA) == mark:
+            bundles[-1].append(item)
+        else:
+            bundles.append([item])
+    for bundle in bundles:
+        gi = bundle[0][0]
+        total, notes_needed, costs = 0, [], []
+        opened = gi in placed
+        for _, _, line, _ in bundle:
+            cost, needed = cost_of(gi, line, opened, bool(placed) or bool(costs))
+            opened = True
+            costs.append(cost)
+            total += cost
+            notes_needed += [t for t in needed if t not in notes_needed]
+        fits = used + total <= bound
+        for (_, li, line, n), cost in zip(bundle, costs):
+            entry = ledger[n]
+            entry["tok"], entry["section"] = cost, "cast"
+            if fits:
+                placed.setdefault(gi, []).append((li, "  " + line.xml))
+                in_cast.add(line.ref.get("assertion"))
+                entry["placed"], entry["why"] = True, "placed"
+            elif used + total <= limit - held_back:
+                entry["why"] = "cast_cap"
+        if fits:
+            extras.extend(t for t in notes_needed if t not in extras)
+            used += total
+    body: list[str] = []
+    for gi in range(len(cast)):
+        if gi in placed:
+            body += [openings[gi], *(x for _, x in sorted(placed[gi])), "    </Character>"]
+    return body, offset, used
+
+
 def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateItem] | None = None,
                   threads: list[Line] | None = None, facts: list[Line] | None = None,
                   policy: str = DEFAULT_POLICY, lead: list[Line] | None = None, note: str = "",
@@ -876,6 +963,11 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         used += cost
         entry["placed"], entry["why"] = True, "placed"
     kept_cast: list[str] = []
+    in_cast: set[Any] = set()  # packet-v21: the assertions of <Cast>'s placed extra lines
+    if v21:  # packet-v21: the wider <Cast> is placed in two passes, its extra lines inside a bound
+        kept_cast, offset, used = _cast_v21(cast, ledger, offset, used, limit, held_back, inner, cast_marks, pinned,
+                                            admitted, needed_notes, extras, est, in_cast)
+        cast = []  # placed: the loop below has nothing left
     for name, lines in cast:
         group: list[str] = []
         back = f" back_after={quoteattr(cast_marks[name])}" if name in cast_marks else ""
@@ -912,6 +1004,9 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
                 continue
             if capped and id(line) not in admitted:  # beyond GONE_SHARE (packet-v20)
                 entry["why"] = "gone_cap"
+                continue
+            if in_cast and line.ref.get("assertion") in in_cast:  # packet-v21: <Cast> already placed it
+                entry["why"] = "in_cast"
                 continue
             hidden = privacy and line.private
             if hidden:
