@@ -95,9 +95,12 @@ def _compact_observation(body: ReconcileRequest, result, base_hash: str | None, 
              m.generation_id, m.special_comments or None] for m in body.messages[base_len if appended else 0:]]
     columns = ["host_logical_id", "revision_hash", "role", "disabled", "is_comment", "swipe_id", "swipe_count",
                "generation_id", "special_comments"]
+    # PHASE-67: an output sync says so; a request sync's observation stays as it was (compaction keeps the key)
+    trigger = {"trigger": body.trigger} if body.trigger != "request" else {}
     if appended:
-        return {"chat_id": body.chat_id, "columns": columns, "base_manifest_hash": base_hash, "appended": rows}
-    return {"chat_id": body.chat_id, "columns": columns, "entries": rows}
+        return {"chat_id": body.chat_id, "columns": columns, "base_manifest_hash": base_hash, "appended": rows,
+                **trigger}
+    return {"chat_id": body.chat_id, "columns": columns, "entries": rows, **trigger}
 
 
 _TOKEN_QUERY = re.compile(r"([?&]token=)[^&#]*")
@@ -381,7 +384,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  response.status_code, (time.perf_counter() - started) * 1000)
         return response
 
-    def enqueue(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids) -> None:
+    def enqueue(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids, trigger: str = "request") -> None:
         cur = rt["settings"]
         if rt["extractor"] or rt["projection"]:
             enqueue_after_apply(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids,
@@ -389,6 +392,21 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                 extractor_key=rt["extractor"].key if rt["extractor"] else None,
                                 embed_key=rt["projection"].key if rt["projection"] else None,
                                 embed_backfill=cur.embed_backfill)
+        if cur.extract_on_output and (rt["extractor"] or rt["projection"]):
+            early(conn, conv_id, old_head is None, manifest, new_lifecycle, ids, trigger)
+
+    def early(conn, conv_id, first_sight, manifest, lifecycle, ids, trigger) -> None:
+        """PHASE-67: an output sync queues the open turn now; any applied sync withdraws early jobs that no longer
+        stand for it. Fail-open, as the sync must be: an error is logged and the sync goes on (a savepoint)."""
+        try:
+            with conn.transaction():
+                keep = extraction.enqueue_open_turn(
+                    conn, conv_id, first_sight, manifest, lifecycle, ids, settings.extract_turns,
+                    extractor_key=rt["extractor"].key if rt["extractor"] else None,
+                    embed_key=rt["projection"].key if rt["projection"] else None) if trigger == "output" else []
+                extraction.withdraw_early(conn, conv_id, keep)
+        except Exception as e:  # noqa: BLE001 — the turn is still queued once the user continues (ADR 0008)
+            log.warning("early extraction not scheduled conversation=%s (%s)", conv_id, type(e).__name__)
 
     def summarize_after(conn, conv_id, head, since: int | None) -> None:
         """Queue the windows this sync made due (an append from position `since`), or every window missing a summary
@@ -441,7 +459,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         # From the tail's first turn on is enough: lifecycle and turn hashes change only there.
         offset = tail.turn_start - tail.start
         enqueue(conn, conv.id, tail.entries[offset:], lifecycle, entries[offset:], {**lifecycle, **result.lifecycle},
-                revision_ids)
+                revision_ids, body.trigger)
         summarize_after(conn, conv.id, head, since=length)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=full_hash, changes_summary=result.summary, commit_reason=None)
@@ -475,7 +493,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         )
         head = ledger.apply_plan(conn, conv, state, result, observation, manifest, settings.extract_turns)
         enqueue(conn, conv.id, state.head, state.lifecycle, manifest, {**state.lifecycle, **result.lifecycle},
-                state.revision_ids)
+                state.revision_ids, body.trigger)
         summarize_after(conn, conv.id, head, since=len(state.head or []) if result.commit_reason is None else None)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,
@@ -1987,6 +2005,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                         ex = rt["extractor"]
                         if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
                             queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)
+                        if before["settings"].extract_on_output and not rt["settings"].extract_on_output:
+                            extraction.withdraw_early(conn)  # PHASE-67: off means no early call starts from now on
                         prepared = dict(rt)
                 if set(clean) <= {runtime.PRESETS_KEY}:
                     rt["overrides"] = overrides

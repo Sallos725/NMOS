@@ -667,6 +667,80 @@ def first_sight_pending(conn: psycopg.Connection, conv_id: UUID, extractor_key: 
         (conv_id, FIRST_PRIORITY, extractor_key)).fetchone() is not None
 
 
+def enqueue_open_turn(
+    conn: psycopg.Connection,
+    conv_id: UUID,
+    first_sight: bool,
+    manifest: list[Entry],
+    lifecycle: dict[RevKey, str],
+    ids: dict[RevKey, UUID],
+    turns: int,
+    extractor_key: str | None = None,
+    embed_key: str | None = None,
+) -> list[str]:
+    """Queue the open turn early, after an output sync (PHASE-67, `extract_on_output`): the extraction of the head's
+    last turn whose reply is not accepted yet, and the embedding of that turn's provisional messages.
+
+    The jobs are the ones `enqueue_after_apply` queues once the user continues from the reply: the same kinds, dedupe
+    keys, payloads and priorities, so when the reply is accepted unchanged its insert meets this row and queues nothing
+    (the early extraction is the turn's extraction). The extract payload also says `early`, which `withdraw_early`
+    reads; it is not part of the key. Returns the extract dedupe key queued, if any (`withdraw_early` keeps it)."""
+    layout = turn_layout(manifest, turns)
+    last = max((i for i, (t, _) in enumerate(layout) if t is not None), default=None)
+    if last is None or layout[last][1] is None or lifecycle.get(manifest[last].key) == "accepted":
+        return []  # no turn, the last turn has no reply yet (its user message is the tail), or it is accepted
+    turn = layout[last][0]
+    rows, keys = [], []
+    if extractor_key:
+        rev, turn_hash = ids[manifest[last].key], layout[last][1]
+        priority = FIRST_PRIORITY if first_sight or first_sight_pending(conn, conv_id, extractor_key) else LIVE_PRIORITY
+        key = f"extract:{rev}:{turn_hash}:{extractor_key}"
+        keys.append(key)
+        rows.append(("extract", key, conv_id,
+                     Jsonb({"revision_id": str(rev), "window_hash": turn_hash, "generation": extractor_key,
+                            "early": True}), priority))
+    if embed_key:  # as `enqueue_after_apply`'s `messages`, for the open turn's members not accepted yet
+        for i, e in enumerate(manifest):
+            if layout[i][0] == turn and lifecycle.get(e.key) != "accepted" and not e.is_comment \
+                    and e.disabled not in (True, "allBefore"):
+                rev = ids[e.key]
+                rows.append(("embed", f"embed:{rev}:{embed_key}", conv_id,
+                             Jsonb({"revision_id": str(rev), "generation": embed_key}), 150 if first_sight else 50))
+    if rows:
+        with conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority) VALUES (%s, %s, %s, %s, %s) "
+                + REQUEUE,
+                rows,
+            )
+    return keys
+
+
+def withdraw_early(conn: psycopg.Connection, conv_id: UUID | None = None, keep: list[str] | None = None) -> int:
+    """Early extractions (PHASE-67) that no longer stand for the open turn never start, and a running one stores
+    nothing: every queued or running early extract job (of one chat, or every chat) whose reply is not accepted, except
+    the `keep` keys (the turn an output sync just queued). A reroll, swipe, edit, continue or delete of the reply (it is
+    retracted or superseded), or an edit of its user message (the turn hash moves), leaves its job here; a reply the
+    user continued from is accepted, and its early job is its turn's extraction. Locked in id order, as `discard_turns`
+    does, so a worker storing one of them commits first (its row never serves: the revision left the head, or the hash
+    no longer matches) or finds the job obsolete and stores nothing (`process_extract`)."""
+    with conn.transaction():
+        ids = [r["id"] for r in conn.execute(
+            "SELECT j.id FROM job j JOIN source_revision sr ON sr.id = (j.payload->>'revision_id')::uuid"
+            " WHERE j.kind = 'extract' AND j.status IN ('queued', 'running') AND j.payload->>'early' = 'true'"
+            " AND (%(conv)s::uuid IS NULL OR j.conversation_id = %(conv)s::uuid) AND j.dedupe_key <> ALL(%(keep)s)"
+            " AND (sr.lifecycle <> 'accepted' OR NOT EXISTS ("
+            "   SELECT 1 FROM conversation c JOIN active_membership am ON am.commit_id = c.head_commit_id"
+            "   WHERE c.id = j.conversation_id AND am.source_revision_id = sr.id"
+            "   AND am.turn_hash = j.payload->>'window_hash'))"
+            " ORDER BY j.id FOR UPDATE OF j",
+            {"conv": conv_id, "keep": keep or []}).fetchall()]
+        if ids:
+            conn.execute("UPDATE job SET status = 'obsolete', locked_at = NULL, updated_at = now() WHERE id = ANY(%s)",
+                         (ids,))
+    return len(ids)
+
+
 def retire(conn: psycopg.Connection, kind: str) -> int:
     """The provider for `kind` was turned off: no queued job of that kind may start (#18). A request
     already in flight finishes; its job keeps the obsolete status."""
