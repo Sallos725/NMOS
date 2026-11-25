@@ -518,14 +518,18 @@ def backfill(conn: psycopg.Connection, conv_id: UUID, dry_run: bool = True) -> d
     rolled back, so the counts are what it would write. The caller holds the conversation's lock."""
     started = time.perf_counter()
     result: dict[str, Any] = {}
-    with conn.transaction() as tx:
-        before = _bounded(conn, int(BACKFILL_BUDGET_S * 1000))
-        result = inherit(conn, conv_id, backfill=True, budget_s=BACKFILL_BUDGET_S, limit=10 ** 9)
-        _restore(conn, before)
-        if result["status"] == "done":
-            result["jobs_settled"] = drop_covered(conn, conv_id, any_chat=True)
-        if dry_run:
-            raise psycopg.Rollback(tx)
+    try:
+        with conn.transaction() as tx:
+            before = _bounded(conn, int(BACKFILL_BUDGET_S * 1000))
+            result = inherit(conn, conv_id, backfill=True, budget_s=BACKFILL_BUDGET_S, limit=10 ** 9)
+            _restore(conn, before)
+            if result["status"] == "done":
+                result["jobs_settled"] = drop_covered(conn, conv_id, any_chat=True)
+            if dry_run:
+                raise psycopg.Rollback(tx)
+    except Exception as e:  # noqa: BLE001 — nothing was written; the answer says why
+        log.warning("branch back-fill failed conversation=%s (%s)", conv_id, type(e).__name__)
+        result = {"status": "failed", "error": type(e).__name__}
     result = {**result, "dry_run": dry_run, "ms": round((time.perf_counter() - started) * 1000, 1)}
     if not dry_run and result["status"] == "done":
         marker = conn.execute("SELECT branch_inherit FROM conversation WHERE id = %s", (conv_id,)).fetchone()
