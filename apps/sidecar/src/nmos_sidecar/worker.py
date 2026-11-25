@@ -13,7 +13,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
-from . import calls, canonfacts, generations, migrate, retention, reveals, summaries
+from . import calls, canonfacts, generations, migrate, normtext, retention, reveals, summaries
 from .config import Settings
 from .extraction import claim, extractor, fail, finish, process_extract
 from .llm import ChatModel, Embedder, LLMError, Observer
@@ -218,6 +218,7 @@ def wait_for_schema(database_url: str, stop: threading.Event, poll_s: float = 2.
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = Settings()
+    normtext.use(settings.normalizer)  # the sidecar's: their generation keys must agree (PHASE-66 part 3)
     holder: dict[str, Any] = {"jobs": {}}
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
