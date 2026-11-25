@@ -86,6 +86,7 @@ def grade(case: dict[str, Any], parsed: dict[str, Any], compiler: str) -> dict[s
     if not isinstance(parsed.get("assertions"), list):
         raise ValueError("model reply has no assertions list")
     items = [a for a in parsed["assertions"] if not (isinstance(a, dict) and a.get("predicate") in X.DERIVED)]
+    items = getattr(X, "own_items", list)(items)  # the model's own, capped, before the derived rows (review F5)
     if compiler in X.ROLES:
         items = X.ended_roles(parsed, items, case["roles"], case["target"])
     rows = X.normalize(items, case["target"], shown=case["target"], apart=compiler in X.PARTS_APART)

@@ -22,7 +22,7 @@ from eval_extraction_model import call  # noqa: E402
 from eval_phase7_model import SCENES as PHASE7_SCENES  # noqa: E402
 from eval_phase8_model import v7_prompt  # noqa: E402
 
-from nmos_sidecar.extraction import SYSTEM_PROMPT, build_prompt, normalize  # noqa: E402
+from nmos_sidecar.extraction import SYSTEM_PROMPT, build_prompt, normalize, own_items  # noqa: E402
 from nmos_sidecar.llm import parse_json_object  # noqa: E402
 from nmos_sidecar.predicates import registry_prompt  # noqa: E402
 
@@ -43,7 +43,7 @@ def main() -> None:
         variant, scene, run = job
         reply = call(args.url, args.model, prompts[variant], build_prompt(scene.ctx(), scene.hints, scene.listed()), 180)
         items = (parse_json_object(reply["text"]) or {}).get("assertions") if reply.get("text") else []
-        rows = normalize(items if isinstance(items, list) else [], "\n".join(x for _, _, x in scene.target), scene.hints)
+        rows = normalize(own_items(items if isinstance(items, list) else []), "\n".join(x for _, _, x in scene.target), scene.hints)
         ok, detail = scene.check(rows, scene)
         return {"scene": scene.name, "variant": variant, "run": run, "pass": ok, "detail": detail,
                 "error": reply.get("error"), "usage": reply.get("usage")}
