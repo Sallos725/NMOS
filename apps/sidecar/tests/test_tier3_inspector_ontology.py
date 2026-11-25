@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from base_rules import base_rules  # noqa: F401 -- autouse: the base's keys, without the revision marker (PHASE-66 part 5)
 from conftest import make_client
 from simchat import SimChat
 from test_phase60_views_unchanged import STORY, check_golden, normalize
