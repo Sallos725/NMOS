@@ -43,6 +43,7 @@ FACT_KEYS: tuple[str, ...] = (
     "polarity", "modality", "source", "asserted_by", "salience", "participants",
     "outcome", "because", "feeling", "when_happened", "address_condition", "turn", "position", "compiler",
     "condition", "guise", "item_kind", "knowledge_scope",  # extract-v21's (PHASE-66): only on rows that have them
+    "open_turn",  # PHASE-67: a row of the source's provisional finale (`facts.memory_view(include_open_turn=True)`)
 )
 THREAD_KEYS: tuple[str, ...] = (
     "kind", "by", "to", "text", "status", "horizon", "turn", "position",
@@ -387,9 +388,13 @@ def snapshot_of(
     resolved_names = _validate_mode_and_names(mode, names, r, mem_excluded)
     rev_map: Mapping[int, UUID | str] = revisions or {}
 
-    # Facts: newest first (source position descending), canon rows left out.
+    # Facts: newest first (source position descending), canon rows left out. A belief the source still holds
+    # (extract-v21, PHASE-66) is carried as its row: a continue target reads it as a belief (`facts.memory_view`, an
+    # epistemic row), a regression keeps it apart from the facts (`target_rows`: line "belief"). A forgetting is not
+    # carried: what it withdrew is already out of the facts and their marks. A view without beliefs is as before.
     source_facts = sorted(
-        (f for f in (view.get("facts") or ()) if not f.get("canon")),
+        (f for f in [*(view.get("facts") or ()), *(b for b in view.get("beliefs") or () if b.get("status") == "held")]
+         if not f.get("canon")),
         key=lambda f: f.get("position") or 0,
         reverse=True,
     )
@@ -467,7 +472,7 @@ def snapshot_of(
                     },
                 })
 
-    return _plain({
+    out = {
         "shape": SHAPE,
         "mode": mode,
         "names": _map_name_list(resolved_names, r),
@@ -478,7 +483,10 @@ def snapshot_of(
         "story_left_out": story_left_out,
         "characters": _characters(view),
         "persona_character": _persona_character(view),
-    })
+    }
+    if view.get("open_turn"):  # PHASE-67: the reading took the source's provisional finale (its rows say `open_turn`)
+        out["open_turn"] = {k: view["open_turn"][k] for k in ("turn", "revision", "host_logical_id")}
+    return _plain(out)
 
 
 def _alias_entries(
@@ -587,6 +595,8 @@ def preview_of(
         "persona_character": snap.get("persona_character"),
         "fingerprint": reading["fingerprint"],
         "replaces": str(replaces) if replaces is not None else None,
+        # PHASE-67: the reading took the source's provisional finale (only then is the key there)
+        **({"open_turn": snap["open_turn"]} if snap.get("open_turn") else {}),
     })
 
 
@@ -680,7 +690,9 @@ def target_rows(link: Mapping[str, Any]) -> Carried:
     mode = str(link.get("mode") or snap.get("mode"))
     names = tuple(str(n) for n in (snap.get("names") or link.get("entity_names") or ()))
     if mode == "regression":
-        kept = [{**_plain(dict(f)), "line": "fact"} for f in snap.get("facts") or ()]
+        # a carried belief (PHASE-66) is a line of its own: a reader of regression lines takes "fact" and "thread"
+        kept = [{**_plain(dict(f)), "line": "belief" if f.get("predicate") == "believes" else "fact"}
+                for f in snap.get("facts") or ()]
         kept += [{**_plain(dict(t)), "line": "thread"} for t in snap.get("threads") or ()]
         for i, row in enumerate(kept):
             row["carried"], row["carried_from"] = link_id, row.get("from")
@@ -701,6 +713,37 @@ def target_rows(link: Mapping[str, Any]) -> Carried:
         rows.append(_carried_row(alias, link_id, "alias", i, CARRY_BASE + len(rows), a.get("from")))
     story = snap.get("story")
     return Carried(link_id, source, mode, names, tuple(rows), (), _plain(dict(story)) if story else None)
+
+
+def _finale_revision(row: Mapping[str, Any]) -> str | None:
+    """The source revision of a carried row (or a regression thread's opening) from the source's provisional finale."""
+    for x in (row, row.get("opening") if isinstance(row.get("opening"), Mapping) else None):
+        if x is not None and x.get("open_turn"):
+            rev = (x.get("carried_from") or x.get("from") or row.get("carried_from") or row.get("from") or {})
+            return str(rev.get("revision")) if rev.get("revision") else None
+    return None
+
+
+def finale_left(conn: psycopg.Connection, carried: Carried) -> tuple[Carried, dict[str, Any] | None]:
+    """A link's rows without those of a source finale that is gone (PHASE-67): a snapshot taken while the source's last
+    reply was provisional keeps its rows only while that reply is still a member of the source's head (accepted since,
+    or still open). Rerolled, swiped, edited or removed, its rows no longer serve; the rest of the snapshot does. The
+    snapshot itself is never retaken (a link is frozen, ADR 0085): the owner links again for a fresh one. Returns the
+    rows kept and {"revisions", "stale"} for the view, or None when the snapshot took no finale (rows unchanged)."""
+    revs = {rev for x in (*carried.rows, *carried.regression) if (rev := _finale_revision(x))}
+    if not revs:
+        return carried, None
+    alive = {r["id"] for r in conn.execute(
+        "SELECT sr.id::text AS id FROM conversation c"
+        " JOIN active_membership am ON am.commit_id = c.head_commit_id"
+        " JOIN source_revision sr ON sr.id = am.source_revision_id"
+        " WHERE c.id = %s AND sr.id::text = ANY(%s) AND sr.lifecycle IN ('provisional', 'accepted')",
+        (_as_uuid(carried.source), sorted(revs))).fetchall()}
+    stale = revs - alive
+    if stale:
+        carried = replace(carried, rows=tuple(x for x in carried.rows if _finale_revision(x) not in stale),
+                          regression=tuple(x for x in carried.regression if _finale_revision(x) not in stale))
+    return carried, {"revisions": sorted(revs), "stale": sorted(stale)}
 
 
 def _resolved_id(r: Resolution | None, entity_type: str | None, name: str | None) -> str | None:
@@ -731,7 +774,7 @@ def _panel_line(row: Mapping[str, Any], opening: Mapping[str, Any] | None, *, th
         line.update(kind="thread", predicate=(opening or {}).get("predicate") or row.get("kind"),
                     subject=row.get("by"), object=row.get("to"), value=row.get("text"))
     else:
-        line["kind"] = "fact"
+        line["kind"] = "belief" if row.get("predicate") == "believes" else "fact"  # PHASE-66: never a fact line
     for key in ("knowledge", "known_by", "hidden_from", "carried", "carried_from"):
         line.setdefault(key, None)
     line.pop("when_happened", None)
@@ -781,6 +824,7 @@ def panel_lines(view: Mapping[str, Any], entity_id: str | None = None) -> list[d
         rows = [(x, x.get("line") == "thread") for x in view.get("regression") or ()]
     else:
         rows = [(f, False) for f in view.get("facts") or () if f.get("carried")]
+        rows += [(b, False) for b in view.get("beliefs") or () if b.get("carried")]  # PHASE-66: kind "belief"
         rows += [(t, True) for t in view.get("threads") or () if t.get("status") == "open" and t.get("carried")]
     openings = {a["id"]: a for a in view.get("assertions") or () if a.get("carried")}
     out: list[dict[str, Any]] = []
@@ -855,7 +899,7 @@ def cutoff_of(
 def _fetch_revisions(conn: psycopg.Connection, view: Mapping[str, Any], mode: str) -> dict[int, UUID]:
     """Fetch source_revision_id for every stored assertion referenced by the reading, in one query."""
     ids: set[int] = set()
-    for row in view.get("facts") or ():
+    for row in [*(view.get("facts") or ()), *(view.get("beliefs") or ())]:  # a held belief is carried too (PHASE-66)
         if not row.get("canon") and (aid := _positive_int(row.get("id"))) is not None:
             ids.add(aid)
     r: Resolution | None = view.get("resolution")
@@ -904,7 +948,10 @@ def take_reading(
     own = in_force(conn, src)
     chained = (target_rows(own) if own is not None and own["mode"] == "continue"
                and (target_id is None or _as_uuid(own["source_conversation_id"]) != _as_uuid(target_id)) else None)
-    view = memory_view(conn, head, keys.extractor, upto=position, canon_key=keys.canon, carried=chained)
+    # PHASE-67 (owner decision 2026-11-25): a reading takes the source's finished early extraction of its open turn,
+    # marked in the snapshot; a target's read leaves its rows out once the source's reply is replaced (`finale_left`)
+    view = memory_view(conn, head, keys.extractor, upto=position, canon_key=keys.canon, carried=chained,
+                       include_open_turn=True)
     revisions = _fetch_revisions(conn, view, mode)
     # A story that repeats an open secret even in other words (LEAK_NEAR) is not frozen into the link: the target
     # reads it in every scene, with whoever the secret is kept from.

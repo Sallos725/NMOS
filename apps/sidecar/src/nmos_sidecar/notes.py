@@ -405,7 +405,7 @@ def _open_threads(shown: list[dict[str, Any]], tells: Callable[..., list[dict[st
 def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts: list[dict[str, Any]],
               secrets: list[dict[str, Any]], chars: int, model: Callable[..., tuple[Any, ...]] | None,
               told_secrets: bool = False, last_turn: int | None = None, language: str = "chat",
-              semantic_leaks: LeakCheck | None = None) -> dict[str, Any]:
+              semantic_leaks: LeakCheck | None = None, finale: str | None = None) -> dict[str, Any]:
     """The chronicle's Markdown (PHASE-50 S2): Events and Now from the model, or assembled from the summaries when there
     is no model or its replies fail; Open threads always from the stored threads (the newest THREADS_MAX, in at most
     THREADS_SHARE of the part, so they never crowd out the story). An open thread not said again for longer than its
@@ -435,7 +435,9 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
     user = _input(newest, story, shown, now, open_secrets, told_secrets)
     which = getattr(getattr(model, "__self__", None), "model", "") if model is not None else ""
     checked = "semantic" if semantic_leaks is not None else ""
-    key = hashlib.sha256(f"{chars}|{told_secrets}|{which}|{lang}|{checked}|{user}".encode()).hexdigest()
+    # PHASE-67: `finale`, the revision of the provisional reply the view read (`view["open_turn"]`): a reroll is a new key
+    key = hashlib.sha256(f"{chars}|{told_secrets}|{which}|{lang}|{checked}|{user}"
+                         f"{'|finale:' + finale if finale else ''}".encode()).hexdigest()
     with _CACHE_LOCK:
         hit = _CACHE.get(key) if model is not None else None
         if hit is not None:
@@ -515,7 +517,8 @@ def custom(prompt: str, told: dict[str, Any] | None, threads: list[dict[str, Any
            secrets: list[dict[str, Any]], chars: int, model: Callable[..., tuple[Any, ...]] | None,
            told_secrets: bool = False, last_turn: int | None = None, setting: list[dict[str, Any]] | None = None,
            entities: list[dict[str, Any]] | None = None, excluded: frozenset[str] = frozenset(),
-           language: str = "chat", semantic_leaks: LeakCheck | None = None) -> dict[str, Any]:
+           language: str = "chat", semantic_leaks: LeakCheck | None = None,
+           finale: str | None = None) -> dict[str, Any]:
     """The custom part's Markdown (PHASE-56): the owner's prompt in a fixed frame over the chronicle's story input and,
     when `setting` (the manifest in force) is given, the setting's side as PHASE-53 S3 picks it. One call, asked again
     once when the reply is not JSON with a string `text` or (secrets off) when it repeats an open secret at LEAK_NEAR;
@@ -547,7 +550,8 @@ def custom(prompt: str, told: dict[str, Any] | None, threads: list[dict[str, Any
                                   write_in=CUSTOM_LANGUAGE[s["language"]])
     which = getattr(getattr(model, "__self__", None), "model", "")
     checked = "semantic" if semantic_leaks is not None else ""
-    key = hashlib.sha256(f"custom|{chars}|{told_secrets}|{which}|{checked}|{system}|{user}".encode()).hexdigest()
+    key = hashlib.sha256(f"custom|{chars}|{told_secrets}|{which}|{checked}|{system}|{user}"
+                         f"{'|finale:' + finale if finale else ''}".encode()).hexdigest()  # PHASE-67, as the chronicle
     with _CACHE_LOCK:
         hit = _CACHE.get(key)
         if hit is not None:
@@ -636,6 +640,8 @@ def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn:
     (default: the one asked for, `Ask.language`) and `semantic_leaks` go to the chronicle and the custom part."""
     language = ask.language if language is None else language
     facts = view.get("facts") or []
+    # PHASE-67: a view read with the provisional finale (`include_open_turn`) names its reply's revision
+    finale = str(view["open_turn"]["revision"]) if view.get("open_turn") else None
     parts: list[str] = []
     info = []
     for kind in ask.sections:
@@ -653,13 +659,13 @@ def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn:
                        model if ask.model else None, ask.secrets, last_turn,
                        setting=(canon or []) if ask.custom_setting else None, entities=view.get("entities") or [],
                        excluded=frozenset(view.get("excluded") or ()), language=language,
-                       semantic_leaks=semantic_leaks)
+                       semantic_leaks=semantic_leaks, finale=finale)
             body = c["body"]
             info.append({"kind": kind, **{k: c[k] for k in ("made", "cached", "held", "reason", "turns", "stale")},
                          **{k: c[k] for k in ("entries", "left_out") if k in c}, "chars": len(body)})
         elif kind == "chronicle":
             c = chronicle(told, view.get("threads") or [], facts, view.get("secrets") or [], ask.chars,
-                          model if ask.model else None, ask.secrets, last_turn, language, semantic_leaks)
+                          model if ask.model else None, ask.secrets, last_turn, language, semantic_leaks, finale)
             body = c["body"]
             info.append({"kind": kind, "made": c["made"], "cached": c["cached"], "held": c["held"],
                          "reason": c["reason"], "turns": c["turns"], "chars": len(body), "stale": c["stale"]})
@@ -673,4 +679,7 @@ def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn:
     text = ""
     if parts:
         text = wrap("\n\n".join([HEADER.format(turn=last_turn or 0), *parts]), last_turn, today)
-    return {"text": text, "chars": len(text), "sections": info, "last_turn": last_turn}
+    out = {"text": text, "chars": len(text), "sections": info, "last_turn": last_turn}
+    if view.get("open_turn"):  # PHASE-67: the note read the provisional finale (provenance; absent otherwise)
+        out["open_turn"] = {k: view["open_turn"][k] for k in ("turn", "revision", "host_logical_id")}
+    return out
