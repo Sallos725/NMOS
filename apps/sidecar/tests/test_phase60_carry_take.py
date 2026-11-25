@@ -181,7 +181,10 @@ def test_take_reading_and_preview_with_provenance_and_story(migrated: str) -> No
 
             assert keys.extractor in reading["generations"]["served"]
             assert keys.summarize in reading["generations"]["served"]
-            assert "세라" in snap["characters"] and "도현" not in snap["characters"]
+            # Changed in Tier 1 (F1, owner-agreed): the persona 도현 was asserted absent from `characters`; it is listed
+            # now (a persona may regress) and marked by `persona_character`.
+            assert "세라" in snap["characters"] and "도현" in snap["characters"]
+            assert snap["persona_character"] == "도현"
 
             # Preview writes nothing and summarizes counts, first_lines and source labels.
             prev = carry.preview(conn, tgt_id, src_id, "continue", [], keys)
