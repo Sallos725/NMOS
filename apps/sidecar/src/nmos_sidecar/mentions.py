@@ -6,7 +6,8 @@ An `@` inside a word (such as an email address or handle) or before an unknown n
 
 Tier 1 (B5): a name may also carry a vocative (`@하람아`, `@세라야`), an honorific written onto it (`@세라님`,
 `@기현씨`), or an honorific and then one particle (`@세라님께서`, `@세라님은`); a name runs to three
-words (`@세라 델 모렌`), and an apostrophe inside a word belongs to it (`@O'Connor`). `aliases` (optional, as
+words (`@세라 델 모렌`), and an apostrophe between two Latin letters belongs to the word (`@O'Connor`); when the word
+does not name anyone, the text before the apostrophe is tried (`@Sera's`). `aliases` (optional, as
 `variants.aliases` gives them) widens each name by the other names its character goes by in this request.
 """
 
@@ -36,12 +37,17 @@ def _read_token(text: str, start: int) -> tuple[str, int]:
     length = len(text)
     while end < length and not text[end].isspace():
         if text[end] in _AFTER_STOP:
-            # An apostrophe between two letters is part of the word (O'Connor, D’Arcy); otherwise it closes a quote.
-            if not (text[end] in "'’" and end > start and text[end - 1].isalpha()
-                    and end + 1 < length and text[end + 1].isalpha()):
+            # An apostrophe between two Latin letters is part of the word (O'Connor, D’Arcy); otherwise it closes a
+            # quote ('@하람'이, ‘@하람’은).
+            if not (text[end] in "'’" and end > start and _latin(text[end - 1])
+                    and end + 1 < length and _latin(text[end + 1])):
                 break
         end += 1
     return text[start:end], end
+
+
+def _latin(ch: str) -> bool:
+    return "a" <= ch.lower() <= "z"
 
 
 def _stems(key: str) -> Iterable[str]:
@@ -134,6 +140,10 @@ def at_mentions(
             if matched is not None:
                 i = ends[count - 1]
                 break
+        if matched is None and (cut := min((token.find(q) for q in "'’" if q in token), default=-1)) > 0:
+            matched = _match(token[:cut], names)  # @Sera's sword: the name before the apostrophe
+            if matched is not None:
+                i = pos + 1 + cut
         if matched is not None and matched not in blocked_set and matched not in seen:
             seen.add(matched)
             out.append(matched)

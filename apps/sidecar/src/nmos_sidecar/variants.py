@@ -14,7 +14,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from .entities import TITLES, norm
+from .entities import ARTICLES, TITLES, norm
 
 # One-syllable family names whose three-syllable full names Korean shortens to the given name (Q1).
 FAMILY = frozenset("김이박최정강조윤장임한오서신권황안송류전홍고문양손배백허유남심노하곽성차주우구민진나지엄채원천방공현함변염여추"
@@ -47,22 +47,29 @@ _FINAL = ("", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "l", "l", "l", "
           "t", "t", "k", "t", "p", "t")
 HANGUL = re.compile(r"[가-힣]+")
 _LATIN_NAME = re.compile(r"[a-z][a-z' -]*")
+# Words after a family-name syllable that are not a given name: a title (김 선배, 전 원장) or a word for a person
+# (이 남자: "this man").
+NOT_GIVEN = TITLES | frozenset({"남자", "여자", "사람", "아이", "녀석", "소년", "소녀", "청년", "노인", "꼬마", "아저씨",
+                                "아줌마", "친구", "부인", "양반", "나리", "도령", "처자", "총각", "영감", "할멈"})
 
 
 def given(name: str) -> str | None:
     """The given name of a normalized Hangul full name: three syllables with a common one-syllable family name
     (백이안 → 이안), four with a two-syllable one (남궁세연 → 세연), and either written with a space after the family
-    name (백 이안 → 이안)."""
+    name (백 이안 → 이안). Never a title or a word for a person (김 선배, 이 남자: none), and never half of a two-syllable
+    family name (남궁민: none). A three-syllable name that is not Korean (유리아) still gives its last two syllables:
+    a known limit, which the owner's split undoes."""
     family, _, rest = name.partition(" ")
     if rest:  # spaced: the family name, then a two-syllable given name
-        if ((family in FAMILY or family in FAMILY_TWO) and len(rest) == 2 and HANGUL.fullmatch(rest)):
+        if ((family in FAMILY or family in FAMILY_TWO) and len(rest) == 2 and HANGUL.fullmatch(rest)
+                and rest not in NOT_GIVEN):
             return rest
         return None
     if not HANGUL.fullmatch(name):
         return None
-    if len(name) == 3 and name[0] in FAMILY:
+    if len(name) == 3 and name[0] in FAMILY and name[:2] not in FAMILY_TWO and name[1:] not in TITLES:
         return name[1:]
-    if len(name) == 4 and name[:2] in FAMILY_TWO:
+    if len(name) == 4 and name[:2] in FAMILY_TWO and name[2:] not in TITLES:
         return name[2:]
     return None
 
@@ -97,15 +104,15 @@ def hangul_keys(word: str) -> frozenset[str]:
 
 
 def latin_keys(name: str) -> frozenset[str]:
-    """The keys of a normalized Latin name: the whole name, its first part that is not a title when it has two or more
-    (a Western first name: Elena Vance → Elena, Sir Arthur Pendragon → Arthur), and its last part when it has two (a
-    romanized Korean given name: Ryu Ha-jin → Ha-jin)."""
+    """The keys of a normalized Latin name: the whole name, its first part that is not a title or an article when it has
+    two or more (a Western first name: Elena Vance → Elena, Sir Arthur Pendragon → Arthur), and its last part when it
+    has two (a romanized Korean given name: Ryu Ha-jin → Ha-jin)."""
     if not _LATIN_NAME.fullmatch(name):
         return frozenset()
     parts = name.split()
     out = {key(name)} | ({key(parts[1])} if len(parts) == 2 else set())
     if len(parts) >= 2:
-        first = next((p for p in parts[:-1] if p.rstrip(".") not in TITLES), None)
+        first = next((p for p in parts[:-1] if p.rstrip(".") not in TITLES and p not in ARTICLES), None)
         if first:
             out.add(key(first))
     return frozenset(k for k in out if len(k) >= KEY_MIN)
@@ -115,8 +122,9 @@ LOOSE_MIN = 5  # a shorter loose key matches too much
 
 
 def loose(k: str) -> str:
-    """A spelling key with every run of vowels as one mark: the vowels English names leave to the ear (Ronan, 로넌,
-    로난 → `rvnvn`). Only for the persona's own names (`entities._persona_matcher`), never between two characters."""
+    """A spelling key with every run of vowels as one mark: the vowels English names leave to the ear (Elena, 엘리나 →
+    `vrvnv`). Only for the persona's own names (`entities._persona_matcher`, for a Hangul word of three syllables or
+    more), never between two characters."""
     return re.sub(r"[aeiouwy]+", "v", k)
 
 
