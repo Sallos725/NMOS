@@ -90,11 +90,10 @@ def test_a_rerolled_or_edited_finale_never_counts(migrated: str):
 
 
 def test_with_the_switch_off_the_option_changes_nothing(migrated: str):
-    with make_client(migrated, **LLM) as c:
+    with make_client(migrated, **LLM, extract_on_output=False) as c:
         fin = Finale(c, migrated)
-        assert fin.view(include_open_turn=True) == fin.view() or (
-            {k: v for k, v in fin.view(include_open_turn=True).items() if k != "resolution"}
-            == {k: v for k, v in fin.view().items() if k != "resolution"})
+        on, off = fin.view(include_open_turn=True), fin.view()
+        assert {k: v for k, v in on.items() if k != "resolution"} == {k: v for k, v in off.items() if k != "resolution"}
 
 
 def test_the_note_reads_the_finale_keeps_its_secret_and_keys_its_cache_by_the_reply(migrated: str):
@@ -166,3 +165,17 @@ def test_a_carry_snapshot_takes_the_finale_and_leaves_it_out_once_the_reply_is_r
         sync(c, kept.chat)
         view = link_view(migrated, targets["kept"], key)
         assert "등대" in places(view) and view["carried"]["finale"]["stale"] == []
+
+
+def test_only_the_note_endpoint_serves_the_finale_among_the_callers_of_view_of(migrated: str):
+    with make_client(migrated, **LLM, extract_on_output=True) as c:
+        fin = Finale(c, migrated)
+        lighthouse = current(fin.view(include_open_turn=True), "located_in")[0]
+        res = c.post(f"/v1/conversations/{fin.cid}/notes", json={"sections": ["chronicle"], "model": False})
+        assert res.status_code == 200, res.text
+        assert "등대" in res.json()["text"] and res.json()["open_turn"]["turn"] == lighthouse["turn"]
+        # a repair's view and the facts page keep the accepted turns only
+        res = c.post(f"/v1/conversations/{fin.cid}/repairs", json={"kind": "fact_retract", "item": str(lighthouse["id"])})
+        assert res.status_code == 422 and "no fact with that id" in res.text
+        page = c.get(f"/v1/conversations/{fin.cid}/facts").json()
+        assert "등대" not in str(page)

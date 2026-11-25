@@ -256,7 +256,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     rebuild({})
 
-    def view_of(conn, head: UUID, told: bool = False, carried: bool = False) -> dict[str, Any]:
+    def view_of(conn, head: UUID, told: bool = False, carried: bool = False, open_turn: bool = False) -> dict[str, Any]:
         """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047). `told`: with who told
         whom (`view["told"]`, PHASE-60 S8), for the pages that draw chains. `carried`: with the chat's carry link in
         force (ADR 0085): the read-only lists and screens that show carried memory, and (Tier 1, owner-agreed) the
@@ -265,9 +265,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         (PHASE-60 S6)."""
         link = carried_of(conn, head) if carried else None
         if link is None:
-            return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told)
+            return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told,
+                               include_open_turn=open_turn)
         return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told,
-                           carried=link)
+                           carried=link, include_open_turn=open_turn)
 
     def with_told(out: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
         """A page's data with `told` (PHASE-60 S8) only when there is some: a chat without told rows keeps its data as
@@ -1579,7 +1580,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
-            view = view_of(conn, head, carried=True)  # carried facts and threads in the note too (Tier 1)
+            # carried facts and threads in the note too (Tier 1); and the open turn's finished early extraction (PHASE-67,
+            # owner decision 2026-11-25: the note and carry read the finale, a request never does)
+            view = view_of(conn, head, carried=True, open_turn=True)
             last = head_turn(conn, head)
             key = rt.get("active_summarizer")
             # the parts that read summaries and call a model
