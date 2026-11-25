@@ -12,7 +12,8 @@ it (`known_by`); with nobody in the cast, nothing is. Public, unknown and unmark
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+import re
+from collections.abc import Collection, Iterable, Mapping
 from typing import Any
 
 from .entities import USER_NAMES, Resolution, norm
@@ -20,6 +21,23 @@ from .variants import widened
 
 CAST_TURNS = 2
 PERSONA = "{{user}}"
+LATIN = re.compile(r"[a-z0-9]+")
+
+
+def _words(text: str) -> str:
+    """A normalized text as its Latin words, space-padded: a whole-word match is a substring of it."""
+    return f" {' '.join(LATIN.findall(text))} "
+
+
+def _said(name: str, said: str, words: str) -> bool:
+    """A normalized name in the normalized message (`words` = `_words(said)`): a Latin name as whole words ("ren" is
+    not in "current"), as `divergence._named_in`; any other as written, since a Korean particle joins its name."""
+    if len(name) < 2:
+        return False
+    if not name.isascii():
+        return name in said
+    w = _words(name)
+    return w != "  " and w in words
 
 
 def is_persona(r: Resolution, name: str) -> bool:
@@ -47,10 +65,12 @@ def names(scene: dict[str, str], r: Resolution | None,
 
 def cast(rows: list[dict[str, Any]], r: Resolution | None, query: str = "", previous_ai: str = "",
          now: int | None = None, turns: int = CAST_TURNS,
-         aliases: Mapping[str, frozenset[str]] | None = None, marks: Iterable[str] = ()) -> dict[str, str]:
+         aliases: Mapping[str, frozenset[str]] | None = None, marks: Iterable[str] = (),
+         excluded: Collection[str] = ()) -> dict[str, str]:
     """{entity key: display name} of the characters in the scene. `now` is the current turn (the user's
     message); without it, the last turn any row comes from counts as the last one before it. `marks`: more names in
-    knowledge marks (an open thread's, ADR 0058)."""
+    knowledge marks (an open thread's, ADR 0058). `excluded`: ids of the entities the owner marked not a character
+    (PHASE-47, `memory_view`'s `excluded`), never in the cast, so no fact is private for them."""
     if r is None:
         return {}
     out: dict[str, str] = {}
@@ -80,15 +100,26 @@ def cast(rows: list[dict[str, Any]], r: Resolution | None, query: str = "", prev
             if p.get("type") == "character":
                 add(p["name"])
     said = norm(f"{query} {previous_ai}")
+    words = _words(said)
+    known: dict[str, dict[str, Any]] = {}  # every name a character goes by in this request -> that character
     for e in r.entities():
         if e["type"] != "character" or e.get("persona"):
             continue
-        if any(len(n) >= 2 and n in said for n in widened(e["names"], aliases) - USER_NAMES):
+        names_of = widened(e["names"], aliases) - USER_NAMES
+        for n in names_of:
+            known.setdefault(n, e)
+        if any(_said(n, said, words) for n in names_of):
             out.setdefault(e["id"], e["name"])
     for name in marked:
-        if not is_persona(r, name) and any(len(n) >= 2 and n in said for n in widened([name], aliases)):
-            add(name)
+        if not is_persona(r, name) and any(_said(n, said, words) for n in widened([name], aliases)):
+            e = r.entity("character", name) or known.get(norm(name))
+            if e is not None:  # a mark's given name ("이안") is the character it is a variant of ("백이안")
+                out.setdefault(e["id"], e["name"])
+            else:
+                add(name)
     add(PERSONA)
+    if excluded:
+        out = {k: v for k, v in out.items() if str(k) not in excluded}
     return out
 
 

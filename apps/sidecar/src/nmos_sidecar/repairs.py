@@ -280,23 +280,40 @@ def _ekey(r: Resolution | None, entity_type: str | None, name: str | None) -> st
 
 
 def fact_target(f: dict[str, Any]) -> dict[str, Any]:
-    """What a repair stores to find this fact again: its turn, the turn's hash, its head, its line and its quote."""
+    """What a repair stores to find this fact again: its turn, the turn's hash, its head, its line and its quote; and
+    for a fact from before turn 0, whether it is canon's or carried from another chat (both have turn -1)."""
     return {"turn": f.get("turn"), "turn_hash": f.get("turn_hash"), "predicate": f["predicate"],
             "source": f.get("source"), "subject": f["subject"], "subject_type": f.get("subject_type"),
             "object": f.get("object"), "object_type": f.get("object_type"), "text": secret_text(f),
-            "evidence": f.get("evidence")}
+            "evidence": f.get("evidence"),
+            **({"canon": f["canon"]} if f.get("canon") else {}), **({"carried": f["carried"]} if f.get("carried") else {})}
+
+
+def _before_story(target: dict[str, Any]) -> str | None:
+    """Which facts from before turn 0 a target names: "canon", "carried" (ADR 0085), or None for the story's. A target
+    stored before carried facts existed names only its turn (-1): canon's, as it always was (`apply_locks`)."""
+    turn_hash = str(target.get("turn_hash") or "")
+    if target.get("carried") or turn_hash.startswith(("carried:", "carry:")):
+        return "carried"
+    if target.get("canon") or turn_hash.startswith("canon:") or target.get("turn") == -1:
+        return "canon"
+    return None
 
 
 def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution | None,
                quote: bool = True) -> dict[str, Any] | None:
     """The assertion a fact repair names: same predicate, source, subject and object (as entities), and the closest
-    line of its turn, or else the one quote among `rows` that shares a run with its own."""
+    line of its turn, or else the one quote among `rows` that shares a run with its own. The story's, canon's and a
+    carried fact never cross."""
     subject = _ekey(r, target.get("subject_type"), target.get("subject"))
     obj = _ekey(r, target.get("object_type"), target.get("object"))
-    canon = target.get("turn") == -1  # a canon fact's turn (apply_locks); the story's and canon's never cross
+    before = _before_story(target)
+
+    def where(a: dict[str, Any]) -> str | None:
+        return "canon" if a.get("canon") else "carried" if a.get("carried") else None
 
     def same(a: dict[str, Any]) -> bool:
-        return (not a.get("owner") and bool(a.get("canon")) == canon and a["predicate"] == target.get("predicate")
+        return (not a.get("owner") and where(a) == before and a["predicate"] == target.get("predicate")
                 and (a.get("source") or "narration") == (target.get("source") or "narration")
                 and _ekey(r, a.get("subject_type"), a["subject"]) == subject
                 and _ekey(r, a.get("object_type"), a.get("object")) == obj)
@@ -310,12 +327,19 @@ def _established(b: dict[str, Any]) -> bool:
     return (b.get("source") or "narration") == "narration" and (b.get("modality") or "actual") == "actual"
 
 
+# PHASE-22 Q5 level 2 for a predicate that accumulates: two of one character's events (traits, things known) state the
+# same one only when their values are this close; any two of them used to.
+RESTATE_VALUE_MIN = 0.5
+
+
 def _restates(level: int, a: dict[str, Any], b: dict[str, Any], r: Resolution | None) -> bool:
     """Whether `b`, a narrated actual row, states the fact `a` again, at one of PHASE-22 Q5's levels, closest first:
     (1) the same predicate, subject and object (as entities) and, for a predicate that accumulates, the same value;
-    (2) the same predicate, subject and object; (3) the same predicate and subject with a quote sharing a run (the
-    object worded otherwise)."""
+    (2) the same predicate, subject and object and, for a predicate that accumulates, a similar value
+    (RESTATE_VALUE_MIN); (3) the same predicate and subject with a quote sharing a run (the object worded otherwise).
+    Always with the same polarity: a denial does not state the fact it denies."""
     if a["predicate"] != b["predicate"] or not _established(b) or (
+            (a.get("polarity") or "positive") != (b.get("polarity") or "positive")) or (
             _ekey(r, a.get("subject_type"), a["subject"]) != _ekey(r, b.get("subject_type"), b["subject"])):
         return False
     if level == 3:
@@ -323,7 +347,10 @@ def _restates(level: int, a: dict[str, Any], b: dict[str, Any], r: Resolution | 
     if _ekey(r, a.get("object_type"), a.get("object")) != _ekey(r, b.get("object_type"), b.get("object")):
         return False
     pred = REGISTRY.get(a["predicate"])
-    return level == 2 or (pred is not None and pred.cardinality == "single") or norm(a.get("value")) == norm(b.get("value"))
+    if pred is not None and pred.cardinality == "single":
+        return True
+    same = norm(a.get("value")) == norm(b.get("value"))
+    return same or (level == 2 and similarity(a.get("value"), b.get("value")) >= RESTATE_VALUE_MIN)
 
 
 def restated(old: list[dict[str, Any]], new: list[dict[str, Any]], r: Resolution | None) -> dict[int, dict[str, Any]]:
@@ -636,7 +663,7 @@ def exclusions(repairs: list[dict[str, Any]], r: Resolution | None) -> dict[str,
             continue
         t = rep["target"]
         e = r.entity(t.get("entity_type") or "character", t.get("name"))
-        if e is None:
+        if e is None or e.get("persona"):  # a name left out that the story later joins to the persona hides nothing
             continue
         was = out.get(str(e["id"]))
         if was is None or (t.get("scope") == "memory" and was["scope"] != "memory"):

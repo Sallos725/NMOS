@@ -202,14 +202,21 @@ def relation(a: dict[str, Any], r: Resolution | None = None) -> tuple:
 
 # Relationships that hold the same both ways (ADR 0038): the head noun of the value, in Korean last, possibly followed
 # by 관계/사이; in English any word of it, unless "of" makes it someone else's ("friend of her brother").
+# "적" (enemy) only as a word of its own ("적", "오랜 적") or in "숙적": as a suffix it makes adjectives of anything
+# ("일방적", "적대적", "의존적"), most of them one way.
 SYMMETRIC_KO = ("친구", "연인", "애인", "커플", "부부", "배우자", "형제", "자매", "남매", "쌍둥이", "동급생", "동기",
-                "동창", "동료", "라이벌", "경쟁자", "원수", "적", "파트너", "동반자", "룸메이트", "이웃", "약혼자", "사촌",
+                "동창", "동료", "라이벌", "경쟁자", "원수", "숙적", "파트너", "동반자", "룸메이트", "이웃", "약혼자", "사촌",
                 "동맹", "팀원", "짝꿍", "단짝", "소꿉친구", "동지")
+_ENEMY_KO = re.compile(r"(?:^|\s)적$")
 SYMMETRIC_EN = frozenset({"friend", "friends", "lover", "lovers", "couple", "spouse", "spouses", "married", "sibling",
                           "siblings", "twin", "twins", "classmate", "classmates", "colleague", "colleagues", "coworker",
                           "coworkers", "rival", "rivals", "enemy", "enemies", "partner", "partners", "roommate",
                           "roommates", "neighbor", "neighbors", "cousin", "cousins", "fiance", "fiancee", "engaged",
                           "allies", "ally", "teammate", "teammates"})
+# Words that make an English relationship one way or not (or no longer) what it says: "ex-girlfriend", "former partner",
+# "fake friend", "unrequited lover", "one-sided rival". A possessive ("friend's brother") is someone else's.
+ONE_WAY_EN = frozenset({"ex", "former", "fake", "unrequited", "sided"})
+_POSSESSIVE = re.compile(r"[a-z]['’]s\b")
 _ASIDE = re.compile(r"\([^)]*\)")
 
 
@@ -218,9 +225,10 @@ def symmetric(value: str | None) -> bool:
     text = _ASIDE.sub(" ", str(value or "")).strip().casefold()
     words = re.findall(r"[a-z]+", text)
     if words and not re.search(r"[가-힣]", text):
-        return "of" not in words and any(w in SYMMETRIC_EN for w in words)
+        return ("of" not in words and not _POSSESSIVE.search(text) and not ONE_WAY_EN.intersection(words)
+                and any(w in SYMMETRIC_EN for w in words))
     head = re.sub(r"\s*(관계|사이)$", "", text).strip()
-    return bool(head) and "의 " not in head and head.endswith(SYMMETRIC_KO)
+    return bool(head) and "의 " not in head and (head.endswith(SYMMETRIC_KO) or bool(_ENEMY_KO.search(head)))
 
 
 def _pair_versions(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
@@ -454,7 +462,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     rows enter the resolution after the target's own rows (so the target's story names its entities) and fold as facts
     from before turn 0, after the canon facts: the
     story supersedes them, the owner's repairs and exclusions apply to them, a carried opening opens its thread (marked
-    `carried`) and the story can close it by text; they take no part in secrets and keep their stored marks. A
+    `carried`) and the story can close it by text; one kept from someone is a secret of the target, which the target's
+    story can reveal (Tier 1: kept out of secrets, it was neither revealable nor held by the secret gates). A
     `regression` link's rows are listed apart (`regression`), annotated with the target's resolution, and enter
     neither the resolution nor a fold; the owner's `memory` exclusions leave them out as they leave rows out and take
     the excluded from their rememberers (`_regression_kept`). Either way the view gains `carried` and `regression`;
@@ -545,6 +554,10 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         " AND turn = ANY(%s) AND (%s::int IS NULL OR position <= %s::int) GROUP BY turn",
         (head, restored_at, upto, upto)).fetchall()} if restored_at else {}
     rows, retracted = apply_facts(rows, in_force, r, applied, _annotate, turn_positions, turn_info)
+    if any(rep["kind"] in ("fact_retract", "fact_correct", "fact_restore") for rep in in_force):
+        # The threads fold what the repairs left: a retracted opening opens nothing, a corrected one opens as corrected
+        # and a restored one opens (PHASE-22 Q7), in the rows' order (carried openings first, as above; never canon).
+        promises = [x for x in rows if x["predicate"] in THREAD_PREDICATES and not x.get("canon")]
     locks = apply_locks(rows, in_force, r, applied)  # PHASE-14 Q7
     # PHASE-47 S2: entities the owner left out. Out of memory, their own facts and the standing they are one end of
     # leave before the folds; a row that names them only as a participant, or as another's object, stays.
@@ -564,8 +577,9 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
     # and a narrator must count them as knowing it). `learned` is not a fact itself. Before the threads, which copy
     # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
-    secrets, unrevealed, reveals = fold_secrets([x for x in rows if not x.get("canon") and not x.get("carried")]
-                                                if canon_rows or carried_rows else rows, r,
+    # A carried row (ADR 0085) is a secret too: what was kept from someone in the earlier chat still is until this story
+    # shows them finding it out, and the summary and excerpt gates keep it.
+    secrets, unrevealed, reveals = fold_secrets([x for x in rows if not x.get("canon")] if canon_rows else rows, r,
                                                 secret_events(in_force, r, applied))
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     by_repair = {s["id"]: s["repair"] for s in secrets if s.get("repair")}
@@ -573,7 +587,9 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         if row["id"] in by_repair:
             row["repair"] = by_repair[row["id"]]
         if row["id"] in ended:
-            row["hidden_from"] = [n for n in row["hidden_from"] if n not in ended[row["id"]]] or None
+            # by entity: a reveal to "김하나" also ends the secret for "하나" written beside it
+            revealed_to = {r.key("character", n) for n in ended[row["id"]]}
+            row["hidden_from"] = [n for n in row["hidden_from"] if r.key("character", n) not in revealed_to] or None
             row["known_by"] = list(row.get("known_by") or []) + sorted(ended[row["id"]] - set(row.get("known_by") or []))
             row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
     threads, unmatched, consumed = fold_threads(promises, r, thread_events(in_force, r, applied))
@@ -589,7 +605,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             continue
         if row["source"] == "character_claim" and row["modality"] in ("actual", "unknown"):
             # A claim's truth is unknown by nature; the model may say so (owner decision 2026-09-24).
-            claimed[version_key(row, r) + (_norm(row["asserted_by"]),)] = row  # latest wins
+            # latest wins, per speaker as an entity: "백이안" and "이안" are one speaker
+            claimed[version_key(row, r) + (r.key("character", row["asserted_by"]),)] = row
         elif row["modality"] != "actual":
             other.append(row)
         else:
