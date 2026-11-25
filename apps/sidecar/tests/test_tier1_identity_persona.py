@@ -274,7 +274,13 @@ def test_the_two_syllable_family_names_match_extraction():
 
 
 @pytest.mark.parametrize(("name", "given"), [("남궁세연", "세연"), ("제갈민", None), ("백 이안", "이안"),
-                                             ("남궁 세연", "세연"), ("크리스티나", None), ("아오키 타쿠미", None)])
+                                             ("남궁 세연", "세연"), ("크리스티나", None), ("아오키 타쿠미", None),
+                                             # review findings 10 and D: never a title, a word for a person, or half
+                                             # a two-syllable family name
+                                             ("김 선배", None), ("전 원장", None), ("이 남자", None), ("김선배", None),
+                                             ("남궁민", None),
+                                             # a known limit: a three-syllable name that is not Korean
+                                             ("유리아", "리아")])
 def test_more_given_names(name, given):
     assert variants.given(name) == given
 
@@ -378,3 +384,128 @@ def test_the_owner_can_plan_a_split_of_a_derived_persona_name(persona, names, a,
     target, _ = _plan_split(a, b, "character", r)
     after = resolve(CONV, rows, persona=persona, splits=[{**target, "id": uuid.uuid4(), "created_at": NOW}])
     assert key(after, a) != key(after, b) and after.is_persona("character", a)
+
+
+# --- review of resolve-v6 (findings 1-14): existing chats resolve as under resolve-v5 ----------------------------------
+
+FP = "아오키 타쿠미"  # a full name ending with the persona name 타쿠미 (what resolve-v5 folded into {{user}})
+
+
+@pytest.mark.parametrize("extra", [alias("타쿠미", "타쿠쨩"), alias("{{user}}", "타쿠쨩"), dalias("타쿠미", "타쿠쨩")])
+def test_review_1_a_full_name_alias_of_the_persona_keeps_one_persona_and_no_ghost(extra):
+    r = resolve(CONV, [alias(FP, "타쿠미"), extra, fact("루카")], persona=["타쿠미"])
+    personas = [e for e in r.entities() if e["persona"]]
+    assert len(personas) == 1 and r.status("character", "타쿠미") == "resolved" and one(r, FP, "타쿠미", "타쿠쨩")
+    persona_id = str(uuid5(entities._NS, f"{CONV}:{RESOLVER_VERSION}:character:{PERSONA}"))
+    assert [e for e in r.entities() if e["id"] == persona_id] == personas
+
+
+def test_review_2_owner_decisions_stored_under_the_full_name_name_the_persona():
+    rows = [fact(FP), fact("타쿠미"), fact("루카")]
+    r = resolve(CONV, rows, persona=["타쿠미"], links=[link(FP, "루카")])
+    assert r.is_persona("character", "루카") and one(r, FP, "타쿠미", "루카")
+    rows = [fact(FP), fact("타쿠미"), alias("타쿠미", "루카")]
+    r = resolve(CONV, rows, persona=["타쿠미"], splits=[split(FP, "루카")])
+    assert not r.is_persona("character", "루카") and r.is_persona("character", FP)
+    # an alias whose value is the full name
+    r = resolve(CONV, [fact("타쿠미"), alias("루카", FP)], persona=["타쿠미"])
+    assert r.is_persona("character", "루카") and r.is_persona("character", FP)
+
+
+def test_review_2_only_an_explicit_split_from_a_persona_name_detaches_the_full_name():
+    rows = [fact(FP), fact("타쿠미")]
+    for other in ("타쿠미", "{{user}}"):
+        r = resolve(CONV, rows, persona=["타쿠미"], splits=[split(FP, other)])
+        assert not r.is_persona("character", FP) and r.is_persona("character", "타쿠미")
+    later = NOW + timedelta(minutes=1)
+    r = resolve(CONV, rows, persona=["타쿠미"], splits=[split(FP, "타쿠미")], links=[link(FP, "타쿠미", at=later)])
+    assert r.is_persona("character", FP)  # the newer link takes it back
+    # the repair can be planned: the resolution's node keeps the full name apart
+    from nmos_sidecar.repairs import _plan_split
+    assert _plan_split(FP, "타쿠미", "character", resolve(CONV, rows, persona=["타쿠미"]))[0]["other"] == "타쿠미"
+
+
+def test_review_5_an_unmentioned_full_name_is_the_persona_in_direct_lookups():
+    r = resolve(CONV, [fact("타쿠미")], persona=["타쿠미"])
+    assert r.is_persona("character", FP) and r.key("character", FP) == r.key("character", "타쿠미")
+    assert r.status("character", FP) == "resolved"
+    assert not r.is_persona("character", "경비병 타쿠미")  # resolve-v6: never after a title
+
+
+def test_review_5_the_call_sites_read_the_full_name_as_the_persona():
+    from nmos_sidecar import carry, extraction
+    from nmos_sidecar.secrets import fold as fold_secrets
+
+    assert extraction._parties([], ["타쿠미"])(FP) == {PERSONA}
+    text = f"{FP}가 코를 킁킁거렸다. \"도도, 술 마셨지.\" 아오키 카즈는 웃었다."
+
+    def item(subject):
+        return {"subject": subject, "subject_type": "character", "predicate": "also_called", "value": "도도",
+                "modality": "actual", "source": "narration", "evidence": text}
+
+    asked = extraction.aliases_to_confirm([item("아오키 카즈"), item(FP)], text,
+                                          [{"name": "아오키 카즈", "type": "character", "also": []}], ["타쿠미"])
+    assert [i["subject"] for i, _ in asked] == ["아오키 카즈"]  # no confirmation call for the persona's own alias
+    r = resolve(CONV, [fact("타쿠미"), fact("루카")], persona=["타쿠미"])
+    mapped = carry.persona_mapped({"subject": FP, "subject_type": "character", "predicate": "has_trait", "value": "x",
+                                   "known_by": [FP, "루카"], "hidden_from": [FP]}, r)
+    assert mapped["subject"] == PERSONA and mapped["known_by"] == [PERSONA, "루카"] and mapped["hidden_from"] == [PERSONA]
+    from test_semantics import row
+
+    kept = row(1, "루카", "possesses", "열쇠", None, subject_type="character", object_type="item", knowledge="limited",
+               known_by=["루카"], hidden_from=[FP])
+    told = row(3, "타쿠미", "learned", None, "[turn 1] 루카 possesses 열쇠", subject_type="character")
+    rows = [kept, told]
+    secrets, unmatched, _ = fold_secrets(rows, resolve(CONV, rows, persona=["타쿠미"]))
+    assert not unmatched and all(not s["open"] for s in secrets)  # told to the persona: kept from nobody now
+
+
+def test_review_6_the_scene_never_contradicts_the_resolution():
+    from nmos_sidecar import scene
+
+    r = resolve(CONV, [fact("윤기현"), fact("강기현")], persona=["윤기현"])
+    assert not scene.is_persona(r, "기현") and scene.key(r, "기현") != scene.key(r, scene.PERSONA)
+    r = resolve(CONV, [fact("윤기현"), dalias("카이토", "기현"), dalias("루카", "기현")], persona=["윤기현"])
+    assert r.status("character", "기현") == "ambiguous" and not scene.is_persona(r, "기현")
+    r = resolve(CONV, [fact("윤기현")], persona=["윤기현"])
+    assert scene.is_persona(r, "기현") and scene.is_persona(r, "아오키 윤기현")  # a mark-only name
+
+
+@pytest.mark.parametrize("text", ["'@하람'이 누구야?", "‘@하람’은", "@하람's", "@Haram's sword", "@Haram’s sword"])
+def test_review_7_an_apostrophe_or_a_quote_after_the_name(text):
+    assert at_mentions(text, {"하람": "h", "haram": "h"}) == ["h"]
+
+
+def test_review_13_14_the_persona_reading_is_built_once_and_scales():
+    import time
+
+    entities._persona_matcher.cache_clear()
+    for _ in range(3):
+        resolve(CONV, [fact("타쿠미"), fact("타쿠")], persona=["타쿠미"])
+    assert entities._persona_matcher.cache_info().misses == 1
+    started = time.perf_counter()
+    for i in range(2000):
+        entities.names_persona("character", f"이름{i}", ["윤기현"])
+    rows = [fact(f"이름{i} 타쿠미") for i in range(1500)] + [fact("타쿠")] * 50
+    r = resolve(CONV, rows, persona=["타쿠미"])
+    assert r.is_persona("character", "이름7 타쿠미") and time.perf_counter() - started < 3
+
+
+def test_review_8_and_9_derived_names_take_no_unrelated_character_by_default():
+    assert persona_parts(["하나 (선배)"])[0] == {"하나 (선배)", "하나"}  # a title is not a piece
+    assert not resolve(CONV, [fact("김 선배"), fact("하나")], persona=["하나 (선배)"]).is_persona("character", "김 선배")
+    primary, derived = persona_parts(["아오키・타쿠미"])
+    assert "아오키 타쿠미" in primary and "아오키" not in primary  # ・ reads as a space, not a piece
+    assert persona_parts(["Ronan Voss／윤기현"])[0] >= {"ronan voss", "윤기현"}  # a full-width slash splits
+    assert "the" not in persona_parts(["The Stranger"])[1]
+    assert not resolve(CONV, [fact("The Stranger"), fact("the")], persona=["The Stranger"]).is_persona("character", "the")
+    r = resolve(CONV, [fact("엘리나"), fact("하린")], persona=["Elena Vance", "Helen"])
+    assert r.is_persona("character", "엘리나") and not r.is_persona("character", "하린")  # loose: three syllables or more
+
+
+def test_review_11_a_canon_entry_naming_a_group_or_a_word_end_joins_nothing():
+    rows = [fact("윤하람"), fact("하람"), fact("카이토")]
+    r = resolve(CONV, rows, canon=[{"key": "lore:group", "names": ["윤하람", "하람", "카이토"]}])
+    assert key(r, "윤하람") != key(r, "하람")
+    r = resolve(CONV, [fact("백설공주"), fact("공주")], canon=[{"key": "lore:snow", "names": ["백설공주", "공주"]}])
+    assert key(r, "백설공주") != key(r, "공주")
