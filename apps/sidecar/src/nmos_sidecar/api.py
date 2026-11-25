@@ -44,12 +44,13 @@ from .ids import uuid7
 from .models import (
     ArchiveUploadChunk,
     ArchiveUploadCreate,
+    BatchDeleteRequest,
     BatchRepairRequest,
     BodiesRequest,
     BodiesResponse,
     CanonSyncRequest, CanonSyncResponse,
     CarryRequest,
-    EntityLinkRequest, ExpectRequest, MemoryModeRequest, ReextractRequest, RepairRequest, RepliesOnlyRequest,
+    EntityLinkRequest, ExpectRequest, MemoryModeRequest, OrphanPreviewRequest, ReextractRequest, RepairRequest, RepliesOnlyRequest,
     OutputRequest,
     Packet,
     ReconcileRequest,
@@ -1743,6 +1744,25 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             result = branch.backfill(conn, conv_id, dry_run=dry_run)
         log.info("branch inherit conversation=%s dry_run=%s result=%s", conv_id, dry_run, result)
+        return result
+
+    @app.post("/v1/conversations/orphans/preview", dependencies=[Depends(auth)])
+    def preview_orphan_conversations(body: OrphanPreviewRequest, request: Request):
+        """Read-only preview of conversations recorded for `body.host` whose `host_chat_ref` is missing from
+        `body.active_chat_refs` (PHASE-68, H22). Flags active `conversation_carry` targets."""
+        with request.app.state.pool.connection() as conn:
+            return readmodel.orphan_conversations(conn, body.host, body.active_chat_refs)
+
+    @app.post("/v1/conversations/delete-batch", dependencies=[Depends(auth)])
+    def delete_conversations_batch_route(body: BatchDeleteRequest, request: Request):
+        """Delete multiple owner-selected conversations via ADR 0009's per-conversation transaction (PHASE-68).
+        Irreversible. Preserves migration 0012's single-conversation DB guard."""
+        with request.app.state.pool.connection() as conn:
+            result = ledger.delete_conversations_batch(conn, body.ids)
+        for item in result["deleted"]:
+            log.info("deleted conversation=%s rows=%s", item["id"], item["counts"])
+        log.info("deleted_batch requested=%d deleted=%d not_found=%d",
+                 len(body.ids), len(result["deleted"]), len(result["not_found"]))
         return result
 
     @app.post("/v1/conversations/{conv_id}/delete", dependencies=[Depends(auth)])

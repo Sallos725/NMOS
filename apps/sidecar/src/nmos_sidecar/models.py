@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, BeforeValidator, Field, PlainValidator, model_serializer, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, PlainValidator, model_serializer, model_validator
 
 from .canonical import storable
 
@@ -317,3 +317,26 @@ class ArchiveUploadChunk(BaseModel):
     """One chunk of it: base64 of its bytes (H23) and their SHA-256 (8 MB of bytes is 11,184,812 base64 characters)."""
     data: str = Field(max_length=11_184_812)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+def _no_nul(value: str) -> str:
+    if "\x00" in value:
+        raise ValueError("must not contain NUL bytes")
+    return value
+
+
+# Host identifiers are stored verbatim (ADR 0029): plain str rejects lone surrogates; _no_nul rejects NUL bytes.
+HostId = Annotated[str, Field(min_length=1, max_length=200), AfterValidator(_no_nul)]
+MAX_ACTIVE_CHAT_REFS = 50_000
+MAX_BATCH_DELETE_IDS = 500
+
+
+class OrphanPreviewRequest(BaseModel):
+    """Active host chat refs sent by the plugin on demand to preview conversations missing from the host (PHASE-68, H22)."""
+    host: Annotated[str, Field(min_length=1, max_length=60), AfterValidator(_no_nul)] = "pocketrisu"
+    active_chat_refs: list[HostId] = Field(default_factory=list, max_length=MAX_ACTIVE_CHAT_REFS)
+
+
+class BatchDeleteRequest(BaseModel):
+    """Conversation UUIDs the owner explicitly selected for bulk deletion (PHASE-68, ADR 0009)."""
+    ids: list[UUID] = Field(min_length=1, max_length=MAX_BATCH_DELETE_IDS)

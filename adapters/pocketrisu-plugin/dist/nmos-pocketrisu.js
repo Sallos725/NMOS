@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:790a51c64efa".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:91cfb26a3199".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -1645,7 +1645,75 @@ ${part}`;
       "\uCCAB \uC751\uB2F5\uBD80\uD130 \uC790\uB3D9\uC73C\uB85C \uB300\uD654 \uB3D9\uAE30\uD654\uC640 \uAE30\uC5B5 \uCD94\uCD9C\uC774 \uC2DC\uC791\uB429\uB2C8\uB2E4.",
       "Sync and memory extraction start automatically on the next reply."
     ],
-    "onboard.waiting": ["\uB300\uAE30 \uC911", "Waiting"]
+    "onboard.waiting": ["\uB300\uAE30 \uC911", "Waiting"],
+    // PHASE-68: clean up conversations missing from the host's active chat list (H22, C10)
+    "orph.title": ["\uBAA9\uB85D\uC5D0 \uC5C6\uB294 \uB300\uD654 \uC815\uB9AC", "Clean up missing chats"],
+    "orph.sub": [
+      "PocketRisu\uC758 \uD604\uC7AC \uD65C\uC131 \uCC44\uD305 \uBAA9\uB85D\uC5D0 \uC5C6\uB294 \uB300\uD654\uB97C \uCC3E\uC544 \uC120\uD0DD \uC0AD\uC81C\uD569\uB2C8\uB2E4. \uD734\uC9C0\uD1B5\uC5D0 \uB123\uC5C8\uAC70\uB098 \uBE44\uD65C\uC131\uD654\uD55C \uCE90\uB9AD\uD130\uC758 \uCC44\uD305\uB3C4 \uBAA9\uB85D\uC5D0\uC11C \uBE60\uC838 \uBCF4\uC774\uBBC0\uB85C, \uC0AD\uC81C \uC804 \uBC18\uB4DC\uC2DC \uD655\uC778\uD558\uACE0 \uBA3C\uC800 \uBC31\uC5C5\uD574 \uB450\uC138\uC694. \uD55C \uC0AC\uC774\uB4DC\uCE74\uB97C \uC5EC\uB7EC PocketRisu\uAC00 \uD568\uAED8 \uC4F0\uB294 \uACBD\uC6B0 \uB2E4\uB978 \uC778\uC2A4\uD134\uC2A4\uC758 \uCC44\uD305\uB3C4 \uB204\uB77D\uC73C\uB85C \uD45C\uC2DC\uB429\uB2C8\uB2E4.",
+      "Find and delete NMOS conversations missing from PocketRisu's active chat list. Chats of trashed or deactivated characters also leave the list, so review carefully and export a backup first. If multiple PocketRisu instances share this sidecar, other instances' chats will also appear missing."
+    ],
+    "orph.scan": ["\uB204\uB77D\uB41C \uB300\uD654 \uCC3E\uAE30", "Scan missing chats"],
+    "orph.scanning": ["\uD655\uC778 \uC911\u2026", "Scanning\u2026"],
+    "orph.select_all": ["\uC804\uCCB4 \uC120\uD0DD", "Select all"],
+    "orph.selected_count": ["{n} / {total} \uC120\uD0DD\uB428", "{n} of {total} selected"],
+    "orph.none": [
+      "\uBAA8\uB4E0 NMOS \uB300\uD654\uAC00 \uD604\uC7AC PocketRisu \uBAA9\uB85D\uC5D0 \uC788\uC2B5\uB2C8\uB2E4 ({matched}/{total}).",
+      "All NMOS conversations exist in PocketRisu ({matched}/{total})."
+    ],
+    "orph.summary": [
+      "\uC804\uCCB4 {total}\uAC1C \uC911 {n}\uAC1C \uB300\uD654\uAC00 \uD604\uC7AC PocketRisu \uBAA9\uB85D\uC5D0 \uC5C6\uC2B5\uB2C8\uB2E4 (\uD65C\uC131 \uC77C\uCE58 {matched}\uAC1C).",
+      "{n} of {total} NMOS conversations are missing from PocketRisu ({matched} active matched)."
+    ],
+    "orph.msgs": ["\uBA54\uC2DC\uC9C0 {n}\uAC1C", "{n} messages"],
+    "orph.stub": ["\uBA54\uC2DC\uC9C0 0\uAC1C (\uBE48 \uAE30\uB85D)", "0 messages (empty stub)"],
+    "orph.last_used": ["\uB9C8\uC9C0\uB9C9 \uC0AC\uC6A9 {when}", "last used {when}"],
+    "orph.created": ["\uC0DD\uC131 {when}", "created {when}"],
+    "orph.carry_badge": [
+      "\u26A0 \uC774\uC5B4\uBC1B\uAE30 \uC6D0\uBCF8: {targets} \u2014 \uC0AD\uC81C \uC2DC \uC774\uC5B4\uBC1B\uC740 \uAE30\uC5B5 \uB9C1\uD06C\uB3C4 \uD568\uAED8 \uC0AD\uC81C\uB428",
+      "\u26A0 Carry source for: {targets} \u2014 deleting removes that carried memory link too"
+    ],
+    "orph.carry_target_missing": ["{name} (\uBAA9\uB85D\uC5D0 \uC5C6\uC74C)", "{name} (also missing)"],
+    "orph.carry_banner": [
+      "\u26A0 \uC120\uD0DD\uD55C \uD56D\uBAA9 \uC911 \uD65C\uC131 \uCC44\uD305 {n}\uAC1C\uC758 \uC774\uC5B4\uBC1B\uAE30 \uC6D0\uBCF8\uC774 \uD3EC\uD568\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4 ({targets}). \uC0AD\uC81C\uD558\uBA74 \uD574\uB2F9 \uCC44\uD305\uC774 \uC774\uC5B4\uBC1B\uC740 \uAE30\uC5B5\uC774 \uC0AC\uB77C\uC9D1\uB2C8\uB2E4.",
+      "\u26A0 Selection includes carry sources for {n} active chat(s) ({targets}). Deleting removes their carried memory."
+    ],
+    "orph.delete": ["\uC120\uD0DD\uD55C {n}\uAC1C \uB300\uD654 \uC0AD\uC81C", "Delete {n} selected"],
+    "orph.delete_confirm": ["\uC815\uB9D0 \uC0AD\uC81C ({n}\uAC1C, \uBCF5\uAD6C \uBD88\uAC00)", "Really delete ({n}, irreversible)"],
+    "orph.delete_warn": [
+      "{n}\uAC1C \uB300\uD654(\uBA54\uC2DC\uC9C0 {m}\uAC1C)\uB97C \uC601\uAD6C \uC0AD\uC81C\uD569\uB2C8\uB2E4. \uBCF5\uAD6C\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC0AD\uC81C\uB429\uB2C8\uB2E4.",
+      "Permanently delete {n} conversation(s) ({m} messages). This cannot be undone. Click again to delete."
+    ],
+    "orph.delete_warn_carry": [
+      "{n}\uAC1C \uB300\uD654(\uBA54\uC2DC\uC9C0 {m}\uAC1C)\uB97C \uC601\uAD6C \uC0AD\uC81C\uD569\uB2C8\uB2E4. \uBCF5\uAD6C\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \u26A0 \uD65C\uC131 \uCC44\uD305 {c}\uAC1C\uC758 \uC774\uC5B4\uBC1B\uC740 \uAE30\uC5B5 \uB9C1\uD06C\uB3C4 \uD568\uAED8 \uC0AD\uC81C\uB429\uB2C8\uB2E4. \uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC0AD\uC81C\uB429\uB2C8\uB2E4.",
+      "Permanently delete {n} conversation(s) ({m} messages). This cannot be undone. \u26A0 Carry links for {c} active chat(s) will also be deleted. Click again to delete."
+    ],
+    "orph.deleting": ["\uC0AD\uC81C \uC911\u2026", "Deleting\u2026"],
+    "orph.done": ["{n}\uAC1C \uB300\uD654\uB97C \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4 (\uBA54\uC2DC\uC9C0 {m}\uAC1C).", "Deleted {n} conversation(s) ({m} messages)."],
+    "orph.done_carry": [
+      "{n}\uAC1C \uB300\uD654\uB97C \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4 (\uBA54\uC2DC\uC9C0 {m}\uAC1C, \uC774\uC5B4\uBC1B\uAE30 \uB9C1\uD06C {c}\uAC1C).",
+      "Deleted {n} conversation(s) ({m} messages, {c} carry link(s))."
+    ],
+    "orph.err_unsupported": [
+      "\uC774 PocketRisu \uBC84\uC804\uC5D0\uC11C\uB294 \uD638\uC2A4\uD2B8 \uCC44\uD305 \uBAA9\uB85D\uC744 \uC77D\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.",
+      "This PocketRisu version does not support reading the host chat list."
+    ],
+    "orph.err_denied": [
+      '\uD638\uC2A4\uD2B8 \uB370\uC774\uD130\uBCA0\uC774\uC2A4("db") \uC811\uADFC \uAD8C\uD55C\uC774 \uAC70\uBD80\uB418\uC5B4 \uC2A4\uCE94\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. PocketRisu \uC124\uC815 \u2192 \uD50C\uB7EC\uADF8\uC778 \u2192 NMOS \uC904 \uBA54\uB274 \u2192 \uAD8C\uD55C \uC751\uB2F5 \uCD08\uAE30\uD654 \uD6C4 \uC0C8\uB85C \uACE0\uCE68\uD574\uC11C \uD5C8\uC6A9\uD574 \uC8FC\uC138\uC694.',
+      'Host database ("db") permission was denied, so scanning is blocked. Reset permission responses in PocketRisu Settings \u2192 Plugin \u2192 NMOS row menu, reload, and allow it.'
+    ],
+    "orph.err_invalid": [
+      "\uD638\uC2A4\uD2B8 \uCC44\uD305 \uBAA9\uB85D \uD615\uC2DD\uC744 \uC77D\uC9C0 \uBABB\uD574 \uC548\uC804\uC744 \uC704\uD574 \uC2A4\uCE94\uC744 \uC911\uB2E8\uD588\uC2B5\uB2C8\uB2E4.",
+      "Could not read the host chat list format; scan stopped for safety."
+    ],
+    "orph.err_empty_host": [
+      "\uD638\uC2A4\uD2B8\uC5D0\uC11C \uD65C\uC131 \uCC44\uD305\uC744 \uD558\uB098\uB3C4 \uCC3E\uC9C0 \uBABB\uD574 \uC548\uC804\uC744 \uC704\uD574 \uC815\uB9AC \uAE30\uB2A5\uC744 \uCC28\uB2E8\uD588\uC2B5\uB2C8\uB2E4. PocketRisu\uAC00 \uC644\uC804\uD788 \uB85C\uB4DC\uB41C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.",
+      "The host returned 0 active chats; cleanup is blocked for safety. Try again after PocketRisu finishes loading."
+    ],
+    "orph.no_sidecar": [
+      "\uC774 \uC0AC\uC774\uB4DC\uCE74 \uBC84\uC804\uC740 \uACE0\uC544 \uB300\uD654 \uC815\uB9AC \uAE30\uB2A5\uC744 \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uB97C \uC5C5\uB370\uC774\uD2B8\uD574 \uC8FC\uC138\uC694.",
+      "This sidecar version does not support orphan cleanup. Please update the sidecar."
+    ],
+    "orph.unnamed": ["(\uC774\uB984 \uC5C6\uC74C)", "(unnamed)"]
   };
   function t(lang, key, vars = {}) {
     const text2 = STRINGS[key][lang === "en" ? 1 : 0];
@@ -3853,6 +3921,83 @@ ${GUARD_LINE}` : "";
     };
   }
 
+  // src/orphans.ts
+  var DELETE_BATCH_CHUNK = 500;
+  function parseHostCharacters(db) {
+    if (db === null || db === void 0) return { ok: false, reason: "denied" };
+    if (typeof db !== "object" || !Array.isArray(db.characters)) {
+      return { ok: false, reason: "invalid" };
+    }
+    const chars = db.characters;
+    const seen = /* @__PURE__ */ new Set();
+    let characterCount = 0;
+    for (const ch of chars) {
+      if (ch === null || ch === void 0) continue;
+      if (typeof ch !== "object") return { ok: false, reason: "invalid" };
+      characterCount += 1;
+      const chats = ch.chats;
+      if (chats === void 0 || chats === null) continue;
+      if (!Array.isArray(chats)) return { ok: false, reason: "invalid" };
+      for (const chat of chats) {
+        if (chat === null || chat === void 0) continue;
+        if (typeof chat !== "object") continue;
+        const id = chat.id;
+        if (typeof id === "string" && id.trim().length > 0) {
+          seen.add(id);
+        }
+      }
+    }
+    return { ok: true, chatIds: Array.from(seen), characterCount };
+  }
+  function orphanLabel(row, fallback) {
+    const ch = (row.character ?? "").trim();
+    const ti = (row.chat ?? "").trim();
+    if (ch && ti && ti !== ch) return `${ch} \xB7 ${ti}`;
+    if (ch) return ch;
+    if (ti) return ti;
+    const ref = (row.host_chat_ref ?? "").trim();
+    if (ref) return ref.slice(0, 8);
+    const id = (row.id ?? "").trim();
+    return id ? id.slice(0, 8) : fallback;
+  }
+  function selectionSummary(orphans, selectedIds) {
+    const totalCount = orphans.length;
+    let selectedCount = 0;
+    let totalMessages = 0;
+    const activeMap = /* @__PURE__ */ new Map();
+    for (const row of orphans) {
+      if (!selectedIds.has(row.id)) continue;
+      selectedCount += 1;
+      totalMessages += Number.isFinite(row.messages) && row.messages > 0 ? row.messages : 0;
+      for (const target of row.carried_by ?? []) {
+        if (!target.target_missing && !activeMap.has(target.id)) {
+          activeMap.set(target.id, target);
+        }
+      }
+    }
+    return {
+      selectedCount,
+      totalCount,
+      allSelected: totalCount > 0 && selectedCount === totalCount,
+      indeterminate: selectedCount > 0 && selectedCount < totalCount,
+      totalMessages,
+      activeCarryTargets: Array.from(activeMap.values())
+    };
+  }
+  function chunkIds(ids, size = DELETE_BATCH_CHUNK) {
+    const out = [];
+    const step = Math.max(1, Math.floor(size));
+    for (let i = 0; i < ids.length; i += step) out.push(ids.slice(i, i + step));
+    return out;
+  }
+  function formatOrphanDate(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso.slice(0, 16).replace("T", " ");
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
   // src/route.ts
   function routeFor(url, setting) {
     if (setting === "direct" || setting === "server") return setting;
@@ -5186,6 +5331,18 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .nmos-toast{position:sticky;bottom:16px;z-index:50;max-width:520px;margin:12px auto 0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:11px;background:var(--c-raised-hover);border:1px solid ${alpha("accent", 0.52)};box-shadow:0 12px 32px rgba(0,0,0,0.5);color:var(--c-text-strong);font-size:13.5px}
 .nmos .note-presets{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}
 .nmos .note-sec-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 6px}
+.nmos .orph-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:10px 0 8px;padding:8px 12px;border-radius:9px;background:var(--c-sunken);border:1px solid var(--c-line)}
+.nmos .orph-all{display:inline-flex;align-items:center;gap:8px;margin:0;font-size:13.5px;font-weight:600;color:var(--c-text-strong);cursor:pointer}
+.nmos .orph-all input[type=checkbox],.nmos .orph-row input[type=checkbox]{width:auto;flex:none;margin:2px 0 0;cursor:pointer}
+.nmos .orph-list{display:flex;flex-direction:column;gap:6px;max-height:360px;overflow:auto;margin:0 0 10px}
+.nmos .orph-row{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:10px;background:var(--c-sunken);border:1px solid var(--c-line);cursor:pointer;margin:0}
+.nmos .orph-row:hover{border-color:var(--c-line-hover)}
+.nmos .orph-row.has-carry{border-color:${alpha("warn", 0.42)};background:linear-gradient(90deg,${alpha("warn", 0.08)},var(--c-sunken) 55%)}
+.nmos .orph-row-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.nmos .orph-title{font-size:14px;font-weight:600;color:var(--c-text-strong);word-break:break-word}
+.nmos .orph-meta{font-size:12.5px;color:var(--c-text-muted)}
+.nmos .orph-carry-warn{font-size:12.5px;color:var(--c-warn);line-height:1.45;margin-top:2px}
+.nmos .orph-banner{padding:10px 12px;border-radius:9px;border:1px solid ${alpha("warn", 0.48)};background:${alpha("warn", 0.1)};color:var(--c-warn);font-size:13px;line-height:1.5;margin:0 0 10px}
 
 @media (max-width: 860px){
   .nmos .notes-studio{grid-template-columns:1fr}
@@ -8132,6 +8289,236 @@ html,body{margin:0;background:${PALETTE.bg}}
       restoreSummary,
       restoreMsg
     ));
+    let orphanRows = [];
+    let orphanSelected = /* @__PURE__ */ new Set();
+    let orphanArmed = false;
+    let orphanBusy = false;
+    let orphanTotalHost = 0;
+    let orphanMatchedActive = 0;
+    const orphanScan = el("button", { text: L("orph.scan") });
+    const orphanSummary = el("p", { class: "sub", style: "display:none;margin-top:12px" });
+    const orphanSelectAll = el("input", { type: "checkbox", class: "orph-select-all" });
+    const orphanCount = el("span", { class: "muted", style: "font-size:13px" });
+    const orphanHead = el(
+      "div",
+      { class: "orph-head", style: "display:none" },
+      el("label", { class: "orph-all" }, orphanSelectAll, el("span", { text: L("orph.select_all") })),
+      orphanCount
+    );
+    const orphanList = el("div", { class: "orph-list", style: "display:none" });
+    const orphanBanner = el("div", { class: "orph-banner", style: "display:none" });
+    const orphanDelete = el("button", {
+      class: "danger",
+      style: "display:none",
+      disabled: true,
+      text: L("orph.delete", { n: 0 })
+    });
+    const orphanMsg = el("div", { class: "msg" });
+    const formatCarryTargetList = (targets) => targets.map((tg) => {
+      const name = orphanLabel(tg, L("orph.unnamed"));
+      return tg.target_missing ? L("orph.carry_target_missing", { name }) : name;
+    }).join(", ");
+    function syncOrphanControls() {
+      const sum = selectionSummary(orphanRows, orphanSelected);
+      const hasRows = sum.totalCount > 0;
+      orphanHead.style.display = hasRows ? "" : "none";
+      orphanList.style.display = hasRows ? "" : "none";
+      orphanDelete.style.display = hasRows ? "" : "none";
+      if (!hasRows) {
+        orphanBanner.style.display = "none";
+        orphanSelectAll.checked = false;
+        orphanSelectAll.indeterminate = false;
+        orphanDelete.disabled = true;
+        return;
+      }
+      orphanSelectAll.checked = sum.allSelected;
+      orphanSelectAll.indeterminate = sum.indeterminate;
+      orphanSelectAll.disabled = orphanBusy;
+      orphanCount.textContent = L("orph.selected_count", { n: sum.selectedCount, total: sum.totalCount });
+      if (sum.activeCarryTargets.length > 0) {
+        orphanBanner.textContent = L("orph.carry_banner", {
+          n: sum.activeCarryTargets.length,
+          targets: formatCarryTargetList(sum.activeCarryTargets)
+        });
+        orphanBanner.style.display = "";
+      } else {
+        orphanBanner.style.display = "none";
+      }
+      orphanDelete.disabled = orphanBusy || sum.selectedCount === 0;
+      orphanDelete.textContent = orphanArmed ? L("orph.delete_confirm", { n: sum.selectedCount }) : L("orph.delete", { n: sum.selectedCount });
+    }
+    function disarmOrphan() {
+      if (!orphanArmed) return;
+      orphanArmed = false;
+      say(orphanMsg, "");
+    }
+    function renderOrphanList() {
+      orphanList.replaceChildren(...orphanRows.map((row) => {
+        const box = el("input", { type: "checkbox", "data-orph-id": row.id });
+        box.checked = orphanSelected.has(row.id);
+        box.disabled = orphanBusy;
+        box.addEventListener("change", () => {
+          if (box.checked) orphanSelected.add(row.id);
+          else orphanSelected.delete(row.id);
+          disarmOrphan();
+          syncOrphanControls();
+        });
+        const metaBits = [row.messages > 0 ? L("orph.msgs", { n: row.messages }) : L("orph.stub")];
+        const when = formatOrphanDate(row.last_retrieval || row.created_at);
+        if (when) metaBits.push(L(row.last_retrieval ? "orph.last_used" : "orph.created", { when }));
+        const bodyChildren = [
+          el("span", { class: "orph-title", text: orphanLabel(row, L("orph.unnamed")) }),
+          el("span", { class: "orph-meta", text: metaBits.join(" \xB7 ") })
+        ];
+        if (row.carried_by.length > 0) {
+          bodyChildren.push(el("span", {
+            class: "orph-carry-warn",
+            text: L("orph.carry_badge", { targets: formatCarryTargetList(row.carried_by) })
+          }));
+        }
+        const hasCarry = row.carried_by.length > 0;
+        return el(
+          "label",
+          { class: `orph-row${hasCarry ? " has-carry" : ""}` },
+          box,
+          el("span", { class: "orph-row-body" }, ...bodyChildren)
+        );
+      }));
+      syncOrphanControls();
+    }
+    orphanSelectAll.addEventListener("change", () => {
+      if (orphanSelectAll.checked) orphanSelected = new Set(orphanRows.map((r) => r.id));
+      else orphanSelected.clear();
+      for (const box of Array.from(orphanList.querySelectorAll("input[data-orph-id]"))) {
+        box.checked = orphanSelectAll.checked;
+      }
+      disarmOrphan();
+      syncOrphanControls();
+    });
+    orphanScan.addEventListener("click", async () => {
+      if (orphanBusy) return;
+      orphanBusy = true;
+      orphanArmed = false;
+      orphanRows = [];
+      orphanSelected = /* @__PURE__ */ new Set();
+      orphanSummary.style.display = "none";
+      orphanScan.disabled = true;
+      renderOrphanList();
+      say(orphanMsg, L("orph.scanning"));
+      try {
+        const scan = deps.scanHostChats ? await deps.scanHostChats() : { ok: false, reason: "unsupported" };
+        if (!scan.ok) {
+          const key = scan.reason === "denied" ? "orph.err_denied" : scan.reason === "invalid" ? "orph.err_invalid" : "orph.err_unsupported";
+          say(orphanMsg, L(key), "err");
+          return;
+        }
+        if (scan.chatIds.length === 0) {
+          say(orphanMsg, L("orph.err_empty_host"), "warn");
+          return;
+        }
+        const preview = await deps.api(
+          "POST",
+          "/v1/conversations/orphans/preview",
+          { host: "pocketrisu", active_chat_refs: scan.chatIds },
+          3e4
+        );
+        if (!preview.orphans.length) {
+          say(orphanMsg, L("orph.none", { matched: preview.matched_active, total: preview.total_host_conversations }), "ok");
+          return;
+        }
+        orphanRows = preview.orphans;
+        orphanSelected = /* @__PURE__ */ new Set();
+        orphanTotalHost = preview.total_host_conversations;
+        orphanMatchedActive = preview.matched_active;
+        orphanSummary.textContent = L("orph.summary", {
+          total: orphanTotalHost,
+          n: orphanRows.length,
+          matched: orphanMatchedActive
+        });
+        orphanSummary.style.display = "";
+        say(orphanMsg, "");
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        say(orphanMsg, /-> HTTP (?:404|405)\b/.test(msg) ? L("orph.no_sidecar") : errorText(lang, error), "err");
+      } finally {
+        orphanBusy = false;
+        orphanScan.disabled = false;
+        renderOrphanList();
+      }
+    });
+    orphanDelete.addEventListener("click", async () => {
+      if (orphanBusy) return;
+      const sum = selectionSummary(orphanRows, orphanSelected);
+      if (sum.selectedCount === 0) return;
+      if (!orphanArmed) {
+        orphanArmed = true;
+        syncOrphanControls();
+        say(orphanMsg, sum.activeCarryTargets.length > 0 ? L("orph.delete_warn_carry", { n: sum.selectedCount, m: sum.totalMessages, c: sum.activeCarryTargets.length }) : L("orph.delete_warn", { n: sum.selectedCount, m: sum.totalMessages }), "err");
+        return;
+      }
+      orphanArmed = false;
+      orphanBusy = true;
+      orphanScan.disabled = true;
+      renderOrphanList();
+      say(orphanMsg, L("orph.deleting"));
+      const removed = /* @__PURE__ */ new Set();
+      let deletedConvs = 0;
+      let deletedMsgs = 0;
+      let deletedCarry = 0;
+      try {
+        for (const batch of chunkIds(Array.from(orphanSelected))) {
+          const res = await deps.api("POST", "/v1/conversations/delete-batch", { ids: batch }, 12e4);
+          for (const item of res.deleted ?? []) removed.add(item.id);
+          for (const id of res.not_found ?? []) removed.add(id);
+          deletedConvs += res.totals?.conversations ?? (res.deleted?.length ?? 0);
+          deletedMsgs += res.totals?.messages ?? 0;
+          deletedCarry += res.totals?.carry_links ?? 0;
+        }
+        say(orphanMsg, deletedCarry > 0 ? L("orph.done_carry", { n: deletedConvs, m: deletedMsgs, c: deletedCarry }) : L("orph.done", { n: deletedConvs, m: deletedMsgs }), "ok");
+      } catch (error) {
+        say(orphanMsg, errorText(lang, error), "err");
+      } finally {
+        if (removed.size > 0) {
+          orphanRows = orphanRows.filter((r) => !removed.has(r.id)).map((r) => ({ ...r, carried_by: r.carried_by.filter((t2) => !removed.has(t2.id)) }));
+          orphanTotalHost = Math.max(orphanMatchedActive + orphanRows.length, orphanTotalHost - deletedConvs);
+          for (const id of removed) orphanSelected.delete(id);
+          knownChats = knownChats.filter((c) => !removed.has(c.id));
+          if (activeChatId && removed.has(activeChatId)) {
+            activeChatId = null;
+            activeChatName = "";
+            updateChatLabel();
+          }
+          if (hubConversation && removed.has(hubConversation)) hubConversation = null;
+          if (hostConversationId && removed.has(hostConversationId)) hostConversationId = null;
+          visited.length = 0;
+          if (!orphanRows.length) {
+            orphanSummary.style.display = "none";
+          } else {
+            orphanSummary.textContent = L("orph.summary", {
+              total: orphanTotalHost,
+              n: orphanRows.length,
+              matched: orphanMatchedActive
+            });
+          }
+        }
+        orphanBusy = false;
+        orphanScan.disabled = false;
+        renderOrphanList();
+      }
+    });
+    settingsView.append(el(
+      "div",
+      { class: "card", id: "nmos-orphans" },
+      el("h2", { text: L("orph.title") }),
+      el("p", { class: "sub", text: L("orph.sub") }),
+      el("div", { class: "btns" }, orphanScan),
+      orphanSummary,
+      orphanHead,
+      orphanList,
+      orphanBanner,
+      el("div", { class: "btns" }, orphanDelete),
+      orphanMsg
+    ));
     const barText = el("span", { class: "text muted" });
     const revert = el("button", { text: L("revert") });
     const save = el("button", { class: "primary", text: L("save") });
@@ -9229,7 +9616,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         [L("trimset.title")]: "memory",
         [L("rules.title")]: "rules",
         [L("exp.title")]: "backup",
-        [L("rst.title")]: "backup"
+        [L("rst.title")]: "backup",
+        [L("orph.title")]: "backup"
       };
       const existingCards = Array.from(settingsView.children);
       for (const card of existingCards) {
@@ -10030,6 +10418,15 @@ html,body{margin:0;background:${PALETTE.bg}}
       return false;
     }
   }
+  async function scanHostChats() {
+    if (typeof risuai.getDatabase !== "function") return { ok: false, reason: "unsupported" };
+    try {
+      const db = await risuai.getDatabase(["characters"]);
+      return parseHostCharacters(db);
+    } catch {
+      return { ok: false, reason: "invalid" };
+    }
+  }
   async function registerHooks(beforeRequest, onOutput, status, api, file, hud) {
     await risuai.addRisuReplacer("beforeRequest", beforeRequest);
     await risuai.addRisuChatListener("output", onOutput);
@@ -10042,6 +10439,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       hide: () => risuai.hideContainer(),
       hud,
       chat: risuChatSwitch,
+      scanHostChats,
       async download(path, name) {
         const bytes = await file(path);
         saveFile(bytes, name);

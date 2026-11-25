@@ -11,6 +11,7 @@ import { DEFAULT_DEADLINE_MS, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_RESERVED_TOKENS
 import type { PanelTarget } from './hud';
 import { createHud, type HudDocument } from './hud-host';
 import { NMOS_ICON, namedIcon } from './icon';
+import { parseHostCharacters, type HostChatScan } from './orphans';
 import { routeFor } from './route';
 import { openPanel, type HudControl, type PanelDeps, type Tab } from './ui';
 
@@ -33,8 +34,8 @@ declare const risuai: {
   setArgument(key: string, value: string | number): Promise<void>;
   showContainer(type: 'fullscreen'): Promise<void>;
   hideContainer(): Promise<void>;
-  // Lite database view (ADR 0023): asks the host's "db" permission once; null when refused.
-  getDatabase?(includeOnly: string[]): Promise<{ personas?: unknown; selectedPersona?: unknown } | null>;
+  // Lite database view (ADR 0023, H22): asks the host's "db" permission once; null when refused.
+  getDatabase?(includeOnly: string[]): Promise<{ personas?: unknown; selectedPersona?: unknown; characters?: unknown } | null>;
   // Main-page access (H16); missing on older builds.
   requestPluginPermission?(permission: 'mainDom'): Promise<boolean>;
   getRootDocument?(): Promise<HudDocument | null>;
@@ -258,6 +259,21 @@ export function onPluginUnload(teardown: () => void): boolean {
   }
 }
 
+/**
+ * Read active host chat IDs on demand via `getDatabase(['characters'])` (H22, PHASE-68).
+ * Never called on the request path or automatically: opened chats carry their messages until reload (≈100–150 ms
+ * at 10k–15k messages). Fails closed on missing API, denied permission, or unexpected shape.
+ */
+export async function scanHostChats(): Promise<HostChatScan> {
+  if (typeof risuai.getDatabase !== 'function') return { ok: false, reason: 'unsupported' };
+  try {
+    const db = await risuai.getDatabase(['characters']);
+    return parseHostCharacters(db);
+  } catch {
+    return { ok: false, reason: 'invalid' };
+  }
+}
+
 export async function registerHooks(
   beforeRequest: (prompt: unknown, mode: unknown) => Promise<unknown>,
   onOutput: (arg: unknown) => void,
@@ -277,6 +293,7 @@ export async function registerHooks(
     hide: () => risuai.hideContainer(),
     hud,
     chat: risuChatSwitch,
+    scanHostChats,
     async download(path, name) {
       const bytes = await file(path);
       saveFile(bytes, name);
