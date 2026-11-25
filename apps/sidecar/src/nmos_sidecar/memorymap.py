@@ -111,6 +111,8 @@ def graph(view: dict[str, Any], scene: list[str] | tuple[str, ...] = ()) -> dict
             if s in ex:
                 continue
             o = _key(f.get("object_entity"), kind, f["object"])
+            if o in ex:  # a group or a place the owner left out is not drawn either, nor a tie to it
+                continue
             add("character", s, (f.get("subject_entity") or {}).get("name") or f["subject"])
             add(kind, o, (f.get("object_entity") or {}).get("name") or f["object"])
             edges.append({"kind": kind, "a": s, "b": o, "mark": mark([f]), "facts": [f], "speech": []})
@@ -171,7 +173,9 @@ def suspects(view: dict[str, Any]) -> list[dict[str, Any]]:
 
 def events(view: dict[str, Any]) -> list[dict[str, Any]]:
     """Section 3: the story's events (the setting's stay with the setting), in turn order, each with its subject, who
-    else took part (the entity's name when resolved), its weight, its reason and its outcome."""
+    else took part (the entity's name when resolved), its weight, its reason and its outcome; and, only when the event
+    has them, when it happened (`when_happened`, PHASE-60 S7) and its knowledge marks (`knowledge`, `known_by`,
+    `hidden_from`: a secret's badge)."""
     out = []
     for f in view["facts"]:
         if f["predicate"] != "event" or f.get("canon") or f.get("polarity") == "negative":
@@ -179,11 +183,15 @@ def events(view: dict[str, Any]) -> list[dict[str, Any]]:
         subject = f.get("subject_entity") or {}
         who = [str((p.get("entity") or {}).get("name") or p.get("name") or "")
                for p in f.get("participant_entities") or f.get("participants") or ()]
-        out.append({"turn": f.get("turn"), "position": f["position"], "subject": subject.get("name") or f["subject"],
-                    "subject_id": str(subject["id"]) if subject.get("id") else None,
-                    "participants": [w for w in dict.fromkeys(who) if w], "salience": f.get("salience"),
-                    "because": f.get("because"), "outcome": f.get("outcome"),
-                    "text": str(f.get("value") or f.get("object") or ""), "generation": f.get("generation")})
+        ev = {"turn": f.get("turn"), "position": f["position"], "subject": subject.get("name") or f["subject"],
+              "subject_id": str(subject["id"]) if subject.get("id") else None,
+              "participants": [w for w in dict.fromkeys(who) if w], "salience": f.get("salience"),
+              "because": f.get("because"), "outcome": f.get("outcome"),
+              "text": str(f.get("value") or f.get("object") or ""), "generation": f.get("generation")}
+        for k in ("when_happened", "knowledge", "known_by", "hidden_from"):  # as `facts._entry`: only when present
+            if f.get(k):
+                ev[k] = f[k]
+        out.append(ev)
     out.sort(key=lambda e: (e["turn"] if isinstance(e["turn"], int) else -1, e["position"]))
     return out
 
@@ -302,11 +310,32 @@ def _told_about(row: dict[str, Any]) -> list[str]:
     return out
 
 
+# Two passed-on contents are one rumour when their normalized text is the same or their character trigrams overlap this
+# much (Dice: symmetric, so a short content does not match every longer one that contains it).
+TOLD_SIMILAR = 0.6
+
+
+def _grams(text: str) -> set[str]:
+    padded = f"  {text} "
+    return {padded[i: i + 3] for i in range(len(padded) - 2)}
+
+
+def told_similarity(a: str, b: str) -> float:
+    """How alike two normalized passed-on contents are: 1 when equal, else the Dice overlap of their trigrams."""
+    if a == b:
+        return 1.0
+    ga, gb = _grams(a), _grams(b)
+    return 2 * len(ga & gb) / ((len(ga) + len(gb)) or 1)
+
+
 def told_chains(rows: list[dict[str, Any]] | None) -> list[list[dict[str, Any]]]:
-    """Group `told` rows oldest first into chains (PHASE-60 S8): a row starts a new chain unless an earlier chain's
-    last hearer is this row's teller and the passed-on content is the same (normalized `value`, case/space-insensitive),
-    in which case it extends that chain (A -> B -> C). Each link holds {teller, hearer, what, about, turn}; chains are
-    ordered by their first turn."""
+    """Group `told` rows oldest first into chains (PHASE-60 S8): a row extends a chain when one of its hearers is this
+    row's teller and the content passed on is the same rumour (`told_similarity` at least TOLD_SIMILAR against what that
+    hearer was told, so a retelling in other words still links). From the chain's last hearer it extends the chain
+    (A -> B -> C); from an earlier one it forks: a new chain with the path up to that hearer, then this link
+    (A -> B -> C and A -> B -> D), so every chain stays one path from the first teller and no branch is lost. The best
+    match wins (most alike, then the last hearer, then the earliest chain). Each link holds {teller, hearer, what, about,
+    turn}; chains are ordered by their first turn, a fork right after the chains it branched from."""
     if not rows:
         return []
 
@@ -320,7 +349,7 @@ def told_chains(rows: list[dict[str, Any]] | None) -> list[list[dict[str, Any]]]
 
     ordered = [row for _, row in sorted(enumerate(rows), key=order)]
     chains: list[list[dict[str, Any]]] = []
-    tails: list[tuple[tuple[str | None, frozenset[str]], str]] = []
+    hops: list[list[tuple[tuple[str | None, frozenset[str]], str]]] = []  # per link: (its hearer, what it was told)
     for row in ordered:
         teller, teller_id, teller_names = _told_person(row, "subject")
         hearer, hearer_id, hearer_names = _told_person(row, "object")
@@ -333,13 +362,30 @@ def told_chains(rows: list[dict[str, Any]] | None) -> list[list[dict[str, Any]]]
                                 "turn": turn}
         what_norm = norm(what)
         teller_key = (teller_id, teller_names)
-        hearer_key = (hearer_id, hearer_names)
-        for i, (last_hearer, chain_what) in enumerate(tails):
-            if chain_what == what_norm and _same_person(last_hearer, teller_key):
-                chains[i].append(link)
-                tails[i] = (hearer_key, chain_what)
-                break
-        else:
+        hop = ((hearer_id, hearer_names), what_norm)
+        best: tuple[tuple[float, bool, int], int, int] | None = None
+        for i, path in enumerate(hops):
+            for j, (heard_by, heard) in enumerate(path):
+                if not _same_person(heard_by, teller_key):
+                    continue
+                alike = told_similarity(heard, what_norm)
+                if alike < TOLD_SIMILAR:
+                    continue
+                rank = (alike, j == len(path) - 1, -i)
+                if best is None or rank > best[0]:
+                    best = (rank, i, j)
+        if best is None:
             chains.append([link])
-            tails.append((hearer_key, what_norm))
+            hops.append([hop])
+            continue
+        _, i, j = best
+        if j == len(hops[i]) - 1:
+            chains[i].append(link)
+            hops[i].append(hop)
+            continue
+        at = i + 1  # after the chain it branches from and the forks already taken from that chain's first link
+        while at < len(chains) and chains[at][0] is chains[i][0]:
+            at += 1
+        chains.insert(at, chains[i][:j + 1] + [link])
+        hops.insert(at, hops[i][:j + 1] + [hop])
     return chains
