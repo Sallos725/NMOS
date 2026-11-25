@@ -336,7 +336,8 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
                    "key_set": bool(settings.rerank_api_key), "configured": reranker(settings) is not None,
                    "note": RERANK_NOTE},
         "extraction": {"backfill": settings.extract_backfill, "summaries": settings.summaries,
-                       "canon_facts": settings.canon_facts},
+                       "canon_facts": settings.canon_facts,
+                       "normalizer": settings.normalizer},  # NMOS_NORMALIZER, read at startup only (PHASE-66 part 3)
         "parsers": {"rules": overrides.get(PARSERS_KEY) if PARSERS_KEY in overrides else None,
                     "spec": parser_spec(settings, overrides), "presets": overrides.get(PRESETS_KEY, []),
                     "source": "ui" if PARSERS_KEY in overrides else ("file" if settings.parsers_file else "none"),

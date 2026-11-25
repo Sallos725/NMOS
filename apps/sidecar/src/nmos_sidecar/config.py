@@ -21,6 +21,8 @@ TARGET_CHARS = (6000, 36000)
 EMBED_MAX_CHUNKS = (1, 64)
 # The extractors NMOS_EXTRACT_COMPILER may select (empty: `extraction.DEFAULT_COMPILER`). extract-v20 is PHASE-64's
 # (conditional forms of address, ADR 0091); extract-v21 is PHASE-66's (extract-v20 with the typed ontology).
+# The normalizers NMOS_NORMALIZER may select (`normtext.NORMALIZERS`, the first the default).
+NORMALIZERS = ("clean-v3", "clean-v4")
 EXTRACT_COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19", "extract-v20",
                      "extract-v21")
 
@@ -179,6 +181,11 @@ class Settings:
     # but a switch among extract-v16, extract-v18, extract-v19, extract-v20 and extract-v21 (PHASE-58 S3, PHASE-60 S7,
     # PHASE-64, PHASE-66) re-extracts nothing.
     extract_compiler: str = field(default_factory=lambda: os.environ.get("NMOS_EXTRACT_COMPILER", ""))
+    # The normalizer every projection reads (PHASE-66 part 3, `normtext`): `clean-v3` (the default; empty reads as it,
+    # as the compose files pass an unset variable) or `clean-v4`. Part of every generation key, but a switch between
+    # the two re-derives nothing a model wrote (`generations.classify`: `normalizer`): only the embeddings are made
+    # again, locally. Read at startup only.
+    normalizer: str = field(default_factory=lambda: os.environ.get("NMOS_NORMALIZER") or NORMALIZERS[0])
     # Scene summaries and the story so far (PHASE-12, ADR 0042, 0043), written by the extraction model; "0" or the
     # plugin's switch turns them off. Needs NMOS_LLM_URL.
     summaries: bool = field(default_factory=lambda: os.environ.get("NMOS_SUMMARIES", "1") != "0")
@@ -264,6 +271,9 @@ class Settings:
         if self.extract_compiler not in ("", *EXTRACT_COMPILERS):
             raise ValueError(f"NMOS_EXTRACT_COMPILER must be empty, {', '.join(EXTRACT_COMPILERS[:-1])} or"
                              f" {EXTRACT_COMPILERS[-1]}, not {self.extract_compiler!r}")
+        # A misspelt normalizer would be a projection of its own: refused at startup.
+        if self.normalizer not in NORMALIZERS:
+            raise ValueError(f"NMOS_NORMALIZER must be empty, {' or '.join(NORMALIZERS)}, not {self.normalizer!r}")
         # Under 6,000 it would read less than every release did; 36,000 is past the longest reply measured, and a
         # scene summary reads 8 turns of them in one call (PHASE-62 S1b): another value is refused at startup.
         if (isinstance(self.extract_target_chars, bool) or not isinstance(self.extract_target_chars, int)

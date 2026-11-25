@@ -2278,7 +2278,7 @@ def extractor(settings: Settings, compiler: str | None = None) -> Generation | N
         # extract-v21's speakers are in its `prompt` (ONTOLOGY_PRINT): a field here would make a switch a version
         **({"speakers": generations.fingerprint(f"{SPEAKER_RULE}|{QUOTES_LISTED}|{QUOTE_SHOWN}|{SYSTEM_V17}")}
            if compiler in SPEAKERS - ONTOLOGY else {}),
-        predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,
+        predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.active(),
         json_mode=settings.llm_json_mode, unit="turn", context_turns=settings.extract_turns,
         **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
         target_chars=settings.extract_target_chars, context_chars=CONTEXT_CHARS, hints=settings.extract_hints,
@@ -2500,7 +2500,7 @@ def cut_turns(conn: psycopg.Connection, conv: UUID, gen: Generation) -> dict[str
     `failed` the ones whose job of `gen` is queued, running or dead (the panel's retry runs a dead one again)."""
     cap = int(gen.spec.get("target_chars") or TARGET_CHARS)
     found = conn.execute(CUT_TURNS, {"conv": conv, "key": gen.key, "cap": cap, "default": TARGET_CHARS,
-                                     "norm": normtext.NORMALIZER_VERSION}).fetchall() if cap > TARGET_CHARS else []
+                                     "norm": normtext.active()}).fetchall() if cap > TARGET_CHARS else []
     rows = [r for r in found if r["job"] in (None, "obsolete") and r["shown"] > r["used"]]
     return {"cap": cap, "rows": rows, "turns": len(rows),
             "pending": sum(1 for r in found if r["job"] in ("queued", "running")),

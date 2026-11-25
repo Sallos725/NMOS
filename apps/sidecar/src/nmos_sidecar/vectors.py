@@ -25,9 +25,12 @@ CHUNK_CHARS = 700
 # and re-embeds; the default is unchanged, so an upgrade does not.
 MAX_CHUNKS = 8
 CHUNKER_VERSION = "chunk-v1"  # bump when chunks() can cut differently
-# Opt-in overlap between consecutive chunks (`chunks(..., overlap=CHUNK_OVERLAP)`), for a later projection such as
-# one under `clean-v4`. Not in `projection()`'s key and not used by `process_embed` yet: `chunk-v1` cuts with none.
+# The overlap between consecutive chunks (`chunks(..., overlap=CHUNK_OVERLAP)`) of a projection under `clean-v4`
+# (PHASE-66 part 3). Its cut is `chunk-v2` with `chunk_overlap` in the key, so the key says what cut the chunks and
+# `process_embed` cuts as the key says; a `chunk-v1` projection (every one under `clean-v3`) cuts with none, as always.
 CHUNK_OVERLAP = 100
+CHUNKER_OVERLAP_VERSION = "chunk-v2"  # chunk-v1's cut with `chunk_overlap`; bump when `_overlap_start` can cut differently
+OVERLAP_NORMALIZERS = frozenset({"clean-v4"})  # the normalizers whose projections cut with CHUNK_OVERLAP
 DOCUMENT_PROFILE = "plain"  # documents are embedded without an instruction prefix
 RECENT_PRIORITY, HISTORY_PRIORITY = 200, 950
 
@@ -36,9 +39,12 @@ def projection(settings: Settings) -> Generation | None:
     """The corpus embedding projection the settings describe (credentials excluded), or None when off."""
     if not (settings.embed_url and settings.embed_model):
         return None
+    normalizer = normtext.active()
+    cut: dict[str, Any] = ({"chunker": CHUNKER_OVERLAP_VERSION, "chunk_overlap": CHUNK_OVERLAP}
+                           if normalizer in OVERLAP_NORMALIZERS else {"chunker": CHUNKER_VERSION})
     return generations.make(
-        "embed", settings.embed_url, settings.embed_model, normalizer=normtext.NORMALIZER_VERSION,
-        chunker=CHUNKER_VERSION, chunk_chars=CHUNK_CHARS, max_chunks=settings.embed_max_chunks,
+        "embed", settings.embed_url, settings.embed_model, normalizer=normalizer,
+        **cut, chunk_chars=CHUNK_CHARS, max_chunks=settings.embed_max_chunks,
         document_profile=DOCUMENT_PROFILE,
     )
 
@@ -94,7 +100,9 @@ def process_embed(conn: psycopg.Connection, job: dict[str, Any], embedder: Embed
         raise ValueError(f"job generation {job['payload'].get('generation')} is not handler generation {gen.key}")
     revision_id = UUID(job["payload"]["revision_id"])
     with conn.transaction():
-        row = normtext.get(conn, revision_id)
+        # the text of the projection's own normalizer (its key holds it): spans index the text they were cut from
+        own = gen.spec.get("normalizer")
+        row = normtext.get(conn, revision_id, own if own in normtext.CLEANERS else None)
         done = conn.execute("SELECT 1 FROM revision_embedding WHERE source_revision_id = %s AND projection = %s LIMIT 1",
                             (revision_id, gen.key)).fetchone()
     if row is None:
@@ -103,7 +111,9 @@ def process_embed(conn: psycopg.Connection, job: dict[str, Any], embedder: Embed
         return "done"
     text = row["clean_content"]  # spans index into the normalized text (retrieval slices the same way)
     # The projection's own cut (its key holds it, D20); a projection from before the cap was in the key cut at 8.
-    spans = chunks(text, gen.spec.get("chunk_chars", CHUNK_CHARS), gen.spec.get("max_chunks", 8))
+    # With the overlap a `chunk-v2` projection's key names (PHASE-66 part 3); none for `chunk-v1`.
+    spans = chunks(text, gen.spec.get("chunk_chars", CHUNK_CHARS), gen.spec.get("max_chunks", 8),
+                   overlap=int(gen.spec.get("chunk_overlap") or 0))
     if not spans:
         return "done"
     # One chunk per request: Ollama serves embeddings in order, and a large batch here would delay the
@@ -126,7 +136,14 @@ def vector_candidates(conn: psycopg.Connection, head: UUID, query_vec: list[floa
                       replies: bool = False) -> list[dict[str, Any]]:
     """Best chunk per eligible head revision by cosine similarity, most similar first. With `upto` and
     `known_at`, as of an earlier request (ADR 0027): vectors written after it are not searched (rows from
-    before migration 0020 have no time and count as known)."""
+    before migration 0020 have no time and count as known).
+
+    A chunk's span indexes the text of its projection's normalizer, and the candidate carries the active normalizer's
+    text (`clean`, as lexical candidates do): a projection of another normalizer (a replay of a request served under
+    it, or one naming a projection embedded since) finds nothing, so no excerpt is cut with another text's offsets
+    (PHASE-66 part 3)."""
+    if not same_normalizer(conn, projection_key):
+        return []
     return conn.execute(
         """
         WITH best AS (
@@ -150,9 +167,25 @@ def vector_candidates(conn: psycopg.Connection, head: UUID, query_vec: list[floa
         SELECT * FROM best ORDER BY sim DESC LIMIT %(limit)s
         """,
         {"q": vector_literal(query_vec), "projection": projection_key, "dim": len(query_vec), "head": head, "cut": cut,
-         "limit": limit, "norm": normtext.NORMALIZER_VERSION, "upto": 2**31 - 1 if upto is None else upto,
+         "limit": limit, "norm": normtext.active(), "upto": 2**31 - 1 if upto is None else upto,
          "known_at": known_at, "replies": replies},
     ).fetchall()
+
+
+_projection_normalizers: dict[str, str | None] = {}  # a generation's spec never changes (its key is its identity)
+
+
+def same_normalizer(conn: psycopg.Connection, projection_key: str) -> bool:
+    """Whether the projection's chunks were cut from the active normalizer's text. A key with no generation row, or one
+    whose spec names no normalizer, says nothing against it."""
+    if projection_key not in _projection_normalizers:
+        row = conn.execute("SELECT spec->>'normalizer' AS n FROM projection_generation WHERE key = %s",
+                           (projection_key,)).fetchone()
+        if row is None:
+            return True  # not cached: a row written later is read then
+        _projection_normalizers[projection_key] = row["n"]
+    own = _projection_normalizers[projection_key]
+    return own is None or own == normtext.active()
 
 
 def schedule_projection(conn: psycopg.Connection, key: str, backfill: int, conv: UUID | None = None,
@@ -180,7 +213,7 @@ def schedule_projection(conn: psycopg.Connection, key: str, backfill: int, conv:
                                          AND x.projection <> %(key)s))
             """ + REQUEUE,
             {"conv": conv, "key": key, "n": backfill, "all": history, "recent": RECENT_PRIORITY,
-             "history": HISTORY_PRIORITY, "norm": normtext.NORMALIZER_VERSION},
+             "history": HISTORY_PRIORITY, "norm": normtext.active()},
         ).rowcount
 
 
@@ -207,7 +240,7 @@ def coverage(conn: psycopg.Connection, key: str | None, conv: UUID | None = None
         LEFT JOIN job j ON j.dedupe_key = 'embed:' || r.rid || ':' || %(key)s
         GROUP BY r.conv
         """,
-        {"conv": conv, "key": key or "", "norm": normtext.NORMALIZER_VERSION},
+        {"conv": conv, "key": key or "", "norm": normtext.active()},
     ).fetchall()
     out = {}
     for r in rows:

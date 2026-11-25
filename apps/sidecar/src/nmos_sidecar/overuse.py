@@ -18,7 +18,7 @@ from uuid import UUID
 
 import psycopg
 
-from . import spans
+from . import normtext, spans
 from .reconcile import apply_ops
 
 REST_AFTER = 2  # the default: placed in this many requests in a row, echoed by none of their replies (owner, 2026-10-07)
@@ -53,8 +53,9 @@ def reply_text(conn: psycopg.Connection, head: UUID, upto_position: int | None,
             "SELECT sr.metadata->>'role' AS role, rt.clean_content FROM active_membership am"
             " JOIN source_revision sr ON sr.id = am.source_revision_id"
             " LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id"
-            " WHERE am.commit_id = %s AND am.position = %s AND am.turn IS NOT NULL ORDER BY rt.normalizer DESC LIMIT 1",
-            (head, upto_position + 1)).fetchone()
+            " WHERE am.commit_id = %s AND am.position = %s AND am.turn IS NOT NULL"
+            " ORDER BY rt.normalizer = %s DESC, rt.normalizer DESC LIMIT 1",
+            (head, upto_position + 1, normtext.active())).fetchone()  # the active normalizer's text first
         return (row["clean_content"] or "") if row and row["role"] == "char" else None
     # The membership as it stood then, rebuilt from the commits' and appends' ops recorded before it, in the order
     # `ledger.rebuild_membership` replays them: a reorder records no change, only a `set` (the third review).
@@ -85,8 +86,9 @@ def reply_text(conn: psycopg.Connection, head: UUID, upto_position: int | None,
         " WHERE m.position = %s AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')"
         " AND coalesce(m.metadata->>'isComment', '') <> 'true'"
         " AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')"
-        " ORDER BY rt.normalizer DESC LIMIT 1",
-        ([logical for logical, _ in members], [hashed for _, hashed in members], conv, upto_position + 1),
+        " ORDER BY rt.normalizer = %s DESC, rt.normalizer DESC LIMIT 1",
+        ([logical for logical, _ in members], [hashed for _, hashed in members], conv, upto_position + 1,
+         normtext.active()),
     ).fetchone()
     return (row["clean_content"] or "") if row and row["role"] == "char" else None
 
