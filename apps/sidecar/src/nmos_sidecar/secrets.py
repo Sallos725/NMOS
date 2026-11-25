@@ -63,6 +63,7 @@ TURN = re.compile(r"^\[turn (-?\d+)\] ")  # -1: a carried secret, from before tu
 # The predicate words of a secret's text (`secret_text`), longest first ("feels toward" before a shorter one). A
 # predicate without a value (`possesses`, `located_in`, `member_of`) has no ": " in its text: its object is the content.
 _WORDS = tuple(sorted({p.replace("_", " ") for p in REGISTRY}, key=len, reverse=True))
+ADDRESSES = "addresses"  # the predicate words of the one predicate whose head can carry a label (PHASE-64)
 _VALUELESS = tuple(sorted({p.replace("_", " ") for p, d in REGISTRY.items() if not d.needs_value}, key=len, reverse=True))
 
 
@@ -81,6 +82,12 @@ def _split(text: str | None) -> tuple[int | None, str | None, str]:
     line = norm(text[m.end():] if m else text)
     head, sep, body = line.partition(": ")
     if sep:
+        # A conditional form of address (PHASE-64) has its label in the head ("X addresses Y [label]: content"), and
+        # the label may hold ": " itself: such a head ends at the label's "]: ". What is stored stays as it is.
+        i = line.find(" [")
+        if 0 < i < len(head) and (end := line.find("]: ", i)) > 0 and (p := _parts(line[:i])) is not None \
+                and p[1] == ADDRESSES:
+            return turn, line[:end + 1], line[end + 3:]
         return turn, head, body
     for words in _VALUELESS:
         i = line.find(f" {words} ")
