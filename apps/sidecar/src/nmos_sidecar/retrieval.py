@@ -43,7 +43,7 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      StateItem, anchor_rank, clean_text, compile_lines, coverage_note, cut_lines, excerpt, fill,
                      fits_at, kept_counts, hidden_entry, secret_line,
                      secret_text)
-from .state import current_state, history as state_history, windows as state_windows
+from .state import CARD_SQL, current_state, history as state_history, windows as state_windows
 from .threads import relevant_threads, similarity
 from .vectors import vector_candidates
 from .keywords import keywords, particle_lookup
@@ -2872,7 +2872,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     # The head, its manifest hash and its end in one statement, and every read below bounded by that end: recall
     # takes no conversation lock, and a concurrent sync's append extends the head commit in place (D4).
     snap = conn.execute(
-        "SELECT head_commit_id, head_manifest_hash, host_character_name, (SELECT max(position) FROM active_membership am"
+        f"SELECT head_commit_id, head_manifest_hash, {CARD_SQL} AS card, (SELECT max(position) FROM active_membership am"
         " WHERE am.commit_id = c.head_commit_id) AS head_end FROM conversation c WHERE c.id = %s", (conv.id,)).fetchone()
     head, upto = snap["head_commit_id"], snap["head_end"]
     fresh = (request.active_commit is None or request.active_commit == head) and (
@@ -2884,7 +2884,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     previous_ai = clean_text(request.previous_ai or "")
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator,
                                   replies_only=conv.replies_only,
-                                  state_pins=dict(options.pins_by_card).get(snap["host_character_name"] or "", ()))
+                                  state_pins=dict(options.pins_by_card).get(snap["card"] or "", ()))
     original_in_context = set(request.in_context_ids)
     in_context = original_in_context
     cov: coverage.Coverage | None = None

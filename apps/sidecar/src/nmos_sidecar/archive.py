@@ -84,10 +84,11 @@ TABLES: tuple[Table, ...] = (
 # Never archived: rebuilt or recomputed from what is (ADR 0050 §2), or operational like the jobs (the log of model
 # calls, ADR 0089). A restore creates them empty in its scratch schema and copies none of them.
 NEVER = ("job", "revision_text", "state_observation", "schema_migrations", "model_call")
-# Settings an archive may hold: the editable ones but the keys (K21), the parser rules and presets, and the status
-# keys pinned per card (PHASE-43 A5).
+# Settings an archive may hold: the editable ones but the keys (K21), the parser rules and presets, the status
+# keys pinned per card (PHASE-43 A5) and the card each card ref is read under (G7.2).
 SETTINGS = tuple(sorted(set(runtime.EDITABLE) - runtime.SECRET)) + (runtime.PARSERS_KEY, runtime.PRESETS_KEY,
-                                                                    runtime.STATUS_PINS_KEY, runtime.NOTES_PROMPT_KEY)
+                                                                    runtime.STATUS_PINS_KEY, runtime.NOTES_PROMPT_KEY,
+                                                                    runtime.CARD_BINDINGS_KEY)
 URL_SETTINGS = ("llm_url", "embed_url", "rerank_url")
 # A credential shorter than this is not looked for: a key of one or two characters would refuse nearly every chat.
 MIN_SECRET = 4

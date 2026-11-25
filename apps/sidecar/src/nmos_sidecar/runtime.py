@@ -24,6 +24,7 @@ from .config import EMBED_MAX_CHUNKS, RERANK_TIMEOUT_MS, Settings, extra_body_er
 from . import rerank, vertex
 from .llm import ChatModel, Embedder, LLMError, Observer, chat_headers
 from .parsers import RuleSet, compile_rules, load_rules
+from . import state
 
 EDITABLE: dict[str, type] = {
     "llm_url": str, "llm_model": str, "llm_api_key": str, "llm_json_mode": bool,
@@ -61,6 +62,7 @@ STARTUP_CHECKED = ("rerank_format", "rerank_timeout_ms", "llm_extra_body", "llm_
 PARSERS_KEY = "parsers"
 PRESETS_KEY = "parser_presets"
 STATUS_PINS_KEY = "status_pins"  # PHASE-43: {card: [status keys told every time]}
+CARD_BINDINGS_KEY = state.CARD_BINDINGS_KEY  # G7.2: {card ref: the card its rules and pins are under}; not editable
 NOTES_PROMPT_KEY = "notes_custom_prompt"  # PHASE-56: the custom part's prompt, one for every chat
 PINS_MAX = 40
 PARSER_MAX_BYTES = 256_000
