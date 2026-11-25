@@ -437,3 +437,39 @@ def test_the_new_kinds_go_through_a_batch_and_its_undo(migrated):
         assert fact(c, chat, "Hana")["hidden_from"] == ["Mina"] and fact(c, chat, "Kaito", "has_status")["value"] == "tired"
         assert c.post(f"/v1/conversations/{cid}/repairs/batch/{res.json()['batch']}/remove").status_code == 200
         assert fact(c, chat, "Hana")["hidden_from"] is None and fact(c, chat, "Kaito", "has_status") is None
+
+
+# --- export / restore: the anchor round-trips; an archive from before migration 0044 restores ----------------------
+
+def test_an_anchor_round_trips_through_an_archive_and_an_older_archive_restores(migrated, database_url_factory,
+                                                                                tmp_path):
+    from nmos_sidecar import archive
+    chat = anchor_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        ids = four_repairs(c, chat, cid)
+    path = tmp_path / f"new{archive.SUFFIX}"
+    archive.export_file(migrated, str(path))
+    target = database_url_factory()
+    archive.restore_file(target, str(path))
+    assert [(r["id"], r["anchor"], r["anchored_at"]) for r in rows(target, cid)] == \
+        [(r["id"], r["anchor"], r["anchored_at"]) for r in rows(migrated, cid)]
+    with make_client(target, **LLM) as c:
+        all_applied(c, chat, cid)
+        chat.delete(3)
+        chat.delete(2)  # the restored anchors name the same messages: a renumbering keeps them
+        resync(c, target, chat)
+        all_applied(c, chat, cid)
+    # An archive written before migration 0044: its owner_repair rows have no anchor columns at all.
+    import io
+    import zipfile
+    from test_restore import reseal
+    old = reseal(path, tmp_path / f"old{archive.SUFFIX}", "owner_repair",
+                 lambda row: {k: v for k, v in row.items() if k not in ("anchor", "anchored_at")})
+    assert b'"anchor"' not in zipfile.ZipFile(io.BytesIO(old.read_bytes())).read("tables/owner_repair.jsonl")
+    again = database_url_factory()
+    archive.restore_file(again, str(old))
+    assert all(r["anchor"] is None for r in rows(again, cid))
+    with make_client(again, **LLM) as c:
+        assert all(listed(c, cid)[i]["applied"] is not None for i in ids.values())  # legacy, and anchored now
+    assert all(r["anchor"] for r in rows(again, cid))
