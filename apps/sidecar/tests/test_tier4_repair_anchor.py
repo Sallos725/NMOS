@@ -248,10 +248,13 @@ def test_a_replay_from_before_an_anchor_was_recorded_reads_the_legacy_target(mig
 
 
 def test_reanchor_moves_an_anchor_onto_a_branchs_messages():
-    anchor = {"target": {"message": "a5", "revision": "r", "turn_revisions": "t"}, "apply": {"messages": ["a12", "a13"]}}
-    moved = repairs.reanchor(anchor, {"a5": "b5", "a12": "b12", "a13": "b13"})
-    assert moved == {"target": {"message": "b5", "revision": "r", "turn_revisions": "t"},
-                     "apply": {"messages": ["b12", "b13"]}}
-    assert repairs.reanchor(anchor, {"a5": "b5"}) is None  # it applies from a turn after the branch point
-    assert repairs.reanchor(anchor, {"a12": "b12", "a13": "b13"}) is None  # its target is outside the prefix
-    assert repairs.reanchor(None, {"a5": "b5"}) is None  # a legacy repair: its target is copied as it is
+    anchor = {"target": {"message": "a5", "revision": "r5", "turn_revisions": ["r4", "r5"]},
+              "apply": {"messages": ["a12", "a13"]}}
+    mapping = {"a5": "b5", "r4": "s4", "r5": "s5", "a12": "b12", "a13": "b13"}
+    assert repairs.reanchor(anchor, mapping) == {
+        "target": {"message": "b5", "revision": "s5", "turn_revisions": ["s4", "s5"]},
+        "apply": {"messages": ["b12", "b13"]}}
+    assert repairs.reanchor(anchor, {k: v for k, v in mapping.items() if k != "a13"}) is not None  # it begins inside
+    assert repairs.reanchor(anchor, {k: v for k, v in mapping.items() if k != "a12"}) is None  # applies after it
+    assert repairs.reanchor(anchor, {k: v for k, v in mapping.items() if k != "r5"}) is None  # edited in the origin
+    assert repairs.reanchor(None, mapping) is None  # a legacy repair: its target is copied as it is

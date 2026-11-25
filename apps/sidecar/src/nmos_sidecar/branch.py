@@ -369,22 +369,31 @@ def _plan_summaries(c: _Copier) -> None:
 def reanchor_repair(rep: dict[str, Any], prefix: Prefix) -> tuple[dict[str, Any], dict[str, Any]] | None:
     """An origin repair's (target, value) for the branch, or None when it is not inherited (item 4).
 
-    A repair is inherited when the turn its target was stated in and the turn it takes effect (`value.turn`, by default
-    the origin's head when it was made) both lie in the prefix: as of the branch point a repair that takes effect later
-    was not in force. A target outside any turn (a name, canon at turn -1, a carried row) always is. The target is
+    An anchored repair (PHASE-67 part 4, migration 0044) is inherited when every message and revision its anchor names
+    is in the prefix (`repairs.reanchor`, by the prefix's map): its target's turn, and the first message of the turn it
+    takes effect from (by default the origin's head when it was made: as of the branch point a repair that takes effect
+    later was not in force). Its anchor is moved onto the branch's messages in `rep` (the row the caller copies), so the
+    branch reads it by its own messages and a later renumbering of the branch keeps it. A legacy repair (no anchor) is
+    inherited when the turn its target was stated in and the turn it takes effect both lie in the prefix; a target
+    outside any turn (a name, canon at turn -1, a carried row) always is. Either way the stored target and value are
     re-anchored by prefix position and content: the origin's turn hashes, revision ids and message ids become the
     branch's at the same position (`find_prefix` matched them by content); a hash the origin's head no longer shows
     stays as it was and matches nothing in the branch either, as in the origin.
-
-    TODO(w4-repair-anchor): when repairs are anchored to a message (host_logical_id + revision hash, migration 0044),
-    replace this body with that worker's re-anchoring function, called with the branch's message at the same position.
     """
+    from .repairs import reanchor  # PHASE-67 part 4: the one re-anchoring rule
+
+    target, value = rep.get("target") or {}, rep.get("value") or {}
+    if rep.get("anchor"):
+        moved = reanchor(rep["anchor"], prefix.remap)
+        if moved is None:
+            return None
+        rep["anchor"] = moved
+        return remapped(target, prefix.remap), remapped(value, prefix.remap)
     last = prefix.last_turn
 
     def inside(turn: Any) -> bool:
         return turn is None or not isinstance(turn, int) or turn < 0 or (last is not None and turn <= last)
 
-    target, value = rep.get("target") or {}, rep.get("value") or {}
     if not inside(target.get("turn")) or not inside(value.get("turn")):
         return None
     return remapped(target, prefix.remap), remapped(value, prefix.remap)

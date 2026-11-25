@@ -23,7 +23,6 @@ Pure: no database here, except `repairs_of`.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
@@ -97,10 +96,12 @@ REPAIR_COLUMNS = ("id", "kind", "target", "value", "note", "created_at", "anchor
 # it: no commit ancestry or chain of earlier ids is needed (a rewind is a delete commit, a child of the old head, so
 # ancestry cannot tell the continuations apart; a chain of earlier ids would detach repairs next to a deleted message).
 #
-# - `target`: the target turn's anchor message (its last reply, whose extraction stated the item), its revision hash,
-#   and the hash of its own turn's revisions (`turn_revisions`; not the K-turn window). The repair applies while that
-#   message is in the head with that revision and its turn reads as it did; renumbering and edits of other turns do
-#   not matter, an edit of its own turn detaches it exactly as the turn hash did (and its quote with it).
+# - `target`: the target turn's anchor message (its last reply, whose extraction stated the item), its revision (the
+#   `source_revision` id: one per message and revision hash) and its own turn's revisions in order (`turn_revisions`;
+#   not the K-turn window). The repair applies while that message is in the head with that revision and its turn reads
+#   as it did; renumbering and edits of other turns do not matter, an edit of its own turn detaches it exactly as the
+#   turn hash did (and its quote with it). Revision ids rather than hashes: a revision hash covers the message id, so a
+#   branch's copy of a message has another one, while a branch's prefix copy maps each revision id (`reanchor`).
 # - `apply`: the first and last message of the turn it applies from (`value.turn`), matched by id only: the turn is
 #   where the first of them is now. A reroll of the turn's reply (a new id) keeps its user message, a typo fix keeps
 #   both ids; a new continuation after a rewind has neither, so the repair does not fire there.
@@ -117,13 +118,8 @@ TARGET_ANCHORED = frozenset({"thread_close", "thread_reopen", "secret_found_out"
                              "attention_dismiss"})
 
 
-def turn_revisions(revisions: list[str]) -> str:
-    """The hash of one turn's own revisions, in order (not the K-turn window the turn hash covers)."""
-    return hashlib.sha256(("own\n" + ",".join(revisions)).encode()).hexdigest()[:32]
-
-
 class Members:
-    """The head members a set of repairs names: each message by id ((position, turn, revision)), and each turn's
+    """The head members a set of repairs names: each message by id ((position, turn, revision id)), and each turn's
     members in order with its hash (the anchor's), from `members_of`."""
 
     def __init__(self, rows: list[Mapping[str, Any]]) -> None:
@@ -135,7 +131,7 @@ class Members:
             if x["position"] in seen:
                 continue
             seen.add(x["position"])
-            self.messages[x["host_logical_id"]] = (x["position"], x["turn"], x["revision_hash"])
+            self.messages[x["host_logical_id"]] = (x["position"], x["turn"], str(x["rid"]))
             if x["turn"] is not None:
                 self.turns.setdefault(x["turn"], []).append(x)
                 if x.get("turn_hash"):
@@ -145,9 +141,10 @@ class Members:
         hit = self.messages.get(message or "")
         return hit[1] if hit else None
 
-    def own(self, turn: int) -> str | None:
+    def own(self, turn: int) -> list[str] | None:
+        """A turn's own revisions, in order."""
         rows = self.turns.get(turn)
-        return turn_revisions([x["revision_hash"] for x in rows]) if rows else None
+        return [str(x["rid"]) for x in rows] if rows else None
 
     def target_anchor(self, turn: int | None) -> dict[str, Any] | None:
         """The anchor of an item stated in this turn: its anchor message (the one with the turn's hash, else its last)."""
@@ -155,7 +152,7 @@ class Members:
         if not rows:
             return None
         at = next((x for x in reversed(rows) if x.get("turn_hash")), rows[-1])
-        return {"message": at["host_logical_id"], "revision": at["revision_hash"], "turn_revisions": self.own(turn)}
+        return {"message": at["host_logical_id"], "revision": str(at["rid"]), "turn_revisions": self.own(turn)}
 
     def message_anchor(self, message: str) -> dict[str, Any] | None:
         """The anchor of an item the owner states on this message (`fact_add`)."""
@@ -171,7 +168,7 @@ class Members:
         return {"messages": list(dict.fromkeys([rows[0]["host_logical_id"], rows[-1]["host_logical_id"]]))}
 
 
-_MEMBER = ("SELECT am.position, am.turn, am.turn_hash, so.host_logical_id, sr.revision_hash FROM active_membership am"
+_MEMBER = ("SELECT am.position, am.turn, am.turn_hash, so.host_logical_id, sr.id AS rid FROM active_membership am"
            " JOIN source_revision sr ON sr.id = am.source_revision_id JOIN source_object so ON so.id = sr.source_object_id")
 
 
@@ -181,7 +178,7 @@ def members_of(conn: psycopg.Connection, head: UUID, messages: list[str], turns:
     rows: list[Mapping[str, Any]] = []
     if messages:
         rows = conn.execute(
-            "SELECT am.position, am.turn, am.turn_hash, so.host_logical_id, sr.revision_hash FROM worldline_commit w"
+            "SELECT am.position, am.turn, am.turn_hash, so.host_logical_id, sr.id AS rid FROM worldline_commit w"
             " JOIN source_object so ON so.conversation_id = w.conversation_id AND so.host_logical_id = ANY(%s)"
             " JOIN source_revision sr ON sr.source_object_id = so.id"
             " JOIN active_membership am ON am.source_revision_id = sr.id AND am.commit_id = w.id WHERE w.id = %s",
@@ -336,23 +333,28 @@ def anchors_needed(repairs: list[dict[str, Any]], legacy: bool) -> tuple[list[st
     return _message_ids(repairs), sorted(turns)
 
 
-def reanchor(anchor: Mapping[str, Any] | None, messages: Mapping[str, str]) -> dict[str, Any] | None:
-    """An anchor moved onto other messages (for a branch the host made, PHASE-67 part 2): `messages` maps each of the
-    origin's message ids to the branch's message of the same content (same revision, same turn layout: the branch's
-    prefix copy matched them). None when the anchor names a message the map lacks (outside the branch's prefix: the
-    repair is not inherited) or there is no anchor (a legacy repair: copy its legacy target as it is)."""
+def reanchor(anchor: Mapping[str, Any] | None, mapping: Mapping[str, str]) -> dict[str, Any] | None:
+    """An anchor moved onto another chat's messages (a branch the host made, PHASE-67 part 2), pure: `mapping` maps each
+    origin message id and revision id (as text) to the branch's message and revision of the same content at the same
+    position (`branch.Prefix.remap`, matched against the origin's head now). None when there is no anchor (a legacy
+    repair: its legacy target is copied as it is) or the anchor names a message or revision the mapping lacks: outside
+    the branch's prefix, or a revision the origin's head no longer shows (the repair is detached there: an edit of its
+    turn), so it is not inherited. The apply anchor's first message must map: the turn it applies from begins in the
+    prefix, as it does in the origin."""
     if not anchor:
         return None
     out: dict[str, Any] = {}
     if t := anchor.get("target"):
-        if t.get("message") not in messages:
+        names = [t.get("message"), t.get("revision"), *(t.get("turn_revisions") or ())]
+        if any(x not in mapping for x in names):
             return None
-        out["target"] = {**t, "message": messages[t["message"]]}
+        out["target"] = {**t, "message": mapping[t["message"]], "revision": mapping[t["revision"]],
+                         "turn_revisions": [mapping[x] for x in t.get("turn_revisions") or ()]}
     if ap := anchor.get("apply"):
-        moved = [messages[m] for m in ap.get("messages") or () if m in messages]
-        if not moved or (ap.get("messages") and moved[0] != messages.get(ap["messages"][0])):
+        first = (ap.get("messages") or [None])[0]
+        if first not in mapping:
             return None
-        out["apply"] = {**ap, "messages": moved}
+        out["apply"] = {**ap, "messages": [mapping[m] for m in ap["messages"] if m in mapping]}
     return out or None
 
 

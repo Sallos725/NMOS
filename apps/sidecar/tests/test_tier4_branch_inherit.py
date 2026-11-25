@@ -378,6 +378,36 @@ def test_settings_are_inherited_once_re_anchored_and_the_branch_own_wins(world, 
                       (b["id"],)).fetchone()["n"] == 3
 
 
+
+def test_an_inherited_repair_is_anchored_to_the_branchs_messages_and_survives_its_renumbering(world, db):
+    """PHASE-67 part 4: the origin's anchored repair moves onto the branch's own messages (`repairs.reanchor`), so
+    deleting an earlier message of the branch (every later turn renumbered) keeps it applying there."""
+    c, url, origin, model, emb = world
+    o = conv(db, origin)
+    oid, head = o["id"], o["head_commit_id"]
+    key = active_generation(db, "extract").key
+    rid = repair(db, oid, "fact_retract", {"turn": 5, "turn_hash": turn_hash(db, head, 5), "predicate": "located_in",
+                                            "subject": "Akari5", "subject_type": "character", "object": "hall5",
+                                            "object_type": "place", "text": "Akari5 located_in hall5"}, {"turn": 7})
+    assert not [f for f in memory_view(db, head, key)["facts"] if f["subject"] == "Akari5"]  # a live read anchors it
+    anchor = db.execute("SELECT anchor FROM owner_repair WHERE id = %s", (rid,)).fetchone()["anchor"]
+    assert anchor["target"]["message"] == origin.messages[11]["chatId"]  # turn 5's reply
+    br = origin.branch(POINT)
+    sync(c, br)
+    b = conv(db, br)
+    mine = db.execute("SELECT * FROM owner_repair WHERE conversation_id = %s AND inherited_from = %s",
+                      (b["id"], rid)).fetchone()
+    assert mine["anchor"]["target"]["message"] == br.messages[11]["chatId"] != anchor["target"]["message"]
+    assert mine["anchor"]["apply"]["messages"][0] == br.messages[14]["chatId"]  # turn 7's user message
+    assert not [f for f in memory_view(db, b["head_commit_id"], key)["facts"] if f["subject"] == "Akari5"]
+    del br.messages[2:4]  # turn 1 of the branch is gone: its turns 2-12 are 1-11 now
+    sync(c, br)
+    drain(url, model, emb)
+    view = memory_view(db, conv(db, br)["head_commit_id"], key)
+    assert [f["turn"] for f in view["facts"] if f["subject"] == "Akari7"] == [6]  # renumbered
+    assert not [f for f in view["facts"] if f["subject"] == "Akari5"]
+    assert next(r for r in view["repairs"] if r["id"] == mine["id"])["applied"] is not None
+
 # --- items 5 and 6: idempotent, fail-open, the explicit back-fill, the bound ------------------------------------------
 
 def test_a_second_sync_and_a_retry_copy_nothing_again(world, db):

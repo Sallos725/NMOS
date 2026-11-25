@@ -1,8 +1,8 @@
 -- PHASE-67 part 4 (audit D7, owner decision 11b): an owner repair is anchored to the message it was made on, not to a
 -- turn number. `anchor` is {"target": {"message", "revision", "turn_revisions"}, "apply": {"messages": [...]}}: the
--- host message id (`source_object.host_logical_id`) of the target's turn anchor with its revision hash and the hash of
--- its own turn's revisions, and the ids of the first and last message of the turn the repair applies from. A read maps
--- the anchor onto the head's numbering (`repairs.rebase`), so deleting an earlier message or editing another turn no
+-- host message id (`source_object.host_logical_id`) of the target's turn anchor with its revision (`source_revision`
+-- id) and its own turn's revisions in order, and the ids of the first and last message of the turn the repair applies
+-- from. A read maps the anchor onto the head's numbering (`repairs.rebase`), so deleting an earlier message or editing another turn no
 -- longer detaches it, and a repair made on a continuation the chat abandoned does not fire on a new one.
 -- `anchored_at` is when the anchor was recorded: a repair written by an earlier release has none and keeps its legacy
 -- target until a live read records one (one idempotent write a repair); a replay as of an earlier time reads the legacy
