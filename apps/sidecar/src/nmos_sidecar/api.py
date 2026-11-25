@@ -385,7 +385,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  response.status_code, (time.perf_counter() - started) * 1000)
         return response
 
-    def enqueue(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids, trigger: str = "request") -> None:
+    def enqueue(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids, trigger: str = "request",
+                inherited: bool = False) -> None:
         cur = rt["settings"]
         if rt["extractor"] or rt["projection"]:
             enqueue_after_apply(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids,
@@ -395,13 +396,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                 embed_backfill=cur.embed_backfill)
         if cur.extract_on_output and (rt["extractor"] or rt["projection"]):
             early(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids, trigger)
-        if rt["extractor"] or rt["projection"]:
+        if inherited and (rt["extractor"] or rt["projection"]):
             covered(conn, conv_id)
 
     def covered(conn, conv_id) -> None:
-        """PHASE-67 part 2: a branch that inherited its origin's memory queues no job for what a copy holds (a one-time
-        filter: any other chat runs no scan). Fail-open: an error is logged and the jobs stay (they finish without a
-        call)."""
+        """PHASE-67 part 2: a branch that inherited its origin's memory (`inherited`: its marker, read with its lock)
+        queues no job for what a copy holds; any other chat runs nothing here. Fail-open: an error is logged and the
+        jobs stay (they finish without a call)."""
         try:
             with conn.transaction():
                 branch.drop_covered(conn, conv_id)
@@ -475,7 +476,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         # From the tail's first turn on is enough: lifecycle and turn hashes change only there.
         offset = tail.turn_start - tail.start
         enqueue(conn, conv.id, tail.entries[offset:], lifecycle, entries[offset:], {**lifecycle, **result.lifecycle},
-                revision_ids, body.trigger)
+                revision_ids, body.trigger, conv.inherited)
         summarize_after(conn, conv.id, head, since=length)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=full_hash, changes_summary=result.summary, commit_reason=None)
@@ -508,10 +509,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             f"{conv.id}:{result.manifest_hash}:manifest",
         )
         head = ledger.apply_plan(conn, conv, state, result, observation, manifest, settings.extract_turns)
+        inherited = conv.inherited
         if state.head is None and result.branch:  # PHASE-67 part 2: before the jobs, so none is queued for the prefix
-            branch.on_first_sync(conn, conv.id)
+            inherited = (branch.on_first_sync(conn, conv.id) or {}).get("status") == "done"
         enqueue(conn, conv.id, state.head, state.lifecycle, manifest, {**state.lifecycle, **result.lifecycle},
-                state.revision_ids, body.trigger)
+                state.revision_ids, body.trigger, inherited)
         summarize_after(conn, conv.id, head, since=len(state.head or []) if result.commit_reason is None else None)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,

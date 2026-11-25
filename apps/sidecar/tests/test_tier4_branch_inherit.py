@@ -27,7 +27,7 @@ from nmos_sidecar.worker import run_once
 from simchat import SimChat
 from test_extraction import fake_complete
 from test_generations import EMB, LLM
-from test_sidecar_integration import sync
+from test_sidecar_integration import recall, sync
 from test_summaries import stub as summary_stub
 from test_vectors import FakeEmbedder
 
@@ -173,6 +173,10 @@ def test_the_prefix_is_copied_with_no_job_and_no_call_and_reads_as_the_origin_di
     assert model.calls == 0 and emb.texts == 1
     o, b = conv(db, origin), conv(db, br)
     assert view_rows(db, b["head_commit_id"]) == view_rows(db, o["head_commit_id"], upto=POINT)
+    # The request path: the branch's first retrieve serves a copied fact, and its replay (ADR 0027) reproduces it.
+    out = recall(c, br, "Where is Akari3?", [m["chatId"] for m in br.messages[-4:]])
+    assert "hall3" in out["packet"]["text"]
+    assert c.get(f"/v1/trace/{out['trace_id']}/replay").json()["reproduced"] is True
     # item 7: the secret found out before the branch point is found out in the branch; the one found out later in the
     # origin is still kept from Ren in the branch, with its marks.
     key = active_generation(db, "extract").key
@@ -350,7 +354,8 @@ def test_settings_are_inherited_once_re_anchored_and_the_branch_own_wins(world, 
                  json={"strict": False, "narrator": "Mira"}).status_code == 200
     sync(c, br)
     b = conv(db, br)
-    assert (b["memory_strict"], b["memory_narrator"], b["replies_only"]) == (True, "Mira", True)
+    # The branch chose its memory mode (strict off, narrator Mira): that pair is its own; replies-only is inherited.
+    assert (b["memory_strict"], b["memory_narrator"], b["replies_only"]) == (False, "Mira", True)
     links = db.execute("SELECT * FROM entity_link WHERE conversation_id = %s", (b["id"],)).fetchall()
     assert [(x["name"], x["same_as"], x["inherited_from"]) for x in links] == [("Akari1", "Sora1", link)]
     reps = {r["inherited_from"]: r for r in db.execute("SELECT * FROM owner_repair WHERE conversation_id = %s",
@@ -441,8 +446,10 @@ def test_a_branch_synced_before_this_code_keeps_its_own_and_takes_only_what_it_l
     assert b["branch_inherit"] is None
     with psycopg.connect(url, row_factory=dict_row, autocommit=True) as conn:  # the branch's own: its newest turn
         g = kinds(conn)
-        job = conn.execute("SELECT * FROM job WHERE conversation_id = %s AND kind = 'extract' ORDER BY"
-                           " (payload->>'window_hash') LIMIT 1", (b["id"],)).fetchone()
+        job = conn.execute(  # its newest turn, which no secret of the story depends on
+            "SELECT j.* FROM job j JOIN active_membership am ON am.source_revision_id = (j.payload->>'revision_id')::uuid"
+            " AND am.commit_id = %s WHERE j.conversation_id = %s AND j.kind = 'extract' ORDER BY am.turn DESC LIMIT 1",
+            (b["head_commit_id"], b["id"])).fetchone()
         assert process_extract(conn, {**job, "locked_at": None}, model, g["extract"],
                                g["extract"].spec["context_turns"]) == "done"
     monkeypatch.undo()
@@ -480,3 +487,76 @@ def test_two_hundred_turns_first_sync_time(migrated, db):
         # is the one call the branch makes (each scene is copied).
         assert [(j["kind"], j["payload"]["level"]) for j in queued(db, br)] == [("summarize", "story")]
         assert marker["copied"]["scene_summaries"] == 18
+
+
+# --- item 2: fallback generations and reveal checks -------------------------------------------------------------------
+
+def test_turns_the_origin_serves_by_an_earlier_generation_are_served_so_with_no_call(migrated, db):
+    """A model change carried on (PHASE-57 A3): the origin's turns are served by the earlier generation; the branch's
+    copies of them serve its prefix the same way, and the active generation's first-sight jobs are taken back."""
+    model, emb = Model(), Embedder()
+    with make_client(migrated, embedder=FakeEmbedder(), **ON) as c:
+        origin = story(14)
+        origin.user("And then?")
+        sync(c, origin)
+        drain(migrated, model, emb)
+        old = active_generation(db, "extract").key
+        assert c.put("/v1/config", json={"llm_model": "fake-2"}).status_code == 200  # carry on, the default
+        new = active_generation(db, "extract").key
+        assert new != old
+        drain(migrated, model, emb)
+        model.calls = emb.texts = 0
+        br = origin.branch(POINT)
+        sync(c, br)
+        br.user("Go on.")
+        sync(c, br)
+        b, o = conv(db, br), conv(db, origin)
+        assert {x["extractor_key"] for x in db.execute(
+            "SELECT x.extractor_key FROM extraction x JOIN source_revision sr ON sr.id = x.source_revision_id"
+            " JOIN source_object so ON so.id = sr.source_object_id WHERE so.conversation_id = %s",
+            (b["id"],)).fetchall()} == {old}
+        assert [j["kind"] for j in queued(db, br)] == ["embed"]
+        drain(migrated, model, emb)
+        assert model.calls == 0 and emb.texts == 1
+        assert view_rows(db, b["head_commit_id"]) == view_rows(db, o["head_commit_id"], upto=POINT)
+
+
+def test_reveal_checks_are_copied_with_the_extraction_they_checked(migrated, db):
+    """A turn extracted before an earlier secret was (K29) is checked by "extract all history" (ADR 0057); the check
+    is copied with its turn, and the branch needs no check of its own."""
+    model, emb = Model(), Embedder()
+    with make_client(migrated, embedder=FakeEmbedder(), **ON) as c:
+        origin = story(14)
+        origin.user("And then?")
+        sync(c, origin)
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            g = kinds(conn)
+            for job in conn.execute(  # newest turn first: no turn knows an earlier secret
+                    "SELECT j.* FROM job j JOIN conversation c ON c.id = j.conversation_id JOIN active_membership am"
+                    " ON am.commit_id = c.head_commit_id AND am.source_revision_id = (j.payload->>'revision_id')::uuid"
+                    " WHERE j.kind = 'extract' AND j.status = 'queued' ORDER BY am.turn DESC").fetchall():
+                process_extract(conn, {**job, "locked_at": None}, model, g["extract"],
+                                g["extract"].spec["context_turns"])
+            conn.execute("UPDATE job SET status = 'done' WHERE kind = 'extract'")
+        drain(migrated, model, emb)
+        o = conv(db, origin)
+        res = c.post(f"/v1/conversations/{o['id']}/extract-history")
+        assert res.status_code == 200 and res.json()["queued"]["reveal"] > 0
+        drain(migrated, model, emb)
+        key = active_generation(db, "extract").key
+        tower = next(s for s in memory_view(db, o["head_commit_id"], key)["secrets"] if "tower" in s["text"])
+        assert not tower["open"]  # found out at turn 4, by the check
+        model.calls = 0
+        br = origin.branch(POINT)
+        sync(c, br)
+        b = conv(db, br)
+        assert b["branch_inherit"]["copied"]["reveal_checks"] >= 1
+        br.user("Go on.")
+        sync(c, br)
+        b = conv(db, br)
+        tower = next(s for s in memory_view(db, b["head_commit_id"], key)["secrets"] if "tower" in s["text"])
+        assert not tower["open"]
+        res = c.post(f"/v1/conversations/{b['id']}/extract-history")
+        assert res.status_code == 200 and res.json()["queued"]["reveal"] == 0  # copied checks read as checked
+        drain(migrated, model, emb)
+        assert model.calls == 0

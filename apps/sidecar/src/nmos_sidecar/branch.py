@@ -22,8 +22,8 @@ On the branch's first applied sync (`on_first_sync`, called by `api.do_reconcile
    `hints.checks`, the window keys), costs nothing (`usage` `{"calls": 0}`) and records its source
    (`coverage.reused_from` / `usage.inherited_from`). Rows keep the origin row's `created_at`, so the branch reads them
    exactly as the origin did (reveal staleness, story choice, repair order); nothing of the branch was read before.
-3. **The owner's settings as of the branch point**, copied once: the per-chat modes (`memory_strict`,
-   `memory_narrator`, `replies_only`; only where the branch still has the default), entity links, the owner repairs
+3. **The owner's settings as of the branch point**, copied once: the memory mode (`memory_strict` with
+   `memory_narrator`, one setting) and `replies_only`, each only where the branch still has the default; entity links, the owner repairs
    in force whose target turn and effect turn both lie in the prefix (every kind: thread, secret and fact repairs,
    restores, locks, name splits, status-flag dismissals, exclusions, character pins), and the carried-memory link
    (PHASE-60 S6) when the branch has none. Each copied row records `inherited_from`. Status pins are per card
@@ -393,14 +393,17 @@ def reanchor_repair(rep: dict[str, Any], prefix: Prefix) -> tuple[dict[str, Any]
 def _plan_settings(c: _Copier) -> None:
     """Item 4: the origin's owner input as of now (the branch point, for the first sync), copied once."""
     p, conn = c.prefix, c.conn
-    modes = conn.execute(
-        "UPDATE conversation b SET memory_strict = b.memory_strict OR o.memory_strict,"
-        " memory_narrator = coalesce(b.memory_narrator, o.memory_narrator), replies_only = b.replies_only OR o.replies_only"
-        " FROM conversation o WHERE b.id = %s AND o.id = %s AND ((NOT b.memory_strict AND o.memory_strict)"
-        " OR (b.memory_narrator IS NULL AND o.memory_narrator IS NOT NULL) OR (NOT b.replies_only AND o.replies_only))"
-        " RETURNING b.memory_strict, b.memory_narrator, b.replies_only", (c.conv, p.origin)).fetchone()
-    if modes:
-        c.count("modes")
+    # The memory mode is one setting (ADR 0035: one PUT writes strict and narrator together), `replies_only` another
+    # (PHASE-48); each is inherited only while the branch still has the default, the one sign of its own choice.
+    mode = conn.execute(
+        "UPDATE conversation b SET memory_strict = o.memory_strict, memory_narrator = o.memory_narrator"
+        " FROM conversation o WHERE b.id = %s AND o.id = %s AND NOT b.memory_strict AND b.memory_narrator IS NULL"
+        " AND (o.memory_strict OR o.memory_narrator IS NOT NULL) RETURNING b.id", (c.conv, p.origin)).fetchone()
+    if mode:
+        c.count("memory_mode")
+    if conn.execute("UPDATE conversation b SET replies_only = true FROM conversation o WHERE b.id = %s AND o.id = %s"
+                    " AND NOT b.replies_only AND o.replies_only RETURNING b.id", (c.conv, p.origin)).fetchone():
+        c.count("replies_only")
     for r in conn.execute("SELECT * FROM entity_link WHERE conversation_id = %s AND removed_at IS NULL"
                           " ORDER BY created_at, id", (p.origin,)).fetchall():
         def link(r: dict[str, Any] = r) -> Callable[[datetime], bool]:
@@ -541,8 +544,10 @@ def backfill(conn: psycopg.Connection, conv_id: UUID, dry_run: bool = True) -> d
 _COVERED = """(
     (j.kind = 'extract' AND EXISTS (
         SELECT 1 FROM extraction x WHERE x.source_revision_id = (j.payload->>'revision_id')::uuid
-          AND x.window_hash = j.payload->>'window_hash' AND x.extractor_key = j.payload->>'generation'
-          AND x.discarded_at IS NULL))
+          AND x.window_hash = j.payload->>'window_hash' AND x.discarded_at IS NULL
+          -- the job's generation, or a copy of any generation: an earlier one the origin still served the turn with
+          -- serves it in the branch as it did there (ADR 0014, PHASE-57 carry on), with no call
+          AND (x.extractor_key = j.payload->>'generation' OR x.coverage ? 'inherited_from')))
     OR (j.kind = 'embed' AND EXISTS (
         SELECT 1 FROM revision_embedding e WHERE e.source_revision_id = (j.payload->>'revision_id')::uuid
           AND e.projection = j.payload->>'generation')))"""
