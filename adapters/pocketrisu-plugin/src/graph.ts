@@ -103,9 +103,28 @@ const make = <K extends keyof SVGElementTagNameMap>(tag: K, cls: string): SVGEle
   return node;
 };
 
+export interface GraphUiOpts {
+  labels: {
+    search: string;
+    zoomIn: string;
+    zoomOut: string;
+    filterAll: string;
+    filterSetting: string;
+    filterStory: string;
+    filterChanged: string;
+    filterSplit: string;
+    openPerson: string;
+    focusPerson: string;
+    noTies: string;
+  };
+  openPerson?: (entity: string) => void;
+}
+
 /** Draw the graph in `box`: a lead line under it says whom a tap picked; `open` takes a character's entity id, `toggle`
- * asks for the whole cast or the capped one. */
-export function drawGraph(box: HTMLElement, g: Graph, open: (entity: string) => void, toggle: (everyone: boolean) => void): void {
+ * asks for the whole cast or the capped one. When `opts` is given, adds search, source filter chips, zoom +/- buttons
+ * and a 1-tap relation summary card without breaking legacy callers. */
+export function drawGraph(box: HTMLElement, g: Graph, open: (entity: string) => void, toggle: (everyone: boolean) => void,
+  opts?: GraphUiOpts): void {
   const svg = make('svg', 'g-panel');
   const edges = make('g', ''), nodes = make('g', '');
   svg.append(edges, nodes);
@@ -122,7 +141,7 @@ export function drawGraph(box: HTMLElement, g: Graph, open: (entity: string) => 
     buttons.append(b);
   };
   const pos = new Map(g.nodes.map((n) => [n.id, n]));
-  const lines: { e: GraphEdge | { a: string; b: string; mark: string }; el: SVGLineElement }[] = [];
+  const lines: { e: GraphEdge | { a: string; b: string; mark: string; kind?: string }; el: SVGLineElement }[] = [];
   for (const e of [...g.edges, ...g.suspects.map((s) => ({ ...s, mark: 'split' }))]) {
     const a = pos.get(e.a)!, b = pos.get(e.b)!;
     const line = make('line', `g-e ${e.mark}`);
@@ -147,22 +166,177 @@ export function drawGraph(box: HTMLElement, g: Graph, open: (entity: string) => 
     dots.set(group, n);
     parts.push({ n, dot, label, group });
   }
-  box.replaceChildren(svg, caption, buttons);
+
+  let searchQuery = '';
+  let markFilter = 'all';
+  let drawer: HTMLElement | null = null;
+
+  if (opts) {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'g-toolbar';
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'g-search';
+    search.placeholder = opts.labels.search;
+    search.setAttribute('aria-label', opts.labels.search);
+    const chips = document.createElement('div');
+    chips.className = 'g-chips';
+    const filterSpecs: [string, string][] = [
+      ['all', opts.labels.filterAll],
+      ['setting', opts.labels.filterSetting],
+      ['story', opts.labels.filterStory],
+      ['changed', opts.labels.filterChanged],
+      ...(g.suspects.length ? [['split', opts.labels.filterSplit] as [string, string]] : []),
+    ];
+    const chipBtns: HTMLButtonElement[] = [];
+    for (const [key, label] of filterSpecs) {
+      const cb = document.createElement('button');
+      cb.type = 'button';
+      cb.className = `g-chip${key === 'all' ? ' on' : ''}`;
+      cb.dataset.mark = key;
+      cb.textContent = label;
+      cb.addEventListener('click', () => {
+        markFilter = key;
+        for (const x of chipBtns) x.classList.toggle('on', x.dataset.mark === key);
+        apply();
+        if (picked) renderDrawer(picked);
+      });
+      chipBtns.push(cb);
+      chips.append(cb);
+    }
+    search.addEventListener('input', () => {
+      searchQuery = search.value.trim().toLowerCase();
+      apply();
+    });
+    toolbar.append(search, chips);
+
+    const stage = document.createElement('div');
+    stage.className = 'g-stage';
+    const zoomBtns = document.createElement('div');
+    zoomBtns.className = 'g-zoom';
+    const mkZoom = (txt: string, aria: string, factor: number) => {
+      const zb = document.createElement('button');
+      zb.type = 'button';
+      zb.className = 'mini';
+      zb.textContent = txt;
+      zb.setAttribute('aria-label', aria);
+      zb.setAttribute('title', aria);
+      zb.addEventListener('click', () => {
+        const cx = view.x + view.w / 2, cy = view.y + view.h / 2;
+        view = zoomAt(view, factor, cx, cy, size().w, ...limits());
+        apply();
+      });
+      zoomBtns.append(zb);
+    };
+    mkZoom('+', opts.labels.zoomIn, 1.35);
+    mkZoom('−', opts.labels.zoomOut, 1 / 1.35);
+    stage.append(svg, zoomBtns);
+
+    drawer = document.createElement('div');
+    drawer.className = 'g-drawer';
+    drawer.style.display = 'none';
+    box.replaceChildren(toolbar, stage, caption, drawer, buttons);
+  } else {
+    box.replaceChildren(svg, caption, buttons);
+  }
+
   const size = () => ({ w: svg.clientWidth || 360, h: svg.clientHeight || 420 });
   let fit = fitView(g.nodes, size().w, size().h);
   let view = fit;
   let picked: string | null = null;
   const scaleOf = (v: View) => size().w / v.w;
+
+  const markLabel = (mark: string): string => {
+    if (!opts) return mark;
+    if (mark === 'setting') return opts.labels.filterSetting;
+    if (mark === 'story') return opts.labels.filterStory;
+    if (mark === 'changed') return opts.labels.filterChanged;
+    if (mark === 'split') return opts.labels.filterSplit;
+    return mark;
+  };
+
+  const renderDrawer = (id: string | null) => {
+    if (!drawer || !opts) return;
+    const n = id ? pos.get(id) : null;
+    if (!n) {
+      drawer.style.display = 'none';
+      drawer.replaceChildren();
+      return;
+    }
+    const connected = lines.filter(({ e }) => (e.a === n.id || e.b === n.id) && (markFilter === 'all' || e.mark === markFilter));
+    const head = document.createElement('div');
+    head.className = 'g-drawer-head';
+    const title = document.createElement('b');
+    title.textContent = n.name;
+    const acts = document.createElement('div');
+    acts.className = 'g-drawer-acts';
+    if (n.entity && n.kind === 'character') {
+      if (opts.openPerson) {
+        const personBtn = document.createElement('button');
+        personBtn.type = 'button';
+        personBtn.className = 'mini primary';
+        personBtn.textContent = opts.labels.openPerson;
+        personBtn.addEventListener('click', () => opts.openPerson!(n.entity!));
+        acts.append(personBtn);
+      }
+      const focusBtn = document.createElement('button');
+      focusBtn.type = 'button';
+      focusBtn.className = 'mini';
+      focusBtn.textContent = opts.labels.focusPerson;
+      focusBtn.addEventListener('click', () => open(n.entity!));
+      acts.append(focusBtn);
+    }
+    head.append(title, acts);
+    const list = document.createElement('div');
+    list.className = 'g-drawer-list';
+    if (!connected.length) {
+      const empty = document.createElement('div');
+      empty.className = 'v-meta';
+      empty.textContent = opts.labels.noTies;
+      list.append(empty);
+    } else {
+      for (const { e } of connected.slice(0, 12)) {
+        const other = pos.get(e.a === n.id ? e.b : e.a);
+        if (!other) continue;
+        const row = document.createElement('div');
+        row.className = 'g-drawer-row';
+        const nm = document.createElement('span');
+        nm.className = 'g-drawer-name';
+        nm.textContent = other.name;
+        const badge = document.createElement('span');
+        badge.className = `g-m ${e.mark}`;
+        badge.textContent = markLabel(e.mark);
+        row.append(nm, badge);
+        if (other.entity && other.kind === 'character') {
+          row.classList.add('clickable');
+          row.addEventListener('click', () => pick(other.id));
+        }
+        list.append(row);
+      }
+    }
+    drawer.replaceChildren(head, list);
+    drawer.style.display = '';
+  };
+
   const apply = () => {
     svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
     const s = scaleOf(view);
     const near = picked ? around(g, picked) : null;
     const names = ARC * s >= NAMES_FROM;
-    for (const { n, dot, label } of parts) {
+    const activeNodes = markFilter === 'all' ? null : new Set<string>();
+    for (const { e, el } of lines) {
+      const shown = markFilter === 'all' || e.mark === markFilter;
+      el.style.display = shown ? '' : 'none';
+      if (shown && activeNodes) { activeNodes.add(e.a); activeNodes.add(e.b); }
+    }
+    for (const { n, dot, label, group } of parts) {
+      const matchesSearch = !searchQuery || n.name.toLowerCase().includes(searchQuery);
+      const matchesMark = !activeNodes || activeNodes.has(n.id);
+      group.classList.toggle('dim', !matchesSearch || !matchesMark);
       dot.setAttribute('r', String((n.lead ? 9 : 6) / s));
       label.setAttribute('y', String(n.y + ((n.lead ? 9 : 6) + LABEL_PX + 2) / s));
       label.style.fontSize = `${LABEL_PX / s}px`; // over the stylesheet's size
-      label.style.display = names || n.lead || near?.has(n.id) ? '' : 'none';
+      label.style.display = (searchQuery && matchesSearch) || names || n.lead || near?.has(n.id) ? '' : 'none';
     }
   };
   const pick = (id: string | null) => {
@@ -175,6 +349,7 @@ export function drawGraph(box: HTMLElement, g: Graph, open: (entity: string) => 
     caption.textContent = n
       ? `${n.name} · ${g.words.ties.replace('{n}', String(near.size - 1))}${n.entity ? ` · ${g.words.tap}` : ''}`
       : g.words.legend;
+    renderDrawer(id);
     apply();
   };
   button(g.words.fit, () => { view = fit = fitView(g.nodes, size().w, size().h); apply(); });

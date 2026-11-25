@@ -8,6 +8,7 @@ import { CHAT_OFF_ARG, createChatSwitch, parseChatIds, type ChatState } from './
 import type { HostChat, HostPersonas } from './types';
 import { DEFAULT_DEADLINE_MS, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_RESERVED_TOKENS, MAX_DEADLINE_MS, MAX_KEEP_RECENT_TURNS,
   MAX_RESERVED_TOKENS, MIN_KEEP_RECENT_TURNS } from './form';
+import type { PanelTarget } from './hud';
 import { createHud, type HudDocument } from './hud-host';
 import { NMOS_ICON, namedIcon } from './icon';
 import { routeFor } from './route';
@@ -161,14 +162,14 @@ export const risuHost: HostPort = {
 };
 
 /** The progress display (D28) on the PocketRisu page, and its toggle for the panel. */
-export function createRisuHud(link: { coverage(conversationId: string): Promise<unknown>; openPanel(): void }) {
+export function createRisuHud(link: { coverage(conversationId: string): Promise<unknown>; openPanel(target?: PanelTarget): void }) {
   const hud = createHud({
     enabled: async () => Number(await arg('hud')) === 1,
     lang: async () => langOf(await arg('language')),
     rootDocument: async () => (typeof risuai.getRootDocument === 'function' ? risuai.getRootDocument() : null),
     position: async () => `${await risuai.getCurrentCharacterIndex()}:${await risuai.getCurrentChatIndex()}`,
     coverage: (conversationId) => link.coverage(conversationId),
-    openPanel: () => link.openPanel(),
+    openPanel: (target) => link.openPanel(target),
     now: () => performance.now(),
     debug: (...args) => console.debug(...args),
     setTimer: (fn, ms) => setTimeout(fn, ms),
@@ -243,7 +244,7 @@ export async function registerHooks(
   api: PanelDeps['api'],
   file: (path: string) => Promise<ArrayBuffer>,
   hud: HudControl,
-): Promise<() => void> {
+): Promise<(target?: PanelTarget) => void> {
   await risuai.addRisuReplacer('beforeRequest', beforeRequest);
   await risuai.addRisuChatListener('output', onOutput);
   const deps: PanelDeps = {
@@ -261,7 +262,7 @@ export async function registerHooks(
       return bytes.byteLength;
     },
   };
-  const open = (tab: Tab) => openPanel(deps, tab);
+  const open = (tab: Tab, target?: PanelTarget) => openPanel(deps, tab, target);
   // Menu names are fixed at load, in the language chosen then (they follow a change after a reload).
   const lang = langOf(await arg('language'));
   // One entry in PocketRisu settings: the panel has status, inspector and settings tabs.
@@ -281,5 +282,5 @@ export async function registerHooks(
   // is the first card.
   await risuai.registerButton({ name: t(lang, 'menu.panel'), icon: namedIcon(t(lang, 'menu.panel')), iconType: 'html',
     location: 'hamburger', id: 'nmos-sidebar' }, () => open('status'));
-  return () => void open('status');
+  return (target?: PanelTarget) => void open('status', target);
 }

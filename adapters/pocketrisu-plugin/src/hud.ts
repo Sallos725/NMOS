@@ -50,6 +50,23 @@ export const EMPTY: HudState = { request: null, progress: null };
 /** `icon`: NMOS's icon before the text, while memory is being recalled. */
 export interface HudView { kind: 'busy' | 'ok' | 'muted' | 'warn'; text: string; fraction: number | null; icon?: true }
 
+/** Context-aware panel landing target when the user taps the HUD pill. */
+export type PanelTarget = 'working' | 'calls' | 'connection';
+
+/** Where tapping the HUD pill right now should land inside the panel, or null for the default Home view. */
+export function openTarget(state: HudState, now: number): PanelTarget | null {
+  const r = state.request;
+  if (r?.phase === 'done' && now < r.until) {
+    if (r.outcome === 'failed') return 'connection';
+    if (r.outcome === 'injected' || r.outcome === 'nothing-relevant') return 'working';
+    return null;
+  }
+  const p = state.progress;
+  if (p && 'coverage' in p) return failures(p.coverage) > 0 ? 'calls' : 'working';
+  if (p && 'finishedUntil' in p && now < p.finishedUntil) return p.failed > 0 ? 'calls' : 'working';
+  return null;
+}
+
 export function pending(c: Coverage): number {
   return (c.extract?.pending ?? 0) + (c.embed?.pending ?? 0) + (c.summarize?.pending ?? 0);
 }

@@ -18,7 +18,8 @@ import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { icon, type IconName } from './icons';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
   bulkMark, localTime, markDetail, placeMarks, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
-import { copyText, PROMPT_MAX } from './notes';
+import type { PanelTarget } from './hud';
+import { copyText, loadNotePresets, PROMPT_MAX, saveNotePresets, splitNoteSections, type NotePreset } from './notes';
 import { drawGraph, parseGraph } from './graph';
 import type { BulkMark, BulkRequest, EntityRow, ExcludePreview, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
@@ -166,7 +167,7 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos button.ghost{background:transparent;border-color:transparent;color:var(--c-text-muted)}
 .nmos button.ghost:hover:not(:disabled){background:var(--c-raised);color:var(--c-text-strong);border-color:var(--c-line)}
 .nmos button:disabled{opacity:.42;cursor:default}
-.nmos .msg{margin-top:10px;font-size:13.5px;white-space:pre-wrap}
+.nmos .msg{margin-top:10px;font-size:13.5px;white-space:pre-wrap}.nmos .msg:empty{display:none}
 .nmos .ok{color:var(--c-ok)}.nmos .err{color:var(--c-err)}.nmos .warn{color:var(--c-warn)}.nmos .muted{color:var(--c-text-muted)}
 .nmos .check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:var(--c-text-soft)}.nmos .check input{width:auto}
 .nmos .preview{margin:8px 0;padding:10px 12px;border-left:3px solid var(--c-accent);background:var(--c-sunken);border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.6}.nmos .preview>b{display:block;margin-bottom:4px;color:var(--c-text-strong)}
@@ -350,6 +351,45 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .bar .text{flex:1;min-width:160px;font-size:14px}
 .nmos .bar .model-change{flex:1;display:flex;flex-direction:column;gap:2px;font-size:14px}.nmos .bar .model-change p{margin:0}
 .nmos .bar .model-change .btns{justify-content:flex-end;margin-top:8px}
+.nmos .bar.modal-open{position:fixed;inset:0;bottom:0;z-index:60;background:rgba(8,10,14,0.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px;border:0}
+.nmos .bar.modal-open .model-change{flex:0 1 460px;width:100%;max-width:460px;background:var(--c-surface);border:1px solid var(--c-line-strong);border-radius:14px;padding:18px 20px;box-shadow:0 22px 60px rgba(0,0,0,0.65);gap:8px}
+.nmos .bar.modal-open .model-change label.check{margin:0;padding:9px 11px;border-radius:9px;background:var(--c-sunken);border:1px solid var(--c-line);cursor:pointer}
+.nmos .status-pill{cursor:pointer}
+.nmos .status-pill:hover{border-color:var(--c-line-hover)}
+.nmos .dirty-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--c-warn);margin-left:auto;flex:none}
+.nmos .other-chat-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 15px;border-radius:12px;border:1px solid ${alpha('cyan', 0.4)};background:linear-gradient(90deg,${alpha('cyan', 0.12)},var(--c-surface) 60%);margin-bottom:10px}
+.nmos .worker-home{padding:14px 16px;border-radius:12px;background:var(--c-surface);border:1px solid var(--c-line-strong)}
+.nmos .worker-home.trouble{border-color:${alpha('warn', 0.48)};background:linear-gradient(135deg,${alpha('warn', 0.08)},var(--c-surface) 58%)}
+.nmos .worker-home-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.nmos .worker-home-title{display:inline-flex;align-items:center;gap:8px;font-weight:650;font-size:14.5px;color:var(--c-text-strong)}
+.nmos .worker-home-lines{display:flex;flex-direction:column;gap:4px;font-size:13px}
+.nmos .onboard-card{padding:16px 18px;border-radius:13px;background:var(--c-surface);border:1px solid ${alpha('accent', 0.36)}}
+.nmos .onboard-step{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:var(--c-sunken);border:1px solid var(--c-line);margin-top:8px}
+.nmos .doc-search-bar{margin:0 0 12px}
+.nmos .doc-search-bar input{width:100%}
+.nmos .filter-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.nmos .filter-chip{padding:4px 10px;border-radius:999px;font-size:12px;background:var(--c-sunken);border:1px solid var(--c-line);color:var(--c-text-soft)}
+.nmos .filter-chip.on{background:${alpha('accent', 0.18)};border-color:${alpha('accent', 0.48)};color:var(--c-text-strong)}
+.nmos .insp tr.call-fail td{background:${alpha('err', 0.06)}}
+.nmos .g-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px}
+.nmos .g-toolbar .g-search{flex:1 1 160px;min-width:140px;padding:6px 10px;font-size:13px}
+.nmos .g-chips{display:flex;flex-wrap:wrap;gap:5px}
+.nmos .g-chip{padding:4px 9px;border-radius:999px;font-size:12px;background:var(--c-sunken);border:1px solid var(--c-line);color:var(--c-text-soft)}
+.nmos .g-chip.on{background:${alpha('accent', 0.18)};border-color:${alpha('accent', 0.48)};color:var(--c-text-strong)}
+.nmos .g-stage{position:relative}
+.nmos .g-zoom{position:absolute;right:10px;bottom:10px;display:flex;gap:4px}
+.nmos svg.g-panel .g-node.dim{opacity:.18}
+.nmos .g-drawer{margin-top:10px;padding:12px 14px;border-radius:11px;background:var(--c-raised);border:1px solid ${alpha('accent', 0.36)}}
+.nmos .g-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.nmos .g-drawer-head b{color:var(--c-text-strong);font-size:14.5px}
+.nmos .g-drawer-acts{display:flex;gap:6px;flex-wrap:wrap}
+.nmos .g-drawer-list{display:flex;flex-direction:column;gap:4px}
+.nmos .g-drawer-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 6px;border-radius:6px;font-size:13px;color:var(--c-text-soft)}
+.nmos .g-drawer-row.clickable{cursor:pointer}
+.nmos .g-drawer-row.clickable:hover{background:var(--c-surface);color:var(--c-text-strong)}
+.nmos .nmos-toast{position:sticky;bottom:16px;z-index:50;max-width:520px;margin:12px auto 0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:11px;background:var(--c-raised-hover);border:1px solid ${alpha('accent', 0.52)};box-shadow:0 12px 32px rgba(0,0,0,0.5);color:var(--c-text-strong);font-size:13.5px}
+.nmos .note-presets{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}
+.nmos .note-sec-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 6px}
 
 @media (max-width: 860px){
   .nmos .notes-studio{grid-template-columns:1fr}
@@ -419,22 +459,23 @@ function errorText(lang: Lang, error: unknown): string {
   return text.replace(/^\/v1\/\S+ -> HTTP 422: /, t(lang, 'invalid')).replace(/^\/v1\/\S+ -> /, t(lang, 'sidecar_error'));
 }
 
-let current: { root: HTMLElement; select(tab: Tab): void } | null = null;
+let current: { root: HTMLElement; select(tab: Tab, target?: PanelTarget): void } | null = null;
 
-/** Open the NMOS panel on `tab` (or switch tabs if it is already open). */
-export async function openPanel(deps: PanelDeps, tab: Tab): Promise<void> {
+/** Open the NMOS panel on `tab` (or switch tabs / jump to a HUD target if it is already open). */
+export async function openPanel(deps: PanelDeps, tab: Tab, target?: PanelTarget): Promise<void> {
   if (current && document.body.contains(current.root)) {
-    current.select(tab);
+    current.select(tab, target);
     await deps.show();
     return;
   }
   if (!document.getElementById('nmos-style')) document.head.append(el('style', { id: 'nmos-style', text: CSS }));
   const lang = langOf(await deps.getArg('language'));
-  current = await render(deps, lang, tab);
+  current = await render(deps, lang, tab, target);
   await deps.show();
 }
 
-async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HTMLElement; select(tab: Tab): void }> {
+async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: PanelTarget):
+  Promise<{ root: HTMLElement; select(tab: Tab, target?: PanelTarget): void }> {
   const L = (key: StringKey, vars?: Record<string, string | number>) => t(lang, key, vars);
   const root = el('div', { class: 'nmos', id: 'nmos-panel' });
   const wrap = el('div', { class: 'wrap' });
@@ -458,6 +499,59 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const settingsView = el('div');
   wrap.append(statusView, inspectorView, notesStudioView, settingsView);
   let shown: Tab = tab;
+
+  // --- floating Undo toast (#6) + onboarding helper (#9) ----------------------------------------
+  let dirtyReady = false;
+  const toastEl = el('div', { class: 'nmos-toast', style: 'display:none', role: 'status' });
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  function hideToast(): void {
+    if (toastTimer !== null) { clearTimeout(toastTimer); toastTimer = null; }
+    toastEl.style.display = 'none';
+    toastEl.replaceChildren();
+  }
+  function showUndoToast(conversation: string, repairId: string): void {
+    hideToast();
+    const undoBtn = el('button', { class: 'primary mini', text: L('undo.button') });
+    undoBtn.addEventListener('click', async () => {
+      undoBtn.disabled = true;
+      try {
+        await deps.api('POST', `/v1/conversations/${conversation}/repairs/${repairId}/remove`, {}, 15_000);
+        hideToast();
+        say(actionMsg, L('undo.done'), 'ok');
+        await showInspector();
+      } catch (error) {
+        say(actionMsg, errorText(lang, error), 'err');
+        undoBtn.disabled = false;
+      }
+    });
+    const dismiss = el('button', { class: 'ghost mini', 'aria-label': L('close'), text: '×' });
+    dismiss.addEventListener('click', hideToast);
+    toastEl.replaceChildren(el('span', { text: L('undo.applied') }), el('div', { style: 'display:flex;gap:6px' }, undoBtn, dismiss));
+    toastEl.style.display = '';
+    toastTimer = setTimeout(hideToast, 7000);
+  }
+  function onboardingCard(): HTMLElement {
+    const goConn = el('button', { class: 'primary mini', text: L('onboard.step1_btn') });
+    goConn.addEventListener('click', () => {
+      if (viewsOn) { selectPrimary('settings'); openGroup('connection'); } else select('settings');
+    });
+    const goModels = el('button', { class: 'mini', text: L('onboard.step2_btn') });
+    goModels.addEventListener('click', () => {
+      if (viewsOn) { selectPrimary('settings'); openGroup('models'); } else select('settings');
+    });
+    return el('div', { class: 'onboard-card' },
+      el('h2', { text: L('onboard.title') }),
+      el('p', { class: 'sub', text: L('onboard.sub') }),
+      el('div', { class: 'onboard-step' },
+        el('div', {}, el('b', { text: L('onboard.step1') }), el('div', { class: 'sub', style: 'margin:2px 0 0', text: L('onboard.step1_sub') })),
+        goConn),
+      el('div', { class: 'onboard-step' },
+        el('div', {}, el('b', { text: L('onboard.step2') }), el('div', { class: 'sub', style: 'margin:2px 0 0', text: L('onboard.step2_sub') })),
+        goModels),
+      el('div', { class: 'onboard-step' },
+        el('div', {}, el('b', { text: L('onboard.step3') }), el('div', { class: 'sub', style: 'margin:2px 0 0', text: L('onboard.step3_sub') })),
+        el('span', { class: 'badge', text: L('onboard.waiting') })));
+  }
 
   // --- status tab ------------------------------------------------------------------------------
   let usageRound = 0; // a refresh or another chat's card makes an older answer stale
@@ -593,6 +687,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     // This chat first (ADR 0048): the switch is what the owner opened the panel for, often from the sidebar.
     cards.unshift(await chatCard(s.enabled, s.connected));
+    if (!s.connected && !viewsOn) cards.unshift(onboardingCard());
     const refresh = el('button', { text: L('refresh') });
     refresh.addEventListener('click', () => void refreshStatus());
     statusView.replaceChildren(...cards, el('div', { class: 'btns' }, refresh));
@@ -983,10 +1078,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     button.disabled = true;
     try {
-      await deps.api('POST', path, body, 15_000);
+      const r = await deps.api<{ repair?: { id?: string } }>('POST', path, body, 15_000);
       picked.delete(action.item);
       updateBulk();
-      say(actionMsg, L(action.kind === 'undo' || action.kind === 'undo_batch' ? 'rp.undone' : 'rp.done'), 'ok');
+      const isUndo = action.kind === 'undo' || action.kind === 'undo_batch';
+      say(actionMsg, L(isUndo ? 'rp.undone' : 'rp.done'), 'ok');
+      if (!isUndo && typeof r?.repair?.id === 'string' && r.repair.id) showUndoToast(conversation, r.repair.id);
       await showInspector();
     } catch (error) {
       say(actionMsg, errorText(lang, error), 'err');
@@ -1043,6 +1140,99 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         }
       });
       slot.append(box);
+    }
+    // Story document search & open-thread kind filter (#4): injected client-side so sanitizer stays untouched.
+    if (inspectorPath.includes('/memory')) {
+      const docMain = page.querySelector<HTMLElement>('.v-doc-main') ?? page.querySelector<HTMLElement>('.v-doc');
+      if (docMain) {
+        const docInput = el('input', { type: 'search', placeholder: L('mem.search_doc'), 'aria-label': L('mem.search_doc') });
+        const emptyNote = el('p', { class: 'v-note doc-search-empty', style: 'display:none', text: L('mem.search_empty') });
+        const searchBar = el('div', { class: 'doc-search-bar' }, docInput, emptyNote);
+        let threadKind = 'all';
+        const applyDocFilter = () => {
+          const q = docInput.value.trim().toLowerCase();
+          const active = q.length > 0 || threadKind !== 'all';
+          let visibleSecs = 0;
+          for (const sec of Array.from(inspectorBody.querySelectorAll<HTMLElement>('.v-sec'))) {
+            const isOpenSec = sec.id === 's-open';
+            for (const det of Array.from(sec.querySelectorAll<HTMLDetailsElement>('details.v-more'))) {
+              if (active) {
+                if (!('wasOpen' in det.dataset)) det.dataset.wasOpen = det.open ? '1' : '0';
+                det.open = true;
+              } else if ('wasOpen' in det.dataset) {
+                det.open = det.dataset.wasOpen === '1';
+                delete det.dataset.wasOpen;
+              }
+            }
+            const rows = Array.from(sec.querySelectorAll<HTMLElement>('.v-line, .v-ev'));
+            if (!rows.length) {
+              const show = !q || (sec.textContent ?? '').toLowerCase().includes(q);
+              sec.style.display = show ? '' : 'none';
+              if (show) visibleSecs += 1;
+              continue;
+            }
+            let shownRows = 0;
+            for (const row of rows) {
+              const textOk = !q || (row.textContent ?? '').toLowerCase().includes(q);
+              const kindOk = !isOpenSec || threadKind === 'all' || !!row.querySelector(`.v-tag.k-${threadKind}`);
+              const show = textOk && kindOk;
+              row.style.display = show ? '' : 'none';
+              if (show) shownRows += 1;
+            }
+            const showSec = shownRows > 0 || (!active && !isOpenSec);
+            sec.style.display = showSec ? '' : 'none';
+            if (showSec) visibleSecs += 1;
+          }
+          emptyNote.style.display = active && visibleSecs === 0 ? '' : 'none';
+        };
+        docInput.addEventListener('input', applyDocFilter);
+        docMain.prepend(searchBar);
+        const openSec = page.querySelector<HTMLElement>('#s-open');
+        if (openSec) {
+          const kinds = (['promise', 'goal', 'threat', 'question', 'debt'] as const)
+            .filter((k) => openSec.querySelector(`.v-tag.k-${k}`));
+          if (kinds.length > 1) {
+            const chips = el('div', { class: 'filter-chips' });
+            const btns: HTMLButtonElement[] = [];
+            for (const k of ['all', ...kinds] as const) {
+              const b = el('button', { type: 'button', class: `filter-chip${k === 'all' ? ' on' : ''}`,
+                'data-th-kind': k, text: L(`mem.filter_${k}` as StringKey) });
+              b.addEventListener('click', () => {
+                threadKind = k;
+                for (const x of btns) x.classList.toggle('on', x.dataset.thKind === k);
+                applyDocFilter();
+              });
+              btns.push(b);
+              chips.append(b);
+            }
+            const h2 = openSec.querySelector('.v-h2');
+            if (h2) h2.after(chips); else openSec.prepend(chips);
+          }
+        }
+      }
+    }
+    // Model calls log filter (#1): All / Failed only chips above the calls table.
+    if (inspectorPath.startsWith('/v1/inspector/calls')) {
+      const tbl = page.querySelector('table');
+      const rows = tbl ? Array.from(tbl.querySelectorAll<HTMLTableRowElement>('tbody tr')) : [];
+      if (tbl && rows.length) {
+        let fails = 0;
+        for (const tr of rows) {
+          const outcome = (tr.children[2]?.textContent ?? '').trim().toLowerCase();
+          const isOk = outcome === 'ok' || outcome === '성공';
+          if (!isOk) { tr.classList.add('call-fail'); fails += 1; }
+        }
+        const allBtn = el('button', { type: 'button', class: 'filter-chip on', text: L('calls.filter_all', { n: rows.length }) });
+        const failBtn = el('button', { type: 'button', class: 'filter-chip', text: L('calls.filter_fail', { n: fails }) });
+        const setFailOnly = (only: boolean) => {
+          allBtn.classList.toggle('on', !only);
+          failBtn.classList.toggle('on', only);
+          for (const tr of rows) tr.style.display = only && !tr.classList.contains('call-fail') ? 'none' : '';
+        };
+        allBtn.addEventListener('click', () => setFailOnly(false));
+        failBtn.addEventListener('click', () => setFailOnly(true));
+        tbl.before(el('div', { class: 'filter-chips' }, allBtn, failBtn));
+      }
     }
     // The timeline is asked for only when its section is opened, so a chat page never holds it unasked (an iPhone's
     // Safari reloads a page under memory pressure; PHASE-32 step 3). The listener goes with the page it is on.
@@ -1124,7 +1314,22 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (!box.isConnected || inspectorPath !== from) return; // the reader moved on
       const graph = parseGraph(raw);
       if (!graph?.edges.length) return void box.replaceWith(note);
-      drawGraph(box, graph, (entity) => go(`/v1/views/c/${conv}/map?focus=${entity}`), (all) => void loadGraph(box, note, all));
+      drawGraph(box, graph, (entity) => go(`/v1/views/c/${conv}/map?focus=${entity}`), (all) => void loadGraph(box, note, all), {
+        labels: {
+          search: L('graph.search'),
+          zoomIn: L('graph.zoom_in'),
+          zoomOut: L('graph.zoom_out'),
+          filterAll: L('graph.filter_all'),
+          filterSetting: L('graph.filter_setting'),
+          filterStory: L('graph.filter_story'),
+          filterChanged: L('graph.filter_changed'),
+          filterSplit: L('graph.filter_split'),
+          openPerson: L('graph.open_person'),
+          focusPerson: L('graph.focus_person'),
+          noTies: L('graph.no_ties'),
+        },
+        openPerson: (entity) => go(`/v1/views/c/${conv}/person/${entity}`),
+      });
     } catch {
       if (box.isConnected) box.replaceWith(note); // the lines below hold the same
     }
@@ -1225,6 +1430,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (load !== loads) return;
       if (path.startsWith('/v1/views/hub')) {
         hubConversation = r.conversation ?? null;
+        if (hubConversation && !path.includes('conversation=')) hostConversationId = hubConversation;
         if (hubConversation) activeChatId = hubConversation;
         if (viewsOn) applyHubMeta(r.meta);
       }
@@ -1766,9 +1972,15 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (!notesCard.childElementCount) buildNotes(conversation);
     notesCard.style.display = '';
   });
+  const notesCache = new Map<string, NotesResult>();
+  let notesElapsedTimer: ReturnType<typeof setInterval> | null = null;
+  function clearNotesTimer(): void {
+    if (notesElapsedTimer !== null) { clearInterval(notesElapsedTimer); notesElapsedTimer = null; }
+  }
   /** The form: which sections, the chronicle's length, whether secrets go in (PHASE-50 S1, PHASE-59 Studio). */
   function buildNotes(conversation: string, target: HTMLElement = notesCard, studio = false): void {
     notesFor = conversation;
+    clearNotesTimer();
     interface OptSpec {
       key: StringKey; kind: string; on: boolean; desc: StringKey;
       badge: StringKey; badgeCls: string; calls: number;
@@ -1813,8 +2025,46 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const counted = () => { count.textContent = L('notes.custom_count', { n: prompt.value.trim().length, max: PROMPT_MAX }); };
     prompt.addEventListener('input', counted);
     counted();
+    // Studio prompt presets (#7): 3 built-in starters + locally saved custom presets.
+    const presetRow = el('div', { class: 'note-presets' });
+    let userPresets: NotePreset[] = studio ? loadNotePresets() : [];
+    const builtInPresets: NotePreset[] = studio ? [
+      { name: L('notes.preset_feelings'), prompt: L('notes.preset_feelings_body') },
+      { name: L('notes.preset_threads'), prompt: L('notes.preset_threads_body') },
+      { name: L('notes.preset_npcs'), prompt: L('notes.preset_npcs_body') },
+    ] : [];
+    const renderPresets = () => {
+      if (!studio) return;
+      const all = [...builtInPresets, ...userPresets];
+      const cur = prompt.value.trim();
+      const chips = all.map((p) => {
+        const b = el('button', { type: 'button', class: `filter-chip${cur === p.prompt ? ' on' : ''}`, text: p.name });
+        b.addEventListener('click', () => {
+          prompt.value = p.prompt;
+          counted();
+          renderPresets();
+        });
+        return b;
+      });
+      const savePreset = el('button', { type: 'button', class: 'mini ghost', text: `+ ${L('notes.preset_save')}` });
+      savePreset.addEventListener('click', () => {
+        const bodyText = prompt.value.trim();
+        if (!bodyText) return;
+        const firstLine = bodyText.split('\n')[0]!.trim().slice(0, 18) || 'Preset';
+        userPresets = [{ name: firstLine, prompt: bodyText }, ...userPresets.filter((p) => p.prompt !== bodyText)].slice(0, 6);
+        saveNotePresets(userPresets);
+        renderPresets();
+      });
+      presetRow.replaceChildren(el('span', { class: 'muted', style: 'font-size:12px', text: `${L('notes.presets_label')}:` }),
+        ...chips, savePreset);
+    };
+    if (studio) {
+      prompt.addEventListener('input', renderPresets);
+      renderPresets();
+    }
     const setting = el('input', { type: 'checkbox' });
-    const customArea = el('div', { style: 'display:none;margin:8px 0 12px' }, prompt, count,
+    const customArea = el('div', { style: 'display:none;margin:8px 0 12px' },
+      ...(studio ? [presetRow] : []), prompt, count,
       el('div', { class: 'check' }, setting, el('span', { text: L('notes.custom_setting') })),
       el('p', { class: 'sub', text: L('notes.custom_setting_sub') }),
       el('p', { class: 'sub', text: L('notes.custom_unchecked') }));
@@ -1822,7 +2072,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     let saved = '';
     void deps.api<{ prompt?: string }>('GET', '/v1/notes/prompt', undefined, 15_000).then((r) => {
       saved = typeof r?.prompt === 'string' ? r.prompt : '';
-      if (!prompt.value) { prompt.value = saved; counted(); }
+      if (!prompt.value) { prompt.value = saved; counted(); renderPresets(); }
     }).catch(() => {}); // an older sidecar has no prompt: the box starts empty
     const length = el('select', { 'aria-label': L('notes.length') },
       el('option', { value: '3000', text: L('notes.short') }), el('option', { value: '6000', text: L('notes.long') }));
@@ -1830,16 +2080,46 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const warn = el('p', { class: 'sub warn', text: L('notes.secrets_warn'), style: 'display:none' });
     secrets.addEventListener('change', () => { warn.style.display = secrets.checked ? '' : 'none'; });
     const make = el('button', { class: 'primary' }, ...(studio ? [icon('sparkles', 15)] : []), L('notes.make'));
+    const cancelBtn = el('button', { class: 'danger mini', style: 'display:none', text: L('notes.cancel', { s: 0 }) });
     const msg = el('div', { class: 'msg' });
-    const results = el('div', {}, ...(studio ? [el('div', { class: 'studio-empty', text: L('notes.empty_hint') })] : []));
+    const cached = studio ? notesCache.get(conversation) : undefined;
+    const results = el('div', {}, ...(cached
+      ? [el('p', { class: 'sub', text: L('notes.cached_hint') }), noteResult(cached, msg, studio)]
+      : studio ? [el('div', { class: 'studio-empty', text: L('notes.empty_hint') })] : []));
+    let runSeq = 0;
+    cancelBtn.addEventListener('click', () => {
+      runSeq += 1;
+      clearNotesTimer();
+      make.disabled = false;
+      cancelBtn.style.display = 'none';
+      say(msg, L('notes.cancelled'), 'muted');
+      const prev = studio ? notesCache.get(conversation) : undefined;
+      results.replaceChildren(...(prev
+        ? [el('p', { class: 'sub', text: L('notes.cached_hint') }), noteResult(prev, msg, studio)]
+        : studio ? [el('div', { class: 'studio-empty', text: L('notes.empty_hint') })] : []));
+    });
     make.addEventListener('click', async () => {
       const sections = kinds.filter((k) => k.box.checked).map((k) => k.box.value);
       if (!sections.length) return say(msg, L('notes.pick'), 'warn');
       const text = prompt.value.trim();
       if (custom.checked && !text) return say(msg, L('notes.custom_empty'), 'warn');
+      const myRun = ++runSeq;
+      let elapsed = 0;
       make.disabled = true;
       say(msg, L('act.working'));
-      results.replaceChildren(...(studio ? [el('div', { class: 'studio-empty', text: L('act.working') })] : []));
+      const waitBox = el('div', { class: 'studio-empty', text: studio ? L('notes.working_sec', { s: 0 }) : L('act.working') });
+      results.replaceChildren(...(studio ? [waitBox] : []));
+      if (studio) {
+        cancelBtn.textContent = L('notes.cancel', { s: 0 });
+        cancelBtn.style.display = '';
+        clearNotesTimer();
+        notesElapsedTimer = setInterval(() => {
+          if (myRun !== runSeq) return clearNotesTimer();
+          elapsed += 1;
+          waitBox.textContent = L('notes.working_sec', { s: elapsed });
+          cancelBtn.textContent = L('notes.cancel', { s: elapsed });
+        }, 1000);
+      }
       let unsaved = false;
       if (custom.checked && text !== saved) {
         try {
@@ -1852,11 +2132,21 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       try {
         const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,
           body, 900_000); // up to three model parts, each with a retry
-        if (notesFor !== conversation) return;
-        results.replaceChildren(noteResult(r, msg));
+        if (notesFor !== conversation || myRun !== runSeq) return;
+        notesCache.set(conversation, r);
+        results.replaceChildren(noteResult(r, msg, studio));
         const done = r.text ? L('notes.done') : L('notes.part_none', { part: L('notes.title') });
         say(msg, unsaved ? `${done} ${L('notes.custom_unsaved')}` : done, r.text && !unsaved ? 'ok' : 'warn');
-      } catch (error) { say(msg, errorText(lang, error), 'err'); } finally { make.disabled = false; }
+      } catch (error) {
+        if (myRun !== runSeq) return;
+        say(msg, errorText(lang, error), 'err');
+      } finally {
+        if (myRun === runSeq) {
+          clearNotesTimer();
+          make.disabled = false;
+          cancelBtn.style.display = 'none';
+        }
+      }
     });
     if (!studio) {
       target.replaceChildren(el('h2', { text: L('notes.title') }), el('p', { class: 'sub', text: L('notes.sub') }),
@@ -1870,7 +2160,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       ...kinds.map((k) => k.row), customArea,
       el('div', { class: 'row' }, field(L('notes.length'), length)),
       el('div', { class: 'check' }, secrets, el('span', { text: L('notes.secrets') })), warn,
-      estBar, el('div', { class: 'btns' }, make), msg);
+      estBar, el('div', { class: 'btns' }, make, cancelBtn), msg);
     const rightCol = el('div', { class: 'studio-col' },
       el('h3', { text: L('notes.preview_head') }), results);
     target.replaceChildren(
@@ -1878,7 +2168,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('div', { class: 'notes-studio' }, leftCol, rightCol));
   }
   /** The note: how each part was made, the one text in a box, and Copy (PHASE-50 S6, amendment 2). */
-  function noteResult(r: NotesResult, msg: HTMLElement): HTMLElement {
+  function noteResult(r: NotesResult, msg: HTMLElement, studio = false): HTMLElement {
     const how = (p: NotePart): string => {
       const part = L(`notes.part.${p.kind}` as StringKey);
       if (p.reason === 'no_scenes') return L('notes.part_no_scenes', { part });
@@ -1908,8 +2198,27 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       const copied = await copyText(box, navigator.clipboard);
       say(msg, L(copied ? 'notes.copied' : 'notes.copy_hint'), copied ? 'ok' : 'warn');
     });
+    const secButtons: HTMLElement[] = [];
+    if (studio) {
+      const sections = splitNoteSections(r.text);
+      if (sections.length > 1) {
+        for (const sec of sections) {
+          const sb = el('button', { type: 'button', class: 'mini', title: L('notes.copy_section') },
+            icon('copy', 13), sec.title);
+          sb.addEventListener('click', async () => {
+            const temp = el('textarea', { readonly: true });
+            temp.value = sec.body;
+            const copied = await copyText(temp, navigator.clipboard);
+            say(msg, copied ? L('notes.section_copied', { title: sec.title }) : L('notes.copy_hint'), copied ? 'ok' : 'warn');
+          });
+          secButtons.push(sb);
+        }
+      }
+    }
     return el('div', {}, el('h2', { text: L('notes.result') }), about,
-      el('p', { class: 'sub', text: L('notes.chars', { n: r.chars }) }), box, el('div', { class: 'btns' }, copy));
+      el('p', { class: 'sub', text: L('notes.chars', { n: r.chars }) }),
+      ...(secButtons.length ? [el('div', { class: 'note-sec-row' }, ...secButtons)] : []),
+      box, el('div', { class: 'btns' }, copy));
   }
   exportButton.addEventListener('click', async () => {
     const conversation = actionConversation;
@@ -2219,6 +2528,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     parserPreview.textContent = !target ? L('rules.choose_target') : !parsed.ok
       ? L(parsed.error === 'blank' ? 'rules.blank' : parsed.error === 'json' ? 'rules.invalid_json' : 'rules.invalid_shape')
       : L('rules.preview', { card: target, n: parsed.rules.length });
+    syncDirtyDots();
   }
 
   function fillParsers(cfg: ServerConfig): void {
@@ -2435,10 +2745,31 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   let closing = false;
   const dirty = () => dirtySections(baseline, values());
 
+  const SECTION_TO_GROUP: Record<Section, Group> = {
+    conn: 'connection', llm: 'models', emb: 'models', rerank: 'models', tune: 'memory', trim: 'memory',
+  };
+  let activeModalCancel: (() => void) | null = null;
+  let workerAutoOn = false;
+  let workerAutoTimer: ReturnType<typeof setInterval> | null = null;
+  function stopWorkerAuto(): void {
+    if (workerAutoTimer !== null) { clearInterval(workerAutoTimer); workerAutoTimer = null; }
+  }
+  function syncDirtyDots(): void {
+    if (!dirtyReady) return;
+    const groups = new Set<Group>(dirty().map((s) => SECTION_TO_GROUP[s]));
+    if (parserDirty()) groups.add('rules');
+    for (const btn of Array.from(groupList.querySelectorAll<HTMLButtonElement>('button[data-group]'))) {
+      const dot = btn.querySelector<HTMLElement>('.dirty-dot');
+      if (dot) dot.style.display = groups.has(btn.dataset.group as Group) ? '' : 'none';
+    }
+    for (const dot of settingsDirtyDots) dot.style.display = groups.size ? '' : 'none';
+  }
+
   function update(message?: { text: string; kind: 'ok' | 'err' | 'warn' | 'muted' }): void {
     const d = dirty();
     syncTrimWarn();  // here, since loading and saving set the boxes without an event
     syncExtra();
+    syncDirtyDots();
     save.disabled = d.length === 0;
     revert.disabled = d.length === 0;
     if (message) say(barText, message.text, message.kind);
@@ -2505,8 +2836,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   interface ModelPreview { model_change: boolean; queued: Partial<Record<'continue' | 'recent' | 'canon', Record<string, number>>> }
   const jobsOf = (q: Record<string, number> | undefined): number => Object.values(q ?? {}).reduce((a, b) => a + b, 0);
 
-  /** Asks, in the save bar, what the chats already processed get from the new model: carry on (selected), the latest
-   * turns again, and the setting read again; null when the owner cancels. The sidecar counts, the panel only shows. */
+  /** Asks, in a centered modal sheet (keeping `.bar .model-change` structure), what the chats already processed get
+   * from the new model: carry on (selected), the latest turns again, and the setting read again; null on cancel. */
   function askModelChange(p: ModelPreview, turns: string): Promise<{ mode: 'continue' | 'recent'; canon: boolean } | null> {
     return new Promise((resolve) => {
       const name = `nmos-model-change-${Date.now()}`;
@@ -2518,13 +2849,18 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       const go = el('button', { class: 'primary', text: L('save') });
       const back = el('button', { text: L('cancel') });
       const done = (answer: { mode: 'continue' | 'recent'; canon: boolean } | null) => {
+        activeModalCancel = null;
+        bar.classList.remove('modal-open');
         bar.replaceChildren(barText, revert, save);
         resolve(answer);
       };
+      activeModalCancel = () => done(null);
       go.addEventListener('click', () => done({ mode: redo.checked ? 'recent' : 'continue', canon: canon.checked }));
       back.addEventListener('click', () => done(null));
+      bar.classList.add('modal-open');
       bar.replaceChildren(el('div', { class: 'model-change' },
-        el('p', { text: L('mc.title') }),
+        el('h2', { text: L('mc.title') }),
+        el('p', { class: 'sub', text: L('mc.sub') }),
         el('label', { class: 'check' }, carry, el('span', { text: L('mc.continue', { n: jobsOf(p.queued.continue) }) })),
         el('label', { class: 'check' }, redo, el('span', { text: L('mc.recent', { t: turns, n: jobsOf(p.queued.recent) }) })),
         el('label', { class: 'check' }, canon, el('span', { text: L('mc.canon', { n: extra }) })),
@@ -2613,6 +2949,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   let onDocClick: ((e: MouseEvent) => void) | null = null;
   let onDocKey: ((e: KeyboardEvent) => void) | null = null;
   function shut(): void {
+    stopWorkerAuto();
+    clearNotesTimer();
+    hideToast();
+    activeModalCancel = null;
     if (onDocClick) document.removeEventListener('click', onDocClick);
     if (onDocKey) document.removeEventListener('keydown', onDocKey);
     root.remove();
@@ -2658,20 +2998,24 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   let activePrimary: PrimaryTab = 'home';
   let activeMemSub: MemorySub = 'story';
   let activeChatId: string | null = null;
+  let hostConversationId: string | null = null;
   let activeChatName = '';
   let attentionCount = 0;
   let lastMeta: HubMeta | null = null;
+  let lastConnected = true;
+  let lastStatusKind: 'ok' | 'warn' | 'err' | '' = 'ok';
   let knownChats: HubChatItem[] = [];
   let chatPopOpen = false;
   let currentGroup: Group = 'chat';
 
   const navButtons = new Map<PrimaryTab, HTMLButtonElement[]>();
   const attnBadges: HTMLSpanElement[] = [];
+  const settingsDirtyDots: HTMLSpanElement[] = [];
   let chatBtnLabel: HTMLSpanElement | null = null;
   let chatPop: HTMLElement | null = null;
   let chatSearchInput: HTMLInputElement | null = null;
   let chatListEl: HTMLElement | null = null;
-  let statusPill: HTMLElement | null = null;
+  let statusPill: HTMLButtonElement | null = null;
 
   function setPrimaryNav(next: PrimaryTab): void {
     activePrimary = next;
@@ -2715,6 +3059,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } else {
       kind = 'ok'; key = 'shell.status_ok';
     }
+    if (s) lastConnected = s.connected;
+    lastStatusKind = kind;
     statusPill.className = `status-pill${kind ? ` ${kind}` : ''}`;
     statusPill.replaceChildren(
       el('span', { class: `dot${kind ? ` ${kind}` : ''}` }),
@@ -2806,16 +3152,64 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
   }
 
-  /** Inline Home quick bar: This Chat ON/OFF strip + urgent advisories (insecure, deadline, budget, vectors). */
+  function otherChatBanner(): HTMLElement | null {
+    if (!hostConversationId || !activeChatId || activeChatId === hostConversationId) return null;
+    const back = el('button', { class: 'primary mini', text: L('home.back_host') });
+    back.addEventListener('click', () => {
+      activeChatId = hostConversationId;
+      hubConversation = hostConversationId;
+      const found = knownChats.find((c) => c.id === hostConversationId);
+      if (found) activeChatName = found.name;
+      updateChatLabel();
+      if (activePrimary === 'settings' && currentGroup === 'chat') showChatPage();
+      else void goHome();
+    });
+    return el('div', { class: 'other-chat-banner' },
+      el('div', {},
+        el('b', { text: L('home.other_chat_title', { name: activeChatName || activeChatId.slice(0, 8) }) }),
+        el('div', { class: 'chat-strip-sub', text: L('home.other_chat_sub') })),
+      back);
+  }
+
+  function openDiag(mode: 'working' | 'calls' | 'raw'): void {
+    const cid = activeChatId ?? hubConversation;
+    notesStudioView.style.display = 'none';
+    settingsView.style.display = 'none';
+    statusView.style.display = 'none';
+    inspectorView.style.display = '';
+    bar.style.display = 'none';
+    shown = 'inspector';
+    root.classList.add('wide');
+    setPrimaryNav('memory');
+    homeQuickBar.style.display = 'none';
+    memSubBar.style.display = '';
+    stopWorkerAuto();
+    renderMemSubBar('diag', mode);
+    if (mode === 'calls') { go('/v1/inspector/calls'); return; }
+    if (!cid) {
+      inspbar.style.display = 'none';
+      inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('mem.no_chat') }));
+      return;
+    }
+    go(mode === 'raw' ? `/v1/inspector/c/${cid}` : `/v1/views/c/${cid}/working`);
+  }
+
+  /** Inline Home quick bar: other-chat banner, onboarding (disconnected), This Chat ON/OFF, live Worker card, advisories. */
   let quickRound = 0;
   async function refreshHomeQuick(): Promise<void> {
     if (!viewsOn) return;
     const round = ++quickRound;
     const items: HTMLElement[] = [];
+    const workerReq = deps.api<unknown>('GET', '/v1/worker/status', undefined, 5000).catch(() => null);
     let s: StatusInfo | null = null;
     try { s = await deps.status(); } catch { s = null; }
     if (round !== quickRound) return;
     updateStatusPill(s, lastMeta);
+    const other = otherChatBanner();
+    if (other) items.push(other);
+    if (s && !s.connected) {
+      items.push(onboardingCard());
+    }
     try {
       const state = await deps.chat.current();
       if (round !== quickRound) return;
@@ -2841,10 +3235,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
             el('span', { class: `dot ${off || allOff ? 'warn' : 'ok'}` }),
             el('div', {},
               el('div', { class: 'chat-strip-title', text: `${L('chat.title')} · ${badgeText}` }),
-              el('div', { class: 'chat-strip-sub', text: allOff ? L('chat.all_off') : L(off ? 'chat.off_sub' : 'chat.on_sub') }))),
+              el('div', { class: 'chat-strip-sub', text: allOff ? L('chat.all_off') : L(off ? 'chat.off_sub' : 'chat.on_sub') }),
+              msg)),
           flip);
         items.push(strip);
-        if (msg.textContent) items.push(msg);
       }
     } catch { /* host chat state unavailable */ }
     if (s) {
@@ -2887,9 +3281,57 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       }
     }
     homeQuickBar.replaceChildren(...items);
+    // Live Worker card (#1): surface queued/failing model work directly on Home without delaying the hub.
+    const rawWorker = await workerReq;
+    if (round !== quickRound || !homeQuickBar.isConnected || homeQuickBar.style.display === 'none') return;
+    const wShown = workerLines(lang, rawWorker);
+    if (wShown.lines.length && (wShown.level === 'working' || wShown.level === 'trouble')) {
+      const ws = rawWorker as WorkerStatus;
+      const errIdx = ws.last_error && wShown.level === 'trouble' ? wShown.lines.length - 1 : -1;
+      const autoBtn = el('button', { class: `mini${workerAutoOn ? ' primary' : ''}`,
+        text: L(workerAutoOn ? 'worker.auto_on' : 'worker.auto_off') });
+      autoBtn.addEventListener('click', () => {
+        workerAutoOn = !workerAutoOn;
+        if (workerAutoOn) {
+          stopWorkerAuto();
+          workerAutoTimer = setInterval(() => {
+            if (activePrimary === 'home' && homeQuickBar.style.display !== 'none') void refreshHomeQuick();
+            else stopWorkerAuto();
+          }, 5000);
+        } else stopWorkerAuto();
+        autoBtn.classList.toggle('primary', workerAutoOn);
+        autoBtn.textContent = L(workerAutoOn ? 'worker.auto_on' : 'worker.auto_off');
+      });
+      const callsBtn = el('button', { class: 'mini', text: L('worker.open_calls') });
+      callsBtn.addEventListener('click', () => openDiag('calls'));
+      const actBtns: HTMLElement[] = [callsBtn];
+      const cid = activeChatId ?? hubConversation;
+      if (wShown.level === 'trouble') {
+        if (cid && (ws.dead_recent > 0 || ws.retrying > 0)) {
+          const retry = el('button', { class: 'primary mini', text: L('act.retry') });
+          retry.addEventListener('click', () => void retryFrom(cid));
+          actBtns.unshift(retry);
+        }
+        const modelsBtn = el('button', { class: 'mini', text: L('worker.open_models') });
+        modelsBtn.addEventListener('click', () => { selectPrimary('settings'); openGroup('models'); });
+        actBtns.push(modelsBtn);
+      }
+      const wCard = el('div', { class: `worker-home${wShown.level === 'trouble' ? ' trouble' : ''}` },
+        el('div', { class: 'worker-home-head' },
+          el('span', { class: 'worker-home-title' },
+            el('span', { class: `dot ${wShown.level === 'trouble' ? 'warn' : 'ok'}` }),
+            el('span', { text: L('worker.title') })),
+          el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, autoBtn, ...actBtns)),
+        el('div', { class: 'worker-home-lines' },
+          ...wShown.lines.map((line, i) => el('div', { class: i === errIdx ? 'warn' : 'muted', text: line }))));
+      homeQuickBar.append(wCard);
+      if (wShown.level === 'trouble') updateStatusPill(s, { ...(lastMeta ?? {}), working: { state: 'failed', failed: ws.dead_recent + ws.retrying } });
+    } else {
+      stopWorkerAuto();
+    }
   }
 
-  function renderMemSubBar(sub: MemorySub, rawMode = false): void {
+  function renderMemSubBar(sub: MemorySub, diagMode: 'working' | 'calls' | 'raw' = 'working'): void {
     activeMemSub = sub;
     const defs: { key: MemorySub; label: StringKey; ic: IconName; hide?: boolean }[] = [
       { key: 'story', label: 'mem.story', ic: 'book' },
@@ -2914,11 +3356,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('p', { class: 'mem-subtext', text: L(`mem.${sub}_sub` as StringKey) }));
     if (sub === 'diag') {
       const cid = activeChatId ?? hubConversation;
-      const bWork = el('button', { class: !rawMode ? 'on' : '', text: L('mem.diag_working') });
-      const bRaw = el('button', { class: rawMode ? 'on' : '', text: L('mem.diag_raw') });
+      const bWork = el('button', { class: diagMode === 'working' ? 'on' : '', text: L('mem.diag_working') });
+      const bCalls = el('button', { class: diagMode === 'calls' ? 'on' : '', text: L('mem.diag_calls') });
+      const bRaw = el('button', { class: diagMode === 'raw' ? 'on' : '', text: L('mem.diag_raw') });
       bWork.addEventListener('click', () => { if (cid) go(`/v1/views/c/${cid}/working`); });
+      bCalls.addEventListener('click', () => go('/v1/inspector/calls'));
       bRaw.addEventListener('click', () => { if (cid) go(`/v1/inspector/c/${cid}`); });
-      subHead.append(el('div', { class: 'diag-toggle' }, bWork, bRaw));
+      subHead.append(el('div', { class: 'diag-toggle' }, bWork, bCalls, bRaw));
     }
     memSubBar.replaceChildren(tabsRow, subHead);
   }
@@ -2936,7 +3380,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     setPrimaryNav('memory');
     homeQuickBar.style.display = 'none';
     memSubBar.style.display = '';
-    renderMemSubBar(sub, false);
+    stopWorkerAuto();
+    renderMemSubBar(sub, 'working');
     if (!cid) {
       inspbar.style.display = 'none';
       inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('mem.no_chat') }));
@@ -2990,19 +3435,21 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       return;
     }
     homeQuickBar.style.display = 'none';
+    stopWorkerAuto();
     if (shown !== 'inspector') return;
     setPrimaryNav('memory');
     memSubBar.style.display = '';
     const isPerson = /\/(person|e)\//.test(path);
     inspbar.style.display = visited.length || isPerson ? '' : 'none';
-    if (path.includes('/memory')) renderMemSubBar('story', false);
-    else if (path.includes('/map')) renderMemSubBar('map', false);
-    else if (path.includes('/working')) renderMemSubBar('diag', false);
+    if (path.includes('/memory')) renderMemSubBar('story', 'working');
+    else if (path.includes('/map')) renderMemSubBar('map', 'working');
+    else if (path.includes('/working')) renderMemSubBar('diag', 'working');
+    else if (path.startsWith('/v1/inspector/calls')) renderMemSubBar('diag', 'calls');
     else if (path.startsWith('/v1/inspector/c/')) {
       const isAttn = pendingSection === 's-attention' || activeMemSub === 'attention';
-      renderMemSubBar(isAttn ? 'attention' : 'diag', !isAttn);
+      renderMemSubBar(isAttn ? 'attention' : 'diag', isAttn ? 'working' : 'raw');
     } else {
-      renderMemSubBar(activeMemSub, false);
+      renderMemSubBar(activeMemSub, 'working');
     }
   }
 
@@ -3067,6 +3514,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         attnBadges.push(badge);
         children.push(badge);
       }
+      if (key === 'settings') {
+        const dot = el('span', { class: 'dirty-dot', style: 'display:none' });
+        settingsDirtyDots.push(dot);
+        children.push(dot);
+      }
       const btn = el('button', { 'data-nav': key }, ...children);
       btn.addEventListener('click', () => selectPrimary(key));
       const list = navButtons.get(key) ?? [];
@@ -3087,7 +3539,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       makeNavBtn('notes', 'feather', 'nav.notes', true),
       makeNavBtn('settings', 'sliders', 'nav.settings', true));
 
-    statusPill = el('span', { class: 'status-pill' }, el('span', { class: 'dot' }), el('span', { class: 'st-txt', text: L('shell.status_ok') }));
+    statusPill = el('button', { type: 'button', class: 'status-pill', title: L('shell.status_tip') },
+      el('span', { class: 'dot' }), el('span', { class: 'st-txt', text: L('shell.status_ok') }));
+    statusPill.addEventListener('click', () => {
+      closeChatPop();
+      if (!lastConnected) { selectPrimary('settings'); openGroup('connection'); return; }
+      openDiag(lastStatusKind === 'err' || lastStatusKind === 'warn' ? 'calls' : 'working');
+    });
     close.className = 'nmos-close ghost';
     close.replaceChildren(icon('close', 16));
     close.setAttribute('aria-label', L('close'));
@@ -3102,7 +3560,15 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     root.append(bottomNav);
 
     onDocClick = () => { if (chatPopOpen) closeChatPop(); };
-    onDocKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && chatPopOpen) closeChatPop(); };
+    onDocKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (activeModalCancel) { activeModalCancel(); return; }
+      if (chatPopOpen) { closeChatPop(); return; }
+      const rpCancel = inspectorBody.querySelector<HTMLButtonElement>('.rp-form button:not(.primary)');
+      if (rpCancel) { rpCancel.click(); return; }
+      if (closing) { bar.querySelector<HTMLButtonElement>('button')?.click(); return; }
+      close.click();
+    };
     document.addEventListener('click', onDocClick);
     document.addEventListener('keydown', onDocKey);
   }
@@ -3195,7 +3661,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         icon(GROUP_ICONS[g], 16),
         el('span', { class: 'grp-txt' },
           el('b', { text: L(`grp.${g}` as StringKey) }),
-          el('span', { class: 'sub', text: L(`grp.${g}_sub` as StringKey) })));
+          el('span', { class: 'sub', text: L(`grp.${g}_sub` as StringKey) })),
+        el('span', { class: 'dirty-dot', style: 'display:none' }));
       b.addEventListener('click', () => openGroup(g));
       return b;
     };
@@ -3271,7 +3738,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       actionMsg);
     const pinsCard = el('div', { class: 'card' }, el('h2', { text: L('pins.title') }), el('p', { class: 'sub', text: L('pin.sub') }));
     const carryCard = el('div', { class: 'card', style: 'display:none' });
-    chatPage.replaceChildren(switchSlot, modeCard, statusCard, pinsCard, carryCard, maintCard);
+    const other = otherChatBanner();
+    chatPage.replaceChildren(...(other ? [other] : []), switchSlot, modeCard, statusCard, pinsCard, carryCard, maintCard);
     void showPins(cid, pinsCard);
     void showCarry(cid, carryCard);
     void showMode(cid, loads);
@@ -3743,6 +4211,41 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } catch { /* the pages still read without it */ }
   }
 
+  function applyTarget(target?: PanelTarget): boolean {
+    if (!target) return false;
+    if (target === 'connection') {
+      select('settings');
+      if (viewsOn) openGroup('connection');
+      return true;
+    }
+    if (!viewsOn) {
+      select('status');
+      return true;
+    }
+    if (target === 'calls') {
+      openDiag('calls');
+      return true;
+    }
+    if (target === 'working') {
+      if (activeChatId ?? hubConversation) {
+        openDiag('working');
+      } else {
+        select('inspector');
+        void showInspector(inspectorPath).then(() => {
+          if (activeChatId ?? hubConversation) openDiag('working');
+        });
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function selectWithTarget(next: Tab, target?: PanelTarget): void {
+    if (applyTarget(target)) return;
+    select(next);
+  }
+
+  root.append(toastEl);
   document.body.append(root);
   // A sidecar with the new screens (PHASE-52/59) opens on its unified shell + hub; an older one keeps legacy tabs.
   try {
@@ -3758,7 +4261,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     buildShell();
     groupSettings();
   }
-  select(tab);
+  dirtyReady = true;
+  if (!applyTarget(initialTarget)) select(tab);
   await loadAll();
-  return { root, select };
+  syncDirtyDots();
+  return { root, select: selectWithTarget };
 }

@@ -15,10 +15,10 @@ const MAP = `map(?:\\?focus=${UUID})?`;
 // What a page of the sidecar's may ask the plugin to do itself (PHASE-52): nothing else survives in `data-act`.
 export const ACTS = new Set(['notes', 'settings', 'backup', 'retry']);
 
-/** The sidecar API path for an inspector link (`/inspector`, `/inspector/c/<id>`, `/inspector/c/<id>/e/<id>`,
- * `/inspector/c/<id>/t/<turn>`), or null. */
+/** The sidecar API path for an inspector link (`/inspector`, `/inspector/calls`, `/inspector/c/<id>`,
+ * `/inspector/c/<id>/e/<id>`, `/inspector/c/<id>/t/<turn>`), or null. */
 export function inspectorApiPath(href: string | null): string | null {
-  const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, 'i').exec(href ?? '');
+  const m = new RegExp(`^/inspector(/calls|/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, 'i').exec(href ?? '');
   if (m) return `/v1/inspector${m[1] ?? ''}`;
   const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|${MAP}|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, 'i')
     .exec(href ?? '');
