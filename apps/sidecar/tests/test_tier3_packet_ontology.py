@@ -267,3 +267,29 @@ def test_a_v21_request_with_beliefs_and_forgettings_replays_to_the_same_ledger(m
         v20 = audit.replay(conn, UUID(out["trace_id"]), RecallOptions(), policy="packet-v20")
     assert again["status"] == "ok" and again["reproduced"] is True and again["text"] == text
     assert "<Belief " not in v20["text"] and "<Forgot " not in v20["text"]
+
+
+def test_forgetting_a_fact_only_some_knew_stays_as_private_as_that_fact():
+    known = v21row(5, "하나", "knows", None, "북쪽 다리의 암호", **C, knowledge="limited", known_by=["하나"])
+    w = [{"id": 5, "turn": 3, "predicate": "knows", "text": "하나 knows: 북쪽 다리의 암호", "how": "fact"}]
+    view = view_of(forgotten=[forgetting(9, "하나", w)], assertions=[known])
+    _, lines = forgets(view, ["하나", "도윤"])
+    assert lines[0].private and 'known_by="하나"' in lines[0].xml  # 도윤 never knew it: not said before him
+    r = res([row(98, n, "event", None, "x", **C) for n in ("하나", "도윤")])
+    g = Gathered()
+    g.cast = scene_of(r, "하나", "도윤")
+    strict = forgot_lines(g, view, r, dataclasses.replace(V21, strict=True))
+    assert strict[0].kind == "secret" and "암호" not in strict[0].xml
+
+
+def test_a_conditioned_fact_with_a_slot_private_here_stays_out_of_cast():
+    pub = v21row(1, "하나", "feels_toward", "{{user}}", "존경", **CC, condition={"scope": "public", "when": None})
+    priv = v21row(2, "하나", "feels_toward", "{{user}}", "연모", **CC, condition={"scope": "private", "when": "둘만"},
+                  knowledge="limited", known_by=["하나"])
+    r = res([pub, priv])
+    cast = scene_of(r, "하나", "{{user}}")
+    groups = dict(cast_groups(view_of([pub, priv]), cast, r, "", V21, shown_v21=Shown())[0])
+    assert "하나" not in groups or not any(line.ref["assertion"] in (1, 2) for line in groups["하나"])
+    plain = v21row(3, "하나", "feels_toward", "{{user}}", "신뢰", **CC)  # no condition: as packet-v20 shows it
+    groups = dict(cast_groups(view_of([plain]), cast, r, "", V21, shown_v21=Shown())[0])
+    assert [line.ref["assertion"] for line in groups["하나"]] == [3]

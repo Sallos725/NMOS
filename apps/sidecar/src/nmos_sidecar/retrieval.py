@@ -1946,6 +1946,7 @@ def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptio
     present = scene.names(g.cast, r)
     out: list[Line] = []
     rows: list[dict[str, Any]] = []
+    stored = {x["id"]: x for x in (view.get("assertions") or view["facts"])}
     for e in view["forgotten"]:
         if len(out) >= FORGOT_MAX:
             break
@@ -1964,13 +1965,20 @@ def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptio
                                                          e.get("turn"), "secret_gate"))
                 continue
             turn = e["turn"] if e.get("turn") is not None else e.get("position")
-            xml = (f"    <Forgot by={quoteattr(who)} turn=\"{turn}\"{_knowledge_attrs(e)}>"
+            # the line says what was known: it is as private as that fact was (its marks as stored, before the
+            # forgetting took the forgetter out of known_by), or as the forgetting is when the fact was not limited
+            src = stored.get(w.get("id")) or {}
+            marked = ({**e, **{k: src.get(k) for k in ("knowledge", "known_by", "hidden_from", "knowledge_scope")}}
+                      if src.get("knowledge") == "limited" else e)
+            xml = (f"    <Forgot by={quoteattr(who)} turn=\"{turn}\"{_knowledge_attrs(marked)}>"
                    f"{xml_escape(who + ' does not remember: ' + text)}</Forgot>")
             ref = {**assertion_ref(e), "withdrew": w.get("id")}
             out.append(_scoped(Line("forgot", xml, ref, e.get("turn"), f"{who} does not remember: {text}", text,
-                                    {"class": "lead" if w.get("predicate") in STANDING else "facts"},
-                                    _private(e, g.cast, r, True)), e, True))
-            rows.append(e)
+                                    {"class": "lead" if w.get("predicate") in STANDING else "facts",
+                                     **({"hidden_from": list(marked["hidden_from"])} if marked.get("hidden_from")
+                                        else {})},
+                                    _private(marked, g.cast, r, True)), marked, True))
+            rows.append({**marked, "id": e["id"]})
     return _moded(out, rows, g, r, options)
 
 
@@ -2194,11 +2202,14 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
 
     mine: dict[str, list[dict[str, Any]]] = {}
     unshown_pairs: set[tuple[str, str]] = set()  # packet-v21: a pair with a form of address the scene may not read
+    unshown_slots: set[tuple] = set()  # packet-v21: a conditioned fact with a slot the scene may not read
     for f in view["facts"]:
         if f["predicate"] in (CAST_PREDICATES_V21 if v21 else CAST_PREDICATES) and shown(f):
             mine.setdefault(scene.key(r, f["subject"]), []).append(f)
         elif v21 and f["predicate"] == "addresses" and f.get("object"):
             unshown_pairs.add((scene.key(r, f["subject"]), scene.key(r, f["object"])))
+        elif v21 and slot_key(f) is not None and condition_slot(f) != ("default",):
+            unshown_slots.add(slot_key(f))  # only a row that holds in a condition (extract-v21) counts
     others = {k for k in cast if k != persona and str(k) not in left_out}
     groups: list[tuple[str, list[Line]]] = []
     used: set[Any] = set()
@@ -2215,6 +2226,9 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
             # forms of address stay in lead and <Private>, as packet-v20 has them
             more = [f for f in more if f["predicate"] != "addresses"
                     or (k, scene.key(r, f["object"])) not in unshown_pairs]
+            # likewise a conditioned fact: one of its slots private here keeps all of them where packet-v20 has them
+            pick = [f for f in pick if slot_key(f) not in unshown_slots or slot_key(f) is None]
+            more = [f for f in more if slot_key(f) not in unshown_slots or slot_key(f) is None]
         else:
             pick = cast_facts(own, to_persona)
         named = any(n in said for n in scene.names({k: cast[k]}, r, aliases))
