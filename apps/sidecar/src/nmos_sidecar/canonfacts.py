@@ -519,8 +519,8 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
                 "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
                 " raw, coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
                 " ON CONFLICT DO NOTHING RETURNING id",
-                (xid, rid, window, ver, gen.key, gen.model, Jsonb({"reply": raw[:20000]}), Jsonb(coverage), [rid],
-                 hints, Jsonb(usage) if usage is not None else None)).fetchone()
+                (xid, rid, window, ver, gen.key, gen.model, Jsonb({"reply": raw[:20000].replace("\x00", "")}),
+                 Jsonb(coverage), [rid], hints, Jsonb(usage) if usage is not None else None)).fetchone()
             if inserted is None:
                 continue
             values = [(xid, rid, *assertion_values(a)) for a in rows]

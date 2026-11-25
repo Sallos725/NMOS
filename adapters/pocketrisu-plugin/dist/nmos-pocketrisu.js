@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:95a394e25a02".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:d1f4bdf01269".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -5795,6 +5795,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       const msg = el("div", { class: "msg", role: "status" });
       const card = found.card;
+      const cardLabel = found.card_name || card || "";
       const act = async (button, method, path, body, done) => {
         button.disabled = true;
         try {
@@ -5822,8 +5823,8 @@ html,body{margin:0;background:${PALETTE.bg}}
             track,
             "POST",
             "/v1/parsers/card/track",
-            { card, keys: c.keys },
-            L("sw.tracked_now", { card })
+            { card, conversation_id: conversation, keys: c.keys },
+            L("sw.tracked_now", { card: cardLabel })
           ));
           box.append(el("div", { class: "btns" }, track));
           return box;
@@ -5836,6 +5837,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         const savePins = el("button", { text: L("sw.save_pins") });
         savePins.addEventListener("click", () => void act(savePins, "PUT", "/v1/parsers/card/pins", {
           card,
+          conversation_id: conversation,
           keys: pins.map((p) => p.querySelector("input")).filter((i) => i.checked).map((i) => i.value)
         }, L("sw.pins_saved")));
         const buttons = el("div", { class: "btns" }, savePins);
@@ -5845,7 +5847,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             untrack,
             "POST",
             "/v1/parsers/card/untrack",
-            { card, rule_id: c.rule_id },
+            { card, conversation_id: conversation, rule_id: c.rule_id },
             L("sw.untracked")
           ));
           buttons.append(untrack);
@@ -5857,7 +5859,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       });
       statusCard.replaceChildren(
         el("h2", { text: L("sw.title") }),
-        el("p", { class: "sub", text: card ? L("sw.sub", { card }) : L("sw.no_card") }),
+        el("p", { class: "sub", text: card ? L("sw.sub", { card: cardLabel }) : L("sw.no_card") }),
         ...rows.length ? rows : [el("p", { class: "muted", text: L("sw.none") })],
         msg
       );

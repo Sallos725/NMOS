@@ -307,7 +307,8 @@ def _user(given: list[dict[str, Any]], story: str, open_secrets: list[dict[str, 
 def diverged(entries: list[dict[str, Any]], entities: list[dict[str, Any]], facts: list[dict[str, Any]],
              told: dict[str, Any] | None, open_secrets: list[dict[str, Any]], last_turn: int | None,
              model: Callable[..., tuple[Any, ...]] | None, told_secrets: bool, fallback: list[str],
-             excluded: frozenset[str] = frozenset(), held_keys: Collection[str] | None = None) -> dict[str, Any]:
+             excluded: frozenset[str] = frozenset(), held_keys: Collection[str] | None = None,
+             finale: str | None = None) -> dict[str, Any]:
     """The part's Markdown and how it was made (S4–S6). `facts` are already filtered for secrets by the caller, and
     `fallback` is Phase 50's `changed` lines; `held_keys` as `canon_input`. One call, asked again once when its reply
     is not JSON with a list, when
@@ -327,7 +328,8 @@ def diverged(entries: list[dict[str, Any]], entities: list[dict[str, Any]], fact
     system = PROMPT.format(secrets=SECRETS_TOLD if told_secrets else (SECRETS_KEPT if open_secrets else ""))
     user = _user(given, story, open_secrets, told_secrets)
     which = getattr(getattr(model, "__self__", None), "model", "")
-    key = hashlib.sha256(f"{told_secrets}|{which}|{system}|{user}".encode()).hexdigest()
+    key = hashlib.sha256(
+        f"{told_secrets}|{which}|{system}|{user}{'|finale:' + finale if finale else ''}".encode()).hexdigest()
     with _CACHE_LOCK:
         hit = _CACHE.get(key)
         if hit is not None:

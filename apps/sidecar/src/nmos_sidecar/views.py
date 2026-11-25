@@ -147,6 +147,7 @@ T: dict[str, tuple[str, str]] = {
     "carry_forgot": ("이 채팅은 이전 타임라인을 이어받았지만, 이 인물은 그것을 기억하지 않습니다",
                      "This chat carries an earlier timeline, which this person does not remember"),
     "carry_aka": ("다른 이름", "also called"), "carry_has": ("가진 것", "has"), "carry_told": ("말해 줌", "told"),
+    "carry_believes": ("믿음", "believes"),
     "carry_not": ("(아님)", "(not)"),
     "carried": ("이어받음", "carried"),
     "ok": ("작동 중", "Working"),
@@ -604,6 +605,10 @@ def _is_thread(row: dict[str, Any]) -> bool:
 def carry_text(row: dict[str, Any], lang: str) -> str:
     """A carried line as plain text (not escaped): "세라 위치 등대", "세라 → 카이토 관계 소꿉친구", or a thread's
     "세라 → 카이토: 등대에서 만나기"."""
+    if row.get("kind") == "belief" or row.get("line") == "belief":
+        who = _named(row, "subject")
+        val = str(row.get("value") or "")
+        return f"{who} {t(lang, 'carry_believes')}: {val}" if who else val
     if _is_thread(row):  # a thread row's by / to / text, or a carry line's subject / object / value
         by = row.get("by") if "by" in row else _named(row, "subject")
         to = row.get("to") if "by" in row else _named(row, "object")

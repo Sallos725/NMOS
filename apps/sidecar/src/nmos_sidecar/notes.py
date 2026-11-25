@@ -25,7 +25,7 @@ import math
 import re
 import threading
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -634,7 +634,7 @@ def model_for(settings: Settings, *, log_to: str | None = None,
 def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn: int | None,
          model: Callable[..., tuple[Any, ...]] | None, today: str,
          canon: list[dict[str, Any]] | None = None, language: str | None = None,
-         semantic_leaks: LeakCheck | None = None) -> dict[str, Any]:
+         semantic_leaks: LeakCheck | None = None, held_keys: Collection[str] | None = None) -> dict[str, Any]:
     """The note: one block holding every part asked for that has something to say, and what each part was made of.
     `canon` is the manifest in force with its texts (`canon.manifest`), which only the diverged part reads. `language`
     (default: the one asked for, `Ask.language`) and `semantic_leaks` go to the chronicle and the custom part."""
@@ -650,7 +650,7 @@ def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn:
                                     [f for f in facts if ask.secrets or not kept(f)], told,
                                     [s for s in view.get("secrets") or [] if s.get("open")], last_turn,
                                     model if ask.model else None, ask.secrets, changed_lines(facts, ask.secrets),
-                                    frozenset(view.get("excluded") or ()))
+                                    frozenset(view.get("excluded") or ()), held_keys=held_keys, finale=finale)
             body = d["body"]
             info.append({"kind": kind, **{k: d[k] for k in ("made", "cached", "held", "reason", "turns", "lines",
                                                             "entries", "left_out", "dropped")}, "chars": len(body)})

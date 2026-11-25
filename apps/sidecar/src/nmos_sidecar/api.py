@@ -1638,15 +1638,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             told = summaries.current(conn, conv_id, head, key) if key and calls else None
             setting = "diverged" in ask.sections or ("custom" in ask.sections and ask.custom_setting)
             manifest = canon.manifest(conn, conv_id) if setting else None
+            held = set(canon.held(conn, conv_id)) if "diverged" in ask.sections else None
         # PHASE-61 S6: each call logged as a `note` of this chat, outside the request's connection
         model = (notes.model_for(rt["settings"], log_to=rt["settings"].database_url, conversation_id=conv_id)
                  if ask.model and calls else None)
-        # TODO(Wave 3): `notes.make` takes no `held_keys` yet, so the diverged part still reads every lorebook entry.
-        # When it does, pass the lorebook keys this chat's prompts held, `canon.held(conn, conv_id)` read beside the
-        # manifest (keys as `retrieval_trace.canon_held` records them, traces pruned after `trace_retention_days`), or
-        # None when there are none: an empty set would leave out every entry that is not always active.
         out = notes.make(ask, view, told, last, model, date.today().isoformat(), canon=manifest,
-                         semantic_leaks=leak_check(ask, model))
+                         semantic_leaks=leak_check(ask, model), held_keys=held or None)
         log.info("author notes conversation=%s sections=%s made=%s", conv_id, ",".join(ask.sections),
                  ",".join(s["made"] for s in out["sections"]))
         return out
@@ -2411,6 +2408,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 changed = f["predicate"] in ("relationship", "role_toward") and i > 0 \
                     and _said_differs(history[i - 1], h)
                 text = " → ".join(str(x) for x in (h.get("object"), h.get("value")) if x)
+                if text and f["predicate"] != "addresses" and (label := inspector.cond_label(h)):
+                    text = f"{text} [{label}]"
                 if text and (turn, f["predicate"], text) not in seen:
                     seen.add((turn, f["predicate"], text))
                     mark = (turn, event_major or changed, text, f["predicate"])

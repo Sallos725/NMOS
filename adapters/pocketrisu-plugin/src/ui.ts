@@ -99,6 +99,7 @@ interface Preset { label: string | StringKey; url: string; model?: string; minSi
 /** `GET /v1/conversations/<id>/status/candidates` (PHASE-43 S2): status windows found by their shape in the chat. */
 interface StatusCandidates {
   card: string | null;
+  card_name?: string | null;
   candidates: { keys: string[]; count: number; values: Record<string, string>; tracked: boolean; rule_id: string | null }[];
   pins: string[];
 }
@@ -1339,6 +1340,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (!found || !Array.isArray(found.candidates)) { statusCard.style.display = 'none'; return; }
     const msg = el('div', { class: 'msg', role: 'status' });
     const card = found.card;
+    const cardLabel = found.card_name || card || '';
     const act = async (button: HTMLButtonElement, method: Method, path: string, body: unknown, done: string) => {
       button.disabled = true;
       try {
@@ -1356,8 +1358,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (!card) return box;
       if (!c.tracked) {
         const track = el('button', { class: 'primary', text: L('sw.track') });
-        track.addEventListener('click', () => void act(track, 'POST', '/v1/parsers/card/track', { card, keys: c.keys },
-          L('sw.tracked_now', { card })));
+        track.addEventListener('click', () => void act(track, 'POST', '/v1/parsers/card/track',
+          { card, conversation_id: conversation, keys: c.keys }, L('sw.tracked_now', { card: cardLabel })));
         box.append(el('div', { class: 'btns' }, track));
         return box;
       }
@@ -1368,13 +1370,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       });
       const savePins = el('button', { text: L('sw.save_pins') });
       savePins.addEventListener('click', () => void act(savePins, 'PUT', '/v1/parsers/card/pins', {
-        card, keys: pins.map((p) => p.querySelector('input') as HTMLInputElement).filter((i) => i.checked).map((i) => i.value),
+        card, conversation_id: conversation,
+        keys: pins.map((p) => p.querySelector('input') as HTMLInputElement).filter((i) => i.checked).map((i) => i.value),
       }, L('sw.pins_saved')));
       const buttons = el('div', { class: 'btns' }, savePins);
       if (c.rule_id) {
         const untrack = el('button', { text: L('sw.untrack') });
         untrack.addEventListener('click', () => void act(untrack, 'POST', '/v1/parsers/card/untrack',
-          { card, rule_id: c.rule_id }, L('sw.untracked')));
+          { card, conversation_id: conversation, rule_id: c.rule_id }, L('sw.untracked')));
         buttons.append(untrack);
       } else {
         box.append(el('p', { class: 'sub', text: L('sw.by_rule') }));
@@ -1383,7 +1386,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       return box;
     });
     statusCard.replaceChildren(el('h2', { text: L('sw.title') }),
-      el('p', { class: 'sub', text: card ? L('sw.sub', { card }) : L('sw.no_card') }),
+      el('p', { class: 'sub', text: card ? L('sw.sub', { card: cardLabel }) : L('sw.no_card') }),
       ...(rows.length ? rows : [el('p', { class: 'muted', text: L('sw.none') })]), msg);
     statusCard.style.display = '';
   }

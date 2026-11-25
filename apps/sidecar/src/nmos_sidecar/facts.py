@@ -21,7 +21,7 @@ from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .keywords import keywords
 from .predicates import (EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, address_label,
-                         stored_knowledge, whereabouts)
+                         stored_knowledge, takes_value, whereabouts)
 from . import canon, canonfacts
 from .repairs import (FACT_KINDS, IN_FORCE, READ_REGISTRY, REPAIR_COLUMNS, anchors_needed, apply_facts, apply_locks,
                       apply_told, cardinality, conditional, epistemic, exclusions, fungible, is_v21, legacy_anchors,
@@ -257,7 +257,8 @@ def version_key(a: dict[str, Any], r: Resolution | None = None) -> tuple:
     pred = READ_REGISTRY[a["predicate"]]
     if pred.cardinality == "single":
         return (a["predicate"], _subject(a, r)) + ((_object(a, r),) if pred.per_object else ())
-    return (a["predicate"], _subject(a, r), _object(a, r), _norm(a["value"]))
+    return (a["predicate"], _subject(a, r), _object(a, r),
+            _norm(a["value"]) if takes_value(a["predicate"], READ_REGISTRY) else "")
 
 
 def relation(a: dict[str, Any], r: Resolution | None = None) -> tuple:
@@ -272,7 +273,8 @@ def relation(a: dict[str, Any], r: Resolution | None = None) -> tuple:
         return (a["predicate"], _object(a, r))
     pred = READ_REGISTRY[a["predicate"]]
     if pred.cardinality == "single":
-        return ((_norm(a["value"]),) if pred.per_object else (_object(a, r), _norm(a["value"])))
+        value = _norm(a["value"]) if takes_value(a["predicate"], READ_REGISTRY) else ""
+        return ((value,) if pred.per_object else (_object(a, r), value))
     return ()
 
 

@@ -65,19 +65,37 @@ describe('status window card', () => {
 
     button('Track').click();
     await settle();
-    expect(calls.find(([, p]) => p === '/v1/parsers/card/track')![2]).toEqual({ card: 'Shape test', keys });
+    expect(calls.find(([, p]) => p === '/v1/parsers/card/track')![2]).toEqual({ card: 'Shape test', conversation_id: id, keys });
     expect(card().textContent).toContain('Tracked · 4 keys');
 
     const items = [...card().querySelectorAll<HTMLInputElement>('input[type=checkbox]')].find((i) => i.value === 'items')!;
     items.checked = true;
     button('Save pins').click();
     await settle();
-    expect(calls.find(([, p]) => p === '/v1/parsers/card/pins')![2]).toEqual({ card: 'Shape test', keys: ['items'] });
+    expect(calls.find(([, p]) => p === '/v1/parsers/card/pins')![2]).toEqual({ card: 'Shape test', conversation_id: id, keys: ['items'] });
 
     button('Stop tracking').click();
     await settle();
-    expect(calls.find(([, p]) => p === '/v1/parsers/card/untrack')![2]).toEqual({ card: 'Shape test', rule_id: 'card-x:1:status' });
+    expect(calls.find(([, p]) => p === '/v1/parsers/card/untrack')![2]).toEqual({ card: 'Shape test', conversation_id: id, rule_id: 'card-x:1:status' });
     expect(card().textContent).toContain('A 4-key status window');
+  });
+
+  it('displays card_name instead of opaque card binding id while sending card and conversation_id', async () => {
+    const { d, calls } = deps('binding-uuid-123');
+    const orig = d.api;
+    d.api = async (method, path, body, t) => {
+      const res = await orig(method, path, body, t);
+      if (method === 'GET' && path.includes('/status/candidates')) return { ...(res as object), card_name: 'Elena' };
+      return res;
+    };
+    await openChat(d);
+    expect(card().textContent).toContain('Elena');
+    expect(card().textContent).not.toContain('binding-uuid-123');
+    button('Track').click();
+    await settle();
+    expect(calls.find(([, p]) => p === '/v1/parsers/card/track')![2]).toEqual({
+      card: 'binding-uuid-123', conversation_id: id, keys,
+    });
   });
 
   it('cannot bind without a character name, and an older sidecar shows nothing', async () => {
