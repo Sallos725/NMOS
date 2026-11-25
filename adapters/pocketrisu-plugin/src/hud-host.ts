@@ -2,7 +2,7 @@
 // polls the sidecar's coverage while background work is pending. Best effort throughout: an error turns
 // the display off for the session and never reaches the request path.
 
-import { EMPTY, nextChange, parseCoverage, pending, reduce, view, type ActivityEvent, type HudState, type HudView } from './hud';
+import { EMPTY, nextChange, openTarget, parseCoverage, pending, reduce, view, type ActivityEvent, type HudState, type HudView, type PanelTarget } from './hud';
 import type { Lang } from './i18n';
 import { NMOS_ICON } from './icon';
 import { alpha, PALETTE } from './palette';
@@ -36,7 +36,7 @@ export interface HudDeps {
   /** Where the user is; changes when they open another character or chat. Must be cheap. */
   position(): Promise<string>;
   coverage(conversationId: string): Promise<unknown>;
-  openPanel(): void;
+  openPanel(target?: PanelTarget): void;
   now(): number;
   debug(...args: unknown[]): void;
   setTimer(fn: () => void, ms: number): unknown;
@@ -146,7 +146,7 @@ export function createHud(deps: HudDeps) {
       if (!d) return;
       const r = await d.root.getBoundingClientRect();
       if (event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom) {
-        deps.openPanel();
+        deps.openPanel(openTarget(state, deps.now()) ?? undefined);
       }
     } catch (error) {
       deps.debug('[NMOS] progress display click failed:', error instanceof Error ? error.message : error);

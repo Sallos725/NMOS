@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:789b1c4e237c".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:790a51c64efa".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -68,6 +68,45 @@
       box.select();
       box.setSelectionRange(0, box.value.length);
       return false;
+    }
+  }
+  function splitNoteSections(text2) {
+    const inner = text2.trim().replace(/^\[NMOS note[^\]]*\]\n?/, "").replace(/\n?\[\/NMOS note\]\s*$/, "").trim();
+    if (!inner) return [];
+    const parts = inner.split(/(?=^## )/m).map((s) => s.trim()).filter(Boolean);
+    const out = [];
+    for (const part of parts) {
+      const nl = part.indexOf("\n");
+      if (part.startsWith("## ")) {
+        const title = (nl === -1 ? part : part.slice(0, nl)).slice(3).trim();
+        out.push({ title: title || "Section", body: part });
+      } else if (out.length) {
+        out[out.length - 1].body += `
+
+${part}`;
+      } else {
+        out.push({ title: "Note", body: part });
+      }
+    }
+    return out;
+  }
+  var PRESETS_KEY = "nmos_note_presets_v1";
+  var MAX_CUSTOM_PRESETS = 6;
+  function loadNotePresets(storage) {
+    try {
+      const raw = (storage ?? globalThis.localStorage)?.getItem(PRESETS_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((x) => !!x && typeof x.name === "string" && typeof x.prompt === "string" && x.name.trim().length > 0 && x.prompt.trim().length > 0).slice(0, MAX_CUSTOM_PRESETS).map((x) => ({ name: x.name.trim().slice(0, 40), prompt: x.prompt.trim().slice(0, PROMPT_MAX) }));
+    } catch {
+      return [];
+    }
+  }
+  function saveNotePresets(presets, storage) {
+    try {
+      (storage ?? globalThis.localStorage)?.setItem(PRESETS_KEY, JSON.stringify(presets.slice(0, MAX_CUSTOM_PRESETS)));
+    } catch {
     }
   }
 
@@ -1522,7 +1561,91 @@
     ],
     "carry.err_no_link": ["\uD604\uC7AC \uC5F0\uACB0\uB41C \uC774\uC804 \uCC44\uD305\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "There is no link in force."],
     "carry.err_not_found": ["\uD574\uB2F9 \uCC44\uD305\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "That chat could not be found."],
-    "carry.err_failed": ["\uC694\uCCAD\uC744 \uCC98\uB9AC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.", "The request could not be completed. Please try again."]
+    "carry.err_failed": ["\uC694\uCCAD\uC744 \uCC98\uB9AC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.", "The request could not be completed. Please try again."],
+    // UX polish: live worker card, model calls, chat context banner, search/filters, graph drawer, undo toast, notes, onboarding
+    "worker.open_calls": ["\uD638\uCD9C \uB85C\uADF8 \uBCF4\uAE30", "View call log"],
+    "worker.auto_on": ["\uC790\uB3D9 \uAC31\uC2E0 ON", "Auto-refresh ON"],
+    "worker.auto_off": ["\uC790\uB3D9 \uAC31\uC2E0 OFF", "Auto-refresh OFF"],
+    "worker.open_models": ["\uBAA8\uB378 \uC124\uC815", "Model settings"],
+    "mem.diag_calls": ["\uBAA8\uB378 \uD638\uCD9C", "Model calls"],
+    "calls.filter_all": ["\uC804\uCCB4 ({n})", "All ({n})"],
+    "calls.filter_fail": ["\uC2E4\uD328\uB9CC ({n})", "Failed only ({n})"],
+    "home.other_chat_title": ["\uB2E4\uB978 \uCC44\uD305 \uC5F4\uB78C \uC911: {name}", "Viewing another chat: {name}"],
+    "home.other_chat_sub": [
+      "PocketRisu\uC5D0 \uD604\uC7AC \uC5F4\uB9B0 \uCC44\uD305\uACFC \uB2E4\uB985\uB2C8\uB2E4. \uC544\uB798 ON/OFF \uC2A4\uC704\uCE58\uB294 \uC5F4\uB9B0 \uCC44\uD305 \uC804\uC6A9\uC785\uB2C8\uB2E4.",
+      "This differs from the chat currently open in PocketRisu. The ON/OFF switch below controls the open chat."
+    ],
+    "home.back_host": ["\uC5F4\uB9B0 \uCC44\uD305\uC73C\uB85C \uB3CC\uC544\uAC00\uAE30", "Return to open chat"],
+    "shell.status_tip": ["\uD074\uB9AD\uD574 \uC9C4\uB2E8 \xB7 \uBAA8\uB378 \uC791\uC5C5 \uC5F4\uAE30", "Click to open diagnostics & model work"],
+    "mem.search_doc": ["\uC778\uBB3C, \uC0AC\uAC74, \uC57D\uC18D, \uBE44\uBC00 \uAC80\uC0C9\u2026", "Search people, events, threads, secrets\u2026"],
+    "mem.search_empty": ["\uAC80\uC0C9 \uC870\uAC74\uC5D0 \uB9DE\uB294 \uD56D\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No items match your search."],
+    "mem.filter_all": ["\uC804\uCCB4", "All"],
+    "mem.filter_promise": ["\uC57D\uC18D", "Promise"],
+    "mem.filter_goal": ["\uBAA9\uD45C", "Goal"],
+    "mem.filter_threat": ["\uC704\uD611", "Threat"],
+    "mem.filter_question": ["\uC9C8\uBB38", "Question"],
+    "mem.filter_debt": ["\uBE5A", "Debt"],
+    "graph.search": ["\uC778\uBB3C \xB7 \uC7A5\uC18C \uC774\uB984 \uCC3E\uAE30\u2026", "Find person or place\u2026"],
+    "graph.zoom_in": ["\uD655\uB300", "Zoom in"],
+    "graph.zoom_out": ["\uCD95\uC18C", "Zoom out"],
+    "graph.filter_all": ["\uC804\uCCB4", "All"],
+    "graph.filter_setting": ["\uC124\uC815", "Setting"],
+    "graph.filter_story": ["\uC774\uC57C\uAE30", "Story"],
+    "graph.filter_changed": ["\uBC14\uB01C", "Changed"],
+    "graph.filter_split": ["\uC758\uC2EC \uBCC4\uCE6D", "Possible split"],
+    "graph.open_person": ["\uC778\uBB3C \uC2DC\uD2B8 \uC5F4\uAE30", "Open person sheet"],
+    "graph.focus_person": ["\uC774 \uC778\uBB3C \uC911\uC2EC\uC73C\uB85C \uBCF4\uAE30", "Focus map here"],
+    "graph.no_ties": ["\uD45C\uC2DC \uC911\uC778 \uC5F0\uACB0\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No visible connections."],
+    "undo.applied": ["\uC218\uC815 \uC0AC\uD56D\uC744 \uBC18\uC601\uD588\uC2B5\uB2C8\uB2E4.", "Repair applied."],
+    "undo.button": ["\uC2E4\uD589 \uCDE8\uC18C", "Undo"],
+    "undo.done": ["\uBC29\uAE08 \uC218\uC815\uC744 \uB418\uB3CC\uB838\uC2B5\uB2C8\uB2E4.", "Reverted the repair."],
+    "notes.presets_label": ["\uD504\uB86C\uD504\uD2B8 \uD504\uB9AC\uC14B", "Prompt presets"],
+    "notes.preset_save": ["\uD604\uC7AC \uB0B4\uC6A9 \uC800\uC7A5", "Save current"],
+    "notes.preset_feelings": ["\uCE90\uB9AD\uD130 \uAC10\uC815\uC120", "Character feelings"],
+    "notes.preset_feelings_body": [
+      "\uC8FC\uC694 \uC778\uBB3C\uB4E4\uC774 \uC8FC\uC778\uACF5\uC5D0\uAC8C \uB290\uB07C\uB294 \uD604\uC7AC \uAC10\uC815\uACFC \uC18D\uB9C8\uC74C \uBCC0\uD654\uB97C 5\uC904 \uC774\uB0B4\uB85C \uC815\uB9AC\uD574\uC918.",
+      "Summarize each main character's current feelings toward the protagonist and how they shifted, in 5 lines or fewer."
+    ],
+    "notes.preset_threads": ["\uBBF8\uD68C\uC218 \uB5A1\uBC25", "Open mysteries"],
+    "notes.preset_threads_body": [
+      "\uC544\uC9C1 \uD480\uB9AC\uC9C0 \uC54A\uC740 \uBE44\uBC00, \uC57D\uC18D, \uBCF5\uC120\uC744 \uC2DC\uAC04\uC21C\uC73C\uB85C \uBC88\uD638 \uB9E4\uACA8 \uC815\uB9AC\uD574\uC918.",
+      "List unresolved secrets, promises, and foreshadowing in chronological order."
+    ],
+    "notes.preset_npcs": ["NPC \uC694\uC57D", "NPC summary"],
+    "notes.preset_npcs_body": [
+      "\uCD5C\uADFC \uB4F1\uC7A5\uD55C \uC870\uC5F0\uB4E4\uC758 \uC18C\uC18D\xB7\uC5ED\uD560\xB7\uB9D0\uD22C \uD2B9\uC9D5\uC744 \uAC04\uACB0\uD558\uAC8C \uC815\uB9AC\uD574\uC918.",
+      "Briefly list recent supporting characters with their affiliation, role, and speech style."
+    ],
+    "notes.cancel": ["\uC0DD\uC131 \uCDE8\uC18C ({s}\uCD08)", "Cancel ({s}s)"],
+    "notes.cancelled": ["\uB178\uD2B8 \uC0DD\uC131\uC744 \uCDE8\uC18C\uD588\uC2B5\uB2C8\uB2E4.", "Note generation cancelled."],
+    "notes.working_sec": ["\uB178\uD2B8\uB97C \uB9CC\uB4E4\uACE0 \uC788\uC2B5\uB2C8\uB2E4\u2026 ({s}\uCD08 \uACBD\uACFC)", "Generating note\u2026 ({s}s elapsed)"],
+    "notes.copy_section": ["\uC139\uC158 \uBCF5\uC0AC", "Copy section"],
+    "notes.section_copied": ['"{title}" \uC139\uC158\uC744 \uBCF5\uC0AC\uD588\uC2B5\uB2C8\uB2E4.', 'Copied "{title}".'],
+    "notes.cached_hint": ["\uC774\uC804 \uC0DD\uC131 \uACB0\uACFC\uB97C \uC720\uC9C0 \uC911\uC785\uB2C8\uB2E4.", "Showing your last generated note for this chat."],
+    "mc.sub": ["\uC774\uBBF8 \uC77D\uC740 \uD134\uC744 \uC5B4\uB5BB\uAC8C \uCC98\uB9AC\uD560\uC9C0 \uC120\uD0DD\uD558\uC138\uC694. (Esc\uB85C \uCDE8\uC18C)", "Choose how to handle already-processed turns. (Esc to cancel)"],
+    "onboard.title": ["NMOS \uC2DC\uC791\uD558\uAE30", "Getting started with NMOS"],
+    "onboard.sub": [
+      "\uC0AC\uC774\uB4DC\uCE74\uC640 \uC544\uC9C1 \uC5F0\uACB0\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uC544\uB798 3\uB2E8\uACC4\uB97C \uC21C\uC11C\uB300\uB85C \uB9C8\uCE58\uBA74 \uC790\uB3D9\uC73C\uB85C \uAE30\uC5B5\uC774 \uC791\uB3D9\uD569\uB2C8\uB2E4.",
+      "Not connected to the sidecar yet. Complete these 3 steps to enable long-term memory."
+    ],
+    "onboard.step1": ["1. \uC0AC\uC774\uB4DC\uCE74 \uC11C\uBC84 \uC5F0\uACB0", "1. Connect to the sidecar"],
+    "onboard.step1_sub": [
+      "\uC0AC\uC774\uB4DC\uCE74 \uC8FC\uC18C(\uAE30\uBCF8 http://127.0.0.1:8790)\uC640 \uD1A0\uD070\uC744 \uD655\uC778\uD558\uACE0 \uC5F0\uACB0\uC744 \uD14C\uC2A4\uD2B8\uD558\uC138\uC694.",
+      "Check your sidecar URL (default http://127.0.0.1:8790) and token, then test the connection."
+    ],
+    "onboard.step1_btn": ["\uC5F0\uACB0 \uC124\uC815", "Connection"],
+    "onboard.step2": ["2. \uCD94\uCD9C \xB7 \uC784\uBCA0\uB529 \uBAA8\uB378 \uC120\uD0DD", "2. Choose extraction & embedding models"],
+    "onboard.step2_sub": [
+      "OpenRouter, Gemini, OpenAI, Ollama \uD504\uB9AC\uC14B \uC911 \uC0AC\uC6A9\uD560 \uBAA8\uB378\uC744 \uACE0\uB974\uC138\uC694.",
+      "Pick a preset for OpenRouter, Gemini, OpenAI, or Ollama."
+    ],
+    "onboard.step2_btn": ["\uBAA8\uB378 \uC124\uC815", "Models"],
+    "onboard.step3": ["3. \uCC44\uD305\uC5D0\uC11C \uBA54\uC2DC\uC9C0 1\uD68C \uC804\uC1A1", "3. Send a message in chat"],
+    "onboard.step3_sub": [
+      "\uCCAB \uC751\uB2F5\uBD80\uD130 \uC790\uB3D9\uC73C\uB85C \uB300\uD654 \uB3D9\uAE30\uD654\uC640 \uAE30\uC5B5 \uCD94\uCD9C\uC774 \uC2DC\uC791\uB429\uB2C8\uB2E4.",
+      "Sync and memory extraction start automatically on the next reply."
+    ],
+    "onboard.waiting": ["\uB300\uAE30 \uC911", "Waiting"]
   };
   function t(lang, key, vars = {}) {
     const text2 = STRINGS[key][lang === "en" ? 1 : 0];
@@ -3326,6 +3449,18 @@ ${GUARD_LINE}` : "";
   var OUTCOME_MS = 4e3;
   var DONE_MS = 3e3;
   var EMPTY = { request: null, progress: null };
+  function openTarget(state, now) {
+    const r = state.request;
+    if (r?.phase === "done" && now < r.until) {
+      if (r.outcome === "failed") return "connection";
+      if (r.outcome === "injected" || r.outcome === "nothing-relevant") return "working";
+      return null;
+    }
+    const p = state.progress;
+    if (p && "coverage" in p) return failures(p.coverage) > 0 ? "calls" : "working";
+    if (p && "finishedUntil" in p && now < p.finishedUntil) return p.failed > 0 ? "calls" : "working";
+    return null;
+  }
   function pending(c) {
     return (c.extract?.pending ?? 0) + (c.embed?.pending ?? 0) + (c.summarize?.pending ?? 0);
   }
@@ -3587,7 +3722,7 @@ ${GUARD_LINE}` : "";
         if (!d) return;
         const r = await d.root.getBoundingClientRect();
         if (event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom) {
-          deps.openPanel();
+          deps.openPanel(openTarget(state, deps.now()) ?? void 0);
         }
       } catch (error) {
         deps.debug("[NMOS] progress display click failed:", error instanceof Error ? error.message : error);
@@ -3906,7 +4041,7 @@ ${GUARD_LINE}` : "";
   var MAP = `map(?:\\?focus=${UUID})?`;
   var ACTS = /* @__PURE__ */ new Set(["notes", "settings", "backup", "retry"]);
   function inspectorApiPath(href) {
-    const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
+    const m = new RegExp(`^/inspector(/calls|/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
     if (m) return `/v1/inspector${m[1] ?? ""}`;
     const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|${MAP}|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, "i").exec(href ?? "");
     return v ? `/v1/views${v[1]}` : null;
@@ -4297,7 +4432,7 @@ ${GUARD_LINE}` : "";
     if (cls) node.setAttribute("class", cls);
     return node;
   };
-  function drawGraph(box, g, open, toggle) {
+  function drawGraph(box, g, open, toggle, opts) {
     const svg2 = make("svg", "g-panel");
     const edges = make("g", ""), nodes = make("g", "");
     svg2.append(edges, nodes);
@@ -4342,22 +4477,172 @@ ${GUARD_LINE}` : "";
       dots.set(group, n);
       parts.push({ n, dot, label, group });
     }
-    box.replaceChildren(svg2, caption, buttons);
+    let searchQuery = "";
+    let markFilter = "all";
+    let drawer = null;
+    if (opts) {
+      const toolbar = document.createElement("div");
+      toolbar.className = "g-toolbar";
+      const search = document.createElement("input");
+      search.type = "search";
+      search.className = "g-search";
+      search.placeholder = opts.labels.search;
+      search.setAttribute("aria-label", opts.labels.search);
+      const chips = document.createElement("div");
+      chips.className = "g-chips";
+      const filterSpecs = [
+        ["all", opts.labels.filterAll],
+        ["setting", opts.labels.filterSetting],
+        ["story", opts.labels.filterStory],
+        ["changed", opts.labels.filterChanged],
+        ...g.suspects.length ? [["split", opts.labels.filterSplit]] : []
+      ];
+      const chipBtns = [];
+      for (const [key, label] of filterSpecs) {
+        const cb = document.createElement("button");
+        cb.type = "button";
+        cb.className = `g-chip${key === "all" ? " on" : ""}`;
+        cb.dataset.mark = key;
+        cb.textContent = label;
+        cb.addEventListener("click", () => {
+          markFilter = key;
+          for (const x of chipBtns) x.classList.toggle("on", x.dataset.mark === key);
+          apply();
+          if (picked) renderDrawer(picked);
+        });
+        chipBtns.push(cb);
+        chips.append(cb);
+      }
+      search.addEventListener("input", () => {
+        searchQuery = search.value.trim().toLowerCase();
+        apply();
+      });
+      toolbar.append(search, chips);
+      const stage = document.createElement("div");
+      stage.className = "g-stage";
+      const zoomBtns = document.createElement("div");
+      zoomBtns.className = "g-zoom";
+      const mkZoom = (txt, aria, factor) => {
+        const zb = document.createElement("button");
+        zb.type = "button";
+        zb.className = "mini";
+        zb.textContent = txt;
+        zb.setAttribute("aria-label", aria);
+        zb.setAttribute("title", aria);
+        zb.addEventListener("click", () => {
+          const cx = view2.x + view2.w / 2, cy = view2.y + view2.h / 2;
+          view2 = zoomAt(view2, factor, cx, cy, size().w, ...limits());
+          apply();
+        });
+        zoomBtns.append(zb);
+      };
+      mkZoom("+", opts.labels.zoomIn, 1.35);
+      mkZoom("\u2212", opts.labels.zoomOut, 1 / 1.35);
+      stage.append(svg2, zoomBtns);
+      drawer = document.createElement("div");
+      drawer.className = "g-drawer";
+      drawer.style.display = "none";
+      box.replaceChildren(toolbar, stage, caption, drawer, buttons);
+    } else {
+      box.replaceChildren(svg2, caption, buttons);
+    }
     const size = () => ({ w: svg2.clientWidth || 360, h: svg2.clientHeight || 420 });
     let fit = fitView(g.nodes, size().w, size().h);
     let view2 = fit;
     let picked = null;
     const scaleOf = (v) => size().w / v.w;
+    const markLabel = (mark) => {
+      if (!opts) return mark;
+      if (mark === "setting") return opts.labels.filterSetting;
+      if (mark === "story") return opts.labels.filterStory;
+      if (mark === "changed") return opts.labels.filterChanged;
+      if (mark === "split") return opts.labels.filterSplit;
+      return mark;
+    };
+    const renderDrawer = (id) => {
+      if (!drawer || !opts) return;
+      const n = id ? pos.get(id) : null;
+      if (!n) {
+        drawer.style.display = "none";
+        drawer.replaceChildren();
+        return;
+      }
+      const connected = lines.filter(({ e }) => (e.a === n.id || e.b === n.id) && (markFilter === "all" || e.mark === markFilter));
+      const head = document.createElement("div");
+      head.className = "g-drawer-head";
+      const title = document.createElement("b");
+      title.textContent = n.name;
+      const acts = document.createElement("div");
+      acts.className = "g-drawer-acts";
+      if (n.entity && n.kind === "character") {
+        if (opts.openPerson) {
+          const personBtn = document.createElement("button");
+          personBtn.type = "button";
+          personBtn.className = "mini primary";
+          personBtn.textContent = opts.labels.openPerson;
+          personBtn.addEventListener("click", () => opts.openPerson(n.entity));
+          acts.append(personBtn);
+        }
+        const focusBtn = document.createElement("button");
+        focusBtn.type = "button";
+        focusBtn.className = "mini";
+        focusBtn.textContent = opts.labels.focusPerson;
+        focusBtn.addEventListener("click", () => open(n.entity));
+        acts.append(focusBtn);
+      }
+      head.append(title, acts);
+      const list = document.createElement("div");
+      list.className = "g-drawer-list";
+      if (!connected.length) {
+        const empty = document.createElement("div");
+        empty.className = "v-meta";
+        empty.textContent = opts.labels.noTies;
+        list.append(empty);
+      } else {
+        for (const { e } of connected.slice(0, 12)) {
+          const other = pos.get(e.a === n.id ? e.b : e.a);
+          if (!other) continue;
+          const row = document.createElement("div");
+          row.className = "g-drawer-row";
+          const nm = document.createElement("span");
+          nm.className = "g-drawer-name";
+          nm.textContent = other.name;
+          const badge = document.createElement("span");
+          badge.className = `g-m ${e.mark}`;
+          badge.textContent = markLabel(e.mark);
+          row.append(nm, badge);
+          if (other.entity && other.kind === "character") {
+            row.classList.add("clickable");
+            row.addEventListener("click", () => pick(other.id));
+          }
+          list.append(row);
+        }
+      }
+      drawer.replaceChildren(head, list);
+      drawer.style.display = "";
+    };
     const apply = () => {
       svg2.setAttribute("viewBox", `${view2.x} ${view2.y} ${view2.w} ${view2.h}`);
       const s = scaleOf(view2);
       const near = picked ? around(g, picked) : null;
       const names = ARC * s >= NAMES_FROM;
-      for (const { n, dot, label } of parts) {
+      const activeNodes = markFilter === "all" ? null : /* @__PURE__ */ new Set();
+      for (const { e, el: el2 } of lines) {
+        const shown = markFilter === "all" || e.mark === markFilter;
+        el2.style.display = shown ? "" : "none";
+        if (shown && activeNodes) {
+          activeNodes.add(e.a);
+          activeNodes.add(e.b);
+        }
+      }
+      for (const { n, dot, label, group } of parts) {
+        const matchesSearch = !searchQuery || n.name.toLowerCase().includes(searchQuery);
+        const matchesMark = !activeNodes || activeNodes.has(n.id);
+        group.classList.toggle("dim", !matchesSearch || !matchesMark);
         dot.setAttribute("r", String((n.lead ? 9 : 6) / s));
         label.setAttribute("y", String(n.y + ((n.lead ? 9 : 6) + LABEL_PX + 2) / s));
         label.style.fontSize = `${LABEL_PX / s}px`;
-        label.style.display = names || n.lead || near?.has(n.id) ? "" : "none";
+        label.style.display = searchQuery && matchesSearch || names || n.lead || near?.has(n.id) ? "" : "none";
       }
     };
     const pick = (id) => {
@@ -4368,6 +4653,7 @@ ${GUARD_LINE}` : "";
       for (const { e, el: el2 } of lines) el2.classList.toggle("on", id !== null && (e.a === id || e.b === id));
       const n = id ? pos.get(id) : null;
       caption.textContent = n ? `${n.name} \xB7 ${g.words.ties.replace("{n}", String(near.size - 1))}${n.entity ? ` \xB7 ${g.words.tap}` : ""}` : g.words.legend;
+      renderDrawer(id);
       apply();
     };
     button(g.words.fit, () => {
@@ -4677,7 +4963,7 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos button.ghost{background:transparent;border-color:transparent;color:var(--c-text-muted)}
 .nmos button.ghost:hover:not(:disabled){background:var(--c-raised);color:var(--c-text-strong);border-color:var(--c-line)}
 .nmos button:disabled{opacity:.42;cursor:default}
-.nmos .msg{margin-top:10px;font-size:13.5px;white-space:pre-wrap}
+.nmos .msg{margin-top:10px;font-size:13.5px;white-space:pre-wrap}.nmos .msg:empty{display:none}
 .nmos .ok{color:var(--c-ok)}.nmos .err{color:var(--c-err)}.nmos .warn{color:var(--c-warn)}.nmos .muted{color:var(--c-text-muted)}
 .nmos .check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:var(--c-text-soft)}.nmos .check input{width:auto}
 .nmos .preview{margin:8px 0;padding:10px 12px;border-left:3px solid var(--c-accent);background:var(--c-sunken);border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.6}.nmos .preview>b{display:block;margin-bottom:4px;color:var(--c-text-strong)}
@@ -4861,6 +5147,45 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .bar .text{flex:1;min-width:160px;font-size:14px}
 .nmos .bar .model-change{flex:1;display:flex;flex-direction:column;gap:2px;font-size:14px}.nmos .bar .model-change p{margin:0}
 .nmos .bar .model-change .btns{justify-content:flex-end;margin-top:8px}
+.nmos .bar.modal-open{position:fixed;inset:0;bottom:0;z-index:60;background:rgba(8,10,14,0.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px;border:0}
+.nmos .bar.modal-open .model-change{flex:0 1 460px;width:100%;max-width:460px;background:var(--c-surface);border:1px solid var(--c-line-strong);border-radius:14px;padding:18px 20px;box-shadow:0 22px 60px rgba(0,0,0,0.65);gap:8px}
+.nmos .bar.modal-open .model-change label.check{margin:0;padding:9px 11px;border-radius:9px;background:var(--c-sunken);border:1px solid var(--c-line);cursor:pointer}
+.nmos .status-pill{cursor:pointer}
+.nmos .status-pill:hover{border-color:var(--c-line-hover)}
+.nmos .dirty-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--c-warn);margin-left:auto;flex:none}
+.nmos .other-chat-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 15px;border-radius:12px;border:1px solid ${alpha("cyan", 0.4)};background:linear-gradient(90deg,${alpha("cyan", 0.12)},var(--c-surface) 60%);margin-bottom:10px}
+.nmos .worker-home{padding:14px 16px;border-radius:12px;background:var(--c-surface);border:1px solid var(--c-line-strong)}
+.nmos .worker-home.trouble{border-color:${alpha("warn", 0.48)};background:linear-gradient(135deg,${alpha("warn", 0.08)},var(--c-surface) 58%)}
+.nmos .worker-home-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.nmos .worker-home-title{display:inline-flex;align-items:center;gap:8px;font-weight:650;font-size:14.5px;color:var(--c-text-strong)}
+.nmos .worker-home-lines{display:flex;flex-direction:column;gap:4px;font-size:13px}
+.nmos .onboard-card{padding:16px 18px;border-radius:13px;background:var(--c-surface);border:1px solid ${alpha("accent", 0.36)}}
+.nmos .onboard-step{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:var(--c-sunken);border:1px solid var(--c-line);margin-top:8px}
+.nmos .doc-search-bar{margin:0 0 12px}
+.nmos .doc-search-bar input{width:100%}
+.nmos .filter-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.nmos .filter-chip{padding:4px 10px;border-radius:999px;font-size:12px;background:var(--c-sunken);border:1px solid var(--c-line);color:var(--c-text-soft)}
+.nmos .filter-chip.on{background:${alpha("accent", 0.18)};border-color:${alpha("accent", 0.48)};color:var(--c-text-strong)}
+.nmos .insp tr.call-fail td{background:${alpha("err", 0.06)}}
+.nmos .g-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px}
+.nmos .g-toolbar .g-search{flex:1 1 160px;min-width:140px;padding:6px 10px;font-size:13px}
+.nmos .g-chips{display:flex;flex-wrap:wrap;gap:5px}
+.nmos .g-chip{padding:4px 9px;border-radius:999px;font-size:12px;background:var(--c-sunken);border:1px solid var(--c-line);color:var(--c-text-soft)}
+.nmos .g-chip.on{background:${alpha("accent", 0.18)};border-color:${alpha("accent", 0.48)};color:var(--c-text-strong)}
+.nmos .g-stage{position:relative}
+.nmos .g-zoom{position:absolute;right:10px;bottom:10px;display:flex;gap:4px}
+.nmos svg.g-panel .g-node.dim{opacity:.18}
+.nmos .g-drawer{margin-top:10px;padding:12px 14px;border-radius:11px;background:var(--c-raised);border:1px solid ${alpha("accent", 0.36)}}
+.nmos .g-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.nmos .g-drawer-head b{color:var(--c-text-strong);font-size:14.5px}
+.nmos .g-drawer-acts{display:flex;gap:6px;flex-wrap:wrap}
+.nmos .g-drawer-list{display:flex;flex-direction:column;gap:4px}
+.nmos .g-drawer-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 6px;border-radius:6px;font-size:13px;color:var(--c-text-soft)}
+.nmos .g-drawer-row.clickable{cursor:pointer}
+.nmos .g-drawer-row.clickable:hover{background:var(--c-surface);color:var(--c-text-strong)}
+.nmos .nmos-toast{position:sticky;bottom:16px;z-index:50;max-width:520px;margin:12px auto 0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:11px;background:var(--c-raised-hover);border:1px solid ${alpha("accent", 0.52)};box-shadow:0 12px 32px rgba(0,0,0,0.5);color:var(--c-text-strong);font-size:13.5px}
+.nmos .note-presets{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}
+.nmos .note-sec-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 6px}
 
 @media (max-width: 860px){
   .nmos .notes-studio{grid-template-columns:1fr}
@@ -4919,18 +5244,18 @@ html,body{margin:0;background:${PALETTE.bg}}
     return text2.replace(/^\/v1\/\S+ -> HTTP 422: /, t(lang, "invalid")).replace(/^\/v1\/\S+ -> /, t(lang, "sidecar_error"));
   }
   var current = null;
-  async function openPanel(deps, tab) {
+  async function openPanel(deps, tab, target) {
     if (current && document.body.contains(current.root)) {
-      current.select(tab);
+      current.select(tab, target);
       await deps.show();
       return;
     }
     if (!document.getElementById("nmos-style")) document.head.append(el("style", { id: "nmos-style", text: CSS }));
     const lang = langOf(await deps.getArg("language"));
-    current = await render(deps, lang, tab);
+    current = await render(deps, lang, tab, target);
     await deps.show();
   }
-  async function render(deps, lang, tab) {
+  async function render(deps, lang, tab, initialTarget) {
     const L = (key, vars) => t(lang, key, vars);
     const root = el("div", { class: "nmos", id: "nmos-panel" });
     const wrap = el("div", { class: "wrap" });
@@ -4956,6 +5281,78 @@ html,body{margin:0;background:${PALETTE.bg}}
     const settingsView = el("div");
     wrap.append(statusView, inspectorView, notesStudioView, settingsView);
     let shown = tab;
+    let dirtyReady = false;
+    const toastEl = el("div", { class: "nmos-toast", style: "display:none", role: "status" });
+    let toastTimer = null;
+    function hideToast() {
+      if (toastTimer !== null) {
+        clearTimeout(toastTimer);
+        toastTimer = null;
+      }
+      toastEl.style.display = "none";
+      toastEl.replaceChildren();
+    }
+    function showUndoToast(conversation, repairId) {
+      hideToast();
+      const undoBtn = el("button", { class: "primary mini", text: L("undo.button") });
+      undoBtn.addEventListener("click", async () => {
+        undoBtn.disabled = true;
+        try {
+          await deps.api("POST", `/v1/conversations/${conversation}/repairs/${repairId}/remove`, {}, 15e3);
+          hideToast();
+          say(actionMsg, L("undo.done"), "ok");
+          await showInspector();
+        } catch (error) {
+          say(actionMsg, errorText(lang, error), "err");
+          undoBtn.disabled = false;
+        }
+      });
+      const dismiss = el("button", { class: "ghost mini", "aria-label": L("close"), text: "\xD7" });
+      dismiss.addEventListener("click", hideToast);
+      toastEl.replaceChildren(el("span", { text: L("undo.applied") }), el("div", { style: "display:flex;gap:6px" }, undoBtn, dismiss));
+      toastEl.style.display = "";
+      toastTimer = setTimeout(hideToast, 7e3);
+    }
+    function onboardingCard() {
+      const goConn = el("button", { class: "primary mini", text: L("onboard.step1_btn") });
+      goConn.addEventListener("click", () => {
+        if (viewsOn) {
+          selectPrimary("settings");
+          openGroup("connection");
+        } else select("settings");
+      });
+      const goModels = el("button", { class: "mini", text: L("onboard.step2_btn") });
+      goModels.addEventListener("click", () => {
+        if (viewsOn) {
+          selectPrimary("settings");
+          openGroup("models");
+        } else select("settings");
+      });
+      return el(
+        "div",
+        { class: "onboard-card" },
+        el("h2", { text: L("onboard.title") }),
+        el("p", { class: "sub", text: L("onboard.sub") }),
+        el(
+          "div",
+          { class: "onboard-step" },
+          el("div", {}, el("b", { text: L("onboard.step1") }), el("div", { class: "sub", style: "margin:2px 0 0", text: L("onboard.step1_sub") })),
+          goConn
+        ),
+        el(
+          "div",
+          { class: "onboard-step" },
+          el("div", {}, el("b", { text: L("onboard.step2") }), el("div", { class: "sub", style: "margin:2px 0 0", text: L("onboard.step2_sub") })),
+          goModels
+        ),
+        el(
+          "div",
+          { class: "onboard-step" },
+          el("div", {}, el("b", { text: L("onboard.step3") }), el("div", { class: "sub", style: "margin:2px 0 0", text: L("onboard.step3_sub") })),
+          el("span", { class: "badge", text: L("onboard.waiting") })
+        )
+      );
+    }
     let usageRound = 0;
     let workerRound = 0;
     async function refreshStatus() {
@@ -5133,6 +5530,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         ));
       }
       cards.unshift(await chatCard(s.enabled, s.connected));
+      if (!s.connected && !viewsOn) cards.unshift(onboardingCard());
       const refresh = el("button", { text: L("refresh") });
       refresh.addEventListener("click", () => void refreshStatus());
       statusView.replaceChildren(...cards, el("div", { class: "btns" }, refresh));
@@ -5643,10 +6041,12 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       button.disabled = true;
       try {
-        await deps.api("POST", path, body, 15e3);
+        const r = await deps.api("POST", path, body, 15e3);
         picked.delete(action.item);
         updateBulk();
-        say(actionMsg, L(action.kind === "undo" || action.kind === "undo_batch" ? "rp.undone" : "rp.done"), "ok");
+        const isUndo = action.kind === "undo" || action.kind === "undo_batch";
+        say(actionMsg, L(isUndo ? "rp.undone" : "rp.done"), "ok");
+        if (!isUndo && typeof r?.repair?.id === "string" && r.repair.id) showUndoToast(conversation, r.repair.id);
         await showInspector();
       } catch (error) {
         say(actionMsg, errorText(lang, error), "err");
@@ -5708,6 +6108,104 @@ html,body{margin:0;background:${PALETTE.bg}}
           }
         });
         slot.append(box);
+      }
+      if (inspectorPath.includes("/memory")) {
+        const docMain = page.querySelector(".v-doc-main") ?? page.querySelector(".v-doc");
+        if (docMain) {
+          const docInput = el("input", { type: "search", placeholder: L("mem.search_doc"), "aria-label": L("mem.search_doc") });
+          const emptyNote = el("p", { class: "v-note doc-search-empty", style: "display:none", text: L("mem.search_empty") });
+          const searchBar = el("div", { class: "doc-search-bar" }, docInput, emptyNote);
+          let threadKind = "all";
+          const applyDocFilter = () => {
+            const q = docInput.value.trim().toLowerCase();
+            const active = q.length > 0 || threadKind !== "all";
+            let visibleSecs = 0;
+            for (const sec of Array.from(inspectorBody.querySelectorAll(".v-sec"))) {
+              const isOpenSec = sec.id === "s-open";
+              for (const det of Array.from(sec.querySelectorAll("details.v-more"))) {
+                if (active) {
+                  if (!("wasOpen" in det.dataset)) det.dataset.wasOpen = det.open ? "1" : "0";
+                  det.open = true;
+                } else if ("wasOpen" in det.dataset) {
+                  det.open = det.dataset.wasOpen === "1";
+                  delete det.dataset.wasOpen;
+                }
+              }
+              const rows = Array.from(sec.querySelectorAll(".v-line, .v-ev"));
+              if (!rows.length) {
+                const show = !q || (sec.textContent ?? "").toLowerCase().includes(q);
+                sec.style.display = show ? "" : "none";
+                if (show) visibleSecs += 1;
+                continue;
+              }
+              let shownRows = 0;
+              for (const row of rows) {
+                const textOk = !q || (row.textContent ?? "").toLowerCase().includes(q);
+                const kindOk = !isOpenSec || threadKind === "all" || !!row.querySelector(`.v-tag.k-${threadKind}`);
+                const show = textOk && kindOk;
+                row.style.display = show ? "" : "none";
+                if (show) shownRows += 1;
+              }
+              const showSec = shownRows > 0 || !active && !isOpenSec;
+              sec.style.display = showSec ? "" : "none";
+              if (showSec) visibleSecs += 1;
+            }
+            emptyNote.style.display = active && visibleSecs === 0 ? "" : "none";
+          };
+          docInput.addEventListener("input", applyDocFilter);
+          docMain.prepend(searchBar);
+          const openSec = page.querySelector("#s-open");
+          if (openSec) {
+            const kinds = ["promise", "goal", "threat", "question", "debt"].filter((k) => openSec.querySelector(`.v-tag.k-${k}`));
+            if (kinds.length > 1) {
+              const chips = el("div", { class: "filter-chips" });
+              const btns = [];
+              for (const k of ["all", ...kinds]) {
+                const b = el("button", {
+                  type: "button",
+                  class: `filter-chip${k === "all" ? " on" : ""}`,
+                  "data-th-kind": k,
+                  text: L(`mem.filter_${k}`)
+                });
+                b.addEventListener("click", () => {
+                  threadKind = k;
+                  for (const x of btns) x.classList.toggle("on", x.dataset.thKind === k);
+                  applyDocFilter();
+                });
+                btns.push(b);
+                chips.append(b);
+              }
+              const h2 = openSec.querySelector(".v-h2");
+              if (h2) h2.after(chips);
+              else openSec.prepend(chips);
+            }
+          }
+        }
+      }
+      if (inspectorPath.startsWith("/v1/inspector/calls")) {
+        const tbl = page.querySelector("table");
+        const rows = tbl ? Array.from(tbl.querySelectorAll("tbody tr")) : [];
+        if (tbl && rows.length) {
+          let fails = 0;
+          for (const tr of rows) {
+            const outcome = (tr.children[2]?.textContent ?? "").trim().toLowerCase();
+            const isOk = outcome === "ok" || outcome === "\uC131\uACF5";
+            if (!isOk) {
+              tr.classList.add("call-fail");
+              fails += 1;
+            }
+          }
+          const allBtn = el("button", { type: "button", class: "filter-chip on", text: L("calls.filter_all", { n: rows.length }) });
+          const failBtn = el("button", { type: "button", class: "filter-chip", text: L("calls.filter_fail", { n: fails }) });
+          const setFailOnly = (only) => {
+            allBtn.classList.toggle("on", !only);
+            failBtn.classList.toggle("on", only);
+            for (const tr of rows) tr.style.display = only && !tr.classList.contains("call-fail") ? "none" : "";
+          };
+          allBtn.addEventListener("click", () => setFailOnly(false));
+          failBtn.addEventListener("click", () => setFailOnly(true));
+          tbl.before(el("div", { class: "filter-chips" }, allBtn, failBtn));
+        }
       }
       for (const box of Array.from(page.querySelectorAll("details > .tl-lazy"))) {
         const section = box.parentElement;
@@ -5795,7 +6293,22 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (!box.isConnected || inspectorPath !== from) return;
         const graph = parseGraph(raw);
         if (!graph?.edges.length) return void box.replaceWith(note);
-        drawGraph(box, graph, (entity) => go(`/v1/views/c/${conv}/map?focus=${entity}`), (all) => void loadGraph(box, note, all));
+        drawGraph(box, graph, (entity) => go(`/v1/views/c/${conv}/map?focus=${entity}`), (all) => void loadGraph(box, note, all), {
+          labels: {
+            search: L("graph.search"),
+            zoomIn: L("graph.zoom_in"),
+            zoomOut: L("graph.zoom_out"),
+            filterAll: L("graph.filter_all"),
+            filterSetting: L("graph.filter_setting"),
+            filterStory: L("graph.filter_story"),
+            filterChanged: L("graph.filter_changed"),
+            filterSplit: L("graph.filter_split"),
+            openPerson: L("graph.open_person"),
+            focusPerson: L("graph.focus_person"),
+            noTies: L("graph.no_ties")
+          },
+          openPerson: (entity) => go(`/v1/views/c/${conv}/person/${entity}`)
+        });
       } catch {
         if (box.isConnected) box.replaceWith(note);
       }
@@ -5900,6 +6413,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (load !== loads) return;
         if (path.startsWith("/v1/views/hub")) {
           hubConversation = r.conversation ?? null;
+          if (hubConversation && !path.includes("conversation=")) hostConversationId = hubConversation;
           if (hubConversation) activeChatId = hubConversation;
           if (viewsOn) applyHubMeta(r.meta);
         }
@@ -6631,8 +7145,17 @@ html,body{margin:0;background:${PALETTE.bg}}
         formMsg
       );
     }
+    const notesCache = /* @__PURE__ */ new Map();
+    let notesElapsedTimer = null;
+    function clearNotesTimer() {
+      if (notesElapsedTimer !== null) {
+        clearInterval(notesElapsedTimer);
+        notesElapsedTimer = null;
+      }
+    }
     function buildNotes(conversation, target = notesCard, studio = false) {
       notesFor = conversation;
+      clearNotesTimer();
       const specs = [
         { key: "notes.diverged", kind: "diverged", on: true, desc: "notes.desc_diverged", badge: "notes.badge_llm", badgeCls: "b-llm", calls: 1 },
         { key: "notes.chronicle", kind: "chronicle", on: false, desc: "notes.desc_chronicle", badge: "notes.badge_llm", badgeCls: "b-llm", calls: 1 },
@@ -6691,10 +7214,50 @@ html,body{margin:0;background:${PALETTE.bg}}
       };
       prompt.addEventListener("input", counted);
       counted();
+      const presetRow = el("div", { class: "note-presets" });
+      let userPresets = studio ? loadNotePresets() : [];
+      const builtInPresets = studio ? [
+        { name: L("notes.preset_feelings"), prompt: L("notes.preset_feelings_body") },
+        { name: L("notes.preset_threads"), prompt: L("notes.preset_threads_body") },
+        { name: L("notes.preset_npcs"), prompt: L("notes.preset_npcs_body") }
+      ] : [];
+      const renderPresets = () => {
+        if (!studio) return;
+        const all = [...builtInPresets, ...userPresets];
+        const cur = prompt.value.trim();
+        const chips = all.map((p) => {
+          const b = el("button", { type: "button", class: `filter-chip${cur === p.prompt ? " on" : ""}`, text: p.name });
+          b.addEventListener("click", () => {
+            prompt.value = p.prompt;
+            counted();
+            renderPresets();
+          });
+          return b;
+        });
+        const savePreset = el("button", { type: "button", class: "mini ghost", text: `+ ${L("notes.preset_save")}` });
+        savePreset.addEventListener("click", () => {
+          const bodyText = prompt.value.trim();
+          if (!bodyText) return;
+          const firstLine = bodyText.split("\n")[0].trim().slice(0, 18) || "Preset";
+          userPresets = [{ name: firstLine, prompt: bodyText }, ...userPresets.filter((p) => p.prompt !== bodyText)].slice(0, 6);
+          saveNotePresets(userPresets);
+          renderPresets();
+        });
+        presetRow.replaceChildren(
+          el("span", { class: "muted", style: "font-size:12px", text: `${L("notes.presets_label")}:` }),
+          ...chips,
+          savePreset
+        );
+      };
+      if (studio) {
+        prompt.addEventListener("input", renderPresets);
+        renderPresets();
+      }
       const setting = el("input", { type: "checkbox" });
       const customArea = el(
         "div",
         { style: "display:none;margin:8px 0 12px" },
+        ...studio ? [presetRow] : [],
         prompt,
         count3,
         el("div", { class: "check" }, setting, el("span", { text: L("notes.custom_setting") })),
@@ -6710,6 +7273,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (!prompt.value) {
           prompt.value = saved;
           counted();
+          renderPresets();
         }
       }).catch(() => {
       });
@@ -6731,16 +7295,42 @@ html,body{margin:0;background:${PALETTE.bg}}
         warn.style.display = secrets.checked ? "" : "none";
       });
       const make2 = el("button", { class: "primary" }, ...studio ? [icon("sparkles", 15)] : [], L("notes.make"));
+      const cancelBtn = el("button", { class: "danger mini", style: "display:none", text: L("notes.cancel", { s: 0 }) });
       const msg = el("div", { class: "msg" });
-      const results = el("div", {}, ...studio ? [el("div", { class: "studio-empty", text: L("notes.empty_hint") })] : []);
+      const cached = studio ? notesCache.get(conversation) : void 0;
+      const results = el("div", {}, ...cached ? [el("p", { class: "sub", text: L("notes.cached_hint") }), noteResult(cached, msg, studio)] : studio ? [el("div", { class: "studio-empty", text: L("notes.empty_hint") })] : []);
+      let runSeq = 0;
+      cancelBtn.addEventListener("click", () => {
+        runSeq += 1;
+        clearNotesTimer();
+        make2.disabled = false;
+        cancelBtn.style.display = "none";
+        say(msg, L("notes.cancelled"), "muted");
+        const prev = studio ? notesCache.get(conversation) : void 0;
+        results.replaceChildren(...prev ? [el("p", { class: "sub", text: L("notes.cached_hint") }), noteResult(prev, msg, studio)] : studio ? [el("div", { class: "studio-empty", text: L("notes.empty_hint") })] : []);
+      });
       make2.addEventListener("click", async () => {
         const sections = kinds.filter((k) => k.box.checked).map((k) => k.box.value);
         if (!sections.length) return say(msg, L("notes.pick"), "warn");
         const text2 = prompt.value.trim();
         if (custom.checked && !text2) return say(msg, L("notes.custom_empty"), "warn");
+        const myRun = ++runSeq;
+        let elapsed = 0;
         make2.disabled = true;
         say(msg, L("act.working"));
-        results.replaceChildren(...studio ? [el("div", { class: "studio-empty", text: L("act.working") })] : []);
+        const waitBox = el("div", { class: "studio-empty", text: studio ? L("notes.working_sec", { s: 0 }) : L("act.working") });
+        results.replaceChildren(...studio ? [waitBox] : []);
+        if (studio) {
+          cancelBtn.textContent = L("notes.cancel", { s: 0 });
+          cancelBtn.style.display = "";
+          clearNotesTimer();
+          notesElapsedTimer = setInterval(() => {
+            if (myRun !== runSeq) return clearNotesTimer();
+            elapsed += 1;
+            waitBox.textContent = L("notes.working_sec", { s: elapsed });
+            cancelBtn.textContent = L("notes.cancel", { s: elapsed });
+          }, 1e3);
+        }
         let unsaved = false;
         if (custom.checked && text2 !== saved) {
           try {
@@ -6764,14 +7354,20 @@ html,body{margin:0;background:${PALETTE.bg}}
             body,
             9e5
           );
-          if (notesFor !== conversation) return;
-          results.replaceChildren(noteResult(r, msg));
+          if (notesFor !== conversation || myRun !== runSeq) return;
+          notesCache.set(conversation, r);
+          results.replaceChildren(noteResult(r, msg, studio));
           const done = r.text ? L("notes.done") : L("notes.part_none", { part: L("notes.title") });
           say(msg, unsaved ? `${done} ${L("notes.custom_unsaved")}` : done, r.text && !unsaved ? "ok" : "warn");
         } catch (error) {
+          if (myRun !== runSeq) return;
           say(msg, errorText(lang, error), "err");
         } finally {
-          make2.disabled = false;
+          if (myRun === runSeq) {
+            clearNotesTimer();
+            make2.disabled = false;
+            cancelBtn.style.display = "none";
+          }
         }
       });
       if (!studio) {
@@ -6799,7 +7395,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("div", { class: "check" }, secrets, el("span", { text: L("notes.secrets") })),
         warn,
         estBar,
-        el("div", { class: "btns" }, make2),
+        el("div", { class: "btns" }, make2, cancelBtn),
         msg
       );
       const rightCol = el(
@@ -6813,7 +7409,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("div", { class: "notes-studio" }, leftCol, rightCol)
       );
     }
-    function noteResult(r, msg) {
+    function noteResult(r, msg, studio = false) {
       const how = (p) => {
         const part = L(`notes.part.${p.kind}`);
         if (p.reason === "no_scenes") return L("notes.part_no_scenes", { part });
@@ -6849,12 +7445,34 @@ html,body{margin:0;background:${PALETTE.bg}}
         const copied = await copyText(box, navigator.clipboard);
         say(msg, L(copied ? "notes.copied" : "notes.copy_hint"), copied ? "ok" : "warn");
       });
+      const secButtons = [];
+      if (studio) {
+        const sections = splitNoteSections(r.text);
+        if (sections.length > 1) {
+          for (const sec of sections) {
+            const sb = el(
+              "button",
+              { type: "button", class: "mini", title: L("notes.copy_section") },
+              icon("copy", 13),
+              sec.title
+            );
+            sb.addEventListener("click", async () => {
+              const temp = el("textarea", { readonly: true });
+              temp.value = sec.body;
+              const copied = await copyText(temp, navigator.clipboard);
+              say(msg, copied ? L("notes.section_copied", { title: sec.title }) : L("notes.copy_hint"), copied ? "ok" : "warn");
+            });
+            secButtons.push(sb);
+          }
+        }
+      }
       return el(
         "div",
         {},
         el("h2", { text: L("notes.result") }),
         about,
         el("p", { class: "sub", text: L("notes.chars", { n: r.chars }) }),
+        ...secButtons.length ? [el("div", { class: "note-sec-row" }, ...secButtons)] : [],
         box,
         el("div", { class: "btns" }, copy)
       );
@@ -7261,6 +7879,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       parserSavePreset.disabled = parserBusy || !parserSupported || !parserName.value.trim() || !parsed.ok;
       parserRemovePreset.disabled = parserBusy || !parserSupported || !parserPreset.value;
       parserPreview.textContent = !target ? L("rules.choose_target") : !parsed.ok ? L(parsed.error === "blank" ? "rules.blank" : parsed.error === "json" ? "rules.invalid_json" : "rules.invalid_shape") : L("rules.preview", { card: target, n: parsed.rules.length });
+      syncDirtyDots();
     }
     function fillParsers(cfg) {
       parserSupported = cfg.parsers.spec !== void 0 && Array.isArray(cfg.parsers.presets);
@@ -7550,10 +8169,38 @@ html,body{margin:0;background:${PALETTE.bg}}
     let baseline = values();
     let closing = false;
     const dirty = () => dirtySections(baseline, values());
+    const SECTION_TO_GROUP = {
+      conn: "connection",
+      llm: "models",
+      emb: "models",
+      rerank: "models",
+      tune: "memory",
+      trim: "memory"
+    };
+    let activeModalCancel = null;
+    let workerAutoOn = false;
+    let workerAutoTimer = null;
+    function stopWorkerAuto() {
+      if (workerAutoTimer !== null) {
+        clearInterval(workerAutoTimer);
+        workerAutoTimer = null;
+      }
+    }
+    function syncDirtyDots() {
+      if (!dirtyReady) return;
+      const groups = new Set(dirty().map((s) => SECTION_TO_GROUP[s]));
+      if (parserDirty()) groups.add("rules");
+      for (const btn of Array.from(groupList.querySelectorAll("button[data-group]"))) {
+        const dot = btn.querySelector(".dirty-dot");
+        if (dot) dot.style.display = groups.has(btn.dataset.group) ? "" : "none";
+      }
+      for (const dot of settingsDirtyDots) dot.style.display = groups.size ? "" : "none";
+    }
     function update(message) {
       const d = dirty();
       syncTrimWarn();
       syncExtra();
+      syncDirtyDots();
       save.disabled = d.length === 0;
       revert.disabled = d.length === 0;
       if (message) say(barText, message.text, message.kind);
@@ -7636,15 +8283,20 @@ html,body{margin:0;background:${PALETTE.bg}}
         const go2 = el("button", { class: "primary", text: L("save") });
         const back = el("button", { text: L("cancel") });
         const done = (answer) => {
+          activeModalCancel = null;
+          bar.classList.remove("modal-open");
           bar.replaceChildren(barText, revert, save);
           resolve(answer);
         };
+        activeModalCancel = () => done(null);
         go2.addEventListener("click", () => done({ mode: redo.checked ? "recent" : "continue", canon: canon.checked }));
         back.addEventListener("click", () => done(null));
+        bar.classList.add("modal-open");
         bar.replaceChildren(el(
           "div",
           { class: "model-change" },
-          el("p", { text: L("mc.title") }),
+          el("h2", { text: L("mc.title") }),
+          el("p", { class: "sub", text: L("mc.sub") }),
           el("label", { class: "check" }, carry, el("span", { text: L("mc.continue", { n: jobsOf(p.queued.continue) }) })),
           el("label", { class: "check" }, redo, el("span", { text: L("mc.recent", { t: turns, n: jobsOf(p.queued.recent) }) })),
           el("label", { class: "check" }, canon, el("span", { text: L("mc.canon", { n: extra }) })),
@@ -7740,6 +8392,10 @@ html,body{margin:0;background:${PALETTE.bg}}
     let onDocKey = null;
     function cleanupPanel() {
       window.clearTimeout(armTimer);
+      stopWorkerAuto();
+      clearNotesTimer();
+      hideToast();
+      activeModalCancel = null;
       if (onDocClick) document.removeEventListener("click", onDocClick);
       if (onDocKey) document.removeEventListener("keydown", onDocKey);
       closers.clear();
@@ -7798,14 +8454,18 @@ html,body{margin:0;background:${PALETTE.bg}}
     let activePrimary = "home";
     let activeMemSub = "story";
     let activeChatId = null;
+    let hostConversationId = null;
     let activeChatName = "";
     let attentionCount = 0;
     let lastMeta = null;
+    let lastConnected = true;
+    let lastStatusKind = "ok";
     let knownChats = [];
     let chatPopOpen = false;
     let currentGroup = "chat";
     const navButtons = /* @__PURE__ */ new Map();
     const attnBadges = [];
+    const settingsDirtyDots = [];
     let chatBtnLabel = null;
     let chatPop = null;
     let chatSearchInput = null;
@@ -7856,6 +8516,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         kind = "ok";
         key = "shell.status_ok";
       }
+      if (s) lastConnected = s.connected;
+      lastStatusKind = kind;
       statusPill.className = `status-pill${kind ? ` ${kind}` : ""}`;
       statusPill.replaceChildren(
         el("span", { class: `dot${kind ? ` ${kind}` : ""}` }),
@@ -7951,11 +8613,61 @@ html,body{margin:0;background:${PALETTE.bg}}
         showChatPage();
       }
     }
+    function otherChatBanner() {
+      if (!hostConversationId || !activeChatId || activeChatId === hostConversationId) return null;
+      const back = el("button", { class: "primary mini", text: L("home.back_host") });
+      back.addEventListener("click", () => {
+        activeChatId = hostConversationId;
+        hubConversation = hostConversationId;
+        const found = knownChats.find((c) => c.id === hostConversationId);
+        if (found) activeChatName = found.name;
+        updateChatLabel();
+        if (activePrimary === "settings" && currentGroup === "chat") showChatPage();
+        else void goHome();
+      });
+      return el(
+        "div",
+        { class: "other-chat-banner" },
+        el(
+          "div",
+          {},
+          el("b", { text: L("home.other_chat_title", { name: activeChatName || activeChatId.slice(0, 8) }) }),
+          el("div", { class: "chat-strip-sub", text: L("home.other_chat_sub") })
+        ),
+        back
+      );
+    }
+    function openDiag(mode) {
+      const cid = activeChatId ?? hubConversation;
+      notesStudioView.style.display = "none";
+      settingsView.style.display = "none";
+      statusView.style.display = "none";
+      inspectorView.style.display = "";
+      bar.style.display = "none";
+      shown = "inspector";
+      root.classList.add("wide");
+      setPrimaryNav("memory");
+      homeQuickBar.style.display = "none";
+      memSubBar.style.display = "";
+      stopWorkerAuto();
+      renderMemSubBar("diag", mode);
+      if (mode === "calls") {
+        go("/v1/inspector/calls");
+        return;
+      }
+      if (!cid) {
+        inspbar.style.display = "none";
+        inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("mem.no_chat") }));
+        return;
+      }
+      go(mode === "raw" ? `/v1/inspector/c/${cid}` : `/v1/views/c/${cid}/working`);
+    }
     let quickRound = 0;
     async function refreshHomeQuick() {
       if (!viewsOn) return;
       const round = ++quickRound;
       const items = [];
+      const workerReq = deps.api("GET", "/v1/worker/status", void 0, 5e3).catch(() => null);
       let s = null;
       try {
         s = await deps.status();
@@ -7964,6 +8676,11 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       if (round !== quickRound) return;
       updateStatusPill(s, lastMeta);
+      const other = otherChatBanner();
+      if (other) items.push(other);
+      if (s && !s.connected) {
+        items.push(onboardingCard());
+      }
       try {
         const state = await deps.chat.current();
         if (round !== quickRound) return;
@@ -7998,13 +8715,13 @@ html,body{margin:0;background:${PALETTE.bg}}
                 "div",
                 {},
                 el("div", { class: "chat-strip-title", text: `${L("chat.title")} \xB7 ${badgeText}` }),
-                el("div", { class: "chat-strip-sub", text: allOff ? L("chat.all_off") : L(off ? "chat.off_sub" : "chat.on_sub") })
+                el("div", { class: "chat-strip-sub", text: allOff ? L("chat.all_off") : L(off ? "chat.off_sub" : "chat.on_sub") }),
+                msg
               )
             ),
             flip
           );
           items.push(strip);
-          if (msg.textContent) items.push(msg);
         }
       } catch {
       }
@@ -8072,8 +8789,72 @@ html,body{margin:0;background:${PALETTE.bg}}
         }
       }
       homeQuickBar.replaceChildren(...items);
+      const rawWorker = await workerReq;
+      if (round !== quickRound || !homeQuickBar.isConnected || homeQuickBar.style.display === "none") return;
+      const wShown = workerLines(lang, rawWorker);
+      if (wShown.lines.length && (wShown.level === "working" || wShown.level === "trouble")) {
+        const ws = rawWorker;
+        const errIdx = ws.last_error && wShown.level === "trouble" ? wShown.lines.length - 1 : -1;
+        const autoBtn = el("button", {
+          class: `mini${workerAutoOn ? " primary" : ""}`,
+          text: L(workerAutoOn ? "worker.auto_on" : "worker.auto_off")
+        });
+        autoBtn.addEventListener("click", () => {
+          workerAutoOn = !workerAutoOn;
+          if (workerAutoOn) {
+            stopWorkerAuto();
+            workerAutoTimer = setInterval(() => {
+              if (activePrimary === "home" && homeQuickBar.style.display !== "none") void refreshHomeQuick();
+              else stopWorkerAuto();
+            }, 5e3);
+          } else stopWorkerAuto();
+          autoBtn.classList.toggle("primary", workerAutoOn);
+          autoBtn.textContent = L(workerAutoOn ? "worker.auto_on" : "worker.auto_off");
+        });
+        const callsBtn = el("button", { class: "mini", text: L("worker.open_calls") });
+        callsBtn.addEventListener("click", () => openDiag("calls"));
+        const actBtns = [callsBtn];
+        const cid = activeChatId ?? hubConversation;
+        if (wShown.level === "trouble") {
+          if (cid && (ws.dead_recent > 0 || ws.retrying > 0)) {
+            const retry = el("button", { class: "primary mini", text: L("act.retry") });
+            retry.addEventListener("click", () => void retryFrom(cid));
+            actBtns.unshift(retry);
+          }
+          const modelsBtn = el("button", { class: "mini", text: L("worker.open_models") });
+          modelsBtn.addEventListener("click", () => {
+            selectPrimary("settings");
+            openGroup("models");
+          });
+          actBtns.push(modelsBtn);
+        }
+        const wCard = el(
+          "div",
+          { class: `worker-home${wShown.level === "trouble" ? " trouble" : ""}` },
+          el(
+            "div",
+            { class: "worker-home-head" },
+            el(
+              "span",
+              { class: "worker-home-title" },
+              el("span", { class: `dot ${wShown.level === "trouble" ? "warn" : "ok"}` }),
+              el("span", { text: L("worker.title") })
+            ),
+            el("div", { style: "display:flex;gap:6px;flex-wrap:wrap" }, autoBtn, ...actBtns)
+          ),
+          el(
+            "div",
+            { class: "worker-home-lines" },
+            ...wShown.lines.map((line, i) => el("div", { class: i === errIdx ? "warn" : "muted", text: line }))
+          )
+        );
+        homeQuickBar.append(wCard);
+        if (wShown.level === "trouble") updateStatusPill(s, { ...lastMeta ?? {}, working: { state: "failed", failed: ws.dead_recent + ws.retrying } });
+      } else {
+        stopWorkerAuto();
+      }
     }
-    function renderMemSubBar(sub, rawMode = false) {
+    function renderMemSubBar(sub, diagMode = "working") {
       activeMemSub = sub;
       const defs = [
         { key: "story", label: "mem.story", ic: "book" },
@@ -8104,15 +8885,17 @@ html,body{margin:0;background:${PALETTE.bg}}
       );
       if (sub === "diag") {
         const cid = activeChatId ?? hubConversation;
-        const bWork = el("button", { class: !rawMode ? "on" : "", text: L("mem.diag_working") });
-        const bRaw = el("button", { class: rawMode ? "on" : "", text: L("mem.diag_raw") });
+        const bWork = el("button", { class: diagMode === "working" ? "on" : "", text: L("mem.diag_working") });
+        const bCalls = el("button", { class: diagMode === "calls" ? "on" : "", text: L("mem.diag_calls") });
+        const bRaw = el("button", { class: diagMode === "raw" ? "on" : "", text: L("mem.diag_raw") });
         bWork.addEventListener("click", () => {
           if (cid) go(`/v1/views/c/${cid}/working`);
         });
+        bCalls.addEventListener("click", () => go("/v1/inspector/calls"));
         bRaw.addEventListener("click", () => {
           if (cid) go(`/v1/inspector/c/${cid}`);
         });
-        subHead.append(el("div", { class: "diag-toggle" }, bWork, bRaw));
+        subHead.append(el("div", { class: "diag-toggle" }, bWork, bCalls, bRaw));
       }
       memSubBar.replaceChildren(tabsRow, subHead);
     }
@@ -8129,7 +8912,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       setPrimaryNav("memory");
       homeQuickBar.style.display = "none";
       memSubBar.style.display = "";
-      renderMemSubBar(sub, false);
+      stopWorkerAuto();
+      renderMemSubBar(sub, "working");
       if (!cid) {
         inspbar.style.display = "none";
         inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("mem.no_chat") }));
@@ -8178,19 +8962,21 @@ html,body{margin:0;background:${PALETTE.bg}}
         return;
       }
       homeQuickBar.style.display = "none";
+      stopWorkerAuto();
       if (shown !== "inspector") return;
       setPrimaryNav("memory");
       memSubBar.style.display = "";
       const isPerson = /\/(person|e)\//.test(path);
       inspbar.style.display = visited.length || isPerson ? "" : "none";
-      if (path.includes("/memory")) renderMemSubBar("story", false);
-      else if (path.includes("/map")) renderMemSubBar("map", false);
-      else if (path.includes("/working")) renderMemSubBar("diag", false);
+      if (path.includes("/memory")) renderMemSubBar("story", "working");
+      else if (path.includes("/map")) renderMemSubBar("map", "working");
+      else if (path.includes("/working")) renderMemSubBar("diag", "working");
+      else if (path.startsWith("/v1/inspector/calls")) renderMemSubBar("diag", "calls");
       else if (path.startsWith("/v1/inspector/c/")) {
         const isAttn = pendingSection === "s-attention" || activeMemSub === "attention";
-        renderMemSubBar(isAttn ? "attention" : "diag", !isAttn);
+        renderMemSubBar(isAttn ? "attention" : "diag", isAttn ? "working" : "raw");
       } else {
-        renderMemSubBar(activeMemSub, false);
+        renderMemSubBar(activeMemSub, "working");
       }
     }
     function selectPrimary(next) {
@@ -8266,6 +9052,11 @@ html,body{margin:0;background:${PALETTE.bg}}
           attnBadges.push(badge);
           children.push(badge);
         }
+        if (key === "settings") {
+          const dot = el("span", { class: "dirty-dot", style: "display:none" });
+          settingsDirtyDots.push(dot);
+          children.push(dot);
+        }
         const btn = el("button", { "data-nav": key }, ...children);
         btn.addEventListener("click", () => selectPrimary(key));
         const list = navButtons.get(key) ?? [];
@@ -8289,7 +9080,21 @@ html,body{margin:0;background:${PALETTE.bg}}
         makeNavBtn("notes", "feather", "nav.notes", true),
         makeNavBtn("settings", "sliders", "nav.settings", true)
       );
-      statusPill = el("span", { class: "status-pill" }, el("span", { class: "dot" }), el("span", { class: "st-txt", text: L("shell.status_ok") }));
+      statusPill = el(
+        "button",
+        { type: "button", class: "status-pill", title: L("shell.status_tip") },
+        el("span", { class: "dot" }),
+        el("span", { class: "st-txt", text: L("shell.status_ok") })
+      );
+      statusPill.addEventListener("click", () => {
+        closeChatPop();
+        if (!lastConnected) {
+          selectPrimary("settings");
+          openGroup("connection");
+          return;
+        }
+        openDiag(lastStatusKind === "err" || lastStatusKind === "warn" ? "calls" : "working");
+      });
       close.className = "nmos-close ghost";
       close.replaceChildren(icon("close", 16));
       close.setAttribute("aria-label", L("close"));
@@ -8312,7 +9117,25 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (chatPopOpen) closeChatPop();
       };
       onDocKey = (e) => {
-        if (e.key === "Escape" && chatPopOpen) closeChatPop();
+        if (e.key !== "Escape") return;
+        if (activeModalCancel) {
+          activeModalCancel();
+          return;
+        }
+        if (chatPopOpen) {
+          closeChatPop();
+          return;
+        }
+        const rpCancel = inspectorBody.querySelector(".rp-form button:not(.primary)");
+        if (rpCancel) {
+          rpCancel.click();
+          return;
+        }
+        if (closing) {
+          bar.querySelector("button")?.click();
+          return;
+        }
+        close.click();
       };
       document.addEventListener("click", onDocClick);
       document.addEventListener("keydown", onDocKey);
@@ -8426,7 +9249,8 @@ html,body{margin:0;background:${PALETTE.bg}}
             { class: "grp-txt" },
             el("b", { text: L(`grp.${g}`) }),
             el("span", { class: "sub", text: L(`grp.${g}_sub`) })
-          )
+          ),
+          el("span", { class: "dirty-dot", style: "display:none" })
         );
         b.addEventListener("click", () => openGroup(g));
         return b;
@@ -8514,7 +9338,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       );
       const pinsCard = el("div", { class: "card" }, el("h2", { text: L("pins.title") }), el("p", { class: "sub", text: L("pin.sub") }));
       const carryCard = el("div", { class: "card", style: "display:none" });
-      chatPage.replaceChildren(switchSlot, modeCard, statusCard, pinsCard, carryCard, maintCard);
+      const other = otherChatBanner();
+      chatPage.replaceChildren(...other ? [other] : [], switchSlot, modeCard, statusCard, pinsCard, carryCard, maintCard);
       void showPins(cid, pinsCard);
       void showCarry(cid, carryCard);
       void showMode(cid, loads);
@@ -8960,6 +9785,39 @@ html,body{margin:0;background:${PALETTE.bg}}
       } catch {
       }
     }
+    function applyTarget(target) {
+      if (!target) return false;
+      if (target === "connection") {
+        select("settings");
+        if (viewsOn) openGroup("connection");
+        return true;
+      }
+      if (!viewsOn) {
+        select("status");
+        return true;
+      }
+      if (target === "calls") {
+        openDiag("calls");
+        return true;
+      }
+      if (target === "working") {
+        if (activeChatId ?? hubConversation) {
+          openDiag("working");
+        } else {
+          select("inspector");
+          void showInspector(inspectorPath).then(() => {
+            if (activeChatId ?? hubConversation) openDiag("working");
+          });
+        }
+        return true;
+      }
+      return false;
+    }
+    function selectWithTarget(next, target) {
+      if (applyTarget(target)) return;
+      select(next);
+    }
+    root.append(toastEl);
     document.body.append(root);
     try {
       const features = (await deps.status()).features;
@@ -8976,9 +9834,11 @@ html,body{margin:0;background:${PALETTE.bg}}
       buildShell();
       groupSettings();
     }
-    select(tab);
+    dirtyReady = true;
+    if (!applyTarget(initialTarget)) select(tab);
     await loadAll();
-    return { root, select };
+    syncDirtyDots();
+    return { root, select: selectWithTarget };
   }
 
   // src/host.ts
@@ -9098,7 +9958,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       rootDocument: async () => typeof risuai.getRootDocument === "function" ? risuai.getRootDocument() : null,
       position: async () => `${await risuai.getCurrentCharacterIndex()}:${await risuai.getCurrentChatIndex()}`,
       coverage: (conversationId) => link.coverage(conversationId),
-      openPanel: () => link.openPanel(),
+      openPanel: (target) => link.openPanel(target),
       now: () => performance.now(),
       debug: (...args) => console.debug(...args),
       setTimer: (fn, ms) => setTimeout(fn, ms),
@@ -9188,7 +10048,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         return bytes.byteLength;
       }
     };
-    const open = (tab) => openPanel(deps, tab);
+    const open = (tab, target) => openPanel(deps, tab, target);
     const lang = langOf(await arg("language"));
     await risuai.registerSetting(t(lang, "menu.panel"), () => open("status"), NMOS_ICON, "html", "nmos-panel");
     await risuai.registerButton(
@@ -9211,7 +10071,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       location: "hamburger",
       id: "nmos-sidebar"
     }, () => open("status"));
-    return () => void open("status");
+    return (target) => void open("status", target);
   }
 
   // src/entry.ts
@@ -9220,7 +10080,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     };
     const hud = createRisuHud({
       coverage: (conversationId) => adapter.api("GET", `/v1/conversations/${conversationId}/coverage`, void 0, 5e3),
-      openPanel: () => openStatus()
+      openPanel: (target) => openStatus(target)
     });
     const adapter = createAdapter(risuHost, (event) => hud.event(event));
     openStatus = await registerHooks(

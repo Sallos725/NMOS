@@ -1,12 +1,13 @@
 import { createAdapter } from './core';
 import { createRisuHud, onPluginUnload, registerHooks, risuHost } from './host';
+import type { PanelTarget } from './hud';
 import type { PromptMessage } from './types';
 
 (async () => {
-  let openStatus = (): void => {};
+  let openStatus: (target?: PanelTarget) => void = () => {};
   const hud = createRisuHud({
     coverage: (conversationId) => adapter.api('GET', `/v1/conversations/${conversationId}/coverage`, undefined, 5000),
-    openPanel: () => openStatus(),
+    openPanel: (target) => openStatus(target),
   });
   const adapter = createAdapter(risuHost, (event) => hud.event(event));
   openStatus = await registerHooks(
