@@ -29,7 +29,7 @@ from .gone import is_gone_place, is_gone_status, is_gone_vital
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
-from .normtext import NORMALIZER_VERSION
+from . import normtext
 from .rerank import Reranker
 from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
                      CHANGE_POLICIES, CONTENTS, COVERAGE_POLICIES, GONE_POLICIES, LABEL_POLICIES, STATE_HISTORY_KEYS,
@@ -471,7 +471,7 @@ _PARTICLE_MATCHES = """
 
 def _matches_params(head: UUID, query: str, cut: int, limit: int, upto: int | None = None,
                     ids: list[UUID] | None = None) -> dict[str, Any]:
-    return {"head": head, "q": query, "cut": cut, "limit": limit, "norm": NORMALIZER_VERSION,
+    return {"head": head, "q": query, "cut": cut, "limit": limit, "norm": normtext.active(),
             "upto": 2**31 - 1 if upto is None else upto, "ids": ids}
 
 
@@ -494,7 +494,7 @@ def _head_ids(conn: psycopg.Connection, head: UUID, cut: int, upto: int | None =
         "SELECT am.source_revision_id AS id, coalesce(rt.clean_chars, 0) AS chars FROM active_membership am"
         " LEFT JOIN revision_text rt ON rt.source_revision_id = am.source_revision_id AND rt.normalizer = %s"
         " WHERE am.commit_id = %s AND am.position > %s AND am.position <= %s LIMIT %s",
-        (NORMALIZER_VERSION, head, cut, 2**31 - 1 if upto is None else upto, HEAD_FIRST_MAX + 1)).fetchall()
+        (normtext.active(), head, cut, 2**31 - 1 if upto is None else upto, HEAD_FIRST_MAX + 1)).fetchall()
     if len(rows) > HEAD_FIRST_MAX or sum(r["chars"] for r in rows) > HEAD_FIRST_CHARS:
         return None
     return [r["id"] for r in rows]
@@ -534,7 +534,7 @@ def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], q
         LIMIT %(limit)s
         """,
         {"head": head, "ids": ids, "q": query, "ai": previous_ai, "w": AI_TIEBREAK_WEIGHT, "limit": CANDIDATE_LIMIT,
-         "norm": NORMALIZER_VERSION, "replies": replies},
+         "norm": normtext.active(), "replies": replies},
     ).fetchall()
 
 
@@ -674,7 +674,7 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                     JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
                     WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
                     """ + REPLIES_ONLY, {"head": head, "ids": list(weights.keys() | additions.keys()),
-                                         "norm": NORMALIZER_VERSION, "replies": replies}).fetchall()
+                                         "norm": normtext.active(), "replies": replies}).fetchall()
             _apply(conn, dict(previous))
     except psycopg.errors.QueryCanceled:
         return [], "timeout"
@@ -2570,7 +2570,7 @@ def _turn_messages(conn: psycopg.Connection, head: UUID, lo: int, hi: int, upto:
         """ + REPLIES_ONLY + """
         ORDER BY am.position LIMIT 20
         """,
-        {"head": head, "lo": lo, "hi": hi, "norm": NORMALIZER_VERSION, "cut": cut,
+        {"head": head, "lo": lo, "hi": hi, "norm": normtext.active(), "cut": cut,
          "upto": 2**31 - 1 if upto is None else upto, "replies": replies}, prepare=False).fetchall()
 
 
@@ -2599,7 +2599,7 @@ def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto
                       AND ({named})
                     """ + REPLIES_ONLY).format(named=sql.SQL(" OR ").join(  # strpos, as the route's search
                         sql.SQL("strpos(rt.clean_content, {}) > 0").format(sql.Literal(f)) for f in forms)),
-                    {"head": head, "norm": NORMALIZER_VERSION, "cut": cut,
+                    {"head": head, "norm": normtext.active(), "cut": cut,
                      "upto": 2**31 - 1 if upto is None else upto, "replies": replies}, prepare=False).fetchone()
                 if row["t"] is None:
                     turns = []
@@ -2649,7 +2649,7 @@ def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str], upto
                   AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
                   AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
                 """ + REPLIES_ONLY).format(hits=sql.SQL(", ").join(holds(w) for w in words), quoted=quoted),
-                {"head": head, "norm": NORMALIZER_VERSION, "cut": cut, "upto": 2**31 - 1 if upto is None else upto,
+                {"head": head, "norm": normtext.active(), "cut": cut, "upto": 2**31 - 1 if upto is None else upto,
                  "replies": replies}, prepare=False).fetchall()
             total = len(marks)
             df = [sum(1 for m in marks if m["hit"][i]) for i in range(len(words))]
@@ -2666,7 +2666,7 @@ def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str], upto
                 JOIN source_object so ON so.id = sr.source_object_id
                 JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
                 WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
-                """, {"head": head, "norm": NORMALIZER_VERSION, "ids": ids}, prepare=False).fetchall()
+                """, {"head": head, "norm": normtext.active(), "ids": ids}, prepare=False).fetchall()
             _apply(conn, {"statement_timeout": previous["t"]})
     except psycopg.errors.QueryCanceled:
         return [], {}, "timeout"
@@ -3035,6 +3035,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         trace_options["trim"] = trim_trace
     if carry_record is not None:  # PHASE-60 S6: the link it read, for its replay (ADR 0085 item 7)
         trace_options["carry"] = carry_record
+    if normtext.active() != normtext.DEFAULT_NORMALIZER:  # PHASE-66 part 3: the text its replay reads (ADR 0027)
+        trace_options["normalizer"] = normtext.active()
     if fresh and options.policy in V21_POLICIES:  # packet-v21: what the secret gates did
         trace_options["secret_gate"] = {"excerpts_fenced": g.excerpts_fenced, "excerpts_withheld": g.excerpts_withheld,
                                         "state_withheld": g.state_withheld}

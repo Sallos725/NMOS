@@ -102,6 +102,15 @@ ADDS_FIELDS = ("compiler", "prompt")
 # generation's spec, `message_chars` in a summarize generation's. A change of it alone re-derives nothing: what was
 # read at the earlier cap stays as good as it was, and only what comes due afterwards is read at the new one.
 READS_FIELDS = ("target_chars", "message_chars")
+# Spec fields a change of re-derives nothing a model wrote, each with the values a switch among carries on (None: any
+# value): rows written under the one value stay as good as they were, and what comes due afterwards is written under the
+# other. A change of only these fields is "carry"; one with a compiler or a cap change too is "adds" or "reads".
+# - `normalizer` (PHASE-66 part 3, `normtext`): between clean-v3 and clean-v4, what was read from the one normalizer's
+#   text keeps serving and new work reads the other's. Another normalizer is a version.
+# A further zero-cost field is one more entry here (its name, and the values that carry on or None); its spec field must
+# be absent at the values every earlier key was made with, so those keys do not move. An embedding projection is never
+# classified (its activation always queues what it is missing: re-embedding is local).
+CARRY_FIELDS: dict[str, frozenset[Any] | None] = {"normalizer": frozenset({"clean-v3", "clean-v4"})}
 
 
 def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) -> str:
@@ -109,8 +118,10 @@ def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) ->
     was), "model" (only the model, the endpoint, the extra request body or the temperature switch differs: the owner
     changed the model or how it is called, PHASE-61 S2), "adds" (only the compiler and its prompt differ, between two
     compilers of ADDS: PHASE-58 S3, PHASE-60 S7), "reads" (the cap of READS_FIELDS differs, alone or with such a
-    compiler change: PHASE-62 S2; either of the two with the model too is "model") or "version" (anything else: a
-    release's version or prompt, or another setting the key hashes)."""
+    compiler change: PHASE-62 S2; either of the two with the model too is "model"), "carry" (only fields of
+    CARRY_FIELDS differ, each between values it carries on: PHASE-66 part 3; with a compiler or a cap change too it
+    is "adds" or "reads", with the model "model") or "version" (anything else: a release's version or prompt, or another setting
+    the key hashes). Every class but "version" carries on: what was written keeps serving."""
     if previous == gen.key:
         return "same"
     if previous is None:
@@ -127,11 +138,13 @@ def classify(conn: psycopg.Connection, previous: str | None, gen: Generation) ->
         return "model"
     adds = old.get("compiler") != new.get("compiler") and {old.get("compiler"), new.get("compiler")} <= ADDS
     reads = any(old.get(k) != new.get(k) for k in READS_FIELDS)
-    skip = (ADDS_FIELDS if adds else ()) + (READS_FIELDS if reads else ())
+    carried = tuple(k for k, values in CARRY_FIELDS.items() if old.get(k) != new.get(k)
+                    and (values is None or {old.get(k), new.get(k)} <= values))
+    skip = (ADDS_FIELDS if adds else ()) + (READS_FIELDS if reads else ()) + carried
     if skip and rest(old, skip) == rest(new, skip):
         if not all(old.get(k) == new.get(k) for k in MODEL_FIELDS):
             return "model"
-        return "reads" if reads else "adds"
+        return "reads" if reads else "adds" if adds else "carry"
     return "version"
 
 

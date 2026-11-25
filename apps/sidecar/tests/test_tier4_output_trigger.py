@@ -1,7 +1,8 @@
 """PHASE-67 part 1: an output sync (`trigger: "output"`) extracts the newest reply's turn before the user continues.
 
 Switch `extract_on_output` (NMOS_EXTRACT_ON_OUTPUT, `PUT /v1/config`, reported at `GET /v1/config`
-`extraction.on_output`), default off. Synthetic chats only.
+`extraction.on_output`), on by default since the owner's decision of 2026-11-25: the tests of the early path run on the
+default, the old path's tests turn it off explicitly. Synthetic chats only.
 """
 
 from __future__ import annotations
@@ -62,9 +63,15 @@ def rev_of(db, text: str):
     return db.execute("SELECT id, lifecycle FROM source_revision WHERE content = %s", (text,)).fetchone()
 
 
+@pytest.fixture(autouse=True)
+def default_switch(monkeypatch):
+    """The switch at its default: no environment value."""
+    monkeypatch.delenv("NMOS_EXTRACT_ON_OUTPUT", raising=False)
+
+
 @pytest.fixture
 def on(migrated) -> Iterator[Any]:
-    with make_client(migrated, extract_on_output=True, **LLM) as c:
+    with make_client(migrated, **LLM) as c:  # the default
         yield c
 
 
@@ -110,29 +117,41 @@ def test_the_trigger_rides_on_then_reconcile_too(on, db):
 
 # --- item 6: the switch -----------------------------------------------------------------------------------------------
 
-def test_the_switch_is_off_by_default_reported_and_saved_without_queuing_anything(migrated, db, monkeypatch):
-    monkeypatch.delenv("NMOS_EXTRACT_ON_OUTPUT", raising=False)
+def test_the_switch_is_on_by_default_reported_and_saved_without_queuing_anything(migrated, db):
     with make_client(migrated, **LLM) as c:
-        assert c.get("/v1/config").json()["extraction"]["on_output"] is False
-        keys = db.execute("SELECT key FROM projection_generation ORDER BY key").fetchall()
-        res = c.put("/v1/config", json={"extract_on_output": True})
-        assert res.status_code == 200, res.text
-        assert res.json()["extraction"]["on_output"] is True and res.json()["queued_jobs"] == 0
         assert c.get("/v1/config").json()["extraction"]["on_output"] is True
+        keys = db.execute("SELECT key FROM projection_generation ORDER BY key").fetchall()
+        res = c.put("/v1/config", json={"extract_on_output": False})
+        assert res.status_code == 200, res.text
+        assert res.json()["extraction"]["on_output"] is False and res.json()["queued_jobs"] == 0
+        assert c.get("/v1/config").json()["extraction"]["on_output"] is False
         assert db.execute("SELECT key FROM projection_generation ORDER BY key").fetchall() == keys
         assert c.put("/v1/config", json={"extract_on_output": "sometimes"}).status_code == 422
         res = c.put("/v1/config", json={"extract_on_output": None})  # back to the environment's value
-        assert res.json()["extraction"]["on_output"] is False and res.json()["queued_jobs"] == 0
+        assert res.json()["extraction"]["on_output"] is True and res.json()["queued_jobs"] == 0
 
 
-def test_the_environment_turns_it_on(monkeypatch):
+def test_the_environment_turns_it_off_and_a_saved_value_wins_either_way(migrated, monkeypatch):
     from nmos_sidecar.config import Settings
 
-    monkeypatch.setenv("NMOS_EXTRACT_ON_OUTPUT", "1")
-    assert Settings(database_url="postgresql://x/y").extract_on_output is True
-    for off in ("0", ""):
-        monkeypatch.setenv("NMOS_EXTRACT_ON_OUTPUT", off)
-        assert Settings(database_url="postgresql://x/y").extract_on_output is False
+    for on in (None, "", "1", "false"):  # the other switches' parser: only "0" is off (NMOS_SUMMARIES, …)
+        if on is None:
+            monkeypatch.delenv("NMOS_EXTRACT_ON_OUTPUT", raising=False)
+        else:
+            monkeypatch.setenv("NMOS_EXTRACT_ON_OUTPUT", on)
+        assert Settings(database_url="postgresql://x/y").extract_on_output is True
+    monkeypatch.setenv("NMOS_EXTRACT_ON_OUTPUT", "0")
+    assert Settings(database_url="postgresql://x/y").extract_on_output is False
+    with make_client(migrated, **LLM) as c:  # environment off, saved on
+        assert c.get("/v1/config").json()["extraction"]["on_output"] is False
+        assert c.put("/v1/config", json={"extract_on_output": True}).status_code == 200
+    with make_client(migrated, **LLM) as c:  # a restart: the saved value is the effective one
+        assert c.get("/v1/config").json()["extraction"]["on_output"] is True
+    monkeypatch.delenv("NMOS_EXTRACT_ON_OUTPUT")
+    with make_client(migrated, **LLM) as c:  # environment on (default), saved off
+        assert c.put("/v1/config", json={"extract_on_output": False}).status_code == 200
+    with make_client(migrated, **LLM) as c:
+        assert c.get("/v1/config").json()["extraction"]["on_output"] is False
 
 
 def _session(c, db, url, trigger: str) -> list[tuple]:
@@ -149,21 +168,55 @@ def _session(c, db, url, trigger: str) -> list[tuple]:
 
 @pytest.mark.parametrize("fast", [True, False])
 def test_off_an_output_sync_queues_exactly_what_a_request_sync_does(database_url_factory, fast):
+    """Off, the base path whatever the trigger says; and on, an older plugin that never sends `trigger: "output"`
+    (request syncs only) gets the same base path."""
     seen = []
-    for trigger in ("request", "output"):
+    for switch, trigger in ((False, "request"), (False, "output"), (True, "request")):
         url = database_url_factory()
-        with make_client(url, append_fast_path=fast, **LLM, **EMBED) as c, \
+        with make_client(url, extract_on_output=switch, append_fast_path=fast, **LLM, **EMBED) as c, \
                 psycopg.connect(url, row_factory=dict_row, autocommit=True) as db:
             seen.append(_session(c, db, url, trigger))
             assert not any(j["payload"].get("early") for j in extract_jobs(db))
-    assert seen[0] == seen[1]
+    assert seen[0] == seen[1] == seen[2]
+
+
+def test_an_upgrade_with_the_switch_on_queues_nothing_by_itself(migrated, db):
+    """A database with chats (one ends with a reply nobody continued from, one with the user's message) started on
+    this build, switch on by default: the start queues nothing, an older plugin's output notification and request
+    syncs queue nothing early; only a later output sync from the plugin does."""
+    with make_client(migrated, extract_on_output=False, **LLM, **EMBED) as c:  # as the earlier build ran
+        open_chat, user_tail = SimChat(), SimChat()
+        story(open_chat)
+        open_chat.reply("Akari moved to the lighthouse.")
+        story(user_tail)
+        sync(c, open_chat)
+        sync(c, user_tail)
+    jobs = "SELECT id, kind, dedupe_key, status, priority, payload FROM job ORDER BY id"
+    before = db.execute(jobs).fetchall()
+    with make_client(migrated, **LLM, **EMBED) as c:
+        assert c.get("/v1/config").json()["extraction"]["on_output"] is True
+        assert db.execute(jobs).fetchall() == before  # the start queued nothing
+        last = open_chat.messages[-1]
+        manifest = open_chat.manifest()["messages"][-1]
+        assert c.post("/v1/output", json={"chat_id": open_chat.id, "host_logical_id": last["chatId"],
+                                          "generation_id": last["chatId"], "revision_hash": manifest["revision_hash"],
+                                          "message_index": len(open_chat.messages) - 1}).status_code == 202
+        sync(c, open_chat)  # an older plugin: request syncs only (a noop here)
+        user_tail.reply("Akari moved to the bakery.")
+        sync(c, user_tail)  # the reply reaches the ledger through a request sync: provisional, nothing early
+        assert not any(j["payload"].get("early") for j in extract_jobs(db))
+        sync(c, open_chat, trigger="output")  # a noop: the ledger already holds this head
+        assert not any(j["payload"].get("early") for j in extract_jobs(db))
+        open_chat.reroll("Akari moved to the mill.")
+        sync(c, open_chat, trigger="output")  # this plugin's output sync of a new reply: the first early job
+        assert len([j for j in extract_jobs(db) if j["payload"].get("early")]) == 1
 
 
 # --- items 2 and 3: early, and exactly once per reply text ------------------------------------------------------------
 
 @pytest.mark.parametrize("fast", [True, False])
 def test_an_output_sync_extracts_the_reply_once_and_the_next_request_serves_it(migrated, db, fast):
-    with make_client(migrated, extract_on_output=True, append_fast_path=fast, **LLM, **EMBED) as c:
+    with make_client(migrated, append_fast_path=fast, **LLM, **EMBED) as c:  # the default: on
         chat = SimChat()
         story(chat)
         sync(c, chat)
@@ -408,7 +461,7 @@ def _seen(c, chat: SimChat) -> tuple[dict, list]:
 def test_a_finished_early_extraction_and_embedding_change_nothing_a_request_sees_before_acceptance(migrated, db):
     from test_vectors import drain_embeddings
 
-    with make_client(migrated, extract_on_output=True, **LLM, **EMBED) as c:
+    with make_client(migrated, **LLM, **EMBED) as c:  # the default: on
         chat = SimChat()
         story(chat)
         sync(c, chat)

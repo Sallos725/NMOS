@@ -8,7 +8,7 @@ from uuid import UUID
 import psycopg
 
 from .extraction import TARGET_CHARS
-from .normtext import NORMALIZER_VERSION
+from . import normtext
 
 
 def list_conversations(conn: psycopg.Connection, limit: int = 200, host_chat_ref: str | None = None,
@@ -65,7 +65,7 @@ def membership(conn: psycopg.Connection, head: UUID, extractor_key: str | None =
         WHERE am.commit_id = %(head)s ORDER BY am.position DESC LIMIT %(limit)s
         """,
         {"head": head, "limit": limit, "ex": extractor_key or "", "pj": projection_key or "",
-         "norm": NORMALIZER_VERSION, "target": TARGET_CHARS},
+         "norm": normtext.active(), "target": TARGET_CHARS},
     ).fetchall()
 
 
@@ -117,7 +117,7 @@ def turn_messages(conn: psycopg.Connection, head: UUID, turn: int) -> list[dict[
         JOIN source_revision sr ON sr.id = am.source_revision_id
         LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
         WHERE am.commit_id = %(head)s AND am.turn = %(turn)s ORDER BY am.position
-        """, {"head": head, "turn": turn, "norm": NORMALIZER_VERSION}).fetchall()
+        """, {"head": head, "turn": turn, "norm": normtext.active()}).fetchall()
 
 
 def turn_bounds(conn: psycopg.Connection, head: UUID) -> tuple[int | None, int | None]:
