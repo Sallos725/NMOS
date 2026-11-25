@@ -95,9 +95,17 @@ export function userTurnIndex(prompt: PromptMessage[], hostMessages: HostMessage
   };
   let found = search(floor);
   if (found < 0 && floor >= 0) found = search(-1);
+  if (found < 0) return -1;
   // An auxiliary call (a script's own model call) can hold a short word with none of the chat around it: a chat with
-  // earlier messages long enough to match has at least one of them in the main generation's prompt.
-  if (found < 0 || (matches.size === 0 && hasAnchorableHistory(hostMessages, latest))) return -1;
+  // earlier messages long enough to match has at least one of them in the main generation's prompt. Unless nothing of
+  // the chat could match (its user messages short, every reply reshaped on the way): a prompt with dialogue in it whose
+  // newest user message is exactly the turn is the main generation's.
+  if (matches.size === 0 && hasAnchorableHistory(hostMessages, latest)) {
+    let newestUser = -1;
+    for (let i = prompt.length - 1; i >= 0 && newestUser < 0; i -= 1) if (prompt[i]?.role === 'user') newestUser = i;
+    const dialogue = prompt.some((m, i) => i < newestUser && m?.role === 'assistant');
+    return dialogue && texts[newestUser] === anchor ? newestUser : -1;
+  }
   return found;
 }
 
@@ -208,13 +216,14 @@ export function matchPromptToHost(
     if (text.length < minAnchor) continue;
     const anchor = anchorOf(text);
     // The newest prompt message of a fitting role wins; one of the other role (a user message sent as the model's,
-    // or a reply inside a user block: a preset that wraps the chat) only when no fitting one holds the text.
+    // or a reply inside a user block: a preset that wraps the chat) only when no fitting one holds the text. A system
+    // block never wins over a newer holder of the other role: an older one quoting the text (a recap) is not the chat.
     let found = -1;
     let other = -1;
     for (let k = pointer; k >= 0; k -= 1) {
       if (!(texts[k] as string).includes(anchor)) continue;
       if (rolesFit(m.role, prompt[k]?.role)) {
-        found = k;
+        if (!(other >= 0 && prompt[k]?.role === 'system')) found = k;
         break;
       }
       if (other < 0) other = k;

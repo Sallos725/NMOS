@@ -119,3 +119,37 @@ describe('finding 3: the backward walk never leaves the chat', () => {
     expect(res.prompt.map((m) => m.content)).toEqual(['Narrator.', '@D lore.', ...host.slice(2).map((m) => m.data)]);
   });
 });
+
+describe('finding 7: a short turn when nothing of the chat anchor-matches', () => {
+  // Short user messages, and replies whose middle is a status block the request strips: nothing can match.
+  const reply = (story: string, id: string): HostMessage => ({ role: 'char', chatId: id,
+    data: `${story}\n<div class="status">HP 10/10 · MP 4/9 · Location: the old watchtower stairs · Weather: rain, wind from the north · Time: dusk</div>` });
+  const stories = ['Kaito nodded and handed over the lantern.', 'Yuna laughed and closed the ledger.'];
+  const host: HostMessage[] = [{ role: 'user', data: '응', chatId: 'u0' }, reply(stories[0]!, 'c0'),
+    { role: 'user', data: 'ok', chatId: 'u1' }, reply(stories[1]!, 'c1'), { role: 'user', data: '네', chatId: 'u2' }];
+  const dialogue: PromptMessage[] = [{ role: 'system', content: 'Narrator.' }, { role: 'user', content: '응' },
+    { role: 'assistant', content: stories[0]! }, { role: 'user', content: 'ok' }, { role: 'assistant', content: stories[1]! }];
+
+  it('accepts a prompt with dialogue whose newest user message is exactly the turn', async () => {
+    const { userTurnIndex, matchPromptToHost } = await import('../src/prompt');
+    const prompt = [...dialogue, { role: 'user', content: '네' }];
+    expect(matchPromptToHost(prompt, host).size).toBe(0);
+    expect(userTurnIndex(prompt, host)).toBe(5);
+  });
+
+  it('still rejects the word inside a longer newest user message, and a prompt with no dialogue', async () => {
+    const { userTurnIndex } = await import('../src/prompt');
+    expect(userTurnIndex([...dialogue, { role: 'user', content: '답: 네 맞아요, 다음 질문으로' }], host)).toBe(-1);
+    expect(userTurnIndex([{ role: 'system', content: '판단하라' }, { role: 'user', content: '네' }], host)).toBe(-1);
+  });
+});
+
+describe('finding 8: a system block never beats a newer holder of the other role', () => {
+  it('the chat sent in user-role blocks, with an older recap quoting a reply: every message is in context', async () => {
+    const { inContextIds } = await import('../src/prompt');
+    const host = chatOf();
+    const prompt: PromptMessage[] = [{ role: 'system', content: `Recap: ${host[3]!.data}` },
+      ...host.map((m) => ({ role: 'user', content: m.data }))];
+    expect(inContextIds(prompt, host)).toEqual(['u0', 'c0', 'u1', 'c1', 'u2']);
+  });
+});
