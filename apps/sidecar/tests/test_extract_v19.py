@@ -22,6 +22,7 @@ from conftest import active_generation, make_client
 from test_extract_v18 import FEELING, USED, WARM, chat_of, feels
 from test_extraction import drain
 from test_generations import LLM, conv_id
+from test_secrets import NEWEST_FIRST
 from test_phase60_pins import BASE, PINNED_EXTRACT_SPEC_FIELDS
 from test_sidecar_integration import sync
 
@@ -305,7 +306,7 @@ def reveal_checks(url: str, predicate: str) -> tuple[int, int, list[dict], list[
     with make_client(url, **LLM, extract_compiler="extract-v19") as c:
         sync(c, chat)
         with psycopg.connect(url, autocommit=True) as conn:
-            conn.execute("UPDATE job SET priority = 200 WHERE kind = 'extract' AND priority = %s", (X.FIRST_PRIORITY,))
+            conn.execute(NEWEST_FIRST, (X.FIRST_PRIORITY,))  # as `test_secrets.first_import` (Tier 1 D5)
         drain(url, stub(predicate))
         conv = conv_id(c, chat)
         queued = c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["reveal"]
@@ -367,7 +368,9 @@ def test_story_clock_reads_the_latest_unambiguous_field_as_of_the_target(migrate
         observe(conn, head, 5, "날짜", "4월 13일")
         assert X.story_clock(conn, at(head, 1)) == "날짜: 4월 12일; 시간: 오후 3시"
         assert X.story_clock(conn, at(head, 3)) == "날짜: 4월 12일; 시간: 오후 3시"
-        assert X.story_clock(conn, at(head, 5)) == "날짜: 4월 13일; 시간: 오후 3시"  # each field its own latest
+        # each field its own latest, but never one of a turn long before (Tier 1 G2: turn 2's date and turn 0's time
+        # were one clock)
+        assert X.story_clock(conn, at(head, 5)) == "날짜: 4월 13일"
         observe(conn, head, 5, "date", "April 13")  # two date keys at the latest position: ambiguous
         assert X.story_clock(conn, at(head, 5)) == "시간: 오후 3시"
         assert X.story_clock(conn, at(head, 3)) == "날짜: 4월 12일; 시간: 오후 3시"

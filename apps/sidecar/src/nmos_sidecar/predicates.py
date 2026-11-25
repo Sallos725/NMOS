@@ -251,6 +251,19 @@ def alias_evidenced(item: dict[str, Any], turn_text: str, hints: list[dict[str, 
 POLARITIES = ("positive", "negative")
 MODALITIES = ("actual", "hypothetical", "dreamed", "unknown")
 SOURCES = ("narration", "character_claim")
+# How a model writes the two polarities besides the words asked for. Anything else is not read as either: a negation
+# coerced to "positive" would state the opposite of the turn (Tier 1 D2).
+NEGATIVE_WORDS = frozenset({"negative", "negated", "neg", "false", "no"})
+POSITIVE_WORDS = frozenset({"", "positive", "pos", "true", "yes", "null", "none"})
+
+
+def polarity_of(raw: Any) -> str | None:
+    """A raw `polarity` as "positive" or "negative"; missing or empty is positive (the prompt's default), a JSON
+    boolean reads as true/false; None when it is neither."""
+    if raw is None:
+        return "positive"
+    word = ("true" if raw else "false") if isinstance(raw, bool) else str(raw).strip().lower()
+    return "negative" if word in NEGATIVE_WORDS else "positive" if word in POSITIVE_WORDS else None
 
 
 def semantics(item: dict[str, Any]) -> tuple[str, str, str, str | None, str | None]:
@@ -258,9 +271,11 @@ def semantics(item: dict[str, Any]) -> tuple[str, str, str, str | None, str | No
 
     A missing or unrecognised modality is `unknown`, never `actual`: only actual assertions form facts,
     so a guess would turn plans or dreams into state. A missing source follows the speaker: with
-    `asserted_by` it is a character's claim, otherwise narration. A claim needs its speaker.
+    `asserted_by` it is a character's claim, otherwise narration. A claim needs its speaker. A polarity
+    `polarity_of` cannot read is a pending reason (stored as "positive", which a pending row never states).
     """
-    polarity = "negative" if str(item.get("polarity") or "").strip().lower() == "negative" else "positive"
+    polarity = polarity_of(item.get("polarity"))
+    unread = None if polarity is not None else f"unrecognized polarity: {str(item.get('polarity')).strip()[:40]}"
     modality = str(item.get("modality") or "").strip().lower()
     if modality not in MODALITIES:
         modality = "unknown"
@@ -269,8 +284,17 @@ def semantics(item: dict[str, Any]) -> tuple[str, str, str, str | None, str | No
     if source not in SOURCES:
         source = "character_claim" if speaker else "narration"
     if source == "narration":
-        return polarity, modality, source, None, None
-    return polarity, modality, source, speaker, None if speaker else "character_claim without asserted_by"
+        return polarity or "positive", modality, source, None, unread
+    unclaimed = None if speaker else "character_claim without asserted_by"
+    return polarity or "positive", modality, source, speaker, "; ".join(r for r in (unread, unclaimed) if r) or None
+
+
+def takes_value(predicate: Any, registry: Mapping[str, Predicate] | None = None) -> bool:
+    """Whether a row of this predicate keeps a `value`: not one the registry defines without one (`needs_value`
+    false: located_in, possesses, member_of), where a stray phrase ("정예 단원" on member_of) would only split the
+    version key from the same relation stated without it. An unknown predicate keeps it (the row is pending)."""
+    pred = (REGISTRY if registry is None else registry).get(str(predicate or ""))
+    return pred is None or pred.needs_value
 
 
 # Predicates whose value can involve other people (PHASE-8 Q3: the measured set). Kept outside REGISTRY
