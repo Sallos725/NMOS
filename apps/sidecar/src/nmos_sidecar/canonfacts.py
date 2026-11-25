@@ -24,10 +24,12 @@ read of them under other names is never theirs. A text counts as read once every
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
 from collections.abc import Callable
 from datetime import datetime
+from functools import lru_cache
 from typing import Any
 from uuid import UUID
 
@@ -46,6 +48,7 @@ from .predicates import REGISTRY, registry_prompt, stored_knowledge
 log = logging.getLogger("nmos.canon")
 
 VERSION = "canon-v1"
+VERSION_V2 = "canon-v2"  # PHASE-64 (ADR 0091): conditional forms of address on `addresses` (paired with extract-v20)
 # What canon states about how things stand. Open business (goals, promises, threats, debts, questions) and the
 # story's own moves (fulfilled, resolved, learned, destroyed) belong to the story; `also_called` too, since canon's
 # names come from the lorebook keys without a model (ADR 0046).
@@ -105,14 +108,51 @@ SOURCES = {"card:desc": "the character card's description", "card:personality": 
            "card:greeting": "the character card's greeting (the scene the story opens with)",
            "note": "the author's note", "persona": "the user's persona (USER described)"}
 
+# canon-v2 (PHASE-64, ADR 0091): conditional forms of address in cards, lorebooks, notes and personas.
+CANON_ADDRESS_RULE = """- `address_condition`, for `addresses` only: when the TEXT states a form of address or speech level that applies
+  only in a specific situation or recurring habit (e.g. formal in public or at work, informal when alone, or
+  another specific condition such as in disguise, during missions, or involuntarily slipping into a given name
+  when flustered or overcome by emotion), give `{{"scope": "...", "when": "..."}}`; null for a general/default
+  form of address. `scope`: "public", "private" or "situational" (never invent a condition the TEXT does not
+  state). `when`: a short phrase of at most 60 characters in the TEXT's language naming the condition (required
+  for "situational"). If the TEXT states multiple forms (e.g. public vs private, or a default plus a situational
+  habit), emit one `addresses` assertion for each.
+"""
+_CANON_PREFER_AT = "- Prefer the facts a later scene would need,"
+_CANON_BECAUSE_ANSWER = '"because": "... or null",'
+_CANON_ADDRESS_ANSWER = (_CANON_BECAUSE_ANSWER + ' "address_condition": {{"scope": "public|private|situational",'
+                         ' "when": "... or null"}} or null (addresses only),')
+
+
+def _v2(prompt: str) -> str:
+    assert prompt.count(_CANON_PREFER_AT) == 1 and prompt.count(_CANON_BECAUSE_ANSWER) == 1, "a canon-v1 rule moved"
+    return (prompt.replace(_CANON_PREFER_AT, CANON_ADDRESS_RULE + _CANON_PREFER_AT, 1)
+            .replace(_CANON_BECAUSE_ANSWER, _CANON_ADDRESS_ANSWER, 1))
+
+
+PROMPT_V2 = _v2(PROMPT)
+assert CANON_ADDRESS_RULE not in PROMPT and CANON_ADDRESS_RULE in PROMPT_V2
+
+
+def version_of(settings: Settings) -> str:
+    """The canon reader version for `settings` (PHASE-64, ADR 0091): `canon-v2` with `extract-v20` (conditional forms
+    of address), `canon-v1` otherwise so all earlier pinned canon keys stay unchanged."""
+    from .extraction import ADDRESS_CONDITIONS, compiler_of
+    return VERSION_V2 if compiler_of(settings) in ADDRESS_CONDITIONS else VERSION
+
+
+def prompt_of(version: str) -> str:
+    return PROMPT_V2 if version == VERSION_V2 else PROMPT
+
 
 def generation(settings: Settings) -> Generation | None:
     """The canon generation the settings describe (credentials excluded), or None when off. It uses the extraction
     model and endpoint (PHASE-14 Q3)."""
     if not (settings.canon_facts and settings.llm_url and settings.llm_model):
         return None
+    ver = version_of(settings)
     return generations.make(
-        "canon", settings.llm_url, settings.llm_model, version=VERSION, prompt=generations.fingerprint(PROMPT),
+        "canon", settings.llm_url, settings.llm_model, version=ver, prompt=generations.fingerprint(prompt_of(ver)),
         predicates=generations.fingerprint(repr(sorted((k, v) for k, v in REGISTRY.items() if k in PREDICATES))),
         normalizer=normtext.NORMALIZER_VERSION, json_mode=settings.llm_json_mode,
         part_chars=PART_CHARS, max_parts=MAX_PARTS,
@@ -356,8 +396,10 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
     done = {r["window_hash"] for r in conn.execute(
         "SELECT window_hash FROM extraction WHERE source_revision_id = %s AND extractor_key = %s"
         " AND discarded_at IS NULL", (rid, gen.key)).fetchall()}
+    ver = gen.spec.get("version", VERSION)
+    is_v2 = ver == VERSION_V2
     count = len(pieces) or 1
-    system = PROMPT.format(registry=registry_prompt(PREDICATES))
+    system = prompt_of(ver).format(registry=registry_prompt(PREDICATES))
     total = reused = 0
     fresh = bool(job["payload"].get("fresh"))  # a rebuild reads its own chat again (PHASE-57 A1)
     hints = Jsonb({"canon": src["key"], "character": src["character"], "user": src["user"]})
@@ -379,7 +421,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
                     "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
                     " raw, coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
                     " ON CONFLICT DO NOTHING RETURNING id",
-                    (xid, rid, window, VERSION, gen.key, gen.model, Jsonb({"reused_from": root}),
+                    (xid, rid, window, ver, gen.key, gen.model, Jsonb({"reused_from": root}),
                      Jsonb({**coverage, "reused_from": root}), [rid], hints, Jsonb(NO_CALL))).fetchone()
                 if inserted is None:
                     continue
@@ -399,8 +441,10 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         items = parsed.get("assertions")
         if not isinstance(items, list):
             raise LLMError("model reply has no `assertions` list")
-        rows = normalize(items, piece)
+        rows = normalize(items, piece, address_conditions=is_v2)
         for a in rows:
+            if a.get("address_condition") and a["address_condition"].get("scope") == "all":
+                a["address_condition"] = None  # canon is the initial baseline: no earlier split to unify
             if a["status"] == "valid" and a["predicate"] not in PREDICATES:
                 a["status"], a["reason"] = "pending", "not a canon predicate"
         with conn.transaction():
@@ -411,7 +455,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
                 "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
                 " raw, coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
                 " ON CONFLICT DO NOTHING RETURNING id",
-                (xid, rid, window, VERSION, gen.key, gen.model, Jsonb({"reply": raw[:20000]}), Jsonb(coverage), [rid],
+                (xid, rid, window, ver, gen.key, gen.model, Jsonb({"reply": raw[:20000]}), Jsonb(coverage), [rid],
                  hints, Jsonb(usage) if usage is not None else None)).fetchone()
             if inserted is None:
                 continue
@@ -458,12 +502,17 @@ live AS (
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence,
        a.evidence, a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
-       a.participants::text AS participants, a.outcome, a.because,
+       a.participants::text AS participants, a.outcome, a.because, a.address_condition::text AS address_condition,
        l.key AS canon, l.extractor_key AS generation, l.compiler_version AS compiler, l.rid
 FROM live l JOIN assertion a ON a.extraction_id = l.xid
 WHERE l.extractor_key = l.chosen AND a.status = 'valid'
 ORDER BY l.ord, l.window_hash, a.id
 """
+
+
+@lru_cache(maxsize=4096)
+def _parse_address_condition(text: str) -> dict[str, Any]:
+    return json.loads(text)
 
 
 # The host's blocks (H20, ADR 0047 amendment 2): `{{#if …}}`, `{{#if_pure …}}`, `{{#when …}}`, `{{#each …}}` and
@@ -643,6 +692,8 @@ def rows(conn: psycopg.Connection, conv: UUID, mid: str | None, key: str | None,
     for i, a in enumerate(out):
         a.update(position=POSITION_BASE + i, turn=-1, turn_hash=f"canon:{a['canon']}",
                  host_logical_id=f"canon:{a['canon']}", listed_hash=None, participants=None)
+        if (cond := a.pop("address_condition")) is not None:
+            a["address_condition"] = _parse_address_condition(cond)
         if a["known_by"] or a["hidden_from"]:
             stored_knowledge(a)
     return out

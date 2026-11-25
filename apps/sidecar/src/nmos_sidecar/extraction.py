@@ -28,9 +28,10 @@ from .facts import _versions, fact_text, links_of, persona_of, served_assertions
 from . import canon
 from .repairs import (apply_facts, live, quoted_turns, repairs_of, secret_events, splits_of, thread_events,
                       unedited_quotes)
-from .predicates import (DERIVED, EXTENSION_PARTICIPANTS, REGISTRY, alias_evidenced, because, feeling, fill_types,
-                         knowledge, outcome, participants, horizon, polarity_of, registry_for, registry_prompt,
-                         salience, semantics, takes_value, validate, when_happened)
+from .predicates import (ADDRESS_CONDITION_MAX, ADDRESS_SCOPES, DERIVED, EXTENSION_PARTICIPANTS, REGISTRY,
+                         address_condition, alias_evidenced, because, feeling, fill_types, knowledge, outcome,
+                         participants, horizon, polarity_of, registry_for, registry_prompt, salience, semantics,
+                         takes_value, validate, when_happened)
 from .secrets import fold as fold_secrets, reveal_value
 from .source_time import KEYS
 from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity
@@ -67,8 +68,9 @@ COMPILER_VERSION = "extract-v15"  # v2: known_by / hidden_from; v3: knowledge sc
 # extract-v18 (PHASE-58, ADR 0081): extract-v16 with how a feeling feels (`feeling`, stored in `assertion.feeling`).
 # extract-v19 (PHASE-60 S7, S8, ADR 0086): extract-v18 with when it happened (`when_happened`, `story_clock`) and
 # `told` (a per-compiler extension outside REGISTRY, `predicates.EXTENSIONS`).
+# extract-v20 (PHASE-64, ADR 0091): extract-v19 with conditional forms of address (`address_condition` on `addresses`).
 # Selectable; the default stays extract-v16 until the owner decides at the 1.0.0 tag.
-COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19")
+COMPILERS = ("extract-v15", "extract-v16", "extract-v17", "extract-v18", "extract-v19", "extract-v20")
 DEFAULT_COMPILER = "extract-v16"
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
@@ -433,20 +435,54 @@ def _v19(prompt: str) -> str:
 
 SYSTEM_V19 = _v19(SYSTEM_V18)
 SYSTEM_V19_ROLES = _v19(SYSTEM_V18_ROLES)
+# extract-v20 (PHASE-64, ADR 0091): extract-v19 with conditional forms of address on `addresses` only.
+ADDRESS_CONDITION_RULE = """- `address_condition`, for `addresses` only: when the TARGET turn settles or explicitly narrates a form of
+  address or speech level that applies only in a specific situation rather than everywhere, give
+  `{{"scope": "...", "when": "..."}}`; null for a general/default form of address.
+  `scope`: "public" for public, workplace, formal settings or in front of others; "private" for private
+  settings or when alone together; "situational" for another specific settled rule or explicitly narrated
+  recurring habit (during missions, in disguise, in letters, in front of specific people, or an involuntary
+  habit when flustered, angry or overcome by emotion); "all" (`when`: null) when the TARGET turn explicitly
+  ends a prior split and unifies how they address each other everywhere ("남들 앞에서도 반말하고 오빠라고
+  불러").
+  `when`: a short phrase of at most 60 characters in the chat's language naming the condition (e.g.
+  "공적인 자리·회사", "둘만 있을 때", "임무 중", "감정이 격해질 때"); required for "situational", null for "all".
+  If the TARGET turn settles two forms at once (e.g. public vs private, or a default plus an emotional-slip
+  habit), emit one `addresses` assertion for each. Never invent a condition from an accidental one-off slip or
+  ordinary dialogue: record a conditional `addresses` only when the TARGET turn explicitly settles, agrees on
+  or narrates it as a condition or recurring habit.
+"""
+_ADDRESS_CONDITION_ANSWER = (
+    _HAPPENED_ANSWER
+    + '\n"address_condition": {{"scope": "public|private|situational|all", "when": "... or null"}} or null (addresses only),'
+)
+
+
+def _v20(prompt: str) -> str:
+    """extract-v19's prompt with the conditional address rule and answer (PHASE-64 S2)."""
+    assert prompt.count(_BECAUSE_AT) == 1 and prompt.count(_HAPPENED_ANSWER) == 1, "a v19 rule's place moved"
+    return (prompt.replace(_BECAUSE_AT, ADDRESS_CONDITION_RULE + _BECAUSE_AT, 1)
+            .replace(_HAPPENED_ANSWER, _ADDRESS_CONDITION_ANSWER, 1))
+
+
+SYSTEM_V20 = _v20(SYSTEM_V19)
+SYSTEM_V20_ROLES = _v20(SYSTEM_V19_ROLES)
 PROMPTS = {"extract-v15": SYSTEM_PROMPT, "extract-v16": SYSTEM_V16_ROLES,
            "extract-v17": SYSTEM_V17_ROLES, "extract-v18": SYSTEM_V18_ROLES,
-           "extract-v19": SYSTEM_V19_ROLES}  # the full form, which the generation names
+           "extract-v19": SYSTEM_V19_ROLES, "extract-v20": SYSTEM_V20_ROLES}  # the full form, which the generation names
 assert all(x in SYSTEM_V16_ROLES for x in (ROLE_ENDINGS, ALIAS_RULE, ANSWER_ROLES)), "a v16 rule's place moved"
 assert ROLE_ENDINGS not in SYSTEM_V16 and ALIAS_CHECK not in SYSTEM_V16_ROLES and PAIRS_RULE not in SYSTEM_V16_ROLES
 assert HORIZON_RULE not in SYSTEM_V16_ROLES and "speakers" not in SYSTEM_V16_ROLES
 assert FEELING_RULE not in SYSTEM_V16_ROLES and FEELING_RULE not in SYSTEM_V17_ROLES
 assert HAPPENED_RULE not in SYSTEM_V18_ROLES and TOLD_RULE not in SYSTEM_V18_ROLES
-ROLES = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19"})  # the compilers that list CURRENT ROLES
-PARTS_APART = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19"})  # the compilers whose alias of a name and its part needs the part on its own
+assert ADDRESS_CONDITION_RULE not in SYSTEM_V19_ROLES
+ROLES = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19", "extract-v20"})  # the compilers that list CURRENT ROLES
+PARTS_APART = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19", "extract-v20"})  # the compilers whose alias of a name and its part needs the part on its own
 HORIZONS = frozenset({"extract-v17"})  # the compilers whose threads carry a horizon (PHASE-51)
 SPEAKERS = frozenset({"extract-v17"})  # the compilers that name each quoted line's speaker (PHASE-45)
-FEELINGS = frozenset({"extract-v18", "extract-v19"})  # the compilers that weigh a feeling (PHASE-58); a switch: generations.ADDS
-HAPPENED = frozenset({"extract-v19"})  # the compilers that place an event in time and read the story clock (PHASE-60 S7)
+FEELINGS = frozenset({"extract-v18", "extract-v19", "extract-v20"})  # the compilers that weigh a feeling (PHASE-58); a switch: generations.ADDS
+HAPPENED = frozenset({"extract-v19", "extract-v20"})  # the compilers that place an event in time and read the story clock (PHASE-60 S7)
+ADDRESS_CONDITIONS = frozenset({"extract-v20"})  # the compilers that record conditional forms of address (PHASE-64)
 # The same compilers' rule that a known name the turn does not write stands in only for a character the turn names
 # (`alias_evidenced`, ADR 0064 item 2): not in the prompt, so its own part of the generation names it.
 ALIASES_PRESENT = ("a known name stands in only for a ?-description or a character the turn writes by another name"
@@ -463,7 +499,8 @@ def prompt_of(compiler: str, roles: bool = True) -> str:
     upgrade by renaming it); the settings only select a compiler of PROMPTS (`Settings.__post_init__`). extract-v16's
     leaves the role-ending rules out when no CURRENT ROLE is listed (`roles` false)."""
     if compiler in ROLES and not roles:
-        return {"extract-v17": SYSTEM_V17, "extract-v18": SYSTEM_V18, "extract-v19": SYSTEM_V19}.get(compiler, SYSTEM_V16)
+        return {"extract-v17": SYSTEM_V17, "extract-v18": SYSTEM_V18, "extract-v19": SYSTEM_V19,
+                "extract-v20": SYSTEM_V20}.get(compiler, SYSTEM_V16)
     return PROMPTS.get(compiler, SYSTEM_PROMPT)
 
 
@@ -1419,7 +1456,7 @@ Match the listed role's place and counterpart to the arrangement the TARGET actu
 Packing, a stripped bed or farewell gifts are preparations, not checkout. If the person is still staying in the room at the TARGET's end and the move is later, the guest role is still held: answer no, not yes. For yes, quote the completed departure or termination itself, not luggage, an emptied shelf or a farewell.
 Return only JSON: {"ended":"yes" or "no","evidence":"one verbatim passage from TARGET, at most 160 characters"}.
 The evidence must support your answer. For yes, quote what happens in TARGET that ends this exact arrangement. A reason, arrangement or plan in CONTEXT is not ending evidence. Never quote CONTEXT or join separate passages with an ellipsis. Do not add explanations or other fields."""
-CONFIRMS = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19"})  # the compilers whose listed role endings are confirmed
+CONFIRMS = frozenset({"extract-v16", "extract-v17", "extract-v18", "extract-v19", "extract-v20"})  # the compilers whose listed role endings are confirmed
 CONFIRM_TURNS = 2  # preceding turns the confirmation shows, each as the TARGET is shown (TARGET_CHARS per message)
 HELD = "role ending not confirmed"  # the reason prefix of a held ending (a pending row: no fact)
 
@@ -1693,8 +1730,8 @@ def summed(*usages: dict[str, Any] | None) -> dict[str, Any] | None:
 ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic",
                      "confidence", "evidence", "status", "reason", "knowledge", "known_by", "hidden_from",
                      "polarity", "modality", "source", "asserted_by", "salience", "participants", "outcome", "because",
-                     "feeling", "when_happened")
-JSON_COLUMNS = frozenset({"participants", "feeling"})  # jsonb columns of ASSERTION_COLUMNS
+                     "feeling", "when_happened", "address_condition")
+JSON_COLUMNS = frozenset({"participants", "feeling", "address_condition"})  # jsonb columns of ASSERTION_COLUMNS
 
 
 def assertion_values(a: dict[str, Any]) -> tuple[Any, ...]:
@@ -1736,7 +1773,8 @@ def capped(items: list[Any]) -> list[Any]:
 
 def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
               shown: str | None = None, apart: bool = False, horizons: bool = False,
-              feelings: bool = False, compiler: str | None = None) -> list[dict[str, Any]]:
+              feelings: bool = False, compiler: str | None = None,
+              address_conditions: bool = False) -> list[dict[str, Any]]:
     """Model output → assertion rows (`capped`: the model's own at most 40, the derived ones all; a `value` on a
     predicate that takes none dropped, `takes_value`): missing entity types filled from the reply or the
     hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
@@ -1744,7 +1782,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
     ADR 0054: the target turn as the model saw it, `shown_target`): a quote of EVIDENCE_MIN_CHARS or more that is
     not in it parks the row. `feelings` (extract-v18, PHASE-58 S2) keeps a feeling's strength, sign and the feeling
     under it. `compiler` (extract-v19, PHASE-60 S7, S8): its extension predicates (`told`) validate, and a
-    `when_happened` is kept. Pure,
+    `when_happened` is kept. `address_conditions` (extract-v20 / canon-v2, PHASE-64): keeps `address_condition` on
+    `addresses` rows. Pure,
     so the real-model evaluation (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
     out = []
     also = EXTENSION_PARTICIPANTS.get(compiler or "", frozenset())
@@ -1798,7 +1837,9 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
                     "participants": participants(item, also) if status == "valid" else None,
                     "outcome": outcome(item), "because": because(item),
                     "feeling": feeling(item) if feelings else None,
-                    "when_happened": when_happened(item, HAPPENED_MAX) if compiler in HAPPENED else None})
+                    "when_happened": when_happened(item, HAPPENED_MAX) if compiler in HAPPENED else None,
+                    "address_condition": (address_condition(item, ADDRESS_CONDITION_MAX)
+                                          if (address_conditions or compiler in ADDRESS_CONDITIONS) else None)})
     return out
 
 
@@ -1962,16 +2003,18 @@ def worker_status(conn: psycopg.Connection) -> dict[str, Any]:
 
 def _prompt_print(compiler: str) -> str:
     """The `prompt` fingerprint of a compiler's generation. Every extractor key hashes `repr(REGISTRY)`, so a
-    compiler's extension predicates (`predicates.EXTENSIONS`, only extract-v19's `told`) and its other output-changing
-    constants (the story clock line, the caps) are hashed here instead: its spec keeps extract-v18's field names, so a
-    switch between them differs in `compiler` and `prompt` alone (PHASE-60 S7, ADR 0086 item 5). Every other
-    compiler's is the fingerprint of its prompt, as before."""
+    compiler's extension predicates (`predicates.EXTENSIONS`, extract-v19/v20's `told`) and its other output-changing
+    constants (the story clock line, the caps, the address condition scopes) are hashed here instead: its spec keeps
+    extract-v18's field names, so a switch between them differs in `compiler` and `prompt` alone (PHASE-60 S7,
+    ADR 0086 item 5; PHASE-64, ADR 0091). Every other compiler's is the fingerprint of its prompt, as before."""
     if compiler not in predicates.EXTENSIONS:
         return generations.fingerprint(prompt_of(compiler))
-    return generations.fingerprint(
-        prompt_of(compiler) + "\n" + repr(sorted(predicates.EXTENSIONS[compiler].items())) + "\n"
-        + repr(sorted(predicates.EXTENSION_PARTICIPANTS.get(compiler, frozenset()))) + "\n" + CLOCK_LINE + "\n"
-        + f"{HAPPENED_MAX}|{CLOCK_MAX}")
+    text = (prompt_of(compiler) + "\n" + repr(sorted(predicates.EXTENSIONS[compiler].items())) + "\n"
+            + repr(sorted(predicates.EXTENSION_PARTICIPANTS.get(compiler, frozenset()))) + "\n" + CLOCK_LINE + "\n"
+            + f"{HAPPENED_MAX}|{CLOCK_MAX}")
+    if compiler in ADDRESS_CONDITIONS:
+        text += f"\n{ADDRESS_CONDITION_MAX}|{'|'.join(ADDRESS_SCOPES)}"
+    return generations.fingerprint(text)
 
 
 def extractor(settings: Settings) -> Generation | None:

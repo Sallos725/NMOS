@@ -30,7 +30,7 @@ import re
 from typing import Any
 
 from .entities import Resolution, norm
-from .predicates import REGISTRY
+from .predicates import REGISTRY, address_label
 from .threads import MATCH_MIN, Event, fire, similarity
 
 PREDICATE = "learned"
@@ -46,6 +46,8 @@ def secret_text(a: dict[str, Any]) -> str:
     if a.get("object"):
         parts.append(a["object"])
     text = " ".join(parts)
+    if label := address_label(a):
+        text = f"{text} [{label}]"
     return f"{text}: {a['value']}" if a.get("value") else text
 
 

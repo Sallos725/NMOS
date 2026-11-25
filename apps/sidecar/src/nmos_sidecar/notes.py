@@ -37,7 +37,7 @@ from .facts import symmetric
 from .inspector import _named, pairs, stale
 from .llm import ChatModel, LLMError, metered
 from .noteblocks import strip_blocks, wrap  # noqa: F401  (the API's names for them)
-from .predicates import HOLDER_PER_ITEM, REGISTRY
+from .predicates import HOLDER_PER_ITEM, REGISTRY, address_label
 from .runtime import NOTES_PROMPT_KEY
 from .summaries import content, held as summary_held, leaks, unnamed
 
@@ -89,7 +89,8 @@ def _head(f: dict[str, Any]) -> str:
     if f["predicate"] in HOLDER_PER_ITEM:
         return f"{f.get('object')} — {_w(f['predicate'])}"
     if f["predicate"] in PAIRWISE and f.get("object"):
-        return f"{_named(f, 'subject')} → {_named(f, 'object')} — {_w(f['predicate'])}"
+        cond = f" [{label}]" if (label := address_label(f)) else ""
+        return f"{_named(f, 'subject')} → {_named(f, 'object')} — {_w(f['predicate'])}{cond}"
     return f"{_named(f, 'subject')} — {_w(f['predicate'])}"
 
 
@@ -134,7 +135,8 @@ def address_lines(facts: list[dict[str, Any]], secrets: bool = False, excluded: 
         for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
             for f in p[k]:
                 value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
-                bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {_w(pred)} {value}"
+                cond = f" [{label}]" if (pred == "addresses" and (label := address_label(f))) else ""
+                bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {_w(pred)}{cond} {value}"
                             + (_secret_mark(f) if kept(f) else ""))
         if bits:
             out.append(f"- {' ↔ '.join(sorted(p['names'].values()))}: " + " · ".join(bits))

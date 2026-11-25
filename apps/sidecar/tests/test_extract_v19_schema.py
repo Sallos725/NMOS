@@ -113,7 +113,7 @@ def test_migration_0037_columns_and_check_constraint(migrated: str, db: psycopg.
         ("assertion", "when_happened"): ("text", "YES"),
         ("extraction", "story_clock"): ("text", "YES"),
     }
-    assert X.ASSERTION_COLUMNS[-1] == "when_happened"
+    assert "when_happened" in X.ASSERTION_COLUMNS
     assert "when_happened" not in X.JSON_COLUMNS
 
     extract_story(migrated)
