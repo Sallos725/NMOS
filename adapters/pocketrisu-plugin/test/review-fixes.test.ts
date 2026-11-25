@@ -153,3 +153,35 @@ describe('finding 8: a system block never beats a newer holder of the other role
     expect(inContextIds(prompt, host)).toEqual(['u0', 'c0', 'u1', 'c1', 'u2']);
   });
 });
+
+describe('finding 5: the whole chat is cleaned once per request with trimming on', () => {
+  // An old message outside the prompt counts how often its text is read during one request.
+  const counted = () => {
+    const n = { reads: 0 };
+    const message: HostMessage[] = Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? 'char' : 'user', chatId: `m${i}`,
+      data: `Message ${i}: the lantern, the harbor ledger and the watchtower bell, told again in turn ${i}.` }));
+    const old = message[1]!;
+    const text = old.data;
+    Object.defineProperty(old, 'data', { get: () => { n.reads += 1; return text; }, enumerable: true });
+    return { n, held: { id: 'chat-5', message } as HostChat };
+  };
+  const readsOf = async (trim: boolean, requests: number) => {
+    const { n, held } = counted();
+    const prompt = asPrompt(held.message.slice(10).map((m) => ({ ...m, data: m.data })));
+    const { host } = makeHost(() => held, (path, body) => (path !== '/v1/retrieve' ? { status: 200, json: {} }
+      : fresh(PACKET, body.trim ? { keep_from_id: 'm20', keep_from_turn: 10, reason: null } : undefined)),
+    trim ? { trimOldTurns: true, keepRecentTurns: 4 } : {});
+    host.currentChat = async () => held;  // the same objects, so the getter counts
+    const adapter = createAdapter(host);
+    for (let r = 0; r < requests; r += 1) await adapter.beforeRequest(structuredClone(prompt), 'model');
+    return n.reads;
+  };
+
+  // One `selectedContent` reads `data` twice (its type, then its value): one clean of the message is 2 reads.
+  const CLEAN = 2;
+
+  it('a request cleans an old message once more than with trimming off (a miss, then a cache hit)', async () => {
+    expect(await readsOf(true, 1) - await readsOf(false, 1)).toBe(CLEAN);  // was 2 cleans: the pre-flight and the cut
+    expect(await readsOf(true, 2) - await readsOf(false, 2)).toBe(2 * CLEAN);
+  });
+});

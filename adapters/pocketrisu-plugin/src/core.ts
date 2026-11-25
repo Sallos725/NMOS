@@ -15,7 +15,7 @@ import type { ActivityEvent } from './hud';
 import { findMarker, holdsText, MEMORY_MARKER, resolvePlaceholders, stripMarkers } from './placement';
 import { GUARD_RESERVE_TOKENS, hasPacket, historyMarkerIndices, inContextIds, injectPacket, landsAfterUserTurn, queryTexts,
   userTurnIndex, withGuard, type InjectPosition } from './prompt';
-import { canTrimPrompt, trimPrompt } from './trim';
+import { canTrimPrompt, createTrimScan, trimPrompt } from './trim';
 import type { HostChat, HostMessage, HostPersonas, PromptMessage, ReconcileRequest } from './types';
 import { failureKind, INSECURE_ERROR, secureContext } from './failure';
 
@@ -665,6 +665,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
       // `[NMOS.memory]` that a chat message itself holds (it mentions the placeholder) is not the preset's: placement
       // looks past it. Found again in a trimmed prompt, whose indices (and a copied message) differ.
+      // The whole chat is cleaned once for this request, for the trimming pre-flight and the cut alike (finding 5).
+      const scan = createTrimScan(prompt, messages);
       const chatMarkers = historyMarkerIndices(prompt, messages);
       const marker = findMarker(prompt, chatMarkers);
       const skipIn = (p: PromptMessage[]): Set<number> => (chatMarkers.size === 0 ? chatMarkers
@@ -701,7 +703,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         if (decision?.keepFromId) {
           if (!packet) reason = 'empty_packet';
           else {
-            const r = trimPrompt(prompt, messages, decision.keepFromId);
+            const r = trimPrompt(prompt, messages, decision.keepFromId, scan);
             if (r.reason !== null) {
               refused = true;
               refusedTrim.delete(chat.id!);
@@ -742,8 +744,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // boundary refused before is not asked for again while the prompt still refuses it.
       const refusedAt = refusedTrim.get(chat.id);
       if (refusedAt && host.now() - refusedAt.at > REFUSED_TRIM_TTL_MS) refusedTrim.delete(chat.id);
-      const askTrim = k > 0 && canTrimPrompt(prompt, messages) && !(refusedAt && host.now() - refusedAt.at
-        <= REFUSED_TRIM_TTL_MS && trimPrompt(prompt, messages, refusedAt.id).reason !== null);
+      const askTrim = k > 0 && canTrimPrompt(prompt, messages, scan) && !(refusedAt && host.now() - refusedAt.at
+        <= REFUSED_TRIM_TTL_MS && trimPrompt(prompt, messages, refusedAt.id, scan).reason !== null);
       // Internal key only (not a cross-language hash): plain JSON keeps it linear and cheap.
       // The token is hashed with the rest, never kept as it is.
       const keyOf = (withTrim: boolean) => within(sha256Hex(JSON.stringify([
