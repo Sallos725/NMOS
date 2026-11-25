@@ -271,3 +271,18 @@ def test_a_continue_link_carrying_a_secret_makes_the_turns_that_looked_before_it
             assert reveals.unchecked(conn, ex.key, rv.key, tgt) == []
             _link_continue(conn, tgt, src)
             assert [r["turn"] for r in reveals.unchecked(conn, ex.key, rv.key, tgt)] == [0, 1, 2]
+
+
+# --- F12: a saved whole number written as a float ----------------------------------------------------------------
+
+def test_a_saved_whole_number_written_as_a_float_is_read_as_the_number():
+    from nmos_sidecar import runtime
+    from nmos_sidecar.config import Settings
+    base = Settings(database_url="postgresql://x/y")
+    saved = {"embed_max_chunks": 52.0}
+    if "extract_target_chars" in runtime.EDITABLE:
+        saved["extract_target_chars"] = 36000.0
+    got = runtime.effective(base, saved)
+    assert got.embed_max_chunks == 52 and isinstance(got.embed_max_chunks, int)
+    if "extract_target_chars" in saved:
+        assert got.extract_target_chars == 36000 and isinstance(got.extract_target_chars, int)

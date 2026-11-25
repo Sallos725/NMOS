@@ -159,7 +159,8 @@ def effective(base: Settings, overrides: dict[str, Any]) -> Settings:
                 log.warning("saved setting %s would be refused at startup and is ignored; the environment's value"
                             " applies", key)
             continue
-        changes[key] = value
+        typed = _typed(EDITABLE[key], value)  # a saved 52.0 reads as the 52 it was checked as (review F12)
+        changes[key] = value if typed is None else typed
     return dataclasses.replace(base, **changes)
 
 
