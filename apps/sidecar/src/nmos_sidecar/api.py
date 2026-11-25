@@ -750,6 +750,42 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with request.app.state.pool.connection() as conn:
             return readmodel.traces(conn, conv_id, min(limit, 200))
 
+    @app.get("/v1/conversations/{conv_id}/messages", dependencies=[Depends(auth)])
+    def conversation_messages(conv_id: UUID, request: Request, limit: int = Query(50, ge=1, le=100)):
+        """Recent head messages of a conversation (newest first, short preview) for the panel's `fact_add` picker."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            if conv["head_commit_id"] is None:
+                return []
+            rows = conn.execute(
+                """
+                SELECT so.host_logical_id, am.turn, am.position,
+                       sr.metadata->>'role' AS role, sr.metadata->>'name' AS name,
+                       left(sr.content, 120) AS preview
+                FROM active_membership am
+                JOIN source_revision sr ON sr.id = am.source_revision_id
+                JOIN source_object so ON so.id = sr.source_object_id
+                WHERE am.commit_id = %s AND am.turn IS NOT NULL AND am.turn >= 0
+                  AND coalesce((sr.metadata->>'disabled')::boolean, false) = false
+                ORDER BY am.position DESC
+                LIMIT %s
+                """,
+                (conv["head_commit_id"], limit),
+            ).fetchall()
+        return [
+            {
+                "host_logical_id": row["host_logical_id"],
+                "turn": row["turn"],
+                "position": row["position"],
+                "role": row["role"],
+                "name": row["name"],
+                "preview": " ".join((row["preview"] or "").split())[:100],
+            }
+            for row in rows
+        ]
+
     @app.get("/v1/conversations/{conv_id}/facts", dependencies=[Depends(auth)])
     def conversation_facts(conv_id: UUID, request: Request, history: bool = False):
         with request.app.state.pool.connection() as conn:

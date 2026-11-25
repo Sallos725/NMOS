@@ -328,7 +328,7 @@ def told_similarity(a: str, b: str) -> float:
     return 2 * len(ga & gb) / ((len(ga) + len(gb)) or 1)
 
 
-def told_chains(rows: list[dict[str, Any]] | None) -> list[list[dict[str, Any]]]:
+def told_chains(rows: list[dict[str, Any]] | None, *, include_id: bool = False) -> list[list[dict[str, Any]]]:
     """Group `told` rows oldest first into chains (PHASE-60 S8): a row extends a chain when one of its hearers is this
     row's teller and the content passed on is the same rumour (`told_similarity` at least TOLD_SIMILAR against what that
     hearer was told, so a retelling in other words still links). From the chain's last hearer it extends the chain
@@ -360,6 +360,8 @@ def told_chains(rows: list[dict[str, Any]] | None) -> list[list[dict[str, Any]]]
         turn = turn_raw if isinstance(turn_raw, int) and not isinstance(turn_raw, bool) else None
         link: dict[str, Any] = {"teller": teller, "hearer": hearer, "what": what, "about": _told_about(row),
                                 "turn": turn}
+        if include_id and row.get("id") is not None and not row.get("carried") and not row.get("canon"):
+            link["id"] = row["id"]
         what_norm = norm(what)
         teller_key = (teller_id, teller_names)
         hop = ((hearer_id, hearer_names), what_norm)

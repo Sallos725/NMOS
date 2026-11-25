@@ -393,7 +393,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "rs.batch": ("일괄 처리 {n}건", "{n} repairs at once"),
     "bk.stale": ("오래 열린 스레드", "Threads open a long time"), "bk.dropped": ("재추출에서 빠진 사실", "Facts a re-extraction dropped"),
     "bk.role_auto": ("자동 적용된 역할 종료", "Role endings applied automatically"),
-    "bk.role_held": ("보류된 역할 종료", "Role endings held"), "bk.canon": ("원전과의 충돌", "Conflicts with the setting"),
+    "bk.role_held": ("보류된 역할 종료", "Role endings held"), "bk.alias_held": ("보류된 별명", "Held aliases"),
+    "bk.canon": ("원전과의 충돌", "Conflicts with the setting"),
     "bk.disputed": ("이야기 안의 충돌", "Conflicts within the story"),
     "bk.repair": ("아무것에도 맞지 않는 수정", "Repairs that match nothing"), "bk.state": ("상태 표시", "Status flags"),
     "at.role_held": ("확인되지 않아 보류된 역할 종료: {why} (복원하면 그 턴에 끝남)",
@@ -475,6 +476,10 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "ex.cast": ("인물 목록에서만", "out of the cast"), "ex.memory": ("기억에서도", "out of memory too"),
     "ex.hidden": ("가린 사실 {n}개", "{n} facts hidden"), "ex.now": ("캐릭터 아님으로 표시됨", "marked not a character"),
     "rk.state_dismiss": ("상태창 확인 표시 넘김", "status flag dismissed"),
+    "rk.fact_add": ("사실 추가", "add a fact"),
+    "rk.told_retract": ("전달 철회", "retract a told line"),
+    "rk.fact_hidden": ("비밀 대상 변경", "change hidden-from"),
+    "rk.attention_dismiss": ("확인 표시 넘김", "dismiss attention item"),
     "rs.applied": ("적용됨", "applied"), "rs.unmatched": ("지금 맞는 항목 없음", "matches nothing now"),
     "rs.removed": ("되돌림", "taken back"),
     "h.repair": ("수리", "Repair"), "h.target": ("대상", "Target"), "h.value": ("내용", "Value"), "h.made": ("만든 때", "Made"),
@@ -1595,13 +1600,17 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
     for f in ends.get("held", []):
         why = ((f.get("reason") or "").split(": ", 1) + [""])[1]
         rows.append([_v(_t(lang, "at.role_held").format(why=why)), _v(fact_line_text(f)) + _quote(f.get("evidence")),
-                     _v(f.get("turn")), _act("fact_restore", f["id"])
-                     + _bulk("role_held", lang, {"kind": "fact_restore", "item": str(f["id"])})])
+                     _v(f.get("turn")), _act("fact_restore", f["id"]) + _act("attention_dismiss", f["id"], "role_held")
+                     + _bulk("role_held", lang, {"kind": "fact_restore", "item": str(f["id"])},
+                             {"kind": "attention_dismiss", "item": str(f["id"]), "attention": "role_held"})])
     for f in ends.get("aliases_held", []):
         why = ((f.get("reason") or "").split(": ", 1) + [""])[1]
         rows.append([_v(_t(lang, "at.alias_held").format(why=why)), _v(f"{f.get('subject')} = {f.get('value')}")
                      + _quote(f.get("evidence")), _v(f.get("turn")),
-                     _act("alias_join", f["id"], f"{f.get('subject')}|{f.get('value')}")])
+                     _act("alias_join", f["id"], f"{f.get('subject')}|{f.get('value')}")
+                     + _act("attention_dismiss", f["id"], "alias_held")
+                     + _bulk("alias_held", lang,
+                             retract={"kind": "attention_dismiss", "item": str(f["id"]), "attention": "alias_held"})])
     owned = {f["id"]: f["repair"] for f in view.get("facts", []) if f.get("owner")}  # the owner's corrections
     for c in view.get("conflicts", []):
         against = c.get("against") or {}
@@ -1625,7 +1634,7 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
                      + _bulk("disputed", lang, retract={"undo": str(owned[c["fact"]])} if mine
                              else {"kind": "fact_retract", "item": str(c["fact"])})])
     for rep in repairs:
-        if rep.get("removed_at") or rep.get("kind") == "state_dismiss":  # a dismissed flag that is gone is no problem
+        if rep.get("removed_at") or rep.get("kind") in ("state_dismiss", "attention_dismiss"):  # a dismissed item that is gone is no problem
             continue
         if rep.get("via"):
             rows.append([_v(_t(lang, "at.split")), _repair_target(rep), "", _undo(rep)])
@@ -1674,7 +1683,10 @@ def _repair_value(rep: dict[str, Any], lang: str) -> str:
         if v.get(k):
             parts.append(f"→ {_v(v[k])}")
     if v.get("character"):
-        parts.append(_v(v["character"]))
+        if rep["kind"] == "fact_hidden" and v.get("hidden") is not None:
+            parts.append(f"{'+' if v['hidden'] else '−'} {_v(v['character'])}")
+        else:
+            parts.append(_v(v["character"]))
     if v.get("turn") is not None:
         parts.append(f"<span class=\"muted\">{_v(_t(lang, 'h.turn'))} {_v(v['turn'])}</span>")
     if rep.get("note"):
@@ -1897,7 +1909,8 @@ def _meta(conv: dict[str, Any], lang: str) -> str:
     """Internal identifiers, folded away; where a branch came from stays in view."""
     t = lambda k: _t(lang, k)
     branched = (f"<p class=\"muted\">{t('branched_from')} {_v(conv['branched_from_host_chat_ref'])} {t('at')} "
-                f"{_v(conv['branched_from_message_ref'])}</p>" if conv.get("branched_from_host_chat_ref") else "")
+                f"{_v(conv['branched_from_message_ref'])}"
+                f"{_act('branch_inherit', conv['id'])}</p>" if conv.get("branched_from_host_chat_ref") else "")
     return (branched + f"<details class=\"meta\"><summary class=\"muted\">{t('ids')}</summary>"
             f"<p class=\"muted mono\">{_v(conv['host_chat_ref'])}<br>{t('conversation')} {_v(conv['id'])} · "
             f"{t('head')} {_v(conv['head_commit_id'])}</p></details>")
@@ -2313,8 +2326,9 @@ def _told_table(chains: list[list[dict[str, Any]]], lang: str) -> str:
                  if isinstance(link.get("turn"), int) and not isinstance(link.get("turn"), bool)]
         meta = [_v(_t(lang, "told_about").format(who=", ".join(about))) if about else "", " → ".join(turns)]
         tail = " · ".join(x for x in meta if x)
+        acts = "".join(_act("told_retract", link["id"]) for link in chain if link.get("id") is not None)
         lines.append(f"<p>{who}: {_v(chain[0]['what'])}" + (f" <span class=\"muted\">· {tail}</span>" if tail else "")
-                     + "</p>")
+                     + acts + "</p>")
     return "".join(lines)
 
 
@@ -2323,5 +2337,5 @@ def told_section(rows: list[dict[str, Any]] | None, lang: str = "ko") -> str:
     if not rows:
         return ""
     from .memorymap import told_chains
-    chains = told_chains(rows)
+    chains = told_chains(rows, include_id=True)
     return _told_table(chains, lang) if chains else ""

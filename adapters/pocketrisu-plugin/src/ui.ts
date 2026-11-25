@@ -714,6 +714,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   // runs none of a page's scripts.
   const notesButton = el('button', { text: L('notes.open') });
   const notesCard = el('div', { class: 'card', style: 'display:none' });
+  const factAddButton = el('button', { text: L('rp.fact_add') });
+  const factAddCard = el('div', { class: 'card', style: 'display:none' });
   let notesFor: string | null = null; // the chat the note form is for: a page's, or the hub's
   let hubConversation: string | null = null; // the chat the hub is about (PHASE-52), from its answer
   let viewsOn = false; // the sidecar has the new screens (PHASE-52): hub first, settings in groups
@@ -721,7 +723,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   let graphOn = false; // and its drawing as data, drawn here (PHASE-55 step 6)
   const actionMsg = el('div', { class: 'msg' });
   const actions = el('div', {}, el('div', { class: 'btns' }, retryButton, historyButton, cutButton, cutSummariesLabel, rebuildButton,
-    exportButton, notesButton, deleteButton),
+    exportButton, notesButton, factAddButton, deleteButton),
     el('details', { class: 'sub help' }, el('summary', { text: L('act.help') }), el('p', { text: L('act.sub') })));
   // The message sits outside the actions so a result stays visible after a delete returns to the list.
   // Back and Refresh stay in reach while reading far down a page.
@@ -752,7 +754,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const inspbar = el('div', { class: 'btns inspbar' }, inspectorBack, inspectorRefresh);
   const homeQuickBar = el('div', { class: 'home-quick', style: 'display:none' });
   const memSubBar = el('div', { class: 'mem-subbar', style: 'display:none' });
-  inspectorView.append(inspbar, homeQuickBar, memSubBar, actions, actionMsg, notesCard,
+  inspectorView.append(inspbar, homeQuickBar, memSubBar, actions, actionMsg, notesCard, factAddCard,
     bulkBar, modeCard, statusCard, pinCard, linkCard, inspectorBody, inspectorAddress);
   function updateBulk(): void {
     bulkBar.style.display = picked.size || bulkGroups.size ? '' : 'none';
@@ -823,6 +825,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const spot = el('div');
     button.addEventListener('click', () => {
       if (action.kind === 'fact_correct') correctForm(action, button);
+      else if (action.kind === 'fact_hidden') hiddenForm(action, button);
+      else if (action.kind === 'branch_inherit') void branchInherit(action, button, spot);
       else if (action.kind === 'undo' && (action.extra === 'name_split' || action.extra === 'entity_exclude')) {
         void undoSplit(action, button, spot); // previewed: a split's and an exclusion's undo (PHASE-20 Q2, PHASE-47)
       } else if (action.kind === 'entity_exclude') void notACharacter(action, button, spot);
@@ -906,6 +910,69 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     spot.replaceChildren(el('span', { class: 'rpform' }, text, turn, save, cancel));
     text.focus();
   }
+  /** Inline form for `fact_hidden`: add or remove a character from a story fact's `hidden_from`. */
+  function hiddenForm(action: RepairAction, button: HTMLButtonElement): void {
+    const spot = button.parentElement;
+    if (!spot) return;
+    const who = el('input', { type: 'text', placeholder: L('fh.char'), 'aria-label': L('fh.char') });
+    const mode = el('select', { class: 'mini' },
+      el('option', { value: '1', text: L('fh.hide') }),
+      el('option', { value: '0', text: L('fh.unhide') }));
+    const save = el('button', { class: 'mini', text: L('save') });
+    const cancel = el('button', { class: 'mini', text: L('cancel') });
+    cancel.addEventListener('click', () => spot.replaceChildren(...repairControls(action)));
+    save.addEventListener('click', () => {
+      const name = who.value.trim();
+      if (!name) return void who.focus();
+      void repairNow(action, save, { character: name, hidden: mode.value === '1' });
+    });
+    spot.replaceChildren(el('span', { class: 'rpform' }, who, mode, save, cancel));
+    who.focus();
+  }
+  /** Branch back-fill: dry-run preview first, then confirm to copy origin memory for the shared prefix. */
+  async function branchInherit(action: RepairAction, button: HTMLButtonElement, spot: HTMLElement): Promise<void> {
+    const conversation = inspectorConversation(inspectorPath) ?? action.item;
+    if (!conversation) return;
+    interface InheritResult { status?: string; prefix?: number; copied?: Record<string, number> }
+    const path = `/v1/conversations/${conversation}/branch-inherit`;
+    button.disabled = true;
+    let preview: InheritResult;
+    try {
+      preview = await deps.api<InheritResult>('POST', path, { dry_run: true }, 30_000);
+    } catch (error) {
+      say(actionMsg, errorText(lang, error), 'err');
+      button.disabled = false;
+      return;
+    }
+    const c = preview.copied ?? {};
+    const total = Object.values(c).reduce((a, b) => a + (Number(b) || 0), 0);
+    if (preview.status !== 'done' || total === 0) {
+      say(actionMsg, L('bi.empty', { s: preview.status ?? 'empty' }), 'ok');
+      spot.replaceChildren();
+      button.disabled = false;
+      return;
+    }
+    const ok = el('button', { class: 'mini', text: L('bi.confirm') });
+    const cancel = el('button', { class: 'mini', text: L('cancel') });
+    cancel.addEventListener('click', () => { spot.replaceChildren(); button.disabled = false; });
+    ok.addEventListener('click', async () => {
+      ok.disabled = true;
+      try {
+        const res = await deps.api<InheritResult>('POST', path, { dry_run: false }, 60_000);
+        const rc = res.copied ?? {};
+        spot.replaceChildren();
+        say(actionMsg, L('bi.done', { x: rc.extractions ?? 0, s: rc.summaries ?? 0, r: rc.repairs ?? 0 }), 'ok');
+        await showInspector();
+      } catch (error) {
+        say(actionMsg, errorText(lang, error), 'err');
+        ok.disabled = false;
+      }
+    });
+    spot.replaceChildren(el('div', { class: 'preview' }, el('b', { text: L('bi.title') }),
+      el('div', { text: L('bi.preview', { p: preview.prefix ?? 0, x: c.extractions ?? 0, s: c.summaries ?? 0,
+        e: c.embeddings ?? 0, r: c.repairs ?? 0, l: c.links ?? 0 }) }),
+      el('div', { class: 'btns' }, ok, cancel)));
+  }
   /** A held alias linked by the owner (PHASE-29 Q5): the join's preview and link, naming the held row. */
   async function aliasJoin(action: RepairAction, button: HTMLButtonElement, spot: HTMLElement): Promise<void> {
     const conversation = inspectorConversation(inspectorPath);
@@ -984,6 +1051,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       body = {};
     } else if (action.kind === 'secret_found_out' || action.kind === 'secret_keep') {
       body.character = action.extra;
+    } else if (action.kind === 'attention_dismiss' && action.extra) {
+      body.attention = action.extra;
     }
     button.disabled = true;
     try {
@@ -1066,7 +1135,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     for (const spot of Array.from(page.querySelectorAll('span.rp[data-repair]'))) {
       const action = repairAction(spot.getAttribute('data-repair'));
-      if (action) spot.replaceChildren(...repairControls(action));
+      if (!action) continue;
+      spot.replaceChildren(...repairControls(action));
+      if (action.kind === 'fact_retract' && spot.closest('#s-facts') && !spot.closest('details.fold')) {
+        const hid = el('span', { class: 'rp' });
+        hid.replaceChildren(...repairControls({ kind: 'fact_hidden', item: action.item, extra: null }));
+        spot.after(hid);
+      }
     }
     for (const item of Array.from(picked)) if (!closers.has(item)) picked.delete(item); // closed or gone since
     bulkGroups = new Map();
@@ -1187,6 +1262,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       actionConversation = conversation;
       notesCard.replaceChildren(); // another chat's sections never stay on screen
       notesCard.style.display = 'none';
+      factAddCard.replaceChildren();
+      factAddCard.style.display = 'none';
       notesFor = null;
       say(actionMsg, '');
       disarm();
@@ -1772,6 +1849,78 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (!notesCard.childElementCount) buildNotes(conversation);
     notesCard.style.display = '';
   });
+  factAddButton.addEventListener('click', () => {
+    const conversation = actionConversation;
+    if (!conversation) return;
+    if (factAddCard.style.display !== 'none') return void (factAddCard.style.display = 'none');
+    factAddCard.style.display = '';
+    void buildFactAdd(conversation);
+  });
+  /** Inline form for `fact_add`: pick a recent message, enter predicate/subject/object/value, and submit. */
+  async function buildFactAdd(conversation: string): Promise<void> {
+    interface MsgRow { host_logical_id: string; turn: number; position: number; role: string; name: string | null; preview: string }
+    factAddCard.replaceChildren(el('b', { text: L('fa.title') }), el('p', { class: 'sub', text: L('act.working') }));
+    let msgs: MsgRow[];
+    try {
+      msgs = await deps.api<MsgRow[]>('GET', `/v1/conversations/${conversation}/messages?limit=40`, undefined, 15_000);
+    } catch (error) {
+      factAddCard.replaceChildren(el('b', { text: L('fa.title') }), el('p', { class: 'msg err', text: errorText(lang, error) }));
+      return;
+    }
+    if (!msgs.length) {
+      factAddCard.replaceChildren(el('b', { text: L('fa.title') }), el('p', { class: 'sub', text: L('fa.no_msgs') }));
+      return;
+    }
+    const preds: [string, string, string | null][] = [
+      ['has_status', 'character', null], ['located_in', 'character', 'place'], ['identity', 'character', null],
+      ['has_trait', 'character', null], ['relationship', 'character', 'character'], ['role_toward', 'character', 'character'],
+      ['feels_toward', 'character', 'character'], ['addresses', 'character', 'character'], ['possesses', 'character', 'item'],
+      ['member_of', 'character', 'group'], ['knows', 'character', null], ['goal', 'character', null],
+      ['promised', 'character', 'character'], ['event', 'character', null], ['world_fact', 'concept', null],
+    ];
+    const msgSel = el('select', { 'aria-label': L('fa.msg') }, ...msgs.map((m) =>
+      el('option', { value: m.host_logical_id, text: `t${m.turn} #${m.position} (${m.name || m.role}) ${m.preview.slice(0, 48)}` })));
+    const predSel = el('select', { 'aria-label': L('fa.pred') }, ...preds.map(([p]) => el('option', { value: p, text: p })));
+    const subj = el('input', { type: 'text', placeholder: L('fa.subj'), 'aria-label': L('fa.subj') });
+    const obj = el('input', { type: 'text', placeholder: L('fa.obj'), 'aria-label': L('fa.obj') });
+    const val = el('input', { type: 'text', placeholder: L('fa.val'), 'aria-label': L('fa.val') });
+    const hid = el('input', { type: 'text', placeholder: L('fa.hidden'), 'aria-label': L('fa.hidden') });
+    const save = el('button', { class: 'primary', text: L('save') });
+    const cancel = el('button', { text: L('cancel') });
+    const formMsg = el('div', { class: 'msg' });
+    cancel.addEventListener('click', () => { factAddCard.style.display = 'none'; });
+    save.addEventListener('click', async () => {
+      const s = subj.value.trim();
+      if (!s) return void say(formMsg, L('fa.need_subj'), 'err');
+      const spec = preds.find(([p]) => p === predSel.value) ?? preds[0]!;
+      const o = obj.value.trim() || null;
+      const v = val.value.trim() || null;
+      const hidden = hid.value.split(',').map((x) => x.trim()).filter(Boolean);
+      const fact: Record<string, unknown> = {
+        predicate: spec[0], subject: s, subject_type: spec[1],
+        ...(o ? { object: o, object_type: spec[2] ?? 'character' } : {}),
+        ...(v ? { value: v } : {}),
+        ...(hidden.length ? { hidden_from: hidden } : {}),
+      };
+      save.disabled = true;
+      say(formMsg, L('act.working'));
+      try {
+        await deps.api('POST', `/v1/conversations/${conversation}/repairs`,
+          { kind: 'fact_add', item: msgSel.value, fact }, 15_000);
+        factAddCard.replaceChildren();
+        factAddCard.style.display = 'none';
+        say(actionMsg, L('rp.done'), 'ok');
+        await showInspector();
+      } catch (error) {
+        say(formMsg, errorText(lang, error), 'err');
+        save.disabled = false;
+      }
+    });
+    factAddCard.replaceChildren(el('b', { text: L('fa.title') }),
+      el('div', { class: 'row' }, msgSel), el('div', { class: 'row' }, predSel),
+      el('div', { class: 'row' }, subj, obj), el('div', { class: 'row' }, val, hid),
+      el('div', { class: 'btns' }, save, cancel), formMsg);
+  }
   /** The form: which sections, the chronicle's length, whether secrets go in (PHASE-50 S1, PHASE-59 Studio). */
   function buildNotes(conversation: string, target: HTMLElement = notesCard, studio = false): void {
     notesFor = conversation;

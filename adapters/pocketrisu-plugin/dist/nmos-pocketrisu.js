@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:d1f4bdf01269".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:203cccc4d5ae".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -829,6 +829,32 @@
     // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
     "rp.state_dismiss": ["\uAD1C\uCC2E\uC74C", "Dismiss"],
     // a status flag the owner looked at (PHASE-39 Q4)
+    "rp.attention_dismiss": ["\uB118\uAE30\uAE30", "Dismiss"],
+    // a held role ending or alias the owner dismissed
+    "rp.told_retract": ["\uCCA0\uD68C", "Retract"],
+    "rp.fact_hidden": ["\uBE44\uBC00 \uB300\uC0C1", "Hidden"],
+    "rp.fact_add": ["\uC0AC\uC2E4 \uCD94\uAC00", "Add fact"],
+    "rp.branch_inherit": ["\uC6D0\uBCF8 \uBD84\uAE30 \uAE30\uC5B5 \uAC00\uC838\uC624\uAE30", "Inherit from origin branch"],
+    "bi.title": ["\uC6D0\uBCF8 \uBD84\uAE30\uC5D0\uC11C \uAC00\uC838\uC62C \uAE30\uC5B5", "Memory to inherit from origin branch"],
+    "bi.preview": [
+      "\uACF5\uD1B5 \uAD6C\uAC04 {p}\uAC1C \uBA54\uC2DC\uC9C0 \xB7 \uCD94\uCD9C {x}\uAC74 \xB7 \uC694\uC57D {s}\uAC74 \xB7 \uC784\uBCA0\uB529 {e}\uAC74 \xB7 \uC218\uB9AC {r}\uAC74 \xB7 \uC5F0\uACB0 {l}\uAC74 (\uBAA8\uB378 \uD638\uCD9C 0\uD68C)",
+      "{p} shared messages \xB7 {x} extractions \xB7 {s} summaries \xB7 {e} embeddings \xB7 {r} repairs \xB7 {l} links (0 model calls)"
+    ],
+    "bi.empty": ["\uC6D0\uBCF8 \uBD84\uAE30\uC5D0\uC11C \uC0C8\uB85C \uAC00\uC838\uC62C \uAE30\uC5B5\uC774 \uC5C6\uC5B4\uC694 ({s}).", "Nothing new to inherit from the origin branch ({s})."],
+    "bi.confirm": ["\uAC00\uC838\uC624\uAE30", "Inherit now"],
+    "bi.done": ["\uC6D0\uBCF8 \uBD84\uAE30 \uAE30\uC5B5\uC744 \uAC00\uC838\uC654\uC5B4\uC694 ({x}\uAC74 \uCD94\uCD9C, {s}\uAC74 \uC694\uC57D, {r}\uAC74 \uC218\uB9AC).", "Inherited from origin branch ({x} extractions, {s} summaries, {r} repairs)."],
+    "fh.char": ["\uB300\uC0C1 \uC778\uBB3C \uC774\uB984", "Character name"],
+    "fh.hide": ["\uC228\uAE40 \uCD94\uAC00", "Hide from"],
+    "fh.unhide": ["\uC228\uAE40 \uD574\uC81C", "Stop hiding"],
+    "fa.title": ["\uBE60\uC9C4 \uC0AC\uC2E4 \uC9C1\uC811 \uCD94\uAC00", "Add a missed fact"],
+    "fa.msg": ["\uAE30\uC900 \uBA54\uC2DC\uC9C0", "Source message"],
+    "fa.pred": ["\uC885\uB958", "Predicate"],
+    "fa.subj": ["\uC8FC\uCCB4 (\uB204\uAC00/\uBB34\uC5C7\uC774)", "Subject"],
+    "fa.obj": ["\uB300\uC0C1 (\uC0C1\uB300/\uC7A5\uC18C/\uBB3C\uAC74)", "Object (optional)"],
+    "fa.val": ["\uAC12 (\uB0B4\uC6A9/\uC0C1\uD0DC)", "Value (optional)"],
+    "fa.hidden": ["\uC228\uAE38 \uC778\uBB3C (\uC27C\uD45C\uB85C \uAD6C\uBD84, \uC120\uD0DD)", "Hidden from (comma-separated, optional)"],
+    "fa.no_msgs": ["\uCD94\uAC00\uD560 \uBA54\uC2DC\uC9C0\uAC00 \uC544\uC9C1 \uC5C6\uC5B4\uC694.", "No messages available yet."],
+    "fa.need_subj": ["\uC8FC\uCCB4\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.", "Enter a subject."],
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
     "rp.undo_batch": ["\uC804\uBD80 \uB418\uB3CC\uB9AC\uAE30", "Undo all"],
     "rp.fact_correct_lock": ["\uC6D0\uC804 \uC815\uC815({n})", "Correct the setting {n}"],
@@ -3770,8 +3796,8 @@ ${GUARD_LINE}` : "";
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/person/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|undo_batch|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
-  var BULK_KINDS = /* @__PURE__ */ new Set(["thread_close", "fact_retract", "fact_lock", "fact_restore", "state_dismiss"]);
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|undo_batch|alias_join|branch_inherit|told_retract|fact_hidden|attention_dismiss|fact_add):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var BULK_KINDS = /* @__PURE__ */ new Set(["thread_close", "fact_retract", "fact_lock", "fact_restore", "state_dismiss", "attention_dismiss"]);
   var ID2 = /^-?[0-9a-f-]{1,64}$/;
   function bulkRequest(raw) {
     if (raw === void 0) return void 0;
@@ -3780,7 +3806,13 @@ ${GUARD_LINE}` : "";
     if ("undo" in r) return typeof r.undo === "string" && ID2.test(r.undo) && Object.keys(r).length === 1 ? { undo: r.undo } : null;
     if (typeof r.kind !== "string" || !BULK_KINDS.has(r.kind) || typeof r.item !== "string" || !ID2.test(r.item)) return null;
     if (r.outcome !== void 0 && (typeof r.outcome !== "string" || !/^[a-z_]{1,32}$/.test(r.outcome))) return null;
-    return { kind: r.kind, item: r.item, ...typeof r.outcome === "string" ? { outcome: r.outcome } : {} };
+    if (r.attention !== void 0 && r.attention !== "role_held" && r.attention !== "alias_held") return null;
+    return {
+      kind: r.kind,
+      item: r.item,
+      ...typeof r.outcome === "string" ? { outcome: r.outcome } : {},
+      ...r.attention === "role_held" || r.attention === "alias_held" ? { attention: r.attention } : {}
+    };
   }
   function bulkMark(value) {
     if (!value || value.length > 2e3) return null;
@@ -5100,6 +5132,8 @@ html,body{margin:0;background:${PALETTE.bg}}
     const exportButton = el("button", { text: L("exp.chat") });
     const notesButton = el("button", { text: L("notes.open") });
     const notesCard = el("div", { class: "card", style: "display:none" });
+    const factAddButton = el("button", { text: L("rp.fact_add") });
+    const factAddCard = el("div", { class: "card", style: "display:none" });
     let notesFor = null;
     let hubConversation = null;
     let viewsOn = false;
@@ -5119,6 +5153,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         rebuildButton,
         exportButton,
         notesButton,
+        factAddButton,
         deleteButton
       ),
       el("details", { class: "sub help" }, el("summary", { text: L("act.help") }), el("p", { text: L("act.sub") }))
@@ -5153,6 +5188,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       actions,
       actionMsg,
       notesCard,
+      factAddCard,
       bulkBar,
       modeCard,
       statusCard,
@@ -5228,6 +5264,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       const spot = el("div");
       button.addEventListener("click", () => {
         if (action.kind === "fact_correct") correctForm(action, button);
+        else if (action.kind === "fact_hidden") hiddenForm(action, button);
+        else if (action.kind === "branch_inherit") void branchInherit(action, button, spot);
         else if (action.kind === "undo" && (action.extra === "name_split" || action.extra === "entity_exclude")) {
           void undoSplit(action, button, spot);
         } else if (action.kind === "entity_exclude") void notACharacter(action, button, spot);
@@ -5321,6 +5359,82 @@ html,body{margin:0;background:${PALETTE.bg}}
       spot.replaceChildren(el("span", { class: "rpform" }, text2, turn, save2, cancel));
       text2.focus();
     }
+    function hiddenForm(action, button) {
+      const spot = button.parentElement;
+      if (!spot) return;
+      const who = el("input", { type: "text", placeholder: L("fh.char"), "aria-label": L("fh.char") });
+      const mode = el(
+        "select",
+        { class: "mini" },
+        el("option", { value: "1", text: L("fh.hide") }),
+        el("option", { value: "0", text: L("fh.unhide") })
+      );
+      const save2 = el("button", { class: "mini", text: L("save") });
+      const cancel = el("button", { class: "mini", text: L("cancel") });
+      cancel.addEventListener("click", () => spot.replaceChildren(...repairControls(action)));
+      save2.addEventListener("click", () => {
+        const name = who.value.trim();
+        if (!name) return void who.focus();
+        void repairNow(action, save2, { character: name, hidden: mode.value === "1" });
+      });
+      spot.replaceChildren(el("span", { class: "rpform" }, who, mode, save2, cancel));
+      who.focus();
+    }
+    async function branchInherit(action, button, spot) {
+      const conversation = inspectorConversation(inspectorPath) ?? action.item;
+      if (!conversation) return;
+      const path = `/v1/conversations/${conversation}/branch-inherit`;
+      button.disabled = true;
+      let preview;
+      try {
+        preview = await deps.api("POST", path, { dry_run: true }, 3e4);
+      } catch (error) {
+        say(actionMsg, errorText(lang, error), "err");
+        button.disabled = false;
+        return;
+      }
+      const c = preview.copied ?? {};
+      const total = Object.values(c).reduce((a, b) => a + (Number(b) || 0), 0);
+      if (preview.status !== "done" || total === 0) {
+        say(actionMsg, L("bi.empty", { s: preview.status ?? "empty" }), "ok");
+        spot.replaceChildren();
+        button.disabled = false;
+        return;
+      }
+      const ok = el("button", { class: "mini", text: L("bi.confirm") });
+      const cancel = el("button", { class: "mini", text: L("cancel") });
+      cancel.addEventListener("click", () => {
+        spot.replaceChildren();
+        button.disabled = false;
+      });
+      ok.addEventListener("click", async () => {
+        ok.disabled = true;
+        try {
+          const res = await deps.api("POST", path, { dry_run: false }, 6e4);
+          const rc = res.copied ?? {};
+          spot.replaceChildren();
+          say(actionMsg, L("bi.done", { x: rc.extractions ?? 0, s: rc.summaries ?? 0, r: rc.repairs ?? 0 }), "ok");
+          await showInspector();
+        } catch (error) {
+          say(actionMsg, errorText(lang, error), "err");
+          ok.disabled = false;
+        }
+      });
+      spot.replaceChildren(el(
+        "div",
+        { class: "preview" },
+        el("b", { text: L("bi.title") }),
+        el("div", { text: L("bi.preview", {
+          p: preview.prefix ?? 0,
+          x: c.extractions ?? 0,
+          s: c.summaries ?? 0,
+          e: c.embeddings ?? 0,
+          r: c.repairs ?? 0,
+          l: c.links ?? 0
+        }) }),
+        el("div", { class: "btns" }, ok, cancel)
+      ));
+    }
     async function aliasJoin(action, button, spot) {
       const conversation = inspectorConversation(inspectorPath);
       const pair = aliasPair(action);
@@ -5401,6 +5515,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         body = {};
       } else if (action.kind === "secret_found_out" || action.kind === "secret_keep") {
         body.character = action.extra;
+      } else if (action.kind === "attention_dismiss" && action.extra) {
+        body.attention = action.extra;
       }
       button.disabled = true;
       try {
@@ -5484,7 +5600,13 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       for (const spot of Array.from(page.querySelectorAll("span.rp[data-repair]"))) {
         const action = repairAction(spot.getAttribute("data-repair"));
-        if (action) spot.replaceChildren(...repairControls(action));
+        if (!action) continue;
+        spot.replaceChildren(...repairControls(action));
+        if (action.kind === "fact_retract" && spot.closest("#s-facts") && !spot.closest("details.fold")) {
+          const hid = el("span", { class: "rp" });
+          hid.replaceChildren(...repairControls({ kind: "fact_hidden", item: action.item, extra: null }));
+          spot.after(hid);
+        }
       }
       for (const item of Array.from(picked)) if (!closers.has(item)) picked.delete(item);
       bulkGroups = /* @__PURE__ */ new Map();
@@ -5607,6 +5729,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         actionConversation = conversation;
         notesCard.replaceChildren();
         notesCard.style.display = "none";
+        factAddCard.replaceChildren();
+        factAddCard.style.display = "none";
         notesFor = null;
         say(actionMsg, "");
         disarm();
@@ -6292,6 +6416,98 @@ html,body{margin:0;background:${PALETTE.bg}}
       if (!notesCard.childElementCount) buildNotes(conversation);
       notesCard.style.display = "";
     });
+    factAddButton.addEventListener("click", () => {
+      const conversation = actionConversation;
+      if (!conversation) return;
+      if (factAddCard.style.display !== "none") return void (factAddCard.style.display = "none");
+      factAddCard.style.display = "";
+      void buildFactAdd(conversation);
+    });
+    async function buildFactAdd(conversation) {
+      factAddCard.replaceChildren(el("b", { text: L("fa.title") }), el("p", { class: "sub", text: L("act.working") }));
+      let msgs;
+      try {
+        msgs = await deps.api("GET", `/v1/conversations/${conversation}/messages?limit=40`, void 0, 15e3);
+      } catch (error) {
+        factAddCard.replaceChildren(el("b", { text: L("fa.title") }), el("p", { class: "msg err", text: errorText(lang, error) }));
+        return;
+      }
+      if (!msgs.length) {
+        factAddCard.replaceChildren(el("b", { text: L("fa.title") }), el("p", { class: "sub", text: L("fa.no_msgs") }));
+        return;
+      }
+      const preds = [
+        ["has_status", "character", null],
+        ["located_in", "character", "place"],
+        ["identity", "character", null],
+        ["has_trait", "character", null],
+        ["relationship", "character", "character"],
+        ["role_toward", "character", "character"],
+        ["feels_toward", "character", "character"],
+        ["addresses", "character", "character"],
+        ["possesses", "character", "item"],
+        ["member_of", "character", "group"],
+        ["knows", "character", null],
+        ["goal", "character", null],
+        ["promised", "character", "character"],
+        ["event", "character", null],
+        ["world_fact", "concept", null]
+      ];
+      const msgSel = el("select", { "aria-label": L("fa.msg") }, ...msgs.map((m) => el("option", { value: m.host_logical_id, text: `t${m.turn} #${m.position} (${m.name || m.role}) ${m.preview.slice(0, 48)}` })));
+      const predSel = el("select", { "aria-label": L("fa.pred") }, ...preds.map(([p]) => el("option", { value: p, text: p })));
+      const subj = el("input", { type: "text", placeholder: L("fa.subj"), "aria-label": L("fa.subj") });
+      const obj = el("input", { type: "text", placeholder: L("fa.obj"), "aria-label": L("fa.obj") });
+      const val = el("input", { type: "text", placeholder: L("fa.val"), "aria-label": L("fa.val") });
+      const hid = el("input", { type: "text", placeholder: L("fa.hidden"), "aria-label": L("fa.hidden") });
+      const save2 = el("button", { class: "primary", text: L("save") });
+      const cancel = el("button", { text: L("cancel") });
+      const formMsg = el("div", { class: "msg" });
+      cancel.addEventListener("click", () => {
+        factAddCard.style.display = "none";
+      });
+      save2.addEventListener("click", async () => {
+        const s = subj.value.trim();
+        if (!s) return void say(formMsg, L("fa.need_subj"), "err");
+        const spec = preds.find(([p]) => p === predSel.value) ?? preds[0];
+        const o = obj.value.trim() || null;
+        const v = val.value.trim() || null;
+        const hidden = hid.value.split(",").map((x) => x.trim()).filter(Boolean);
+        const fact = {
+          predicate: spec[0],
+          subject: s,
+          subject_type: spec[1],
+          ...o ? { object: o, object_type: spec[2] ?? "character" } : {},
+          ...v ? { value: v } : {},
+          ...hidden.length ? { hidden_from: hidden } : {}
+        };
+        save2.disabled = true;
+        say(formMsg, L("act.working"));
+        try {
+          await deps.api(
+            "POST",
+            `/v1/conversations/${conversation}/repairs`,
+            { kind: "fact_add", item: msgSel.value, fact },
+            15e3
+          );
+          factAddCard.replaceChildren();
+          factAddCard.style.display = "none";
+          say(actionMsg, L("rp.done"), "ok");
+          await showInspector();
+        } catch (error) {
+          say(formMsg, errorText(lang, error), "err");
+          save2.disabled = false;
+        }
+      });
+      factAddCard.replaceChildren(
+        el("b", { text: L("fa.title") }),
+        el("div", { class: "row" }, msgSel),
+        el("div", { class: "row" }, predSel),
+        el("div", { class: "row" }, subj, obj),
+        el("div", { class: "row" }, val, hid),
+        el("div", { class: "btns" }, save2, cancel),
+        formMsg
+      );
+    }
     function buildNotes(conversation, target = notesCard, studio = false) {
       notesFor = conversation;
       const specs = [
