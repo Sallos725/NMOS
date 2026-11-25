@@ -367,6 +367,38 @@ describe("the background sync only while the sidecar extracts a reply right afte
     });
   }
 
+  it('a read that started before a save turned it off does not turn it back on when it answers late (review nit 9)', async () => {
+    const h = harness();
+    const adapter = await h.start();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const original = h.host.request;
+    let held = true;
+    h.host.request = async (method, url, body, ...rest) => {
+      if (held && method === 'GET' && url.endsWith('/v1/config')) {
+        held = false;
+        await gate;
+        return { status: 200, json: { extraction: { on_output: true } } };  // the value from before the save
+      }
+      return original(method, url, body, ...rest);
+    };
+    const read = adapter.api('GET', '/v1/config');
+    await settle();
+    h.setSwitch(false);
+    await adapter.api('PUT', '/v1/config', { extract_on_output: false });
+    release();
+    await read;
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.pending()).toHaveLength(0);
+    // A read that starts after the save is in force again.
+    h.setSwitch(true);
+    await adapter.api('GET', '/v1/config');
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.pending()).toHaveLength(1);
+  });
+
   it("follows the panel: a save that turns it off stops a waiting sync, a read that reports it on starts the next", async () => {
     const h = harness();
     const adapter = await h.start();

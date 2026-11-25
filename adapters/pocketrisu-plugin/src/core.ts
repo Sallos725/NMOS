@@ -324,6 +324,11 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   let outputSwitch: { url: string; on: boolean | null } | null = null;
   const setRefreshTimer = options.setRefreshTimer ?? defaultSetTimer;
   let refreshing = false;
+  // Config answers in order (review nit 9): each read or save is numbered when it starts. A read that started before
+  // a save answered may carry the value from before it, and an answer older than one already noted is not news.
+  let configStarted = 0;
+  let configFence = 0;
+  let configNoted = 0;
   // A chat's cached packets are dropped when its memory may have moved (4.3.2): `dropSeq` counts the drops and
   // `droppedAt` holds a chat's last one, so a request that was already running then does not remember its packet.
   let dropSeq = 0;
@@ -995,20 +1000,27 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return outputSwitch?.url === sidecarKey(settings) && outputSwitch.on === true;
   }
 
-  /** Remembers the switch from an answer of `/v1/config` (`null`: the read failed or its answer is unknown). */
-  function noteConfig(settings: Settings, config: unknown | null): void {
+  /** Remembers the switch from the answer of `/v1/config` request number `seq` (`null`: it failed or its answer is
+   *  unknown), unless a newer answer was noted, or it is a read that started before a save answered. */
+  function noteConfig(settings: Settings, seq: number, save: boolean, config: unknown | null): void {
+    if (save) configFence = Math.max(configFence, configStarted);
+    if (seq < configNoted || (!save && seq <= configFence)) return;
+    configNoted = seq;
     outputSwitch = { url: sidecarKey(settings), on: config === null ? null : outputSwitchOf(config) };
   }
 
   /** Reads the sidecar's settings for the switch; never throws. Not while NMOS is off: nothing reaches the sidecar. */
   async function readConfig(): Promise<void> {
     let settings: Settings | null = null;
+    let seq = 0;
     try {
       settings = await host.settings();
       if (!settings.enabled || !settings.sidecarUrl) return;
-      noteConfig(settings, await call<unknown>(settings, '/v1/config', undefined, host.now() + CONFIG_TIMEOUT_MS, 'GET'));
+      seq = ++configStarted;
+      noteConfig(settings, seq, false,
+        await call<unknown>(settings, '/v1/config', undefined, host.now() + CONFIG_TIMEOUT_MS, 'GET'));
     } catch (error) {
-      if (settings?.sidecarUrl) noteConfig(settings, null);
+      if (settings?.sidecarUrl && seq) noteConfig(settings, seq, false, null);
       host.debug('[NMOS] sidecar settings not read:', error instanceof Error ? error.message : error);
     }
   }
@@ -1114,14 +1126,15 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     // is in force at once. One that failed may or may not have been applied: not known until the next read.
     const config = path === '/v1/config' && (method === 'GET' || method === 'PUT');
     const covered = method === 'GET' ? COVERAGE_PATH.exec(path)?.[1] : undefined;
+    const seq = config ? ++configStarted : 0;
     if (change) invalidate();
     try {
       const out = await call<T>(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : undefined);
-      if (config) noteConfig(settings, out);
+      if (config) noteConfig(settings, seq, method === 'PUT', out);
       if (covered) noteCoverage(covered, out);  // a conversation id (a UUID), as the HUD and panel put it in the path
       return out;
     } catch (error) {
-      if (config) noteConfig(settings, null);
+      if (config) noteConfig(settings, seq, method === 'PUT', null);
       throw error;
     } finally {
       if (change) invalidate();
