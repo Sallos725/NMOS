@@ -135,8 +135,9 @@ const PACKET_END = '</NarrativeMemory>';
 
 /**
  * Whether the prompt already holds our packet (a retry, H2). A system message with the tag is one. With the chat's
- * messages, so is a user message (a preset's `[NMOS.memory]` in a user block) holding a whole packet, the tag to its
- * end, that is not text of the chat: a reply or user message quoting the tag, or pasting a packet, must not stop memory.
+ * messages, so is any other message (a preset's `[NMOS.memory]` in a user or assistant block) holding a whole packet,
+ * the tag to its end, that is not text of the chat: a reply or user message quoting the tag, or pasting a packet, must
+ * not stop memory.
  */
 export function hasPacket(prompt: PromptMessage[], hostMessages?: HostMessage[]): boolean {
   if (!Array.isArray(prompt)) return false;
@@ -153,7 +154,7 @@ export function hasPacket(prompt: PromptMessage[], hostMessages?: HostMessage[])
     return chat.some((h) => h.raw.includes(block) || (clean.length >= 2 * MIN_ANCHOR && h.clean.includes(clean)));
   };
   return prompt.some((m) => {
-    if (m?.role !== 'user') return false;
+    if (!m || m.role === 'system') return false;
     const text = contentText(m.content);
     for (let at = text.indexOf(PACKET_TAG); at >= 0; at = text.indexOf(PACKET_TAG, at + 1)) {
       const end = text.indexOf(PACKET_END, at);

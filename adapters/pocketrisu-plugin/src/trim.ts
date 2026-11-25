@@ -74,6 +74,8 @@ export function trimPrompt(
 
     const pairs = matchPromptToHost(prompt, hostMessages);
     const matched = new Set(pairs.values());
+    let lowestMatched = Infinity;
+    for (const k of matched) if (k < lowestMatched) lowestMatched = k;
     // A system block no chat message matched (a lorebook entry or author's note the host put at a depth, between two
     // chat messages) is not dialogue: walked past and kept, never dropped.
     const injected = (p: number, i: number) => prompt[p]?.role === 'system' && !matched.has(p)
@@ -114,11 +116,12 @@ export function trimPrompt(
       }
     }
 
-    // Walk back from j: each older active host message must sit right before the run (past injected blocks).
+    // Walk back from j: each older active host message must sit right before the run (past injected blocks, only while
+    // a matched chat message lies further back: never out of the chat, onto a preset's own blocks above it).
     let p = jPrompt - 1;
     for (let i = j - 1; i >= start; i -= 1) {
       if (!active(i)) continue;
-      while (p >= 0 && injected(p, i)) p -= 1;
+      while (p > lowestMatched && injected(p, i)) p -= 1;
       if (pairs.has(i)) {
         if (pairs.get(i) === p) {
           run.set(p, i);

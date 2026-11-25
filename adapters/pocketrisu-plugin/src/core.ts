@@ -657,7 +657,6 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
           conversationId: conversations.get(chat.id) ?? null });
         return prompt;
       }
-
       // `[NMOS.memory]` that a chat message itself holds (it mentions the placeholder) is not the preset's: placement
       // looks past it. Found again in a trimmed prompt, whose indices (and a copied message) differ.
       const chatMarkers = historyMarkerIndices(prompt, messages);
@@ -668,13 +667,20 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const after = landsAfterUserTurn(prompt, messages, position, turn, marker);
       const budget = after ? Math.max(0, settings.reservedMemoryTokens - GUARD_RESERVE_TOKENS) : settings.reservedMemoryTokens;
       // `at`: the latest user turn's index in `p` (the trimmed prompt's, once old dialogue is left out).
-      const place = (p: PromptMessage[], packet: string, at: number): { out: PromptMessage[]; placed: boolean } => {
-        if (!packet) return { out: stripMarkers(p), placed: false };
+      // `held`: the prompt placed into holds the packet (placed now, or already there on a retry).
+      const place = (p: PromptMessage[], packet: string, at: number): { out: PromptMessage[]; placed: boolean;
+        held: boolean } => {
+        if (!packet) return { out: stripMarkers(p), placed: false, held: false };
+        const plain = packet.split(MEMORY_MARKER).join('');
         // The prompt already holds this packet (a retry), as placed: literal markers are removed from it on placement.
-        if (holdsText(p, packet.split(MEMORY_MARKER).join(''))) return { out: stripMarkers(p), placed: false };
-        const text = after ? withGuard(packet) : packet;
-        return { out: stripMarkers(marker ? resolvePlaceholders(p, text, skipIn(p)) : injectPacket(p, text, position, at)),
-          placed: true };
+        if (holdsText(p, plain)) return { out: stripMarkers(p), placed: false, held: true };
+        // The placeholder of the prompt placed into: a trimmed prompt may have left out the message that held it.
+        const here = !marker ? null : p === prompt ? marker : findMarker(p, skipIn(p));
+        let out = here ? resolvePlaceholders(p, after ? withGuard(packet) : packet, skipIn(p)) : p;
+        if (!holdsText(out, plain)) out = injectPacket(p, position === 'end' ? withGuard(packet) : packet, position, at);
+        out = stripMarkers(out);
+        const held = holdsText(out, plain);
+        return { out, placed: held, held };
       };
       // Old dialogue is left out of the host's prompt (markers still in it) before the packet is placed, by the
       // sidecar's boundary (PHASE-60 S1, ADR 0083): never with no memory in its place. The final prompt is what a
@@ -703,7 +709,12 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
             reason = r.reason;
           }
         }
-        const { out, placed } = place(p, packet, turn - dropped); // every dropped index is before `turn` (trimPrompt)
+        const { out, placed, held } = place(p, packet, turn - dropped); // every dropped index is before `turn`
+        // Never old dialogue left out with no memory in its place: treated as a refused cut (fetched again uncut).
+        if (dropped > 0 && !held) {
+          return { out: prompt, trim: { dropped: 0, savedTokens: 0, reason: 'format' as const, keepFromTurn: null },
+            refused: true };
+        }
         if (out !== prompt && (placed || dropped > 0)) memoiseReturned(out);
         const outcome: TrimOutcome = { dropped, savedTokens, reason,
           keepFromTurn: dropped > 0 ? decision?.keepFromTurn ?? null : null };
