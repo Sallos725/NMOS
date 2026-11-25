@@ -1,5 +1,5 @@
 import { createAdapter } from './core';
-import { createRisuHud, registerHooks, risuHost } from './host';
+import { createRisuHud, onPluginUnload, registerHooks, risuHost } from './host';
 import type { PromptMessage } from './types';
 
 (async () => {
@@ -28,6 +28,9 @@ import type { PromptMessage } from './types';
   adapter.warmPersonas();
   // Whether the sidecar extracts a reply right after it (G6): read now and every few minutes, never on a request.
   adapter.warmConfig();
+  // Its timers (and a waiting background sync) go with the plugin when it is unloaded or re-imported, where the host
+  // says so; the sandbox frame the host removes then takes them anyway.
+  onPluginUnload(() => adapter.dispose());
   console.log('[NMOS] adapter loaded', { version: __NMOS_VERSION__ });
 })().catch((error) => console.error('[NMOS] adapter failed to load', error));
 

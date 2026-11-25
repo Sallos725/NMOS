@@ -15,7 +15,7 @@ import type { ActivityEvent } from './hud';
 import { findMarker, holdsText, MEMORY_MARKER, resolvePlaceholders, stripMarkers } from './placement';
 import { GUARD_RESERVE_TOKENS, hasPacket, historyMarkerIndices, inContextIds, injectPacket, landsAfterUserTurn, queryTexts,
   userTurnIndex, withGuard, type InjectPosition } from './prompt';
-import { canTrimPrompt, trimPrompt } from './trim';
+import { canTrimPrompt, createTrimScan, trimPrompt } from './trim';
 import type { HostChat, HostMessage, HostPersonas, PromptMessage, ReconcileRequest } from './types';
 import { failureKind, INSECURE_ERROR, secureContext } from './failure';
 
@@ -324,6 +324,15 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   let outputSwitch: { url: string; on: boolean | null } | null = null;
   const setRefreshTimer = options.setRefreshTimer ?? defaultSetTimer;
   let refreshing = false;
+  // Unloaded (or re-imported): no timer is set again, and the waiting ones are cleared (`dispose`).
+  let disposed = false;
+  let refreshHandle: unknown = null;
+  // Config answers in order (review nit 9): each read or save is numbered when it starts. A read that started before
+  // a save answered may carry the value from before it, and an answer older than one already noted is not news.
+  let configStarted = 0;
+  let configFence = 0;
+  let configNoted = 0;
+  let configSaved = 0;  // the newest save whose answer was noted: a save loses only to a newer save
   // A chat's cached packets are dropped when its memory may have moved (4.3.2): `dropSeq` counts the drops and
   // `droppedAt` holds a chat's last one, so a request that was already running then does not remember its packet.
   let dropSeq = 0;
@@ -331,6 +340,10 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   // What a conversation's coverage (`GET /v1/conversations/{id}/coverage`, the HUD's polls and the panel's reads) last
   // said its memory holds: a change means an extraction, embedding or canon read finished since.
   const coverageMarks = new Map<string, string>();
+  // How many messages of a chat the plugin last synced (a request or the background sync): a background sync never
+  // sends a snapshot shorter than that (a chat still loading reads as 0 messages, HOST-FACTS Q8 item 7, and an empty
+  // manifest would retract the whole head).
+  const syncedLength = new Map<string, number>();
 
   /** Drops every cached packet, and every packet still being fetched. */
   function invalidate(): void {
@@ -653,9 +666,16 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
           conversationId: conversations.get(chat.id) ?? null });
         return prompt;
       }
+      // A main request of this chat (a send, a reroll, a Continue) syncs it itself: the background sync after the last
+      // reply is not needed, and one already running stops before its next step (G6). Only once its turn is found: an
+      // auxiliary call in `model` mode (a script's own model call) leaves it.
+      turnSeq++;
+      cancelOutputSync();
 
       // `[NMOS.memory]` that a chat message itself holds (it mentions the placeholder) is not the preset's: placement
       // looks past it. Found again in a trimmed prompt, whose indices (and a copied message) differ.
+      // The whole chat is cleaned once for this request, for the trimming pre-flight and the cut alike (finding 5).
+      const scan = createTrimScan(prompt, messages);
       const chatMarkers = historyMarkerIndices(prompt, messages);
       const marker = findMarker(prompt, chatMarkers);
       const skipIn = (p: PromptMessage[]): Set<number> => (chatMarkers.size === 0 ? chatMarkers
@@ -664,13 +684,21 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const after = landsAfterUserTurn(prompt, messages, position, turn, marker);
       const budget = after ? Math.max(0, settings.reservedMemoryTokens - GUARD_RESERVE_TOKENS) : settings.reservedMemoryTokens;
       // `at`: the latest user turn's index in `p` (the trimmed prompt's, once old dialogue is left out).
-      const place = (p: PromptMessage[], packet: string, at: number): { out: PromptMessage[]; placed: boolean } => {
-        if (!packet) return { out: stripMarkers(p), placed: false };
+      // `held`: the prompt placed into holds the packet (placed now, or already there on a retry).
+      const place = (p: PromptMessage[], packet: string, at: number): { out: PromptMessage[]; placed: boolean;
+        held: boolean } => {
+        if (!packet) return { out: stripMarkers(p), placed: false, held: false };
+        const plain = packet.split(MEMORY_MARKER).join('');
         // The prompt already holds this packet (a retry), as placed: literal markers are removed from it on placement.
-        if (holdsText(p, packet.split(MEMORY_MARKER).join(''))) return { out: stripMarkers(p), placed: false };
-        const text = after ? withGuard(packet) : packet;
-        return { out: stripMarkers(marker ? resolvePlaceholders(p, text, skipIn(p)) : injectPacket(p, text, position, at)),
-          placed: true };
+        if (holdsText(p, plain)) return { out: stripMarkers(p), placed: false, held: true };
+        // The placeholder of the prompt placed into: a trimmed prompt may have left out the message that held it.
+        const here = !marker ? null : p === prompt ? marker : findMarker(p, skipIn(p));
+        const lands = here === marker ? after : landsAfterUserTurn(p, messages, position, at, here);
+        let out = here ? resolvePlaceholders(p, lands ? withGuard(packet) : packet, skipIn(p)) : p;
+        if (!holdsText(out, plain)) out = injectPacket(p, position === 'end' ? withGuard(packet) : packet, position, at);
+        out = stripMarkers(out);
+        const held = holdsText(out, plain);
+        return { out, placed: held, held };
       };
       // Old dialogue is left out of the host's prompt (markers still in it) before the packet is placed, by the
       // sidecar's boundary (PHASE-60 S1, ADR 0083): never with no memory in its place. The final prompt is what a
@@ -685,7 +713,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         if (decision?.keepFromId) {
           if (!packet) reason = 'empty_packet';
           else {
-            const r = trimPrompt(prompt, messages, decision.keepFromId);
+            const r = trimPrompt(prompt, messages, decision.keepFromId, scan);
             if (r.reason !== null) {
               refused = true;
               refusedTrim.delete(chat.id!);
@@ -699,7 +727,12 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
             reason = r.reason;
           }
         }
-        const { out, placed } = place(p, packet, turn - dropped); // every dropped index is before `turn` (trimPrompt)
+        const { out, placed, held } = place(p, packet, turn - dropped); // every dropped index is before `turn`
+        // Never old dialogue left out with no memory in its place: treated as a refused cut (fetched again uncut).
+        if (dropped > 0 && !held) {
+          return { out: prompt, trim: { dropped: 0, savedTokens: 0, reason: 'format' as const, keepFromTurn: null },
+            refused: true };
+        }
         if (out !== prompt && (placed || dropped > 0)) memoiseReturned(out);
         const outcome: TrimOutcome = { dropped, savedTokens, reason,
           keepFromTurn: dropped > 0 ? decision?.keepFromTurn ?? null : null };
@@ -721,8 +754,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // boundary refused before is not asked for again while the prompt still refuses it.
       const refusedAt = refusedTrim.get(chat.id);
       if (refusedAt && host.now() - refusedAt.at > REFUSED_TRIM_TTL_MS) refusedTrim.delete(chat.id);
-      const askTrim = k > 0 && canTrimPrompt(prompt, messages) && !(refusedAt && host.now() - refusedAt.at
-        <= REFUSED_TRIM_TTL_MS && trimPrompt(prompt, messages, refusedAt.id).reason !== null);
+      let askTrim = k > 0 && canTrimPrompt(prompt, messages, scan) && !(refusedAt && host.now() - refusedAt.at
+        <= REFUSED_TRIM_TTL_MS && trimPrompt(prompt, messages, refusedAt.id, scan).reason !== null);
       // Internal key only (not a cross-language hash): plain JSON keeps it linear and cheap.
       // The token is hashed with the rest, never kept as it is.
       const keyOf = (withTrim: boolean) => within(sha256Hex(JSON.stringify([
@@ -736,12 +769,22 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // background. Observed for a cached packet too, whose canon may have changed.
       const canon = await observeCanon(chat, prompt, deadline);
       const canonKey = JSON.stringify([canon?.snapshot?.id ?? null, canon?.held ?? []]);
-      const cached = cache.get(key);
       // A packet built with other canon (an entry, the card or the note edited) is stale; a cached miss holds none.
-      const hit = cached && cached.expires > host.now() && (cached.failed || cached.canon === canonKey)
-        ? finishPrompt(cached.packet, k > 0 ? (cached.failed ? FAILED_TRIM : cached.trim ?? FAILED_TRIM) : null) : null;
-      // A cached boundary this prompt refuses (the same state, another layout): fetched again below.
-      if (hit?.refused) cache.delete(key);
+      const lookup = (at: string) => {
+        const entry = cache.get(at);
+        return { cached: entry, hit: entry && entry.expires > host.now() && (entry.failed || entry.canon === canonKey)
+          ? finishPrompt(entry.packet, k > 0 ? (entry.failed ? FAILED_TRIM : entry.trim ?? FAILED_TRIM) : null) : null };
+      };
+      let { cached, hit } = lookup(key);
+      // A cached boundary this prompt refuses (the same state, another layout): no boundary is asked for in this
+      // request; the packet without a cut is served from the cache, else fetched below and kept (a failure too) under
+      // the key the next request will have.
+      if (hit?.refused) {
+        cache.delete(key);
+        askTrim = false;
+        key = await keyOf(false);
+        ({ cached, hit } = lookup(key));
+      }
       if (cached && hit && !hit.refused) {
         const known = conversations.get(chat.id);
         if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
@@ -766,6 +809,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const t1 = host.now();
       const synced = await sync(settings, request, bodies, deadline);
       const syncMs = host.now() - t1;
+      noteSynced(chat.id, messages.length);
       if (synced.conversation_id) {
         conversations.delete(chat.id);
         conversations.set(chat.id, synced.conversation_id);
@@ -816,7 +860,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         done = finishPrompt(got.packet, got.decision);
       }
       const { packet, memory, vectors, decision, coverage } = got;
-      if ((droppedAt.get(chat.id) ?? 0) <= dropsBefore) {
+      // A non-fresh answer (`stale`: the head moved past the commit asked for) is not an empty packet: not remembered.
+      if (retrieved.freshness === 'fresh' && (droppedAt.get(chat.id) ?? 0) <= dropsBefore) {
         remember(key, packet, packet ? SUCCESS_TTL_MS : EMPTY_TTL_MS, false, memory, vectors, canonKey, decision,
           coverage, chat.id);
       }
@@ -847,13 +892,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
   /** Every path out of `beforeRequest` strips any remaining `[NMOS.memory]` literal (ADR 0083). */
   async function beforeRequest(prompt: PromptMessage[], mode: unknown): Promise<PromptMessage[]> {
-    // A main request (a send, a reroll, a Continue) syncs the chat itself: the background sync after the last reply is
-    // not needed, and one already running stops before its next step (G6). An auxiliary request (Auto Suggest runs
-    // after every reply) leaves it.
-    if (mode === 'model') {
-      turnSeq++;
-      cancelOutputSync();
-    }
+    // The background sync after the last reply (G6) is cancelled in `prepare`, once the request's turn is found.
     try {
       return stripMarkers(await prepare(prompt, mode));
     } catch {
@@ -870,13 +909,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   /** Syncs chat `chatId` in the background once the wait after its reply is over (G6), so the reply is in memory (and
    *  can be extracted) before the next message, and the panel's Author's Note, Carry and Inspector see it. Replaces a
    *  waiting one; never throws. */
-  function scheduleOutputSync(chatId: string, seen: number): void {
+  function scheduleOutputSync(chatId: string, seen: number, replyId: string, replyLength: number): void {
     cancelOutputSync();
-    if (!(outputSyncMs > 0)) return;
+    if (!(outputSyncMs > 0) || disposed) return;
     try {
       const handle = setTimer(() => {
         if (outputTimer === handle) outputTimer = null;
-        const done = outputSync(chatId, seen);
+        const done = outputSync(chatId, seen, replyId, replyLength);
         const running = { chatId, done };
         outputRunning = running;
         void done.finally(() => { if (outputRunning === running) outputRunning = null; });
@@ -888,8 +927,12 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   }
 
   /** The sync a request would make, of the chat as it is now: the `output` snapshot is provisional (H7), and the chat
-   *  read now must still be the one replied in (there is no hook for a chat switch). */
-  async function outputSync(chatId: string, seen: number): Promise<void> {
+   *  read now must still be the one replied in (there is no hook for a chat switch). It must also still be the chat
+   *  itself: a snapshot without reply `replyId`, or shorter than the plugin last synced, may be a chat still loading
+   *  (HOST-FACTS Q8 item 7) whose manifest would retract the head. And the chat as the reply left it: one that grew
+   *  past the `replyLength` messages it had then, or is streaming, has a newer turn on its way (a send whose request
+   *  went without memory) and a reply half written. On doubt nothing is sent, and the next request syncs as always. */
+  async function outputSync(chatId: string, seen: number, replyId: string, replyLength: number): Promise<void> {
     const live = () => turnSeq === seen;
     try {
       const settings = await host.settings();
@@ -898,6 +941,12 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const chat = await host.currentChat();
       if (!live() || !chat?.id || chat.id !== chatId) return;  // another chat is open: its own next request syncs it
       const messages: HostMessage[] = Array.isArray(chat.message) ? chat.message : [];
+      if (!messages.some((m) => m?.chatId === replyId) || messages.length < (syncedLength.get(chatId) ?? 0)
+        || messages.length > replyLength || chat.isStreaming === true) {
+        host.debug('[NMOS] background sync skipped: the chat read is not the one replied in', {
+          messages: messages.length, synced: syncedLength.get(chatId) ?? null });
+        return;
+      }
       const deadline = host.now() + OUTPUT_SYNC_TIMEOUT_MS;
       const { request, bodies } = await within(buildManifest(chat, firstSaying(messages),
         { characterName: characterName(chat.id), personaName: personaName(chat) }), deadline, 'the manifest');
@@ -906,6 +955,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // before its request (H14), and a reroll served from the cache would skip the sync that takes it out again.
       dropChatPackets(chatId);
       const synced = await sync(settings, { ...request, trigger: 'output' }, bodies, deadline, live);
+      noteSynced(chatId, messages.length);
       if (synced.conversation_id) {
         conversations.delete(chatId);
         conversations.set(chatId, synced.conversation_id);
@@ -917,6 +967,12 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     } catch (error) {
       host.debug('[NMOS] background sync after the reply failed:', error instanceof Error ? error.message : error);
     }
+  }
+
+  function noteSynced(chatId: string, length: number): void {
+    syncedLength.delete(chatId);
+    syncedLength.set(chatId, length);
+    while (syncedLength.size > CACHE_LIMIT) syncedLength.delete(syncedLength.keys().next().value as string);
   }
 
   /** Waits for `work` (which never rejects) up to `ms`; never throws. */
@@ -951,37 +1007,67 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return outputSwitch?.url === sidecarKey(settings) && outputSwitch.on === true;
   }
 
-  /** Remembers the switch from an answer of `/v1/config` (`null`: the read failed or its answer is unknown). */
-  function noteConfig(settings: Settings, config: unknown | null): void {
+  /** Remembers the switch from the answer of `/v1/config` request number `seq` (`null`: it failed or its answer is
+   *  unknown), unless a newer answer was noted, or it is a read that started before a save answered. */
+  function noteConfig(settings: Settings, seq: number, save: boolean, config: unknown | null): void {
+    if (save) {
+      configFence = Math.max(configFence, configStarted);
+      if (seq < configSaved) return;
+      configSaved = seq;
+    } else if (seq < configNoted || seq <= configFence) {
+      return;
+    }
+    configNoted = Math.max(configNoted, seq);
     outputSwitch = { url: sidecarKey(settings), on: config === null ? null : outputSwitchOf(config) };
   }
 
   /** Reads the sidecar's settings for the switch; never throws. Not while NMOS is off: nothing reaches the sidecar. */
   async function readConfig(): Promise<void> {
     let settings: Settings | null = null;
+    let seq = 0;
     try {
       settings = await host.settings();
       if (!settings.enabled || !settings.sidecarUrl) return;
-      noteConfig(settings, await call<unknown>(settings, '/v1/config', undefined, host.now() + CONFIG_TIMEOUT_MS, 'GET'));
+      seq = ++configStarted;
+      noteConfig(settings, seq, false,
+        await call<unknown>(settings, '/v1/config', undefined, host.now() + CONFIG_TIMEOUT_MS, 'GET'));
     } catch (error) {
-      if (settings?.sidecarUrl) noteConfig(settings, null);
+      if (settings?.sidecarUrl && seq) noteConfig(settings, seq, false, null);
       host.debug('[NMOS] sidecar settings not read:', error instanceof Error ? error.message : error);
     }
   }
 
   /** At load (after the hooks): reads the switch now and again every `CONFIG_REFRESH_MS`, in the background. */
   function warmConfig(): void {
-    if (refreshing) return;
+    if (refreshing || disposed) return;
     refreshing = true;
     const next = (): void => {
+      if (disposed) return;
       try {
-        setRefreshTimer(() => { void readConfig().finally(next); }, CONFIG_REFRESH_MS);
+        refreshHandle = setRefreshTimer(() => {
+          refreshHandle = null;
+          if (disposed) return;
+          void readConfig().finally(next);
+        }, CONFIG_REFRESH_MS);
       } catch (error) {
         refreshing = false;
         host.debug('[NMOS] sidecar settings refresh not scheduled:', error instanceof Error ? error.message : error);
       }
     };
     void readConfig().finally(next);
+  }
+
+  /** The plugin is unloaded or re-imported (the host's `onUnload`, where it has one): the 5-minute read of the
+   *  sidecar's settings and a waiting background sync are cleared, and neither is set again; a sync already running
+   *  stops before its next step. Never throws. */
+  function dispose(): void {
+    disposed = true;
+    turnSeq++;
+    cancelOutputSync();
+    if (refreshHandle !== null) {
+      try { clearTimer(refreshHandle); } catch { /* the chain finds `disposed` set when it fires */ }
+      refreshHandle = null;
+    }
   }
 
   /** Output listener: provisional hint only (H7), and the background sync after the reply (G6). Never awaited work,
@@ -994,15 +1080,18 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       if (!settings.enabled || !settings.sidecarUrl || !arg?.chat?.id || settings.offChats?.includes(arg.chat.id)) return;
       // Scheduled first: whatever happens to the notification below, the reply is synced. Only when the sidecar
       // extracts a reply right after it: otherwise the sync would only cost (and a request could wait on it).
-      if (turnSeq === seen && outputOn(settings)) scheduleOutputSync(arg.chat.id, seen);
+      // The reply's id goes with it: a chat read later that does not hold it is not synced (no id: never scheduled).
+      const index = arg.messageIndex ?? -1;
+      const message = index >= 0 ? arg.chat.message?.[index] : undefined;
+      if (turnSeq === seen && outputOn(settings) && typeof message?.chatId === 'string' && message.chatId) {
+        scheduleOutputSync(arg.chat.id, seen, message.chatId, arg.chat.message!.length);
+      }
       // A reply is extracted after it (H7): an empty packet cached for this chat may have memory now. A packet with
       // memory stays for a reroll of an unchanged chat until the background sync has the reply.
       for (const [k, entry] of cache) if (entry.chatId === arg.chat.id && !entry.packet && !entry.failed) cache.delete(k);
       adviseOnce(settings.language);
       reachOnce(settings.language, settings.sidecarUrl);
       emit({ type: 'background', conversationId: conversations.get(arg.chat.id) ?? null });
-      const index = arg.messageIndex ?? -1;
-      const message = index >= 0 ? arg.chat.message?.[index] : undefined;
       await call(settings, '/v1/output', {
         host: 'pocketrisu',
         chat_id: arg.chat.id,
@@ -1067,14 +1156,15 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     // is in force at once. One that failed may or may not have been applied: not known until the next read.
     const config = path === '/v1/config' && (method === 'GET' || method === 'PUT');
     const covered = method === 'GET' ? COVERAGE_PATH.exec(path)?.[1] : undefined;
+    const seq = config ? ++configStarted : 0;
     if (change) invalidate();
     try {
       const out = await call<T>(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : undefined);
-      if (config) noteConfig(settings, out);
+      if (config) noteConfig(settings, seq, method === 'PUT', out);
       if (covered) noteCoverage(covered, out);  // a conversation id (a UUID), as the HUD and panel put it in the path
       return out;
     } catch (error) {
-      if (config) noteConfig(settings, null);
+      if (config) noteConfig(settings, seq, method === 'PUT', null);
       throw error;
     } finally {
       if (change) invalidate();
@@ -1095,7 +1185,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return res.bytes;
   }
 
-  return { beforeRequest, onOutput, status, api, file, warmPersonas, warmConfig };
+  return { beforeRequest, onOutput, status, api, file, warmPersonas, warmConfig, dispose };
 }
 
 const CARD_FIELDS = ['card:desc', 'card:personality', 'card:scenario'];

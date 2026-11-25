@@ -31,6 +31,34 @@ export interface TrimResult {
 const DROPPABLE_KEYS: ReadonlySet<string> = new Set(['role', 'content', 'memo', 'attr', 'thoughts', 'name', 'removable',
   'cachePoint']);
 
+/**
+ * One request's scan of its prompt and chat, shared by the pre-flight (`canTrimPrompt`) and the cut (`trimPrompt`), so
+ * the whole chat is cleaned once per request, not once per call (review finding 5). Used only for the very prompt and
+ * chat it was made for; a trimmed prompt (another array) is scanned afresh.
+ */
+export interface TrimScan {
+  readonly prompt: PromptMessage[];
+  readonly hostMessages: HostMessage[];
+  /** A host message's cleaned text, by index (filled on first read). */
+  clean(i: number): string;
+  turn?: number;
+  pairs?: Map<number, number>;
+  /** Whether an older host message's anchor is in the prompt before a run, by `runStart:runOldest`. */
+  readonly older: Map<string, boolean>;
+}
+
+export function createTrimScan(prompt: PromptMessage[], hostMessages: HostMessage[]): TrimScan {
+  const cleaned: (string | undefined)[] = [];
+  return {
+    prompt, hostMessages, older: new Map(),
+    clean: (i) => (cleaned[i] ??= cleanText(selectedContent(hostMessages[i]))),
+  };
+}
+
+function scanFor(scan: TrimScan | undefined, prompt: PromptMessage[], hostMessages: HostMessage[]): TrimScan {
+  return scan && scan.prompt === prompt && scan.hostMessages === hostMessages ? scan : createTrimScan(prompt, hostMessages);
+}
+
 function sameText(prompt: PromptMessage[], hostMessages: HostMessage[], p: number, i: number): boolean {
   const m = prompt[p];
   if (!m || typeof m.content !== 'string') return false;
@@ -48,6 +76,7 @@ export function trimPrompt(
   prompt: PromptMessage[],
   hostMessages: HostMessage[],
   keepFromId: string,
+  scan?: TrimScan,
 ): TrimResult {
   const refuse = (): TrimResult => ({ prompt, dropped: 0, savedTokens: 0, reason: 'format' });
   if (!Array.isArray(prompt) || !Array.isArray(hostMessages) || typeof keepFromId !== 'string' || !keepFromId) {
@@ -69,11 +98,14 @@ export function trimPrompt(
 
     if (b > latestUserIndex(hostMessages)) return refuse();
 
-    const turn = userTurnIndex(prompt, hostMessages);
+    const s = scanFor(scan, prompt, hostMessages);
+    const turn = (s.turn ??= userTurnIndex(prompt, hostMessages));
     if (turn < 0) return refuse();
 
-    const pairs = matchPromptToHost(prompt, hostMessages);
+    const pairs = (s.pairs ??= matchPromptToHost(prompt, hostMessages));
     const matched = new Set(pairs.values());
+    let lowestMatched = Infinity;
+    for (const k of matched) if (k < lowestMatched) lowestMatched = k;
     // A system block no chat message matched (a lorebook entry or author's note the host put at a depth, between two
     // chat messages) is not dialogue: walked past and kept, never dropped.
     const injected = (p: number, i: number) => prompt[p]?.role === 'system' && !matched.has(p)
@@ -114,11 +146,12 @@ export function trimPrompt(
       }
     }
 
-    // Walk back from j: each older active host message must sit right before the run (past injected blocks).
+    // Walk back from j: each older active host message must sit right before the run (past injected blocks, only while
+    // a matched chat message lies further back: never out of the chat, onto a preset's own blocks above it).
     let p = jPrompt - 1;
     for (let i = j - 1; i >= start; i -= 1) {
       if (!active(i)) continue;
-      while (p >= 0 && injected(p, i)) p -= 1;
+      while (p > lowestMatched && injected(p, i)) p -= 1;
       if (pairs.has(i)) {
         if (pairs.get(i) === p) {
           run.set(p, i);
@@ -151,16 +184,23 @@ export function trimPrompt(
       if (k < runStart) runStart = k;
       if (hostIdx < runOldest) runOldest = hostIdx;
     }
-    const before = prompt.slice(0, runStart).map((m) => cleanText(contentText(m?.content)));
-    if (before.length > 0) {
-      for (let i = runOldest - 1; i >= start; i -= 1) {
-        if (!active(i)) continue;
-        const text = cleanText(selectedContent(hostMessages[i]));
-        if (text.length < MIN_ANCHOR) continue;
-        const anchor = anchorOf(text);
-        if (before.some((t) => t.includes(anchor))) return refuse();
+    const olderKey = `${runStart}:${runOldest}`;
+    let olderHeld = s.older.get(olderKey);
+    if (olderHeld === undefined) {
+      olderHeld = false;
+      const before = prompt.slice(0, runStart).map((m) => cleanText(contentText(m?.content)));
+      if (before.length > 0) {
+        for (let i = runOldest - 1; i >= start && !olderHeld; i -= 1) {
+          if (!active(i)) continue;
+          const text = s.clean(i);
+          if (text.length < MIN_ANCHOR) continue;
+          const anchor = anchorOf(text);
+          if (before.some((t) => t.includes(anchor))) olderHeld = true;
+        }
       }
+      s.older.set(olderKey, olderHeld);
     }
+    if (olderHeld) return refuse();
 
     // Validate every dropped prompt message.
     let savedTokens = 0;
@@ -173,7 +213,7 @@ export function trimPrompt(
       if (markerCount(m.content) > markerCount(selectedContent(hostMessages[hostIdx]))) return refuse();
       if (k >= K || k >= turn) return refuse();
       const sent = cleanText(m.content).length;
-      const own = cleanText(selectedContent(hostMessages[hostIdx])).length;
+      const own = s.clean(hostIdx).length;
       if (sent > 1.25 * own + 64) return refuse();
       savedTokens += estimateTokens(m.content);
     }
@@ -229,21 +269,22 @@ export function trimPrompt(
  * gets a packet built for a cut the prompt cannot take): the smallest cut, right after the oldest chat message the
  * prompt holds before the latest user turn, must trim. Every later cut drops that message too.
  */
-export function canTrimPrompt(prompt: PromptMessage[], hostMessages: HostMessage[]): boolean {
+export function canTrimPrompt(prompt: PromptMessage[], hostMessages: HostMessage[], scan?: TrimScan): boolean {
   try {
     if (!Array.isArray(prompt) || !Array.isArray(hostMessages)) return false;
+    const s = scanFor(scan, prompt, hostMessages);
     const latest = latestUserIndex(hostMessages);
-    const turn = userTurnIndex(prompt, hostMessages);
+    const turn = (s.turn ??= userTurnIndex(prompt, hostMessages));
     if (latest < 0 || turn < 0) return false;
     let oldest = -1;
-    for (const [hostIdx, promptIdx] of matchPromptToHost(prompt, hostMessages)) {
+    for (const [hostIdx, promptIdx] of (s.pairs ??= matchPromptToHost(prompt, hostMessages))) {
       if (hostIdx < latest && promptIdx < turn && (oldest < 0 || hostIdx < oldest)) oldest = hostIdx;
     }
     if (oldest < 0) return false;
     for (let i = oldest + 1; i <= latest; i += 1) {
       if (!isActive(hostMessages[i])) continue;
       const id = hostMessages[i]?.chatId;
-      return id != null && trimPrompt(prompt, hostMessages, String(id)).reason === null;
+      return id != null && trimPrompt(prompt, hostMessages, String(id), s).reason === null;
     }
     return false;
   } catch {

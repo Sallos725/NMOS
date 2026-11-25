@@ -148,6 +148,22 @@ describe('background sync after a reply (G6)', () => {
     expect(h.calls.length).toBe(before);
   });
 
+  it("an auxiliary call in `model` mode (a script's own model call) leaves it; the chat's own request clears it", async () => {
+    const h = harness();
+    const adapter = await h.start();
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    await adapter.beforeRequest([{ role: 'user', content: 'Summarize the weather in one line.' }], 'model');
+    expect(h.pending()).toHaveLength(1);  // no turn of the chat in it: the sync still waits (review finding 6)
+    await h.fire();
+    expect(h.paths().filter((p) => p === '/v1/sync/reconcile')).toHaveLength(1);
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    h.setChat(structuredClone(baseChat));
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(h.pending()).toHaveLength(0);
+  });
+
   it('a sync a main request overtook stops before its next step', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
@@ -246,6 +262,80 @@ describe('background sync after a reply (G6)', () => {
   });
 });
 
+describe('the background sync sends only the chat replied in (review finding 4)', () => {
+  it('a chat still loading (0 messages) after a switch away and back: no sync; the next request syncs as always', async () => {
+    const h = harness();
+    const adapter = await h.start();
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    h.setChat({ id: 'chat-2', message: [] });  // switched away
+    h.setChat({ id: 'chat-1', message: [] });  // and back: the content is not loaded yet (HOST-FACTS Q8 item 7)
+    await h.fire();
+    expect(h.paths()).toEqual(['/v1/output']);  // no reconcile: an empty manifest would retract the head
+    expect(h.debug.mock.calls.some((c) => /background sync skipped/.test(String(c[0])))).toBe(true);
+    h.setChat(structuredClone(replied));
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(h.paths().filter((p) => p === '/v1/sync/reconcile')).toHaveLength(1);
+  });
+
+  it('with the reply in the chat read: one sync', async () => {
+    const h = harness();
+    const adapter = await h.start();
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    h.setChat({ id: 'chat-2', message: [] });
+    h.setChat(structuredClone(replied));  // back, loaded
+    await h.fire();
+    expect(h.paths().filter((p) => p === '/v1/sync/reconcile')).toHaveLength(1);
+  });
+
+  it('a snapshot that holds the reply but is shorter than the plugin last synced is not sent', async () => {
+    const h = harness();
+    const adapter = await h.start();
+    const longer: HostChat = { ...structuredClone(replied), message: [...structuredClone(replied).message!,
+      { role: 'user', data: 'And then?', chatId: 'u2' }] };
+    h.setChat(longer);
+    await adapter.beforeRequest([{ role: 'system', content: 'narrator' }, { role: 'user', content: 'And then?' }], 'model');
+    expect(h.paths().filter((p) => p === '/v1/sync/reconcile')).toHaveLength(1);  // 5 messages synced
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    h.setChat(structuredClone(replied));  // 4 messages: a partial read
+    const before = h.calls.length;
+    await h.fire();
+    expect(h.calls.slice(before).map((c) => c.path)).toEqual([]);
+  });
+
+  it('a chat that grew after the reply (a send that went without memory), or that is streaming: no sync', async () => {
+    const h = harness();
+    const adapter = await h.start();
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    // The user sent again within the wait; its request found no turn (skipped), so the timer still waits, and the
+    // next reply is being written into the chat.
+    const sending: HostChat = { ...structuredClone(replied), message: [...structuredClone(replied).message!,
+      { role: 'user', data: 'And the bell?', chatId: 'u2' }, { role: 'char', data: 'Sera list', chatId: 'c2' }] };
+    h.setChat(sending);
+    await adapter.beforeRequest([{ role: 'user', content: 'An unrelated script call.' }], 'model');
+    expect(h.pending()).toHaveLength(1);
+    await h.fire();
+    expect(h.paths().filter((p) => p.startsWith('/v1/sync'))).toEqual([]);
+    // Streaming, the same length as at the reply (a Continue writing into it).
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    h.setChat({ ...structuredClone(replied), isStreaming: true });
+    await h.fire();
+    expect(h.paths().filter((p) => p.startsWith('/v1/sync'))).toEqual([]);
+  });
+
+  it('a reply whose id is not known is never scheduled', async () => {
+    const h = harness();
+    const adapter = await h.start();
+    adapter.onOutput({ chat: structuredClone(replied) });  // no message index
+    await settle();
+    expect(h.pending()).toHaveLength(0);
+  });
+});
+
 describe("the background sync only while the sidecar extracts a reply right after it (extraction.on_output)", () => {
   /** What a request sends, without its timings (they differ from run to run). */
   const sent = (calls: { path: string; body: any }[]) => calls.map((c) => {
@@ -282,16 +372,15 @@ describe("the background sync only while the sidecar extracts a reply right afte
       const h = harness({}, undefined, answer ?? true);
       const adapter = answer === null ? createAdapter(h.host, undefined, h.options) : await h.start();
       adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
-      await settle();
+      await vi.waitFor(() => expect(h.paths()).toEqual(['/v1/output']));  // hashed first: may take more than a few ticks
       expect(h.timers).toHaveLength(0);  // no timer at all
-      expect(h.paths()).toEqual(['/v1/output']);
       h.setChat(structuredClone(baseChat));  // a reroll
       expect(hasPacket(await adapter.beforeRequest(structuredClone(prompt), 'model'))).toBe(true);
       // The calls are those of a build without the background sync.
       const without = harness({}, undefined, answer ?? true);
       const plain = createAdapter(without.host, undefined, { ...without.options, outputSyncMs: 0 });
       plain.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
-      await settle();
+      await vi.waitFor(() => expect(without.paths()).toEqual(['/v1/output']));
       without.setChat(structuredClone(baseChat));
       await plain.beforeRequest(structuredClone(prompt), 'model');
       expect(sent(h.calls)).toEqual(sent(without.calls));
@@ -299,6 +388,61 @@ describe("the background sync only while the sidecar extracts a reply right afte
       expect(h.calls.some((c) => c.body?.trigger !== undefined)).toBe(false);
     });
   }
+
+  it('a read that started before a save turned it off does not turn it back on when it answers late (review nit 9)', async () => {
+    const h = harness();
+    const adapter = await h.start();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const original = h.host.request;
+    let held = true;
+    h.host.request = async (method, url, body, ...rest) => {
+      if (held && method === 'GET' && url.endsWith('/v1/config')) {
+        held = false;
+        await gate;
+        return { status: 200, json: { extraction: { on_output: true } } };  // the value from before the save
+      }
+      return original(method, url, body, ...rest);
+    };
+    const read = adapter.api('GET', '/v1/config');
+    await settle();
+    h.setSwitch(false);
+    await adapter.api('PUT', '/v1/config', { extract_on_output: false });
+    release();
+    await read;
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.pending()).toHaveLength(0);
+    // A read that starts after the save is in force again.
+    h.setSwitch(true);
+    await adapter.api('GET', '/v1/config');
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.pending()).toHaveLength(1);
+  });
+
+  it("a save's answer is noted even when a read that started during it answered first with the old value", async () => {
+    const h = harness();
+    const adapter = await h.start();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const original = h.host.request;
+    h.host.request = async (method, url, body, ...rest) => {
+      if (method === 'PUT' && url.endsWith('/v1/config')) {
+        await gate;
+        return { status: 200, json: { extraction: { on_output: false } } };
+      }
+      return original(method, url, body, ...rest);
+    };
+    const save = adapter.api('PUT', '/v1/config', { extract_on_output: false });
+    await settle();
+    await adapter.api('GET', '/v1/config');  // started during the save, answers first: still on
+    release();
+    await save;
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.pending()).toHaveLength(0);
+  });
 
   it("follows the panel: a save that turns it off stops a waiting sync, a read that reports it on starts the next", async () => {
     const h = harness();
@@ -496,5 +640,30 @@ describe("recall's query on a Continue (G7)", () => {
     expect(retrieve.query).toBe(long.slice(-CONTINUE_QUERY_TAIL));
     expect(retrieve.previous_ai).toBe(long);
     expect(retrieve).not.toHaveProperty('is_continue');  // the request keeps its shape
+  });
+});
+
+describe('timers at an unload or re-import (review item 9)', () => {
+  it('dispose clears a waiting sync and the 5-minute read, and neither is set again', async () => {
+    const h = harness();
+    const adapter = await h.start();
+    expect(h.refreshTimers).toHaveLength(1);
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.pending()).toHaveLength(1);
+    adapter.dispose();
+    expect(h.pending()).toHaveLength(0);
+    expect((h.refreshTimers[0] as unknown as { cleared?: boolean }).cleared).toBe(true);
+    // A refresh that fires anyway (a host that cannot clear it) reads nothing and sets no next one.
+    h.refreshTimers[0]!.run();
+    await settle();
+    expect(h.refreshTimers).toHaveLength(1);
+    expect(h.paths()).toEqual(['/v1/output']);
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.timers.filter((t) => !t.cleared)).toHaveLength(0);
+    adapter.warmConfig();
+    await settle();
+    expect(h.refreshTimers).toHaveLength(1);
   });
 });
