@@ -28,7 +28,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from .entities import USER_NAMES, Resolution, norm
-from .predicates import horizon_of
+from .predicates import address_slot, horizon_of
 from .variants import widened
 
 KINDS = {"promised": "promise", "goal": "goal", "question": "question", "threat": "threat", "owes": "debt"}
@@ -81,6 +81,37 @@ def _maker(a: dict[str, Any], r: Resolution | None) -> str:
 
 def _recipient(a: dict[str, Any], r: Resolution | None) -> str | None:
     return _who(r, a.get("object_type"), a["object"]) if a.get("object") else None
+
+
+DEFAULT_SLOT = ("default",)
+
+
+def _slot(a: Mapping[str, Any]) -> tuple[str, ...]:
+    """extract-v21 (PHASE-66): the condition slot of a promise (or of what ends one), read from its `condition` as
+    `repairs.slot` reads it (scope and `when`, as Phase 64 reads an address's); the default slot for a row without one,
+    so every earlier generation's promises share it. `scope = all` is the default slot too (`_unifies`)."""
+    cond = a.get("condition")
+    if a.get("predicate") == "promised" and isinstance(cond, Mapping):
+        return address_slot({"address_condition": cond})
+    return DEFAULT_SLOT
+
+
+def _unifies(a: Mapping[str, Any]) -> bool:
+    cond = a.get("condition")
+    return a.get("predicate") == "promised" and isinstance(cond, Mapping) and cond.get("scope") == "all"
+
+
+def _within(a: dict[str, Any], pool: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The promises of `pool` a closing row may name by its condition slot: one with a condition (a promise broken
+    in private) only those of its slot, `scope = all` any; one without (a `fulfilled` has no condition) those without
+    one first, so a conditioned promise is not closed by the end of the unconditioned one, and only when there is
+    none, the conditioned ones, as before."""
+    if _unifies(a):
+        return pool
+    slot = _slot(a)
+    if slot != DEFAULT_SLOT:
+        return [t for t in pool if t["_slot"] == slot]
+    return [t for t in pool if t["_slot"] == DEFAULT_SLOT] or pool
 
 
 def _reports_ends(a: dict[str, Any]) -> bool:
@@ -161,6 +192,8 @@ def _match(a: dict[str, Any], open_by_maker: dict[str, list[dict[str, Any]]], r:
     pool = [t for t in open_by_maker.get(_maker(a, r), ())
             if t["status"] == "open" and (t["kind"] == "promise") == promise
             and (recipient is None or t["_recipient"] == recipient)]
+    if promise:
+        pool = _within(a, pool)
     if not pool:
         return None
     text = norm(a.get("value"))
@@ -183,6 +216,8 @@ def _restated(a: dict[str, Any], open_by_maker: dict[str, list[dict[str, Any]]],
     recipient = _recipient(a, r) if kind in ("promise", "debt") else None  # others are one owner's
     pool = [t for t in open_by_maker.get(_maker(a, r), ()) if t["status"] == "open" and t["kind"] == kind
             and (recipient is None or t["_recipient"] == recipient)]
+    if kind == "promise" and not _unifies(a):  # a promise said in another slot is another promise (PHASE-66)
+        pool = [t for t in pool if t["_slot"] == _slot(a)]
     if len(text) < RESTATE_MIN_CHARS:
         # a short aim ("복수", "탈출") said again word for word is the same one: two equal open threads would make
         # every resolution of it a tie that closes neither
@@ -243,7 +278,11 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
                      "status": "open", "closed_by": None, "restated": [], "horizon": horizon_of(a),
                      # PHASE-60 S7: when the opening assertion says it happens (a promise's appointed day), else None
                      "when_happened": a.get("when_happened"),
-                     "_maker": _maker(a, r), "_recipient": _recipient(a, r), "_norm": norm(a.get("value"))}
+                     # PHASE-66: when an extract-v21 promise holds (`condition`: scope, `when`), and its four-way
+                     # knowledge scope (`scene.private` reads public_except by it), each only when set
+                     **({"condition": a["condition"]} if a.get("condition") else {}),
+                     **({"knowledge_scope": a["knowledge_scope"]} if a.get("knowledge_scope") else {}),
+                     "_slot": _slot(a), "_maker": _maker(a, r), "_recipient": _recipient(a, r), "_norm": norm(a.get("value"))}
                 threads.append(t)
                 open_by_maker.setdefault(t["_maker"], []).append(t)
             used.add(a["id"])
@@ -264,7 +303,7 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
             used.add(a["id"])
     fire(pending, threads, None)
     for t in threads:
-        for k in ("_maker", "_recipient", "_norm", "_grams"):
+        for k in ("_slot", "_maker", "_recipient", "_norm", "_grams"):
             t.pop(k, None)
     threads.sort(key=lambda t: t["position"], reverse=True)
     unmatched.sort(key=lambda u: u["position"], reverse=True)
