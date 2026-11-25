@@ -1853,8 +1853,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
           saved = text;
         } catch { unsaved = true; } // the note is still made from the box (C2)
       }
+      // `language` only when not the sidecar's default (`chat`): the body is then the one an older sidecar was sent.
+      // Whether a sidecar reads it is not reported (no `/v1/health` feature): an older one writes in the chat's language.
       const body: Record<string, unknown> = { sections, chars: Number(length.value), secrets: secrets.checked,
-        language: language.value };
+        ...(language.value !== 'chat' ? { language: language.value } : {}) };
       if (custom.checked) Object.assign(body, { custom_prompt: text, custom_setting: setting.checked });
       try {
         const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,

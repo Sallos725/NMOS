@@ -185,3 +185,22 @@ describe('finding 5: the whole chat is cleaned once per request with trimming on
     expect(await readsOf(true, 2) - await readsOf(false, 2)).toBe(2 * CLEAN);
   });
 });
+
+describe('nit 12: word boundaries by code point; reasoning blocks as the sidecar drops them', () => {
+  it('a letter outside the Basic Multilingual Plane right before or after a short word is part of the word', async () => {
+    const { holdsWord } = await import('../src/prompt');
+    expect(holdsWord('\u{20000}네 맞아', '네')).toBe(false);  // a CJK Extension B letter (a surrogate pair)
+    expect(holdsWord('네\u{20000}', '네')).toBe(false);
+    expect(holdsWord('😀네 맞아', '네')).toBe(true);  // an emoji is not a letter
+    expect(holdsWord('답: 네', '네')).toBe(true);
+    expect(holdsWord('\u{1D4B6}', '\u{1D4B6}')).toBe(true);
+    expect(holdsWord('\u{1D4B6}\u{1D4B6}', '\u{1D4B6}')).toBe(false);
+  });
+
+  it('a paired <think> block is dropped wherever it is, as the sidecar clean_text (clean-v3 `_drop_blocks`) does', async () => {
+    const { cleanText } = await import('../src/prompt');
+    expect(cleanText('He wrote <think> on the board. Later, </think> he left.')).toBe('He wrote he left.');
+    expect(cleanText('<think>plan</think>\nThe door opened.')).toBe('The door opened.');
+    expect(cleanText('An unclosed <think> stays text.')).toBe('An unclosed stays text.');
+  });
+});

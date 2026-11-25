@@ -113,13 +113,31 @@ export function userTurnIndex(prompt: PromptMessage[], hostMessages: HostMessage
 const SHORT_TURN = 6;
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 
-/** Whether `text` holds `word` not as part of a longer word (a letter or digit right before or after it). */
-function holdsWord(text: string, word: string): boolean {
-  const edgeStart = WORD_CHAR.test(word.charAt(0));
-  const edgeEnd = WORD_CHAR.test(word.charAt(word.length - 1));
+/** The character (code point, not UTF-16 unit) that ends right before `at`, or ''. */
+function charBefore(text: string, at: number): string {
+  if (at <= 0) return '';
+  const low = text.charCodeAt(at - 1);
+  if (low >= 0xdc00 && low <= 0xdfff && at >= 2) {
+    const high = text.charCodeAt(at - 2);
+    if (high >= 0xd800 && high <= 0xdbff) return text.slice(at - 2, at);
+  }
+  return text.charAt(at - 1);
+}
+
+/** The character (code point) that starts at `at`, or ''. */
+function charAt(text: string, at: number): string {
+  const point = text.codePointAt(at);
+  return point === undefined ? '' : String.fromCodePoint(point);
+}
+
+/** Whether `text` holds `word` not as part of a longer word (a letter or digit right before or after it, by code
+ *  point: a letter outside the Basic Multilingual Plane counts). */
+export function holdsWord(text: string, word: string): boolean {
+  const edgeStart = WORD_CHAR.test(charAt(word, 0));
+  const edgeEnd = WORD_CHAR.test(charBefore(word, word.length));
   for (let at = text.indexOf(word); at >= 0; at = text.indexOf(word, at + 1)) {
-    const before = text.charAt(at - 1);
-    const after = text.charAt(at + word.length);
+    const before = charBefore(text, at);
+    const after = charAt(text, at + word.length);
     if ((!edgeStart || !before || !WORD_CHAR.test(before)) && (!edgeEnd || !after || !WORD_CHAR.test(after))) return true;
   }
   return false;

@@ -1443,7 +1443,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     button('Make').click();
     await settle();
     expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
-      { sections: ['diverged', 'address'], chars: 3000, secrets: false, language: 'chat' }]);
+      { sections: ['diverged', 'address'], chars: 3000, secrets: false }]);
     const shown = [...panel().querySelectorAll<HTMLTextAreaElement>('textarea[readonly]')];
     expect(shown.map((b) => b.value)).toEqual(['[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]']);
     expect(panel().textContent).toContain('chronicle: no scene summary yet');
@@ -1462,6 +1462,10 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect([...language.options].map((o) => [o.value, o.textContent])).toEqual([['chat', "The chat's language"],
       ['en', 'English']]);
     expect(language.value).toBe('chat');
+    button('Make').click();
+    await settle();
+    // The default is not sent (review nit 12): the body an older sidecar was sent before the setting existed.
+    expect(posts(calls).at(-1)![2]).not.toHaveProperty('language');
     language.value = 'en';
     button('Make').click();
     await settle();
@@ -1485,7 +1489,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     await settle();
     expect(calls.filter(([m]) => m === 'PUT')).toEqual([]); // unchanged: not saved again
     expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
-      { sections: ['custom'], chars: 3000, secrets: false, language: 'chat', custom_prompt: 'List outfits.',
+      { sections: ['custom'], chars: 3000, secrets: false, custom_prompt: 'List outfits.',
         custom_setting: false }]);
     prompt.value = '  Who owes whom?  ';
     const setting = [...panel().querySelectorAll<HTMLInputElement>('input[type=checkbox]:not([value])')]
