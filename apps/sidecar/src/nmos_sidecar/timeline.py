@@ -386,6 +386,8 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
     def state_label(f: dict[str, Any]) -> str:  # one lane per thing held: the thing names it
         name = _label(t, f["predicate"])
         name = f"{name}: {f['object']}" if f["predicate"] == "possesses" and f.get("object") else name
+        if f["predicate"] == "holds_rank" and f.get("object"):  # PHASE-66 part 5: a rank per group, a lane each
+            name = f"{name} → {f['object']}"
         cond = _address_cond(t, f)  # PHASE-66 part 5: a conditioned status or identity, one lane per slot
         return f"{name} [{cond}]" if cond else name
 

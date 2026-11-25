@@ -113,7 +113,12 @@ import re  # noqa: E402
 from html.parser import HTMLParser  # noqa: E402
 
 from nmos_sidecar import inspector, timeline, views  # noqa: E402
-from test_tier3_read_ontology import EPI, ONTO, PRIV, PUB  # noqa: E402
+import psycopg  # noqa: E402
+from psycopg.rows import dict_row  # noqa: E402
+
+from nmos_sidecar import dropped, readmodel, repairs  # noqa: E402
+from test_extraction import drain  # noqa: E402
+from test_tier3_read_ontology import EPI, ONTO, PRIV, PUB, model_for  # noqa: E402
 
 COND = {
     "t0": [a("하나", "relationship", "도윤", "동료", condition=PUB),
@@ -121,7 +126,7 @@ COND = {
            a("하나", "has_status", None, "피곤함", knowledge="public_except", hidden_from=["도윤"]),
            a("하나", "possesses", "회복 물약", None, ot="item", item_kind="fungible")],
     "t1": [a("하나", "cover_identity", None, "상인",
-             condition={"scope": "public", "when": "시장", "audience": ["민수"], "as_guise": "레아"}),
+             condition={"scope": "public", "when": "시장", "audience": ["민수"], "as_guise": "카이"}),
            a("하나", "vital_status", None, "살아 있음")],
 }
 
@@ -156,8 +161,8 @@ def test_conditioned_facts_show_their_slots_side_by_side_and_the_marks_in_plain_
     assert "동료 [회사]" in ko["person"] and "연인 [둘만 있을 때]" in ko["person"]
     assert "[회사]" in ko["map"] and "[둘만 있을 때]" in ko["map"]  # the map's ties (the lines under its drawing)
     # before whom and under which guise, plain marks beside the slot; the slot itself as a chip and in the lane
-    assert "앞에서: 민수" in ko["chat"] and "변장한 모습: 레아" in ko["chat"]
-    assert "before: 민수" in en["chat"] and "as: 레아" in en["chat"]
+    assert "앞에서: 민수" in ko["chat"] and "변장한 모습: 카이" in ko["chat"]
+    assert "before: 민수" in en["chat"] and "as: 카이" in en["chat"]
     assert "위장 신분 [시장]" in ko["character"]  # the timeline's lane of a conditioned cover
     # a fungible item and public-except knowledge in plain words; the new predicates by name
     assert "여럿 중 하나" in ko["chat"] and "one of many alike" in en["chat"]
@@ -272,6 +277,7 @@ EVIL = {
              condition={"scope": "situational", "when": EVIL_WHEN, "audience": ['"><svg onload=alert(4)>'],
                         "as_guise": "\u202egnp.exe</textarea>"}),
            a("하나", "relationship", "도윤", "동료\"'><b>", condition={"scope": "situational", "when": "<i>밤</i>"}),
+           a("하나", "has_status", None, "<script>alert(7)</script>", condition={"scope": "situational", "when": EVIL_WHEN}),
            a("하나", "believes", None, "<script>alert(5)</script>\u202e"),
            a("하나", "forgot", None, "</textarea><img src=x onerror=alert(6)>")],
 }
@@ -343,6 +349,11 @@ def test_hostile_model_text_is_escaped_on_every_screen(migrated: str):
             # the 60-character `when` full of markup is shown, escaped, as the slot's chip and the timeline lane
             assert f'<span class="chip">{inspector._v(EVIL_WHEN.strip())}</span>' in got["chat"]
             assert inspector._v(EVIL_WHEN.strip()) in got["character"] and inspector._v(EVIL_WHEN.strip()) in got["person"]
+            # a conditioned status is a selectable state lane: its label and its card carry the `when` escaped
+            lane = f'<span class="tl-k">{inspector._v(inspector._t(lang, "p.has_status"))} [{inspector._v(EVIL_WHEN.strip())}]'
+            assert lane in got["character"]
+            # the panel's sections of beliefs and forgettings are not reached through the API yet (api.py's
+            # memory_data / person_data do not pass them): see the direct renderer test
 
 
 def test_the_renderers_escape_hostile_rows_without_a_database():
@@ -372,3 +383,104 @@ def test_the_renderers_escape_hostile_rows_without_a_database():
         assert evil in inspector.fact_line_text(rel)  # raw text: every caller escapes it (`_v`)
         assert_safe(inspector._v(inspector.fact_line_text(rel)), 0)
         assert inspector._v(evil) in html and inspector._v(EVIL_WHEN) in html
+
+
+def test_the_chat_page_and_the_panels_sections_render_beliefs_and_forgettings_when_given(migrated: str):
+    """`inspector.detail(beliefs=, forgotten=)` and the panel's `beliefs` / `forgotten` keys: what the call sites in
+    api.py would pass (they do not yet, the one api.py line this part may change being the guard)."""
+    chat = Chat(migrated, EPI, name="w4-epi-direct")
+    with chat.client() as c:
+        chat.run(c)
+        view = chat.view()
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        conv = readmodel.conversation(conn, chat.cid)
+    for lang in ("ko", "en"):
+        page = inspector.detail(conv, [], [], [], [], view["facts"], None, lang=lang, embed=True,
+                                beliefs=view["beliefs"], forgotten=view["forgotten"])
+        assert 'id="s-beliefs"' in page and 'id="s-forgotten"' in page and "도윤이 배신했다" in page
+        bare = inspector.detail(conv, [], [], [], [], view["facts"], None, lang=lang, embed=True)
+        assert 's-beliefs' not in bare and 's-forgotten' not in bare  # absent: the page as before
+        yuna = next(e for e in view["entities"] if e["name"] == "유나")
+        base = {"conv": {"id": str(chat.cid), "name": "w4", "turns": 3}, "now": [], "threads": [], "stale": 0,
+                "pairs": [], "secrets": [], "changes": [], "facts": 0, "attention": 0, "entities": {}}
+        memory = views.memory({**base, "beliefs": view["beliefs"], "forgotten": view["forgotten"]}, lang)
+        assert 'id="s-beliefs"' in memory and 'id="s-forgotten"' in memory and 'href="#s-beliefs"' in memory
+        assert "카이의 정체는 상인" in memory and 'data-repair="fact_retract:' in memory
+        assert "s-beliefs" not in views.memory(base, lang)
+        person = {**base, "entity": {"id": str(yuna["id"]), "name": "유나", "names": ["유나"], "persona": False,
+                                     "excluded": None, "pinned": None},
+                  "knows": [], "kept": [], "marks": [], "first": 0, "last": 3,
+                  "beliefs": [b for b in view["beliefs"] if b["subject"] == "유나"],
+                  "forgotten": [g for g in view["forgotten"] if g["who"] == "유나"]}
+        sheet = views.person(person, lang)
+        assert 'id="s-beliefs"' in sheet and 'id="s-forgotten"' in sheet
+        assert "s-beliefs" not in views.person({k: v for k, v in person.items() if k not in ("beliefs", "forgotten")},
+                                               lang)
+
+
+def test_the_panels_sections_escape_hostile_beliefs_and_forgettings():
+    evil = "\"'><script>alert(1)</script></textarea>‮"
+    belief = {"id": 1, "subject": evil, "predicate": "believes", "value": evil, "turn": 2, "status": "ended",
+              "ended_by": {"id": 2, "turn": 3, "subject": evil, "predicate": "knows", "object": None, "value": evil}}
+    forgot = {"id": 3, "subject": evil, "who": evil, "predicate": "forgot", "value": evil, "scope": "matter",
+              "since": None, "turn": 4, "withdrew": [{"id": 4, "turn": 1, "predicate": "knows", "text": evil,
+                                                     "how": "fact"}]}
+    for lang in ("ko", "en"):
+        html = "".join(views.belief_lines([belief], lang) + views.forgot_lines([forgot], lang))
+        assert_safe(html, 0)
+        assert inspector._v(evil) in html
+
+
+def test_every_button_on_the_ontologys_pages_plans(migrated: str):
+    """Each repair the chat page and each character page offer for an extract-v21 row is one `repairs.plan` accepts
+    (it changes nothing): retract, and every correction field, the object ones included."""
+    chat = Chat(migrated, ONTO, name="w4-onto-plan")
+    with chat.client() as c:
+        chat.run(c)
+        view = chat.view()
+        cid = str(chat.cid)
+        pages = [c.get(f"/inspector/c/{cid}").text] + [
+            c.get(f"/inspector/c/{cid}/e/{eid}").text for eid in ids_of(c, cid).values()]
+    v21 = {str(f["id"]): f for f in view["facts"] if f["predicate"] in (
+        "vital_status", "lives_in", "cover_identity", "disguised_as", "holds_rank", "contained_in")}
+    seen = set()
+    for kind, item, extra in {x for p in pages for x in offered(p)}:
+        if item not in v21 or kind not in ("fact_retract", "fact_correct"):
+            continue
+        seen.add((v21[item]["predicate"], kind, extra))
+        f = v21[item]
+        if kind == "fact_retract":
+            repairs.plan(kind, item, view, 3)
+        elif extra == "object":
+            repairs.plan(kind, item, view, 3, new_object=f"{f['object']} 2")
+        else:
+            repairs.plan(kind, item, view, 3, new_value=f"{f.get('value') or ''} 2")
+    assert {p for p, _, _ in seen} == {"vital_status", "lives_in", "cover_identity", "disguised_as", "holds_rank",
+                                       "contained_in"}
+    assert ("holds_rank", "fact_correct", "object") in seen and ("holds_rank", "fact_correct", "value") in seen
+    # every row's object and value are on the chat page, a rank beside its group
+    page = pages[0]
+    for f in v21.values():
+        for x in (f.get("object"), f.get("value")):
+            if x:
+                assert inspector._v(x) in page, (f["predicate"], x)
+    assert "<span>: 단장</span>" in page
+    assert '<span class="tl-k">직위 → 기사단' in "".join(pages[1:])  # one lane per group
+
+
+def test_a_belief_a_re_extraction_drops_is_offered_for_restore_and_restored(migrated: str):
+    chat = Chat(migrated, EPI, name="w4-epi-drop")
+    with chat.client() as c:
+        chat.run(c)
+        chat.view()  # its head and generation key, as W3's restore test reads them
+        c.post(f"/v1/conversations/{chat.cid}/rebuild")
+        drain(migrated, model_for(EPI, frozenset({("유나", "도윤이 배신했다")})))
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            lost = dropped.find(conn, chat.head, chat.key, chat.view())
+        listed = [d for d in lost if d["predicate"] == "believes"]
+        assert [d["value"] for d in listed] == ["도윤이 배신했다"]
+        # the attention queue offers its restore, and the API takes it
+        assert f'data-repair="fact_restore:{listed[0]["id"]}"' in c.get(f"/inspector/c/{chat.cid}").text
+        res = c.post(f"/v1/conversations/{chat.cid}/repairs", json={"kind": "fact_restore", "item": str(listed[0]["id"])})
+        assert res.status_code == 200, res.text
+        assert "도윤이 배신했다" in {b["value"] for b in chat.view()["beliefs"]}

@@ -18,7 +18,8 @@ from typing import Any
 
 from . import tokens
 from .facts import symmetric
-from .inspector import _act, _close, _v, cond_extra, cond_label, feeling_detail, feeling_dot, happened_mark, happened_text
+from .inspector import (_act, _close, _epistemic_acts, _v, cond_extra, cond_label, feeling_detail, feeling_dot,
+                        happened_mark, happened_text)
 from .summaries import content
 from .threads import KINDS as THREAD_KINDS
 
@@ -180,6 +181,11 @@ T: dict[str, tuple[str, str]] = {
     "s-sofar": ("지금까지", "So far"),
     "s-secrets": ("비밀", "Secrets"),
     "s-changed": ("바뀐 설정", "Changed from the setting"),
+    # extract-v21's beliefs and forgettings (PHASE-66 part 5); a chat without them never shows these sections
+    "s-beliefs": ("믿음", "Beliefs"), "s-forgotten": ("잊은 것", "Forgotten"),
+    "b_held": ("믿는 중", "held"), "b_ended": ("끝남: {what}", "ended: {what}"),
+    "f_all": ("모든 기억", "everything"), "f_since": ("t{n}부터의 기억", "everything since t{n}"),
+    "f_withdrew": ("거둬들인 것 {n}", "{n} withdrawn"),
     "more": ("{n}개 더 보기", "{n} more"),
     "stale": ("한동안 언급 없는 열린 일 {n}개는 여기 넣지 않았어요. 자세히에서 확인하거나 닫을 수 있어요.",
               "{n} open threads not mentioned for a while are left out here; check or close them in details."),
@@ -477,6 +483,33 @@ def _slotted(f: dict[str, Any], lang: str) -> str:
     return f"{value} [{label}]" if label and value else value
 
 
+def belief_lines(rows: list[dict[str, Any]] | None, lang: str) -> list[str]:
+    """What characters believe (PHASE-66 part 5), escaped: the content, then who, held or what ended it, the turn;
+    retract and correct behind a tap, as every repair here."""
+    out = []
+    for b in rows or []:
+        e = b.get("ended_by")
+        state = t(lang, "b_ended", what=" ".join(str(x) for x in (e.get("predicate"), e.get("object"), e.get("value"))
+                                                 if x)) if e else t(lang, "b_held")
+        out.append(line(_v(b.get("value")), _v(" · ".join(str(x) for x in (_named(b, "subject"), state,
+                                                                         f"t{b.get('turn')}") if x)),
+                        _epistemic_acts(b)))
+    return out
+
+
+def forgot_lines(rows: list[dict[str, Any]] | None, lang: str) -> list[str]:
+    """Who forgot what and since when (PHASE-66 part 5), escaped, with how much it withdrew."""
+    out = []
+    for g in rows or []:
+        what = (t(lang, "f_all") if g.get("scope") == "all"
+                else t(lang, "f_since", n=g["since"]) if g.get("scope") == "since" and g.get("since") is not None
+                else str(g.get("value") or ""))
+        meta = " · ".join(str(x) for x in (g.get("who") or g.get("subject"), f"t{g.get('turn')}",
+                                           t(lang, "f_withdrew", n=len(g.get("withdrew") or []))) if x)
+        out.append(line(_v(what), _v(meta), _epistemic_acts(g)))
+    return out
+
+
 def carried_mark(row: dict[str, Any], lang: str) -> str:
     """A small word on a row that came through a carry link (PHASE-60 S6), or "" (the row then reads as before)."""
     return f'<span class="v-tag">{_v(t(lang, "carried"))}</span>' if row.get("carried") else ""
@@ -696,6 +729,13 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     counts = {"s-now": len(now), "s-open": len(threads), "s-people": len(people),
               "s-sofar": len(scenes) + (1 if story else 0), "s-secrets": len(secrets), "s-changed": len(changed)}
     keys = ["s-now", "s-open", "s-people", "s-sofar", "s-secrets", "s-changed"]
+    epistemic = ""  # PHASE-66 part 5: only a chat whose view has beliefs or forgettings
+    for key, rows in (("s-beliefs", belief_lines(d.get("beliefs"), lang)),
+                      ("s-forgotten", forgot_lines(d.get("forgotten"), lang))):
+        if rows:
+            counts[key] = len(rows)
+            keys.insert(keys.index("s-changed"), key)
+            epistemic += section(key, lang, more(rows, lang), len(rows))
     link = d.get("carry")
     carried = ""
     if link:  # PHASE-60 S6: only while a link is in force
@@ -711,7 +751,7 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
             + section("s-open", lang, (more(opened, lang) or nothing) + stale, len(threads))
             + section("s-people", lang, more(people, lang) or nothing, len(people))
             + section("s-sofar", lang, sofar or nothing)
-            + section("s-secrets", lang, more(secrets, lang) or nothing, len(secrets))
+            + section("s-secrets", lang, more(secrets, lang) or nothing, len(secrets)) + epistemic
             + section("s-changed", lang, more(changed, lang) or nothing, len(changed)))
     detail = f"/inspector/c/{cid}"
     foot = (f'<div class="v-foot"><a href="{detail}#s-facts">{_v(t(lang, "facts", n=d.get("facts", 0)))}</a>'
@@ -803,6 +843,9 @@ def person(d: dict[str, Any], lang: str) -> str:
     body = (section("s-now", lang, now) + section("s-rels", lang, more(rels, lang) or nothing, len(rels))
             + section("s-threads", lang, more(threads, lang) or nothing, len(threads))
             + section("s-knows", lang, more(knows, lang) or nothing, len(knows))
+            + "".join(section(k, lang, more(rows, lang), len(rows)) for k, rows in (  # PHASE-66 part 5
+                ("s-beliefs", belief_lines(d.get("beliefs"), lang)), ("s-forgotten", forgot_lines(d.get("forgotten"), lang)))
+                if rows)
             + _told_section(cid, d.get("told"), ents, lang) + _person_carry(d.get("carry"), e, lang, nothing)
             + section("s-time", lang, time))
     cap = t(lang, "aka", names=", ".join(aka)) if aka else ""

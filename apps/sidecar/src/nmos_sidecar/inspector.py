@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import quote
 
 from .entities import USER_NAMES, norm
-from .predicates import CONDITIONED_PREDICATES, address_label, guise
+from .predicates import CONDITIONED_PREDICATES, V21_PREDICATES, address_label, guise
 from .repairs import READ_REGISTRY, offered
 from .facts import STANDING, earlier, first, participant_entities, symmetric
 from . import scene, timeline, tokens
@@ -1065,6 +1065,8 @@ def v21_marks(row: dict[str, Any], lang: str) -> str:
     keeps showing its own where it did), before whom, under which guise, and a fungible item. "" for a row of every
     earlier generation, so its cell stays byte-identical."""
     bits = []
+    if row.get("predicate") in V21_PREDICATES and row.get("object") and row.get("value"):  # a rank, a guise's note
+        bits.append(f"<span>: {_v(row['value'])}</span>")
     if row.get("predicate") != "addresses" and (label := cond_label(row, lang)):
         bits.append(f"<span class=\"chip\">{_v(label)}</span>")
     bits += [f"<span class=\"muted\">{_v(x)}</span>" for x in cond_extra(row, lang)]
