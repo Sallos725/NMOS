@@ -1232,7 +1232,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if body.kind == "entity_exclude":
                 host_character(conn, conv_id, view, body.entity_type, body.item)
             if (body.kind == "fact_correct" and not body.lock
-                    and not any(str(f["id"]) == body.item for f in view["facts"])):
+                    and not any(str(f["id"]) == body.item for f in [*view["facts"], *(view.get("beliefs") or ()), *(view.get("forgotten") or ())])):
                 # a canon statement the story replaced: corrected alone it would be replaced at once (PHASE-57 B2)
                 raise HTTPException(status_code=422, detail="a statement the story replaced is corrected with its lock")
             target, value = plan_repair(conn, head, view, body)

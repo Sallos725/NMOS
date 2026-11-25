@@ -18,8 +18,7 @@ from typing import Any
 
 from . import tokens
 from .facts import symmetric
-from .inspector import _act, _close, _v, feeling_detail, feeling_dot, happened_mark, happened_text
-from .predicates import address_label
+from .inspector import _act, _close, _v, cond_extra, cond_label, feeling_detail, feeling_dot, happened_mark, happened_text
 from .summaries import content
 from .threads import KINDS as THREAD_KINDS
 
@@ -234,6 +233,10 @@ T: dict[str, tuple[str, str]] = {
     "located_in": ("위치", "location"), "has_status": ("상태", "status"), "relationship": ("관계", "relationship"),
     "role_toward": ("역할", "role"), "feels_toward": ("감정", "feels"), "addresses": ("호칭", "calls"),
     "possesses": ("소지자", "held by"), "destroyed": ("소멸", "destroyed"),
+    # extract-v21's own predicates (PHASE-66 part 5); a chat without them never meets these words
+    "vital_status": ("생사", "vital status"), "lives_in": ("사는 곳", "lives in"),
+    "cover_identity": ("위장 신분", "cover identity"), "disguised_as": ("변장", "disguised as"),
+    "holds_rank": ("직위", "rank"), "contained_in": ("안에 있음", "inside"),
     # the memory map (PHASE-55)
     "map": ("기억 지도", "Memory map"),
     "map_sub": ("출처 · 관계 · 사건", "Sources · ties · events"),
@@ -425,7 +428,7 @@ def hub(data: dict[str, Any], lang: str, map_: bool = False) -> str:
             f'<span class="v-cap">{_v(cap)}</span></div><div class="v-blocks">{"".join(blocks)}</div></div>')
 
 
-NOW = ("located_in", "has_status")
+NOW = ("located_in", "has_status", "vital_status")  # vital_status: extract-v21's alive / dead / missing (PHASE-66)
 
 
 def now_said(facts: list[dict[str, Any]], name: str | list[str]) -> list[str]:
@@ -457,12 +460,21 @@ def _pair_bits(p: dict[str, Any], lang: str) -> list[str]:
     for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
         for f in p[k]:
             value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
-            cond = f" [{label}]" if (pred == "addresses" and (label := address_label(f, lang))) else ""
+            cond = f" [{label}]" if (label := cond_label(f, lang)) else ""  # PHASE-64; PHASE-66 part 5: any slot
+            cond += "".join(f" ({x})" for x in cond_extra(f, lang))
             h = happened_mark(_own(f), lang)
             m = carried_mark(f, lang)
             bits.append(_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)}{cond} ") + feeling_dot(f, lang)
                         + _v(f"{value}") + feeling_detail(f, lang) + (f" {h}" if h else "") + (f" {m}" if m else ""))
     return bits
+
+
+def _slotted(f: dict[str, Any], lang: str) -> str:
+    """A relationship's value with its slot (PHASE-66 part 5: an extract-v21 relationship held only in public, in
+    private or in a situation), raw text; the value alone for every earlier row."""
+    value = f.get("value")
+    label = cond_label(f, lang)
+    return f"{value} [{label}]" if label and value else value
 
 
 def carried_mark(row: dict[str, Any], lang: str) -> str:
@@ -651,11 +663,11 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     people = []
     for p in d.get("pairs") or []:
         names = sorted(p["names"].values())
-        rel = [f.get("value") for f in p["relationship"]]
+        rel = [_slotted(f, lang) for f in p["relationship"]]
         head = " ↔ ".join(nm(n) for n in names) + (f" · {_v(', '.join(str(r) for r in rel if r))}" if rel else "")
         bits = _pair_bits(p, lang)
         if len(p["relationship"]) > 1 or any(not symmetric(f.get("value")) for f in p["relationship"]):
-            bits = [_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, 'relationship')} {f.get('value')}")
+            bits = [_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, 'relationship')} {_slotted(f, lang)}")
                     + (f" {h}" if (h := happened_mark(_own(f), lang)) else "")
                     + (f" {m}" if (m := carried_mark(f, lang)) else "")
                     for f in p["relationship"]] + bits
@@ -779,7 +791,7 @@ def person(d: dict[str, Any], lang: str) -> str:
     rels = []
     for p in d.get("pairs") or []:
         other = [n for i, n in p["names"].items() if str(i) != str(e["id"])]
-        rel = [str(f.get("value")) for f in p["relationship"] if f.get("value")]
+        rel = [str(_slotted(f, lang)) for f in p["relationship"] if f.get("value")]
         rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), " · ".join(_pair_bits(p, lang))))
     threads = [line(f"{_v(th['text'])}" + (f" → {nm(th['to'])}" if th.get("to") and th.get("by") == e.get("name") else ""),
                     _thread_meta(th, lang),
@@ -943,9 +955,9 @@ def _tie_text(e: dict[str, Any], lang: str) -> str:
     bits = []
     for f in e["facts"] + e["speech"]:
         value = f'"{f.get("value")}"' if f["predicate"] == "addresses" else f.get("value")
-        cond = f" [{label}]" if (f["predicate"] == "addresses" and (label := address_label(f, lang))) else ""
+        cond = f" [{label}]" if (label := cond_label(f, lang)) else ""  # PHASE-64; PHASE-66 part 5: any slot
         if f["predicate"] == "relationship" and symmetric(f.get("value")):
-            bits.append(f"{word('relationship', lang)} {value}")
+            bits.append(f"{word('relationship', lang)}{cond} {value}")
         else:
             bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {word(f['predicate'], lang)}{cond} {value}")
     return ", ".join(bits)

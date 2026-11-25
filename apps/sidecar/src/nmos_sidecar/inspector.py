@@ -15,8 +15,8 @@ from typing import Any
 from urllib.parse import quote
 
 from .entities import USER_NAMES, norm
-from .predicates import REGISTRY, address_label
-from .repairs import offered
+from .predicates import CONDITIONED_PREDICATES, address_label, guise
+from .repairs import READ_REGISTRY, offered
 from .facts import STANDING, earlier, first, participant_entities, symmetric
 from . import scene, timeline, tokens
 from .packet import TURN_POLICIES
@@ -529,6 +529,26 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     # conditional forms of address fallback scope labels (PHASE-64)
     "ac.public": ("공적인 자리", "in public"),
     "ac.private": ("사적인 자리", "in private"),
+    # extract-v21's own predicates and marks (PHASE-66 part 5); a chat without them never meets these strings
+    "p.vital_status": ("생사", "vital status"), "p.lives_in": ("사는 곳", "lives in"),
+    "p.cover_identity": ("위장 신분", "cover identity"), "p.disguised_as": ("변장", "disguised as"),
+    "p.holds_rank": ("직위", "holds rank"), "p.contained_in": ("안에 있음", "contained in"),
+    "p.believes": ("믿음", "believes"), "p.forgot": ("잊음", "forgot"),
+    "k.public_except": ("모두 앎 (예외 있음)", "public, except"),
+    "forgotten_by": ("잊은 인물", "forgotten by"),
+    "c.audience": ("앞에서", "before"), "c.guise": ("변장한 모습", "as"),
+    "fungible": ("여럿 중 하나", "one of many alike"),
+    "beliefs": ("믿음 (사실이 아닐 수도 있음)", "Beliefs (may be untrue)"), "toc.beliefs": ("믿음", "Beliefs"),
+    "h.believes": ("믿는 내용", "Believes"), "h.ended_by": ("끝낸 단언", "Ended by"),
+    "bs.held": ("믿는 중", "held"), "bs.ended": ("끝남", "ended"),
+    "forgotten": ("잊은 것", "Forgettings"), "toc.forgotten": ("잊은 것", "Forgotten"),
+    "h.forgot": ("잊은 것", "Forgot"), "h.withdrew": ("거둬들인 것", "Withdrew"),
+    "fg.all": ("모든 기억", "everything"), "fg.since": ("{n}턴부터의 기억", "everything since turn {n}"),
+    "fg.fact": ("사실", "fact"), "fg.known_by": ("아는 인물에서 뺌", "taken from who knows"),
+    "fg.none": ("거둬들인 것 없음", "nothing withdrawn"),
+    "ep.note": ("믿음과 망각은 세계의 사실이 아닙니다: 철회하거나 내용을 정정할 수 있지만 고정할 수는 없습니다.",
+                "A belief or a forgetting is no fact about the world: it can be retracted or its content corrected, "
+                "never locked."),
 }
 
 
@@ -878,6 +898,10 @@ def _knowledge(f: dict[str, Any], lang: str) -> str:
         detail.append(f"{_t(lang, 'known_by')}: " + ", ".join(f["known_by"]))
     if f.get("hidden_from"):
         detail.append(f"{_t(lang, 'hidden_from')}: " + ", ".join(f["hidden_from"]))
+    if f.get("forgotten_by"):  # PHASE-66: who forgot it (their name left `known_by`)
+        detail.append(f"{_t(lang, 'forgotten_by')}: " + ", ".join(f["forgotten_by"]))
+    if f.get("knowledge_scope") == "public_except" and scope == "limited":  # PHASE-66: everyone but `hidden_from`
+        scope = "public_except"
     chip = _t(lang, f"k.{scope}") if f"k.{scope}" in T else scope
     return f"<span class=\"chip\" title=\"{_v(scope)}\">{_v(chip)}</span> " + _v("; ".join(detail))
 
@@ -1012,9 +1036,46 @@ def _named_cell(a: dict[str, Any], side: str) -> str:
     return f"<span title=\"{_v(written)}\">{_v(shown)}</span>" if written and shown != written else _v(shown)
 
 
+def cond_label(row: dict[str, Any], lang: str | None = None) -> str | None:
+    """A row's slot label, raw text: a conditional address's (PHASE-64) or an extract-v21 conditioned fact's, read
+    from its `condition` the same way (PHASE-66, as `facts.fact_text` names it); None for a row without one."""
+    if label := address_label(row, lang):
+        return label
+    cond = row.get("condition")
+    if row.get("predicate") in CONDITIONED_PREDICATES and isinstance(cond, dict):
+        return address_label({"predicate": "addresses", "address_condition": cond}, lang)
+    return None
+
+
+def cond_extra(row: dict[str, Any], lang: str) -> list[str]:
+    """What an extract-v21 row adds beside its slot, raw text, each a plain mark (PHASE-66 part 5): before whom
+    (`condition.audience`) and under which guise (`guise` or `condition.as_guise`; a `disguised_as` names its guise
+    as its object already). Empty for a row of every earlier generation."""
+    out = []
+    cond = row.get("condition")
+    if isinstance(cond, dict) and isinstance(cond.get("audience"), list) and cond["audience"]:
+        out.append(f"{_t(lang, 'c.audience')}: " + ", ".join(str(n) for n in cond["audience"]))
+    if row.get("predicate") != "disguised_as" and (g := guise(row)):
+        out.append(f"{_t(lang, 'c.guise')}: {g}")
+    return out
+
+
+def v21_marks(row: dict[str, Any], lang: str) -> str:
+    """The marks of an extract-v21 fact as chips, escaped (PHASE-66 part 5): its slot label (a conditional address
+    keeps showing its own where it did), before whom, under which guise, and a fungible item. "" for a row of every
+    earlier generation, so its cell stays byte-identical."""
+    bits = []
+    if row.get("predicate") != "addresses" and (label := cond_label(row, lang)):
+        bits.append(f"<span class=\"chip\">{_v(label)}</span>")
+    bits += [f"<span class=\"muted\">{_v(x)}</span>" for x in cond_extra(row, lang)]
+    if row.get("item_kind") == "fungible":
+        bits.append(f"<span class=\"chip\">{_v(_t(lang, 'fungible'))}</span>")
+    return "".join(f" {b}" for b in bits)
+
+
 def fact_line_text(a: dict[str, Any]) -> str:
     text = f"{_named(a, 'subject')} {a['predicate'].replace('_', ' ')}" + (f" {_named(a, 'object')}" if a.get("object") else "")
-    if label := address_label(a):
+    if label := cond_label(a):
         text = f"{text} [{label}]"
     return f"{text}: {a['value']}" if a.get("value") else text
 
@@ -1039,7 +1100,8 @@ def _step(h: dict[str, Any], lang: str) -> str:
         said = f"{_t(lang, 'w.not')} {said}" if lang == "en" else f"{said} {_t(lang, 'w.not')}"
     turn = h["turn"] if h.get("turn") is not None else h["position"]
     outcome = h.get("outcome", "superseded")
-    return (f"<span class=\"muted\">{_v(turn)}</span>{_happened_span(h, lang)} {_v(said)} "
+    kind = f" <span class=\"chip\">{_v(_t(lang, 'fungible'))}</span>" if h.get("item_kind") == "fungible" else ""
+    return (f"<span class=\"muted\">{_v(turn)}</span>{_happened_span(h, lang)} {_v(said)}{kind} "
             f"<span class=\"chip\" title=\"{_v(outcome)}\">{_v(_t(lang, f'o.{outcome}'))}</span>")
 
 
@@ -1202,7 +1264,8 @@ def feeling_detail(f: dict[str, Any], lang: str) -> str:
 def _pairs_table(entries: list[dict[str, Any]], lang: str, persona: frozenset[str] | None = None) -> str:
     def said(f: dict[str, Any], directed: bool) -> str:
         who = f"{_named(f, 'subject')} → {_named(f, 'object')}: " if directed else ""
-        cond = f'<span class="chip">{_v(label)}</span> ' if (label := address_label(f, lang)) else ""
+        cond = f'<span class="chip">{_v(label)}</span> ' if (label := cond_label(f, lang)) else ""
+        cond += "".join(f'<span class="muted">{_v(x)}</span> ' for x in cond_extra(f, lang))
         text = (_v(who) + cond + feeling_dot(f, lang) + _v(f.get("value") or "") + feeling_detail(f, lang)
                 + f" <span class=\"muted\">{_turn(f)}</span>")
         if f.get("polarity") == "negative":
@@ -1211,7 +1274,7 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str, persona: frozenset[st
             text += f" <span class=\"muted\">· {_t(lang, 'because')}: {_v(f['because'])}</span>"
         for key, was in (("before", earlier(f)), ("first", first(f))):
             if was:
-                wcond = f"[{wl}] " if (wl := address_label(was, lang)) else ""
+                wcond = f"[{wl}] " if (wl := cond_label(was, lang)) else ""
                 text += (f" <span class=\"muted\">· {_t(lang, key)}: {_v(wcond + str(was.get('value') or ''))}"
                          f"{feeling_detail(was, lang)} ({_turn(was)})</span>")
         return text
@@ -1310,7 +1373,7 @@ def _facts_rows(facts: list[dict[str, Any]], active: str | None, lang: str, anch
     return table(
         [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.with", "h.knowledge", "h.turn", "h.versions")],
         [[_named_cell(f, "subject"), chip(lang, "p", f["predicate"]),
-          (_named_cell(f, "object") if f.get("object") else _v(f.get("value"))) + _cause(f, lang)
+          (_named_cell(f, "object") if f.get("object") else _v(f.get("value"))) + v21_marks(f, lang) + _cause(f, lang)
           + ("" if f.get("owner") else _act("fact_retract", f["id"]) + "".join(_act("fact_correct", f["id"], x) for x in _corrections(f)))
           + (_act("fact_lock", f["id"]) if (f.get("canon") or f.get("owner")) and not f.get("locked") else ""),
           _with(f, lang),
@@ -1460,7 +1523,7 @@ def _enc(text: str) -> str:
 def _corrections(f: dict[str, Any]) -> list[str]:
     """The fields a correction of this fact can set, as the API checks them (ADR 0044 item 8): its object when its
     predicate has one, its value when it needs or has one (a relationship: both)."""
-    pred = REGISTRY.get(f["predicate"])
+    pred = READ_REGISTRY.get(f["predicate"])  # REGISTRY and extract-v21's own predicates, as `repairs` reads them
     has_object = pred.object_types is not None if pred is not None else bool(f.get("object"))
     has_value = (pred.needs_value if pred is not None else False) or bool(f.get("value"))
     return (["object"] if has_object else []) + (["value"] if has_value else [])
@@ -1664,6 +1727,65 @@ def _secrets_table(secrets: list[dict[str, Any]], lang: str) -> str:
             + f"<p class=\"muted\">{_v(_t(lang, 'sec.note'))}</p>")
 
 
+def _epistemic_acts(row: dict[str, Any]) -> str:
+    """The repairs a belief or a forgetting takes (PHASE-66 part 5): a retraction, and a correction of its value (the
+    belief's content, the forgotten matter); never a lock (`repairs._plan_lock` refuses one: it is no statement about
+    the world a later one could replace), and none on the owner's own correction (its repair is taken back instead)."""
+    if row.get("owner"):
+        return ""
+    return _act("fact_retract", row["id"]) + _act("fact_correct", row["id"], "value")
+
+
+def _owner_chip(row: dict[str, Any], lang: str) -> str:
+    return f" {chip(lang, 'or', 'corrected')}" if row.get("owner") else ""
+
+
+def _beliefs_table(beliefs: list[dict[str, Any]], lang: str, anchors: bool = False) -> str:
+    """What characters believe (extract-v21 `believes`, PHASE-66 part 5), newest first: held, or ended by the
+    statement that ended it (a later `knows` or `learned` of the matter, or a forgetting)."""
+    def ended(b: dict[str, Any]) -> str:
+        e = b.get("ended_by")
+        return f"{_turn(e)} · {_v(fact_line_text(e))}" if e else ""
+
+    rows = beliefs[:100]
+    return (table([_t(lang, k) for k in ("h.who", "h.believes", "h.knowledge", "h.turn", "h.status", "h.ended_by")],
+                  [[_named_cell(b, "subject"),
+                    _v(b.get("value")) + (f" <span class=\"chip\">{_t(lang, 'negated')}</span>"
+                                          if b.get("polarity") == "negative" else "") + _epistemic_acts(b),
+                    _knowledge(b, lang), _turn(b, lang) + _owner_chip(b, lang),
+                    chip(lang, "bs", b.get("status") or "held"), ended(b)] for b in rows],
+                  ids=[f"a-{b['id']}" for b in rows] if anchors else None)
+            + f"<p class=\"muted\">{_v(_t(lang, 'ep.note'))}</p>")
+
+
+def _forgot_what(g: dict[str, Any], lang: str) -> str:
+    """A forgetting's matter in plain words: everything, everything since a turn, or the memory it names."""
+    if g.get("scope") == "all":
+        return _t(lang, "fg.all")
+    if g.get("scope") == "since" and g.get("since") is not None:
+        return _t(lang, "fg.since").format(n=g["since"])
+    return str(g.get("value") or "")
+
+
+def _forgotten_table(forgotten: list[dict[str, Any]], lang: str, anchors: bool = False) -> str:
+    """Who forgot what, since when, and what each forgetting withdrew (extract-v21 `forgot`, PHASE-66 part 5): a
+    `knows` fact it took out of memory, or the forgetter's name taken from a fact's `known_by`."""
+    def withdrew(g: dict[str, Any]) -> str:
+        items = g.get("withdrew") or []
+        if not items:
+            return f"<span class=\"muted\">{_v(_t(lang, 'fg.none'))}</span>"
+        return "<br>".join(f"{_turn(w)} {_v(w.get('text'))} {chip(lang, 'fg', w.get('how') or 'fact')}"
+                           for w in items[:20])
+
+    rows = forgotten[:100]
+    return (table([_t(lang, k) for k in ("h.who", "h.forgot", "h.turn", "h.withdrew")],
+                  [[_v(g.get("who") or g.get("subject")),
+                    _v(_forgot_what(g, lang)) + _epistemic_acts(g),
+                    _turn(g, lang) + _owner_chip(g, lang), withdrew(g)] for g in rows],
+                  ids=[f"a-{g['id']}" for g in rows] if anchors else None)
+            + f"<p class=\"muted\">{_v(_t(lang, 'ep.note'))}</p>")
+
+
 def _unrevealed_table(unrevealed: list[dict[str, Any]], lang: str) -> str:
     return (table([_t(lang, k) for k in ("h.who", "h.listed", "h.turn", "h.evidence")],
                   [[_v(u["subject"]), _v(u.get("value")), _turn(u), _v(u.get("evidence") or "")]
@@ -1741,7 +1863,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            endings: dict[str, list[dict[str, Any]]] | None = None, overuse: dict[str, Any] | None = None,
            cast: dict[str, Any] | None = None, span: str | None = None, lazy: bool = False,
            status: dict[str, list[dict[str, Any]]] | None = None, status_lazy: bool = False,
-           state_flags: list[dict[str, Any]] | None = None) -> str:
+           state_flags: list[dict[str, Any]] | None = None, beliefs: list[dict[str, Any]] | None = None,
+           forgotten: list[dict[str, Any]] | None = None) -> str:
     """One conversation. `cast` (the full memory view's facts and entities, and the current scene's character keys)
     draws a line per character over the turns (PHASE-32), outside the panel only."""
     t = lambda k: _t(lang, k)
@@ -1808,6 +1931,10 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
                          else ""), False))
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
+    if beliefs:  # extract-v21 (PHASE-66 part 5): `view["beliefs"]`, absent for every earlier chat
+        parts.append(("beliefs", t("beliefs"), len(beliefs), _beliefs_table(beliefs, lang), True))
+    if forgotten:
+        parts.append(("forgotten", t("forgotten"), len(forgotten), _forgotten_table(forgotten, lang), True))
     if items:
         parts.append(("items", t("items"), len(items), _items_table(items[:100], lang), True))
     if entities:
@@ -2011,6 +2138,11 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
                       _facts_table(takes_part, active, lang, anchors=not embed), True))
     if knows:
         parts.append(("knows", t("knows"), len(knows), knowledge(knows), True))
+    if believes := [b for b in view.get("beliefs") or () if me(b.get("subject_entity"))]:  # PHASE-66 part 5
+        parts.append(("beliefs", t("beliefs"), len(believes), _beliefs_table(believes, lang, anchors=not embed), True))
+    if forgot := [g for g in view.get("forgotten") or () if me(g.get("subject_entity"))]:
+        parts.append(("forgotten", t("forgotten"), len(forgot), _forgotten_table(forgot, lang, anchors=not embed),
+                      True))
     if hidden:
         parts.append(("hidden", t("hidden"), len(hidden), knowledge(hidden), True))
     if found:
