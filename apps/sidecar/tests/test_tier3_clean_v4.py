@@ -143,12 +143,15 @@ def test_a_normalizer_only_change_is_its_own_carry_on_class(db, monkeypatch):
     assert generations.classify(db, old.key, gen("clean-v4", context_turns=4)) == "version"
     assert generations.classify(db, old.key, gen("clean-v2")) == "version"
     assert generations.classify(db, old.key, gen("clean-v4", compiler="extract-v15", prompt="p15")) == "version"
-    # a second carry-on field is one more entry (any value: None), absent from every earlier key
-    assert generations.classify(db, old.key, gen(revision="r1")) == "version"
-    monkeypatch.setitem(generations.CARRY_FIELDS, "revision", None)
-    assert generations.classify(db, old.key, gen(revision="r1")) == "carry"
-    assert generations.classify(db, old.key, gen("clean-v4", revision="r1")) == "carry"
-    assert generations.classify(db, old.key, gen(revision="r1", prompt="p20b")) == "version"
+    # the second carry-on field is one more entry (PHASE-66 part 5: the revision marker, any value), absent from every
+    # earlier key; another field is still a version
+    assert generations.CARRY_FIELDS["revision"] is None
+    assert generations.classify(db, old.key, gen(revision=1)) == "carry"
+    assert generations.classify(db, old.key, gen("clean-v4", revision=1)) == "carry"
+    assert generations.classify(db, old.key, gen(revision=1, prompt="p20b")) == "version"
+    assert generations.classify(db, old.key, gen(marker=1)) == "version"
+    monkeypatch.setitem(generations.CARRY_FIELDS, "marker", None)
+    assert generations.classify(db, old.key, gen(marker=1)) == "carry"
 
 
 # --- the switch, end to end -----------------------------------------------------------------------------------------

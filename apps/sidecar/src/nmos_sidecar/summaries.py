@@ -107,6 +107,18 @@ def members_key(ids: list[UUID] | tuple[UUID, ...]) -> str:
     return hashlib.sha256("\n".join(str(i) for i in ids).encode()).hexdigest()[:32]
 
 
+# What a summary is written from and kept by (PHASE-66 part 5, owner decision 2026-11-25), as `extraction.REVISION` is
+# for a turn's rows: `revision` in the spec, a bump alone a carry-on (no window is summarized again; a summary of the
+# earlier value keeps serving, and whether it must be written again stays the secrets it listed: `unlisted`).
+# 0 (no field): the production base, Phase 64 (`cdf2c9a`).
+# 1 (Tier 1 and its review fixes), against the base:
+#   - OPEN SECRETS gives a secret with only an object as that object (`content`), and a summary records it so (an
+#     earlier record of the whole line still counts: `_legacy_key`); it lists the continue link's carried secrets;
+#   - the story prompt leaves out a scene that repeats a secret at the bar for a kept-from character present;
+#   - an empty `summary` fails its job instead of being stored as covering its turns.
+REVISION = 1
+
+
 def summarizer(settings: Settings) -> Generation | None:
     """The summarize generation the settings describe (credentials excluded), or None when off. Summaries use the
     extraction model and endpoint (PHASE-12 Q6)."""
@@ -117,6 +129,7 @@ def summarizer(settings: Settings) -> Generation | None:
         prompt=generations.fingerprint(SCENE_PROMPT + STORY_PROMPT), normalizer=normtext.active(),
         json_mode=settings.llm_json_mode, window=WINDOW, lag=LAG, message_chars=settings.extract_target_chars,
         **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
+        **generations.revision(REVISION),
     )
 
 

@@ -144,6 +144,20 @@ def prompt_of(version: str) -> str:
     return PROMPT_V2 if version == VERSION_V2 else PROMPT
 
 
+# The rules a canon read's answer becomes rows with (PHASE-66 part 5, owner decision 2026-11-25), as
+# `extraction.REVISION` is for a turn's: `revision` in the spec, a bump alone a carry-on (no text is read again: what no
+# canon generation has read whole is, `READ_ANY`). A read is reused for another chat only from the same key, so the first
+# chat to show an already read text after a bump pays for that read once.
+# 0 (no field): the production base, Phase 64 (`cdf2c9a`).
+# 1 (Tier 1 and its review fixes), against the base:
+#   - the answer goes through the turn rows' rules: polarity ("negated", "neg", "false", "no", JSON false negative; an
+#     unknown word parks the row pending), the model's own markers stripped and its rows capped at 40 (`own_items`),
+#     NUL characters stripped;
+#   - the persona and the card's fields are always read under the manifest's names (B7; a `plain` read made before
+#     stays served until one under the names is complete).
+REVISION = 1
+
+
 def generation(settings: Settings) -> Generation | None:
     """The canon generation the settings describe (credentials excluded), or None when off. It uses the extraction
     model and endpoint (PHASE-14 Q3)."""
@@ -155,7 +169,8 @@ def generation(settings: Settings) -> Generation | None:
         predicates=generations.fingerprint(repr(sorted((k, v) for k, v in REGISTRY.items() if k in PREDICATES))),
         normalizer=normtext.active(), json_mode=settings.llm_json_mode,
         part_chars=PART_CHARS, max_parts=MAX_PARTS,
-        **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature))
+        **generations.request_spec(settings.llm_extra_body, settings.llm_no_temperature),
+        **generations.revision(REVISION))
 
 
 def always(key: str) -> bool:

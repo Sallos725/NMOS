@@ -21,6 +21,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from base_rules import base_rules  # noqa: F401 -- autouse: the base's keys, without the revision marker (PHASE-66 part 5)
 from conftest import make_client
 from nmos_sidecar import extraction as X, generations, predicates as P, reveals, canonfacts, summaries
 from nmos_sidecar.config import Settings

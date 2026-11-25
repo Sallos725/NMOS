@@ -10,6 +10,7 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
+from base_rules import base_rules  # noqa: F401 -- autouse: the base's keys, without the revision marker (PHASE-66 part 5)
 from conftest import make_client
 from memeval import _sync, settings_for
 from nmos_sidecar import audit, canonfacts, extraction, packet, reveals, summaries, vectors
