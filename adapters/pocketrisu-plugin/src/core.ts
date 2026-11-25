@@ -744,7 +744,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // boundary refused before is not asked for again while the prompt still refuses it.
       const refusedAt = refusedTrim.get(chat.id);
       if (refusedAt && host.now() - refusedAt.at > REFUSED_TRIM_TTL_MS) refusedTrim.delete(chat.id);
-      const askTrim = k > 0 && canTrimPrompt(prompt, messages, scan) && !(refusedAt && host.now() - refusedAt.at
+      let askTrim = k > 0 && canTrimPrompt(prompt, messages, scan) && !(refusedAt && host.now() - refusedAt.at
         <= REFUSED_TRIM_TTL_MS && trimPrompt(prompt, messages, refusedAt.id, scan).reason !== null);
       // Internal key only (not a cross-language hash): plain JSON keeps it linear and cheap.
       // The token is hashed with the rest, never kept as it is.
@@ -759,12 +759,22 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // background. Observed for a cached packet too, whose canon may have changed.
       const canon = await observeCanon(chat, prompt, deadline);
       const canonKey = JSON.stringify([canon?.snapshot?.id ?? null, canon?.held ?? []]);
-      const cached = cache.get(key);
       // A packet built with other canon (an entry, the card or the note edited) is stale; a cached miss holds none.
-      const hit = cached && cached.expires > host.now() && (cached.failed || cached.canon === canonKey)
-        ? finishPrompt(cached.packet, k > 0 ? (cached.failed ? FAILED_TRIM : cached.trim ?? FAILED_TRIM) : null) : null;
-      // A cached boundary this prompt refuses (the same state, another layout): fetched again below.
-      if (hit?.refused) cache.delete(key);
+      const lookup = (at: string) => {
+        const entry = cache.get(at);
+        return { cached: entry, hit: entry && entry.expires > host.now() && (entry.failed || entry.canon === canonKey)
+          ? finishPrompt(entry.packet, k > 0 ? (entry.failed ? FAILED_TRIM : entry.trim ?? FAILED_TRIM) : null) : null };
+      };
+      let { cached, hit } = lookup(key);
+      // A cached boundary this prompt refuses (the same state, another layout): no boundary is asked for in this
+      // request; the packet without a cut is served from the cache, else fetched below and kept (a failure too) under
+      // the key the next request will have.
+      if (hit?.refused) {
+        cache.delete(key);
+        askTrim = false;
+        key = await keyOf(false);
+        ({ cached, hit } = lookup(key));
+      }
       if (cached && hit && !hit.refused) {
         const known = conversations.get(chat.id);
         if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
@@ -840,7 +850,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         done = finishPrompt(got.packet, got.decision);
       }
       const { packet, memory, vectors, decision, coverage } = got;
-      if ((droppedAt.get(chat.id) ?? 0) <= dropsBefore) {
+      // A non-fresh answer (`stale`: the head moved past the commit asked for) is not an empty packet: not remembered.
+      if (retrieved.freshness === 'fresh' && (droppedAt.get(chat.id) ?? 0) <= dropsBefore) {
         remember(key, packet, packet ? SUCCESS_TTL_MS : EMPTY_TTL_MS, false, memory, vectors, canonKey, decision,
           coverage, chat.id);
       }
