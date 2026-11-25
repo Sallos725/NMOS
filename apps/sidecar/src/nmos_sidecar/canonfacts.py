@@ -181,8 +181,19 @@ NAMES_TAG = """left(encode(sha256(convert_to(
 NAMED = "coalesce((sr.metadata->>'named')::boolean, sr.content ~* %(macro)s)"
 # The window suffix of a read of entry `e` (its key) of revision `sr`: the manifest's names for the persona, the card's
 # fields and a text with the macros; `plain` otherwise. `wtag` is the same in Python.
-WTAG = ("CASE WHEN e.key = 'persona' OR e.key LIKE 'card:%%' OR " + NAMED
-        + " THEN e.tag ELSE 'plain' END AS wtag")
+NTAG = "CASE WHEN e.key = 'persona' OR e.key LIKE 'card:%%' OR " + NAMED + " THEN e.tag ELSE 'plain' END"
+WTAG = NTAG + " AS wtag"
+# Owner decision 2026-11-25 (carry forward): a persona or card text without the macros was read `plain` before Tier 1
+# B7. Such a read stays served, and stays the read of its generation, until a read under the names exists: B7 changed
+# what a new read is, not what an earlier one was worth (no paid re-read on deploy). `CARRY`: whether entry `e` of
+# revision `sr` may have one. Never a text with the macros, a lorebook entry or the note.
+CARRY = "((e.key = 'persona' OR e.key LIKE 'card:%%') AND NOT " + NAMED + ")"
+# The window suffix a read of generation %(gen)s has: the carried `plain` while that generation has a `plain` read of
+# the revision and none under the names (`carried_tag` is the same in Python).
+_READ_OF = ("EXISTS (SELECT 1 FROM extraction y WHERE y.source_revision_id = sr.id AND y.extractor_key = %(gen)s"
+            " AND y.discarded_at IS NULL AND split_part(y.window_hash, ':', 3) = {tag})")
+GTAG = ("CASE WHEN " + CARRY + " AND NOT " + _READ_OF.format(tag="e.tag") + " AND " + _READ_OF.format(tag="'plain'")
+        + " THEN 'plain' ELSE " + NTAG + " END AS wtag")
 
 # The revisions a canon generation reads, of each chat's canon in force: the card's fields, the note and the persona,
 # and each lorebook entry some recorded request's prompt held; with the window suffix a read of it has now.
@@ -202,7 +213,7 @@ held AS (
     CROSS JOIN LATERAL jsonb_array_elements_text(t.canon_held) k(key)
     WHERE t.canon_held <> '[]'::jsonb AND k.key LIKE 'lore:%%'
 )
-SELECT e.conv, e.key, sr.id AS rid, """ + WTAG + """
+SELECT e.conv, e.key, sr.id AS rid, """ + GTAG + """, """ + NTAG + """ AS ntag, """ + CARRY + """ AS carry
 FROM e
 JOIN source_object so ON so.conversation_id = e.conv AND so.host_logical_id = 'canon:' || e.key
                      AND so.source_kind = 'canon'
@@ -221,12 +232,17 @@ WANTED = ("SELECT f.* FROM (" + IN_FORCE + ") f CROSS JOIN LATERAL " + READ
           + " rd WHERE rd.parts IS NULL OR rd.calls < rd.parts")
 
 # Whether any canon generation has read the text whole (PHASE-57 A3): a model change carried on, a sync or a startup
-# reads only what none has. A read the active generation stopped between parts still goes on.
+# reads only what none has. A read the active generation stopped between parts still goes on. Each generation's read is
+# the one under the names, else its carried `plain` one (CARRY).
 READ_ANY = """(SELECT coalesce(bool_or(r.n >= r.parts), false) AS complete FROM (
-               SELECT count(*) AS n, max((x.coverage->>'parts')::int) AS parts
+               SELECT count(*) AS n, max((x.coverage->>'parts')::int) AS parts,
+                      split_part(x.window_hash, ':', 3) <> f.ntag AS carried,
+                      bool_or(split_part(x.window_hash, ':', 3) = f.ntag) OVER (PARTITION BY x.extractor_key) AS named
                FROM extraction x JOIN projection_generation g ON g.key = x.extractor_key AND g.kind = 'canon'
                WHERE x.source_revision_id = f.rid AND x.discarded_at IS NULL
-                 AND split_part(x.window_hash, ':', 3) = f.wtag GROUP BY x.extractor_key) r)"""
+                 AND (split_part(x.window_hash, ':', 3) = f.ntag
+                      OR (f.carry AND split_part(x.window_hash, ':', 3) = 'plain'))
+               GROUP BY x.extractor_key, split_part(x.window_hash, ':', 3)) r WHERE NOT (r.carried AND r.named))"""
 WANTED_ANY = ("SELECT f.* FROM (" + IN_FORCE + ") f CROSS JOIN LATERAL " + READ + " rd CROSS JOIN LATERAL " + READ_ANY
               + " ra WHERE (rd.parts IS NOT NULL AND rd.calls < rd.parts) OR NOT ra.complete")
 
@@ -270,6 +286,18 @@ def name_dependent(key: str, named_: bool) -> bool:
 
 def wtag(key: str, named_: bool, entries: list[dict[str, Any]]) -> str:
     return names_tag(entries) if name_dependent(key, named_) else "plain"
+
+
+def carried_tag(conn: psycopg.Connection, rid: UUID, gen: str, key: str, named_: bool, tag: str) -> str:
+    """The window suffix generation `gen`'s read of revision `rid` has (GTAG in SQL): `plain` for a persona or card
+    text without the macros that `gen` read `plain` and has not read under the names (`tag`), else `tag`."""
+    if named_ or not (key == "persona" or key.startswith("card:")) or tag == "plain":
+        return tag
+    seen = conn.execute(
+        "SELECT coalesce(bool_or(split_part(window_hash, ':', 3) = %s), false) AS named,"
+        " coalesce(bool_or(split_part(window_hash, ':', 3) = 'plain'), false) AS plain FROM extraction"
+        " WHERE source_revision_id = %s AND extractor_key = %s AND discarded_at IS NULL", (tag, rid, gen)).fetchone()
+    return "plain" if seen["plain"] and not seen["named"] else tag
 
 
 def manifest_names(conn: psycopg.Connection, conv: UUID,
@@ -328,9 +356,10 @@ def build_prompt(key: str, metadata: dict[str, Any], character: str | None, user
     return "\n".join(lines)
 
 
-def _source(conn: psycopg.Connection, rid: UUID) -> dict[str, Any] | None:
+def _source(conn: psycopg.Connection, rid: UUID, gen: str | None = None) -> dict[str, Any] | None:
     """A canon revision with its key and what the canon in force says of it; None when it is not in force now (a newer
-    text replaced it before its job ran)."""
+    text replaced it before its job ran). With `gen`, its window suffix is the one that generation's read has
+    (`carried_tag`)."""
     row = conn.execute(
         "SELECT sr.id, sr.revision_hash, sr.content, sr.metadata, so.host_logical_id, so.conversation_id, m.entries"
         " FROM source_revision sr JOIN source_object so ON so.id = sr.source_object_id AND so.source_kind = 'canon'"
@@ -348,9 +377,11 @@ def _source(conn: psycopg.Connection, rid: UUID) -> dict[str, Any] | None:
     named_ = (row["metadata"] or {}).get("named")
     if named_ is None:
         named_ = bool(MACRO.search(row["content"]))
+    tag = wtag(key, bool(named_), row["entries"])
+    if gen is not None:
+        tag = carried_tag(conn, row["id"], gen, key, bool(named_), tag)
     return {"id": row["id"], "key": key, "conversation_id": row["conversation_id"],
-            "metadata": entry.get("metadata") or {}, "character": character, "user": user,
-            "wtag": wtag(key, bool(named_), row["entries"])}
+            "metadata": entry.get("metadata") or {}, "character": character, "user": user, "wtag": tag}
 
 
 def input_of(src: dict[str, Any], piece: str, part: int, count: int) -> str:
@@ -386,7 +417,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
     if job["payload"].get("generation") != gen.key:
         raise ValueError(f"job generation {job['payload'].get('generation')} is not handler generation {gen.key}")
     rid = UUID(job["payload"]["revision_id"])
-    src = _source(conn, rid)
+    src = _source(conn, rid, gen.key)
     if src is None:
         return "obsolete"
     text = named(normtext.get(conn, rid)["clean_content"], src["character"], src["user"])
@@ -483,22 +514,30 @@ e AS (
     FROM m CROSS JOIN LATERAL jsonb_array_elements(m.entries) WITH ORDINALITY AS t(x, ord)
 ),
 r AS (
-    SELECT e.key, e.ord, sr.id AS rid, """ + WTAG + """
+    SELECT e.key, e.ord, sr.id AS rid, """ + WTAG + """, """ + CARRY + """ AS carry
     FROM e JOIN source_object so ON so.conversation_id = %(conv)s AND so.host_logical_id = 'canon:' || e.key
                                 AND so.source_kind = 'canon'
     JOIN source_revision sr ON sr.source_object_id = so.id AND sr.revision_hash = e.hash
     WHERE EXISTS (SELECT 1 FROM extraction x WHERE x.source_revision_id = sr.id)
 ),
-live AS (
-    SELECT r.key, r.ord, r.rid, x.id AS xid, x.window_hash, x.extractor_key, x.compiler_version,
-           first_value(x.extractor_key) OVER (PARTITION BY r.rid
-               ORDER BY x.extractor_key = %(gen)s DESC, g.activated_at DESC, g.key) AS chosen
-    FROM r JOIN extraction x ON x.source_revision_id = r.rid AND split_part(x.window_hash, ':', 3) = r.wtag
+reads AS (  -- a generation's read under the names, else its carried `plain` one (CARRY)
+    SELECT r.key, r.ord, r.rid, x.id AS xid, x.window_hash, x.extractor_key, x.compiler_version, g.activated_at,
+           split_part(x.window_hash, ':', 3) <> r.wtag AS carried,
+           bool_or(split_part(x.window_hash, ':', 3) = r.wtag) OVER (PARTITION BY r.rid, x.extractor_key) AS named
+    FROM r JOIN extraction x ON x.source_revision_id = r.rid
+                            AND (split_part(x.window_hash, ':', 3) = r.wtag
+                                 OR (r.carry AND split_part(x.window_hash, ':', 3) = 'plain'))
     JOIN projection_generation g ON g.key = x.extractor_key AND g.kind = 'canon'
     -- as of `at` for a replay; with no `at`, as of the request's transaction start (now(), the database's clock and
     -- the instant its trace records), so an extraction committed during the request is read by neither it nor a replay
     WHERE x.created_at <= coalesce(%(at)s::timestamptz, now())
       AND (x.discarded_at IS NULL OR x.discarded_at > coalesce(%(at)s::timestamptz, now()))
+),
+live AS (
+    SELECT d.key, d.ord, d.rid, d.xid, d.window_hash, d.extractor_key, d.compiler_version,
+           first_value(d.extractor_key) OVER (PARTITION BY d.rid
+               ORDER BY d.extractor_key = %(gen)s DESC, d.activated_at DESC, d.extractor_key) AS chosen
+    FROM reads d WHERE NOT (d.carried AND d.named)
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence,
        a.evidence, a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
