@@ -493,3 +493,78 @@ def test_an_earlier_chat_without_beliefs_has_neither_new_key(migrated: str):
         v21.run(c)
         view = v21.view()
     assert "beliefs" not in view and "forgotten" not in view
+
+
+# --- 5. the owner's repairs on the new rows, and on a carried fact ------------------------------------------------
+
+def post(c, cid: str, **body: Any) -> dict[str, Any]:
+    res = c.post(f"/v1/conversations/{cid}/repairs", json=body)
+    assert res.status_code == 200, (body, res.status_code, res.text)
+    return res.json()
+
+
+def test_retract_correct_lock_and_restore_reach_the_ontologys_rows(migrated: str):
+    v21 = Chat(migrated, ONTO)
+    with v21.client() as c:
+        v21.run(c)
+        view = v21.view()
+        # retract a death: the state before it (none) is current again, the wound stays
+        vital = current(view, "vital_status")[0]
+        assert post(c, v21.cid, kind="fact_retract", item=str(vital["id"]))["applied"] == str(vital["id"])
+        after = v21.view()
+        assert values(after, "vital_status") == {("리안", None, "사망", "positive")}
+        assert values(after, "has_status", "리안") == {("리안", None, "부상", "positive")}
+        # correct a rank at its own turn, then lock the correction: a later rank in the same group is held off
+        rank = next(f for f in current(after, "holds_rank") if f["object"] == "길드")
+        post(c, v21.cid, kind="fact_correct", item=str(rank["id"]), new_value="길드장")
+        owner = next(f for f in current(v21.view(), "holds_rank") if f["object"] == "길드")
+        assert owner["owner"] and owner["value"] == "길드장"
+        post(c, v21.cid, kind="fact_lock", item=str(owner["id"]))
+        v21.script["t3"] = [a("하나", "holds_rank", "길드", "평회원", ot=G)]
+        v21.turn("t3")
+        v21.run(c)
+        locked = v21.view()
+        assert next(f for f in current(locked, "holds_rank") if f["object"] == "길드")["value"] == "길드장"
+        assert any(x["kind"] == "locked" and x["against"]["value"] == "평회원" for x in locked["conflicts"])
+        # one role of several toward one counterpart is retracted alone
+        role = next(f for f in current(locked, "role_toward") if f["value"] == "비서")
+        post(c, v21.cid, kind="fact_retract", item=str(role["id"]))
+        assert ("하나", "도윤", "비서", "positive") not in values(v21.view(), "role_toward")
+        assert ("하나", "기사단", "후원자", "positive") in values(v21.view(), "role_toward")
+        # a re-extraction that drops the home: listed, restored with its marks
+        c.post(f"/v1/conversations/{v21.cid}/rebuild")
+        drain(migrated, model_for(v21.script, frozenset({("하나", None)})))
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            lost = dropped.find(conn, v21.head, v21.key, v21.view())
+        home = next(d for d in lost if d["predicate"] == "lives_in")
+        post(c, v21.cid, kind="fact_restore", item=str(home["id"]))
+        restored = current(v21.view(), "lives_in")[0]
+        assert restored["owner"] and restored["object"] == "저택" and restored["knowledge_scope"] == "public"
+
+
+def test_a_carried_fact_is_retracted_and_corrected_through_the_api(migrated: str):
+    """The Wave 1 leftover: `match_fact` read turn -1 as canon's, so a repair of a carried fact answered 422."""
+    src = Chat(migrated, {"t0": [a("하나", "located_in", "항구", None, ot=PL), a("하나", "lives_in", "저택", None, ot=PL),
+                                 a("하나", "feels_toward", "도윤", "그리움", condition=PRIV)]}, name="w3-src")
+    with src.client() as c:
+        src.run(c)
+        src.view()
+        dst = Chat(migrated, {"d0": []}, name="w3-dst")
+        dst.run(c)
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            carry.link(conn, dst.cid, src.cid, "continue", None, carry.Keys(extractor=src.key))
+            conn.commit()
+            carried = carry.target_rows(carry.in_force(conn, dst.cid))
+        view = dst.view(carried=carried)
+        place = next(f for f in current(view, "located_in") if f.get("carried"))
+        feel = next(f for f in current(view, "feels_toward") if f.get("carried"))
+        assert feel["condition"] == PRIV
+        out = post(c, dst.cid, kind="fact_retract", item=str(place["id"]))
+        assert out["applied"] == str(place["id"]) and out["repair"]["target"]["carried"] == carried.link
+        out = post(c, dst.cid, kind="fact_correct", item=str(feel["id"]), new_value="미련")
+        assert out["applied"] == str(feel["id"])
+        after = dst.view(carried=carried)
+        assert not current(after, "located_in")
+        fixed = current(after, "feels_toward")[0]
+        assert fixed["value"] == "미련" and fixed["owner"] and fixed["condition"] == PRIV
+        assert values(after, "lives_in") == {("하나", "저택", None, "positive")}
