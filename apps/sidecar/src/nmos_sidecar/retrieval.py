@@ -50,9 +50,12 @@ from .keywords import keywords, particle_lookup
 from . import carry
 from .carry import Carried
 from .packet import CARRY_POLICIES, CAST_EXTRA
-from .predicates import address_slot
+from .predicates import CONDITIONED_PREDICATES, address_slot
+from .repairs import slot as condition_slot
+from .facts import _knowledge_attrs, _ref as assertion_ref
+from .packet import SLOT_BUNDLE
 from .facts import SITUATIONAL_ADDRESS_MAX, earlier, first as first_version
-from xml.sax.saxutils import escape as xml_escape
+from xml.sax.saxutils import escape as xml_escape, quoteattr
 
 CANDIDATE_LIMIT = 50
 # packet-v17 (PHASE-39 Q3b): a message that asks how a status value changed: the past (HISTORY_CUE), when, how much,
@@ -1265,6 +1268,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                               if not now_or_kept(f))
                 ranked = [f for f in ranked if now_or_kept(f)]
             facts = _grown(ranked[:options.facts_limit], ranked, fill_facts)
+            if v21:  # packet-v21: a conditioned fact's other slots come with it (PHASE-66 read side)
+                facts = with_slot_siblings(facts, view["facts"], in_context, r)
             persona_added.intersection_update(str(f["id"]) for f in facts)
             if changes:
                 selected = list(facts)
@@ -1293,10 +1298,20 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             g.lead = _moded([entry_v21(f, _private(f, g.cast, r, v21), before, cause, marks, shown21, happened=happened)
                              for f in facts if f["predicate"] in STANDING],
                             facts, g, r, options)
+            if v21:
+                g.lead = bundled(g.lead, facts, r)
             g.facts = _moded([entry_v21(f, _private(f, g.cast, r, v21), before, cause, marks, shown21, happened=happened)
                               for f in facts if f["predicate"] not in STANDING]
                              + [claim_v21(c, _private(c, g.cast, r, v21), cause, shown21) for c in claims], facts + claims, g, r,
                              options)
+            if v21:
+                g.facts = bundled(g.facts, facts, r)
+                g.named |= named_cousins(facts, query, r, aliases)
+                # what a character believes and what they no longer remember, after the facts and claims (PHASE-66)
+                g.facts += belief_lines(g, view, r, query, previous_ai, in_context, options, aliases)
+                forgot = forgot_lines(g, view, r, options)
+                g.lead += [line for line in forgot if line.marks.get("class") == "lead"]
+                g.facts += [line for line in forgot if line.marks.get("class") != "lead"]
             # packet-v20 (PHASE-60 S8): who told whom, after the ordinary facts and claims; chosen after them, so it
             # changes neither their selection nor the fill decision
             g.facts += told_lines(g, view, r, query, previous_ai, in_context, options, aliases, rest)
@@ -1800,6 +1815,165 @@ def present_leaks(text: str | None, secrets: list[dict[str, Any]] | None,
     return [s for s in summaries.leaks(text, secrets, present) if any(norm(n) in present for n in s.get("open") or ())]
 
 
+def slot_key(f: Mapping[str, Any]) -> tuple | None:
+    """packet-v21: the (subject, predicate, object) whose condition slots go together (PHASE-66: a conditioned
+    predicate's rows, one per `repairs.slot`), or None for any other row."""
+    if f.get("predicate") not in CONDITIONED_PREDICATES:
+        return None
+    side = lambda role: (f.get(f"{role}_entity") or {}).get("id") or norm(f.get(role) or "")  # noqa: E731
+    return (side("subject"), f["predicate"], side("object"))
+
+
+def slot_siblings(f: Mapping[str, Any], rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`f` and the rows of its `slot_key` in `rows` when one of them holds in a condition (not the default slot), the
+    newest first after `f`, situational slots at most `facts.SITUATIONAL_ADDRESS_MAX` (as addresses are); [f] when
+    nothing is conditioned."""
+    key = slot_key(f)
+    if key is None:
+        return [f]  # type: ignore[list-item]
+    group = [x for x in rows if slot_key(x) == key and x.get("polarity") != "negative"]
+    if not any(condition_slot(x) != ("default",) for x in group) or len(group) < 2:
+        return [f]  # type: ignore[list-item]
+    group.sort(key=lambda x: (x is not f, -x["position"]))
+    out, situational = [], 0
+    for x in group:
+        if condition_slot(x)[0] == "situational":
+            if situational >= SITUATIONAL_ADDRESS_MAX and x is not f:
+                continue
+            situational += 1
+        out.append(x)
+    return out
+
+
+def with_slot_siblings(selected: list[dict[str, Any]], rows: list[dict[str, Any]], in_context: set[str],
+                       r: Any) -> list[dict[str, Any]]:
+    """packet-v21: the selected facts with each conditioned one's other slots right after it (a public "friend" without
+    its private "lover" would mislead), none whose message the prompt holds; nothing else changes."""
+    out: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    live = [x for x in rows if x.get("host_logical_id") not in in_context or x.get("held_off")]
+    for f in selected:
+        for x in slot_siblings(f, live) if id(f) not in seen else ():
+            if id(x) not in seen:
+                seen.add(id(x))
+                out.append(x)
+    return out
+
+
+def bundled(lines: list[Line], rows: list[dict[str, Any]], r: Any) -> list[Line]:
+    """packet-v21: each line of a conditioned fact whose other slots are offered with it carries one bundle mark
+    (`packet.SLOT_BUNDLE`), so the compiler places them together or not at all."""
+    by_id = {x["id"]: x for x in rows}
+    keys = [slot_key(by_id[line.ref.get("assertion")]) if line.ref.get("assertion") in by_id else None
+            for line in lines]
+    counts: dict[Any, int] = {}
+    for k in keys:
+        if k is not None:
+            counts[k] = counts.get(k, 0) + 1
+    return [dataclasses.replace(line, marks={**line.marks, SLOT_BUNDLE: f"slot:{k}"})
+            if k is not None and counts[k] > 1 else line for line, k in zip(lines, keys)]
+
+
+COUSINS = frozenset({"vital_status", "lives_in", "holds_rank", "cover_identity", "disguised_as", "contained_in"})
+
+
+def named_cousins(facts: list[dict[str, Any]], query: str, r: Any,
+                  aliases: dict[str, frozenset[str]] | None) -> set[str]:
+    """packet-v21: extract-v21's own predicates a name alone names, as it names its older cousins (`NOW`, `STANDING`):
+    the selected facts of COUSINS whose subject the message names (PHASE-34 Q1: required)."""
+    said = " ".join(query.casefold().split())
+    return {str(f["id"]) for f in facts if f["predicate"] in COUSINS
+            and any(n in said for n in _side_names(f, "subject", r, aliases))}
+
+
+BELIEFS_MAX = 2  # packet-v21: lines of what someone believes, at most
+FORGOT_MAX = 2  # packet-v21: lines of what someone no longer remembers, at most
+
+
+def belief_line(b: dict[str, Any]) -> str:
+    """A held belief as its own line (PHASE-66): who believes it and what, with the row's knowledge marks; never a
+    <Fact>."""
+    turn = b["turn"] if b.get("turn") is not None else b["position"]
+    who = b.get("subject") or "?"
+    return (f"    <Belief by={quoteattr(who)} turn=\"{turn}\"{_knowledge_attrs(b)}>"
+            f"{xml_escape(who + ' believes: ' + (b.get('value') or ''))}</Belief>")
+
+
+def belief_lines(g: Gathered, view: dict[str, Any], r: Any, query: str, previous_ai: str, in_context: set[str],
+                 options: RecallOptions, aliases: dict[str, frozenset[str]] | None = None) -> list[Line]:
+    """packet-v21: at most BELIEFS_MAX held beliefs (`view["beliefs"]`, `status == "held"`; an ended one never) of a
+    character in the scene or named, ranked as facts are, then the newest. Each is a <Belief> line: what that
+    character believes, never narration. Private as a fact of that character's mind is (a strict chat keeps one kept
+    from no one readable in <Private>, as an unspoken feeling, `quiet_feeling`); one that repeats a secret kept from
+    someone present is left out (`secret_gate`)."""
+    if r is None:
+        return []
+    present = scene.names(g.cast, r, aliases)
+    keys = set(g.cast)
+    held = [b for b in view.get("beliefs") or () if b.get("status") == "held" and not b.get("carried")
+            and b.get("subject") and b.get("host_logical_id") not in in_context]
+    held = [b for b in held if scene.key(r, b["subject"]) in keys
+            or any(n in norm(query) for n in _side_names(b, "subject", r, aliases))]
+    if not held:
+        return []
+    ranked = relevant_facts(held, query, previous_ai, in_context, len(held), persona=r.persona_names, present=present,
+                            aliases=aliases, named=g.named)
+    chosen = {id(b) for b in ranked}
+    ranked += sorted((b for b in held if id(b) not in chosen), key=lambda b: b["position"], reverse=True)
+    picked: list[dict[str, Any]] = []
+    for b in ranked:
+        if len(picked) >= BELIEFS_MAX:
+            break
+        if present_leaks(b.get("value"), view.get("secrets") or [], present):
+            if options.policy in LABEL_POLICIES:
+                g.hidden_entries.append(hidden_entry("belief", {"assertion": b["id"]}, b.get("turn"), "secret_gate"))
+            continue
+        picked.append(b)
+    lines = [_scoped(Line("belief", belief_line(b), assertion_ref(b), b.get("turn"),
+                          f"{b['subject']} believes: {b.get('value') or ''}", b.get("value") or "",
+                          {"hidden_from": list(b["hidden_from"])} if b.get("hidden_from") else {},
+                          _private(b, g.cast, r, True)), b, True) for b in picked]
+    return _moded(lines, picked, g, r, options)
+
+
+def forgot_lines(g: Gathered, view: dict[str, Any], r: Any, options: RecallOptions) -> list[Line]:
+    """packet-v21: what a character in the scene no longer remembers (`view["forgotten"]`, each entry's `withdrew`),
+    at most FORGOT_MAX lines, the newest first, as <Forgot> lines. Each takes the budget class of the fact it withdrew
+    (`marks["class"]`: lead for how two stand, facts otherwise). A withdrawn text that repeats a secret kept from
+    someone present is left out (`secret_gate`). Private and moded as the forgetting row itself is."""
+    if r is None or not view.get("forgotten"):
+        return []
+    present = scene.names(g.cast, r)
+    out: list[Line] = []
+    rows: list[dict[str, Any]] = []
+    for e in view["forgotten"]:
+        if len(out) >= FORGOT_MAX:
+            break
+        who = e.get("who") or e.get("subject")
+        if not who or e.get("carried") or scene.key(r, who) not in g.cast:
+            continue
+        for w in e.get("withdrew") or ():
+            if len(out) >= FORGOT_MAX:
+                break
+            text = w.get("text") or ""
+            if not text:
+                continue
+            if present_leaks(text, view.get("secrets") or [], present):
+                if options.policy in LABEL_POLICIES:
+                    g.hidden_entries.append(hidden_entry("forgot", {"assertion": e["id"], "withdrew": w.get("id")},
+                                                         e.get("turn"), "secret_gate"))
+                continue
+            turn = e["turn"] if e.get("turn") is not None else e.get("position")
+            xml = (f"    <Forgot by={quoteattr(who)} turn=\"{turn}\"{_knowledge_attrs(e)}>"
+                   f"{xml_escape(who + ' does not remember: ' + text)}</Forgot>")
+            ref = {**assertion_ref(e), "withdrew": w.get("id")}
+            out.append(_scoped(Line("forgot", xml, ref, e.get("turn"), f"{who} does not remember: {text}", text,
+                                    {"class": "lead" if w.get("predicate") in STANDING else "facts"},
+                                    _private(e, g.cast, r, True)), e, True))
+            rows.append(e)
+    return _moded(out, rows, g, r, options)
+
+
 def public_except(f: Mapping[str, Any]) -> bool:
     """An extract-v21 row everyone knows but the characters in `hidden_from` (`knowledge_scope = public_except`; stored
     as `limited`, PHASE-66)."""
@@ -1895,7 +2069,8 @@ def entry_v21(f: dict[str, Any], private: bool, before: bool, cause: bool, marks
 
 
 CAST_PEERS = 2  # packet-v21: feelings toward and forms of address for other scene characters, per <Cast> group
-CAST_PREDICATES_V21 = (*CAST_PREDICATES, "addresses")
+CAST_PREDICATES_V21 = (*CAST_PREDICATES, "addresses", "vital_status", "holds_rank", "cover_identity")
+CAST_ONTOLOGY = ("vital_status", "holds_rank", "cover_identity")  # packet-v21: one each, the newest, as extras
 
 
 def cast_facts_v21(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, Any]], bool],
@@ -1910,6 +2085,16 @@ def cast_facts_v21(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, 
     newest = sorted((f for f in facts if f.get("polarity") != "negative" and f.get("object")
                      and f.get("subject_type") in (None, "character")), key=lambda f: f["position"], reverse=True)
     extra: list[dict[str, Any]] = []
+    # a pick with other condition slots (extract-v21): all its slots go together, as an extra bundle
+    for f in list(pick):
+        group = slot_siblings(f, facts)
+        if len(group) > 1:
+            pick.remove(f)
+            extra += [x for x in group if x not in extra]
+    for p in CAST_ONTOLOGY:  # whether they live, their rank, their cover: the newest of each
+        rows = sorted((f for f in facts if f["predicate"] == p and f.get("polarity") != "negative"),
+                      key=lambda f: f["position"], reverse=True)
+        extra += rows[:1]
     seen: set[str] = set()
     for f in newest:
         if f["predicate"] == "feels_toward" and to_cast(f) and not to_persona(f) and norm(f["object"]) not in seen \
@@ -2039,7 +2224,8 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
         return [entry_v21(f, False, before, cause, options.history_marks, shown_v21, happened=happened)
                 for f in pick] + [thread_entry(t, happened=happened) for t in goals[:CAST_GOALS]] + [
             _extra(entry_v21(f, False, before, cause, options.history_marks, shown_v21, happened=happened),
-                   f"addresses:{norm(f['object'])}" if f["predicate"] == "addresses" else True)
+                   f"addresses:{norm(f['object'])}" if f["predicate"] == "addresses"
+                   else (f"slot:{slot_key(f)}" if len(slot_siblings(f, more)) > 1 else True))
             for f in more]
 
     extra = 0
@@ -2578,7 +2764,7 @@ def quiet_feeling(row: Mapping[str, Any]) -> bool:
     """packet-v21: a feeling its holder keeps to themselves (`feels_toward`, limited, kept from no one by name), not a
     secret the story plots: strict mode leaves it readable in <Private>, since an opaque <Secret> would leave the model
     playing that character without their own feeling. Never a previous timeline's line (a regression row)."""
-    return (row.get("predicate") == "feels_toward" and row.get("knowledge") == "limited"
+    return (row.get("predicate") in ("feels_toward", "believes") and row.get("knowledge") == "limited"
             and not row.get("hidden_from") and not row.get("timeline"))
 
 

@@ -45,6 +45,15 @@ CARRIED_NOTE = (" source=\"carried\" marks what an earlier chat this one continu
 REGRESSION_MARK = "<Regression "
 REGRESSION_NOTE = (" A Regression group is what only the characters in remembered_by remember of a previous timeline of"
                    " this story: nobody else knows it, and it may not hold now.")
+# packet-v21 (PHASE-65, extract-v21's lines): what a character believes, what they no longer remember, and a fact
+# everyone knows but those it is kept from
+BELIEF_MARK = "<Belief "
+BELIEF_NOTE = (" A Belief is what that character believes: it may be false, and it is not what happened. Nobody but"
+               " that character acts on it as true.")
+FORGOT_MARK = "<Forgot "
+FORGOT_NOTE = " A Forgot line says that character no longer remembers it; others who knew it still do."
+PUBLIC_EXCEPT_MARK = 'knowledge="public_except"'
+PUBLIC_EXCEPT_NOTE = " knowledge=\"public_except\" is known to everyone except those in hidden_from."
 # Added to the Note only when a kept line uses the mark (ADR 0013), so other packets stay as they were.
 NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly not, or no longer, true."),
                ("<Claim ", " A Claim is what that character said, not established truth."),
@@ -74,7 +83,11 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                (HAPPENED_MARK, HAPPENED_NOTE),
                (TOLD_MARK, TOLD_NOTE),
                (CARRIED_MARK, CARRIED_NOTE),
-               (REGRESSION_MARK, REGRESSION_NOTE))
+               (REGRESSION_MARK, REGRESSION_NOTE),
+               # packet-v21 only (`_V20_MARKS` gates these too)
+               (BELIEF_MARK, BELIEF_NOTE),
+               (FORGOT_MARK, FORGOT_NOTE),
+               (PUBLIC_EXCEPT_MARK, PUBLIC_EXCEPT_NOTE))
 MAX_EXCERPT_CHARS = 480
 # packet-v10 grows an excerpt to at most this many sentences (owner, 2026-09-30): growing to the whole length brought
 # back more values the story had since replaced (docs/perf/lexical-recall.md, "Step 4"); packet-v11 lifts the cap for a
@@ -410,7 +423,8 @@ CARRY_POLICIES = frozenset({"packet-v20", "packet-v21"})  # a request reads the 
 # and every earlier policy compile exactly as they did (ADR 0027). Not the default until a replay measures it.
 V21_POLICIES = frozenset({"packet-v21"})
 # The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
-_V20_MARKS = {GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES,
+_V20_MARKS = {BELIEF_MARK: V21_POLICIES, FORGOT_MARK: V21_POLICIES, PUBLIC_EXCEPT_MARK: V21_POLICIES,
+              GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES,
               HAPPENED_MARK: HAPPENED_POLICIES, TOLD_MARK: TOLD_POLICIES, CARRIED_MARK: CARRY_POLICIES,
               REGRESSION_MARK: CARRY_POLICIES}
 STATE_HISTORY_MAX = 6  # changes on one <StateHistory> line
@@ -422,7 +436,8 @@ FILL_BASE, FILL_MAX, FILL_FACTS_MAX = 2000, 4.0, 2.0  # the budget recall is siz
 STORY_SHARE = 0.3  # packet-v8: <Story> may take at most this share of the budget inside the frame (PHASE-12 Q5)
 RESTATES = 0.6  # packet-v4: a claim this close to a fact of the same head says it again (ADR 0019's match)
 # What the memory budget is for, and how far a suggested budget may go (ADR 0036).
-MEMORY_KINDS = frozenset({"state", "state_history", "thread", "fact", "claim", "secret", "summary"})
+MEMORY_KINDS = frozenset({"state", "state_history", "thread", "fact", "claim", "secret", "summary",
+                          "belief", "forgot"})  # the last two: packet-v21 only
 FIT_STEP, FIT_CAP = 100, 8000  # the panel's largest suggestion: recall grows up to it (ADR 0049; 6,000 until then)
 # The pilot's rule, shortened to fit a 600-token Korean packet (47 estimated tokens instead of 88).
 PRIVATE_NOTE = (" Private: only its holders (known_by) know it. Others must not mention, hint at or act on it; holders"
