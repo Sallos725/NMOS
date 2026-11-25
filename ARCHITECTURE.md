@@ -911,6 +911,27 @@ new cap. "Read the cut turns again" queues, per chat and on request, one extract
 (and the scene summaries cut the same way, when asked), after showing their count and a range of input tokens; the
 earlier readings stay. An image without this must not meet a database left at another cap: the cap is set back first.
 
+**D93 — Conditional forms of address (`extract-v20`, `canon-v2`; ADR 0091; PHASE-64).** Selectable
+(`NMOS_EXTRACT_COMPILER=extract-v20`, not the default; `extract-v16` stays the code default). Built on `extract-v19`
+with `address_condition` (`assertion.address_condition jsonb`, migration `0040`, null for unconditional addresses, every
+other predicate and all earlier generations): `{"scope": "public|private|situational|all", "when": "<phrase or null>"}`
+(`when` up to 60 characters in the chat's language, required for `situational`, null for `all`). Covers both agreed
+contextual rules (public vs private, missions, disguise) and explicitly stated/narrated recurring habits (e.g.
+involuntarily slipping back into a given name when flustered or overcome by emotion), while still rejecting accidental
+one-off slips (ADR 0028). When `extract-v20` is selected, `canonfacts.generation` activates `canon-v2` so character
+cards, lorebooks, notes and personas extract conditional forms of address too (`scope="all"` in canon normalizes to
+null); all other compilers keep `canon-v1` and its pinned key unchanged. `extract-v20` keeps `REGISTRY` unchanged and
+joins `generations.ADDS`, so switching among `extract-v16`, `extract-v18`, `extract-v19` and `extract-v20` queues no
+already-served turns. Each conditional address is its own assertion row (preserving Invariants 6, 7 and 10) and folds
+per slot at read time (`facts._address_versions`): `default`, `public`, `private`, and each normalized `situational`
+phrase hold independent current values and per-slot histories; once both `public` and `private` are active, a stale
+earlier `default` is retired into history; `scope="all"` closes all earlier active slots into one unconditional form;
+negations and `fact_lock` apply per slot (`all` still conflicts with any locked slot); `retrieval.replaced_marks` does
+not mark a superseded address form obsolete while another active conditional slot for the same pair still uses it;
+packet selection caps `situational` rows at 3 newest per direction (`SITUATIONAL_ADDRESS_MAX`). Active conditional rows
+format in `fact_text` and `secret_text` as `<subject> addresses <object> [<label>]: <value>` so the response model
+judges the situation while historical traces (all null) replay byte-identically under every packet policy.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

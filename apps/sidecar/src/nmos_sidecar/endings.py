@@ -98,6 +98,7 @@ def held(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, 
         a = dict(a)
         a.pop("feeling", None)  # a role or an alias never carries one (PHASE-58): the row reads as before
         a.pop("when_happened", None)  # a role or an alias never carries one (PHASE-60 S7): the row reads as before
+        a.pop("address_condition", None)  # a role or an alias never carries one (PHASE-64): the row reads as before
         a["participants"] = json.loads(a["participants"]) if a.get("participants") else None
         if (a["turn"], *_same(r, a)) in restored or _same(r, a) not in current:
             continue
@@ -136,6 +137,7 @@ def held_aliases(conn: psycopg.Connection, head: UUID, key: str | None, view: di
         a = dict(a)
         a.pop("feeling", None)
         a.pop("when_happened", None)
+        a.pop("address_condition", None)
         if frozenset((norm(a.get("subject")), norm(a.get("value")))) in linked or (
                 r is not None and _ekey(r, a.get("subject_type"), a.get("subject"))
                 == _ekey(r, a.get("subject_type"), a.get("value"))):

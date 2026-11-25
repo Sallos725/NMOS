@@ -17,7 +17,7 @@ x-nmos-env: &nmos-env
   NMOS_EXTRACT_TURNS: ${NMOS_EXTRACT_TURNS:-3}
   NMOS_EXTRACT_HINTS: ${NMOS_EXTRACT_HINTS:-40}
   NMOS_EXTRACT_BACKFILL: ${NMOS_EXTRACT_BACKFILL:-100}
-  NMOS_EXTRACT_COMPILER: ${NMOS_EXTRACT_COMPILER:-}  # empty: extract-v16 (extract-v15/-v17/-v18/-v19 selectable; switching among v16/v18/v19 queues nothing)
+  NMOS_EXTRACT_COMPILER: ${NMOS_EXTRACT_COMPILER:-}  # empty: extract-v16 (extract-v15/-v17/-v18/-v19/-v20 selectable; switching among v16/v18/v19/v20 queues nothing)
   NMOS_EXTRACT_TARGET_CHARS: ${NMOS_EXTRACT_TARGET_CHARS:-}  # empty: 6000, the cap as before (PHASE-62; 6000 to 36000; a change queues nothing)
   NMOS_SUMMARIES: ${NMOS_SUMMARIES:-}  # empty: on (the image's default); 0 turns summaries off
   NMOS_CANON_FACTS: ${NMOS_CANON_FACTS:-}  # empty: on (the image's default); 0 turns canon facts off
