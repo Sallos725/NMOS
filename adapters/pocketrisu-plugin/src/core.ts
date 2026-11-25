@@ -332,6 +332,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   let configStarted = 0;
   let configFence = 0;
   let configNoted = 0;
+  let configSaved = 0;  // the newest save whose answer was noted: a save loses only to a newer save
   // A chat's cached packets are dropped when its memory may have moved (4.3.2): `dropSeq` counts the drops and
   // `droppedAt` holds a chat's last one, so a request that was already running then does not remember its packet.
   let dropSeq = 0;
@@ -692,7 +693,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         if (holdsText(p, plain)) return { out: stripMarkers(p), placed: false, held: true };
         // The placeholder of the prompt placed into: a trimmed prompt may have left out the message that held it.
         const here = !marker ? null : p === prompt ? marker : findMarker(p, skipIn(p));
-        let out = here ? resolvePlaceholders(p, after ? withGuard(packet) : packet, skipIn(p)) : p;
+        const lands = here === marker ? after : landsAfterUserTurn(p, messages, position, at, here);
+        let out = here ? resolvePlaceholders(p, lands ? withGuard(packet) : packet, skipIn(p)) : p;
         if (!holdsText(out, plain)) out = injectPacket(p, position === 'end' ? withGuard(packet) : packet, position, at);
         out = stripMarkers(out);
         const held = holdsText(out, plain);
@@ -907,13 +909,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   /** Syncs chat `chatId` in the background once the wait after its reply is over (G6), so the reply is in memory (and
    *  can be extracted) before the next message, and the panel's Author's Note, Carry and Inspector see it. Replaces a
    *  waiting one; never throws. */
-  function scheduleOutputSync(chatId: string, seen: number, replyId: string): void {
+  function scheduleOutputSync(chatId: string, seen: number, replyId: string, replyLength: number): void {
     cancelOutputSync();
     if (!(outputSyncMs > 0) || disposed) return;
     try {
       const handle = setTimer(() => {
         if (outputTimer === handle) outputTimer = null;
-        const done = outputSync(chatId, seen, replyId);
+        const done = outputSync(chatId, seen, replyId, replyLength);
         const running = { chatId, done };
         outputRunning = running;
         void done.finally(() => { if (outputRunning === running) outputRunning = null; });
@@ -927,9 +929,10 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   /** The sync a request would make, of the chat as it is now: the `output` snapshot is provisional (H7), and the chat
    *  read now must still be the one replied in (there is no hook for a chat switch). It must also still be the chat
    *  itself: a snapshot without reply `replyId`, or shorter than the plugin last synced, may be a chat still loading
-   *  (HOST-FACTS Q8 item 7) whose manifest would retract the head; on doubt nothing is sent, and the next request
-   *  syncs the chat as always. */
-  async function outputSync(chatId: string, seen: number, replyId: string): Promise<void> {
+   *  (HOST-FACTS Q8 item 7) whose manifest would retract the head. And the chat as the reply left it: one that grew
+   *  past the `replyLength` messages it had then, or is streaming, has a newer turn on its way (a send whose request
+   *  went without memory) and a reply half written. On doubt nothing is sent, and the next request syncs as always. */
+  async function outputSync(chatId: string, seen: number, replyId: string, replyLength: number): Promise<void> {
     const live = () => turnSeq === seen;
     try {
       const settings = await host.settings();
@@ -938,7 +941,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const chat = await host.currentChat();
       if (!live() || !chat?.id || chat.id !== chatId) return;  // another chat is open: its own next request syncs it
       const messages: HostMessage[] = Array.isArray(chat.message) ? chat.message : [];
-      if (!messages.some((m) => m?.chatId === replyId) || messages.length < (syncedLength.get(chatId) ?? 0)) {
+      if (!messages.some((m) => m?.chatId === replyId) || messages.length < (syncedLength.get(chatId) ?? 0)
+        || messages.length > replyLength || chat.isStreaming === true) {
         host.debug('[NMOS] background sync skipped: the chat read is not the one replied in', {
           messages: messages.length, synced: syncedLength.get(chatId) ?? null });
         return;
@@ -1006,9 +1010,14 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   /** Remembers the switch from the answer of `/v1/config` request number `seq` (`null`: it failed or its answer is
    *  unknown), unless a newer answer was noted, or it is a read that started before a save answered. */
   function noteConfig(settings: Settings, seq: number, save: boolean, config: unknown | null): void {
-    if (save) configFence = Math.max(configFence, configStarted);
-    if (seq < configNoted || (!save && seq <= configFence)) return;
-    configNoted = seq;
+    if (save) {
+      configFence = Math.max(configFence, configStarted);
+      if (seq < configSaved) return;
+      configSaved = seq;
+    } else if (seq < configNoted || seq <= configFence) {
+      return;
+    }
+    configNoted = Math.max(configNoted, seq);
     outputSwitch = { url: sidecarKey(settings), on: config === null ? null : outputSwitchOf(config) };
   }
 
@@ -1075,7 +1084,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const index = arg.messageIndex ?? -1;
       const message = index >= 0 ? arg.chat.message?.[index] : undefined;
       if (turnSeq === seen && outputOn(settings) && typeof message?.chatId === 'string' && message.chatId) {
-        scheduleOutputSync(arg.chat.id, seen, message.chatId);
+        scheduleOutputSync(arg.chat.id, seen, message.chatId, arg.chat.message!.length);
       }
       // A reply is extracted after it (H7): an empty packet cached for this chat may have memory now. A packet with
       // memory stays for a reroll of an unchanged chat until the background sync has the reply.

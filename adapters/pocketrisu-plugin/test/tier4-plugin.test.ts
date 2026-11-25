@@ -305,6 +305,28 @@ describe('the background sync sends only the chat replied in (review finding 4)'
     expect(h.calls.slice(before).map((c) => c.path)).toEqual([]);
   });
 
+  it('a chat that grew after the reply (a send that went without memory), or that is streaming: no sync', async () => {
+    const h = harness();
+    const adapter = await h.start();
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    // The user sent again within the wait; its request found no turn (skipped), so the timer still waits, and the
+    // next reply is being written into the chat.
+    const sending: HostChat = { ...structuredClone(replied), message: [...structuredClone(replied).message!,
+      { role: 'user', data: 'And the bell?', chatId: 'u2' }, { role: 'char', data: 'Sera list', chatId: 'c2' }] };
+    h.setChat(sending);
+    await adapter.beforeRequest([{ role: 'user', content: 'An unrelated script call.' }], 'model');
+    expect(h.pending()).toHaveLength(1);
+    await h.fire();
+    expect(h.paths().filter((p) => p.startsWith('/v1/sync'))).toEqual([]);
+    // Streaming, the same length as at the reply (a Continue writing into it).
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    h.setChat({ ...structuredClone(replied), isStreaming: true });
+    await h.fire();
+    expect(h.paths().filter((p) => p.startsWith('/v1/sync'))).toEqual([]);
+  });
+
   it('a reply whose id is not known is never scheduled', async () => {
     const h = harness();
     const adapter = await h.start();
@@ -397,6 +419,29 @@ describe("the background sync only while the sidecar extracts a reply right afte
     adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
     await settle();
     expect(h.pending()).toHaveLength(1);
+  });
+
+  it("a save's answer is noted even when a read that started during it answered first with the old value", async () => {
+    const h = harness();
+    const adapter = await h.start();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const original = h.host.request;
+    h.host.request = async (method, url, body, ...rest) => {
+      if (method === 'PUT' && url.endsWith('/v1/config')) {
+        await gate;
+        return { status: 200, json: { extraction: { on_output: false } } };
+      }
+      return original(method, url, body, ...rest);
+    };
+    const save = adapter.api('PUT', '/v1/config', { extract_on_output: false });
+    await settle();
+    await adapter.api('GET', '/v1/config');  // started during the save, answers first: still on
+    release();
+    await save;
+    adapter.onOutput({ chat: structuredClone(replied), messageIndex: 3 });
+    await settle();
+    expect(h.pending()).toHaveLength(0);
   });
 
   it("follows the panel: a save that turns it off stops a waiting sync, a read that reports it on starts the next", async () => {

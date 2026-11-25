@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:7dab1a110061".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:95a394e25a02".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2296,6 +2296,7 @@ ${GUARD_LINE}` : "";
     let configStarted = 0;
     let configFence = 0;
     let configNoted = 0;
+    let configSaved = 0;
     let dropSeq = 0;
     const droppedAt = /* @__PURE__ */ new Map();
     const coverageMarks = /* @__PURE__ */ new Map();
@@ -2600,7 +2601,8 @@ ${GUARD_LINE}` : "";
           const plain = packet2.split(MEMORY_MARKER).join("");
           if (holdsText(p, plain)) return { out: stripMarkers(p), placed: false, held: true };
           const here = !marker ? null : p === prompt ? marker : findMarker(p, skipIn(p));
-          let out = here ? resolvePlaceholders(p, after ? withGuard(packet2) : packet2, skipIn(p)) : p;
+          const lands = here === marker ? after : landsAfterUserTurn(p, messages, position, at, here);
+          let out = here ? resolvePlaceholders(p, lands ? withGuard(packet2) : packet2, skipIn(p)) : p;
           if (!holdsText(out, plain)) out = injectPacket(p, position === "end" ? withGuard(packet2) : packet2, position, at);
           out = stripMarkers(out);
           const held = holdsText(out, plain);
@@ -2861,13 +2863,13 @@ ${GUARD_LINE}` : "";
       }
       outputTimer = null;
     }
-    function scheduleOutputSync(chatId, seen, replyId) {
+    function scheduleOutputSync(chatId, seen, replyId, replyLength) {
       cancelOutputSync();
       if (!(outputSyncMs > 0) || disposed) return;
       try {
         const handle = setTimer(() => {
           if (outputTimer === handle) outputTimer = null;
-          const done = outputSync(chatId, seen, replyId);
+          const done = outputSync(chatId, seen, replyId, replyLength);
           const running = { chatId, done };
           outputRunning = running;
           void done.finally(() => {
@@ -2879,7 +2881,7 @@ ${GUARD_LINE}` : "";
         host.debug("[NMOS] background sync not scheduled:", error instanceof Error ? error.message : error);
       }
     }
-    async function outputSync(chatId, seen, replyId) {
+    async function outputSync(chatId, seen, replyId, replyLength) {
       const live = () => turnSeq === seen;
       try {
         const settings = await host.settings();
@@ -2887,7 +2889,7 @@ ${GUARD_LINE}` : "";
         const chat = await host.currentChat();
         if (!live() || !chat?.id || chat.id !== chatId) return;
         const messages = Array.isArray(chat.message) ? chat.message : [];
-        if (!messages.some((m) => m?.chatId === replyId) || messages.length < (syncedLength.get(chatId) ?? 0)) {
+        if (!messages.some((m) => m?.chatId === replyId) || messages.length < (syncedLength.get(chatId) ?? 0) || messages.length > replyLength || chat.isStreaming === true) {
           host.debug("[NMOS] background sync skipped: the chat read is not the one replied in", {
             messages: messages.length,
             synced: syncedLength.get(chatId) ?? null
@@ -2946,9 +2948,14 @@ ${GUARD_LINE}` : "";
       return outputSwitch?.url === sidecarKey(settings) && outputSwitch.on === true;
     }
     function noteConfig(settings, seq, save, config) {
-      if (save) configFence = Math.max(configFence, configStarted);
-      if (seq < configNoted || !save && seq <= configFence) return;
-      configNoted = seq;
+      if (save) {
+        configFence = Math.max(configFence, configStarted);
+        if (seq < configSaved) return;
+        configSaved = seq;
+      } else if (seq < configNoted || seq <= configFence) {
+        return;
+      }
+      configNoted = Math.max(configNoted, seq);
       outputSwitch = { url: sidecarKey(settings), on: config === null ? null : outputSwitchOf(config) };
     }
     async function readConfig() {
@@ -3008,7 +3015,7 @@ ${GUARD_LINE}` : "";
         const index = arg2.messageIndex ?? -1;
         const message = index >= 0 ? arg2.chat.message?.[index] : void 0;
         if (turnSeq === seen && outputOn(settings) && typeof message?.chatId === "string" && message.chatId) {
-          scheduleOutputSync(arg2.chat.id, seen, message.chatId);
+          scheduleOutputSync(arg2.chat.id, seen, message.chatId, arg2.chat.message.length);
         }
         for (const [k, entry] of cache) if (entry.chatId === arg2.chat.id && !entry.packet && !entry.failed) cache.delete(k);
         adviseOnce(settings.language);
@@ -8802,7 +8809,11 @@ html,body{margin:0;background:${PALETTE.bg}}
   function onPluginUnload(teardown) {
     try {
       if (typeof risuai.onUnload !== "function") return false;
-      risuai.onUnload(teardown);
+      const answer = risuai.onUnload(teardown);
+      if (answer && typeof answer.then === "function") {
+        answer.then(void 0, () => {
+        });
+      }
       return true;
     } catch {
       return false;

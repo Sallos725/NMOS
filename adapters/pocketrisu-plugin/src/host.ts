@@ -39,7 +39,7 @@ declare const risuai: {
   getRootDocument?(): Promise<HudDocument | null>;
   // Called when the plugin is unloaded or re-imported (v1.17.0 source: `onUnload` → `addPluginUnloadCallback`, run by
   // `unloadV3Plugin` before the sandbox frame is removed); missing on older builds.
-  onUnload?(callback: () => void): void;
+  onUnload?(callback: () => void): unknown;
 };
 
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8790';
@@ -244,7 +244,12 @@ export function saveFile(bytes: ArrayBuffer, name: string, type = 'application/z
 export function onPluginUnload(teardown: () => void): boolean {
   try {
     if (typeof risuai.onUnload !== 'function') return false;
-    risuai.onUnload(teardown);
+    // In the sandbox every name is a function (a proxy over the frame bridge, v1.17.0 `factory.ts`): a host without
+    // `onUnload` rejects the call later, which must not surface as an unhandled rejection.
+    const answer = risuai.onUnload(teardown) as unknown;
+    if (answer && typeof (answer as Promise<unknown>).then === 'function') {
+      (answer as Promise<unknown>).then(undefined, () => {});
+    }
     return true;
   } catch {
     return false;

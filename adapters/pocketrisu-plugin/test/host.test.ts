@@ -144,5 +144,13 @@ describe('onPluginUnload (review item 9)', () => {
     expect(onPluginUnload(teardown)).toBe(false);
     (globalThis as { risuai?: unknown }).risuai = { onUnload: () => { throw new Error('refused'); } };
     expect(onPluginUnload(teardown)).toBe(false);
+    // The sandbox's proxy answers every name with a function; one the host lacks rejects later: handled.
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    (globalThis as { risuai?: unknown }).risuai = { onUnload: () => Promise.reject(new Error('no such method')) };
+    expect(onPluginUnload(teardown)).toBe(true);
+    await new Promise((r) => setTimeout(r, 10));
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
   });
 });
