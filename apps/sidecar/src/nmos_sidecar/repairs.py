@@ -858,6 +858,8 @@ def _plan_lock(f: dict[str, Any], view: dict[str, Any], r: Resolution | None) ->
     """A lock (PHASE-14 Q7): a canon fact or the owner's correction, as a fact (narrated, actual), not locked yet."""
     if not (f.get("canon") or f.get("owner")):
         raise RepairError("only a canon fact or the owner's correction can be locked")
+    if epistemic(f):  # PHASE-66: a belief is no statement about the world a later one could replace
+        raise RepairError("a belief or a forgetting is not locked: correct or retract it")
     if f.get("locked"):
         raise RepairError("the fact is locked already")
     if (f.get("source") or "narration") != "narration" or f.get("modality", "actual") != "actual":

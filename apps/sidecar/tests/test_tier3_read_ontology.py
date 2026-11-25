@@ -472,6 +472,9 @@ def test_a_belief_is_its_own_kind_and_ends_when_its_holder_learns_or_forgets_the
                                                    "created_at": None}]})
         assert "도윤이 배신했을지도 모른다" in {b["value"] for b in fixed["beliefs"]}
         assert "도윤이 배신했다" not in {b["value"] for b in fixed["beliefs"]}
+        corrected = next(b for b in fixed["beliefs"] if b.get("owner"))
+        with pytest.raises(repairs.RepairError, match="not locked"):
+            repairs.plan("fact_lock", str(corrected["id"]), fixed, 3)
         gid = str(forgot["아리아"]["id"])
         res = c.post(f"/v1/conversations/{v21.cid}/repairs", json={"kind": "fact_retract", "item": gid})
         assert res.status_code == 200 and res.json()["applied"] == gid, res.text
