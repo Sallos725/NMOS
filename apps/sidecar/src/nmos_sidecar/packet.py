@@ -45,6 +45,15 @@ CARRIED_NOTE = (" source=\"carried\" marks what an earlier chat this one continu
 REGRESSION_MARK = "<Regression "
 REGRESSION_NOTE = (" A Regression group is what only the characters in remembered_by remember of a previous timeline of"
                    " this story: nobody else knows it, and it may not hold now.")
+# packet-v21 (PHASE-65, extract-v21's lines): what a character believes, what they no longer remember, and a fact
+# everyone knows but those it is kept from
+BELIEF_MARK = "<Belief "
+BELIEF_NOTE = (" A Belief is what that character believes: it may be false, and it is not what happened. Nobody but"
+               " that character acts on it as true.")
+FORGOT_MARK = "<Forgot "
+FORGOT_NOTE = " A Forgot line says that character no longer remembers it; others who knew it still do."
+PUBLIC_EXCEPT_MARK = 'knowledge="public_except"'
+PUBLIC_EXCEPT_NOTE = " knowledge=\"public_except\" is known to everyone except those in hidden_from."
 # Added to the Note only when a kept line uses the mark (ADR 0013), so other packets stay as they were.
 NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly not, or no longer, true."),
                ("<Claim ", " A Claim is what that character said, not established truth."),
@@ -74,7 +83,11 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                (HAPPENED_MARK, HAPPENED_NOTE),
                (TOLD_MARK, TOLD_NOTE),
                (CARRIED_MARK, CARRIED_NOTE),
-               (REGRESSION_MARK, REGRESSION_NOTE))
+               (REGRESSION_MARK, REGRESSION_NOTE),
+               # packet-v21 only (`_V20_MARKS` gates these too)
+               (BELIEF_MARK, BELIEF_NOTE),
+               (FORGOT_MARK, FORGOT_NOTE),
+               (PUBLIC_EXCEPT_MARK, PUBLIC_EXCEPT_NOTE))
 MAX_EXCERPT_CHARS = 480
 # packet-v10 grows an excerpt to at most this many sentences (owner, 2026-09-30): growing to the whole length brought
 # back more values the story had since replaced (docs/perf/lexical-recall.md, "Step 4"); packet-v11 lifts the cap for a
@@ -410,7 +423,8 @@ CARRY_POLICIES = frozenset({"packet-v20", "packet-v21"})  # a request reads the 
 # and every earlier policy compile exactly as they did (ADR 0027). Not the default until a replay measures it.
 V21_POLICIES = frozenset({"packet-v21"})
 # The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
-_V20_MARKS = {GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES,
+_V20_MARKS = {BELIEF_MARK: V21_POLICIES, FORGOT_MARK: V21_POLICIES, PUBLIC_EXCEPT_MARK: V21_POLICIES,
+              GONE_MARK: GONE_POLICIES, BACK_AFTER_MARK: RETURN_GAP_POLICIES, SETTLED_MARK: SETTLED_POLICIES,
               HAPPENED_MARK: HAPPENED_POLICIES, TOLD_MARK: TOLD_POLICIES, CARRIED_MARK: CARRY_POLICIES,
               REGRESSION_MARK: CARRY_POLICIES}
 STATE_HISTORY_MAX = 6  # changes on one <StateHistory> line
@@ -422,7 +436,8 @@ FILL_BASE, FILL_MAX, FILL_FACTS_MAX = 2000, 4.0, 2.0  # the budget recall is siz
 STORY_SHARE = 0.3  # packet-v8: <Story> may take at most this share of the budget inside the frame (PHASE-12 Q5)
 RESTATES = 0.6  # packet-v4: a claim this close to a fact of the same head says it again (ADR 0019's match)
 # What the memory budget is for, and how far a suggested budget may go (ADR 0036).
-MEMORY_KINDS = frozenset({"state", "state_history", "thread", "fact", "claim", "secret", "summary"})
+MEMORY_KINDS = frozenset({"state", "state_history", "thread", "fact", "claim", "secret", "summary",
+                          "belief", "forgot"})  # the last two: packet-v21 only
 FIT_STEP, FIT_CAP = 100, 8000  # the panel's largest suggestion: recall grows up to it (ADR 0049; 6,000 until then)
 # The pilot's rule, shortened to fit a 600-token Korean packet (47 estimated tokens instead of 88).
 PRIVATE_NOTE = (" Private: only its holders (known_by) know it. Others must not mention, hint at or act on it; holders"
@@ -713,6 +728,7 @@ def _priority_cost(lead: list[Line], rest: list[Line], skip: int, folded: dict[i
     return cost
 
 
+SLOT_BUNDLE = "slot_bundle"  # packet-v21: the mark of a conditioned fact's line; one bundle's slots go together
 CAST_EXTRA_SHARE = 0.15  # packet-v21: <Cast>'s extra lines may take at most this share of the budget inside the frame
 CAST_EXTRA = "cast_extra"  # packet-v21: the mark (`Line.marks`) of a <Cast> line packet-v20 never had
 
@@ -995,9 +1011,44 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     def section(lines: list[Line], tag: str, opened: bool = False, capped: bool = False) -> list[str]:
         nonlocal used, offset
         kept: list[str] = []
-        for line in lines:
+        start = offset
+        blocked: set[int] = set()  # packet-v21: lines of a slot bundle that does not fit whole
+
+        def skipped(n: int, line: Line) -> bool:
+            return (folded.get(start + n - base) is not None or (capped and id(line) not in admitted)
+                    or bool(in_cast and line.ref.get("assertion") in in_cast))
+
+        def bundle_cost(members: list[tuple[int, Line]]) -> int:
+            """packet-v21: what a slot bundle's lines would cost placed one after another from here."""
+            opened_here, private_here, have = bool(kept) or opened, bool(kept_private), set(extras)
+            total = 0
+            for n, line in members:
+                if skipped(n, line):
+                    continue
+                hidden = privacy and line.private
+                xml = line.private_xml or line.xml if hidden else line.xml
+                total += est(xml + "\n")
+                if hidden and not private_here:
+                    total += est("  <Private>\n  </Private>\n")
+                if not hidden and not opened_here:
+                    total += est(f"  <{tag}>\n  </{tag}>\n")
+                private_here, opened_here = private_here or hidden, opened_here or not hidden
+                for text in [t for mark, t in notes if mark in xml] + ([PRIVATE_NOTE] if hidden else []):
+                    if text not in have:
+                        total += est(text)
+                        have.add(text)
+            return total
+
+        for i, line in enumerate(lines):
             entry = ledger[offset]
             offset += 1
+            bundle = line.marks.get(SLOT_BUNDLE) if v21 else None
+            if bundle and (i == 0 or lines[i - 1].marks.get(SLOT_BUNDLE) != bundle):
+                members = [(i, line)]
+                while i + len(members) < len(lines) and lines[i + len(members)].marks.get(SLOT_BUNDLE) == bundle:
+                    members.append((i + len(members), lines[i + len(members)]))
+                if used + bundle_cost(members) > limit:  # one slot alone would mislead: all of them, or none
+                    blocked.update(n for n, _ in members)
             if (same := folded.get(offset - 1 - base)) is not None:
                 entry["why"], entry["restates"] = "restates", same.ref
                 continue
@@ -1021,6 +1072,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
             entry["tok"] = cost
             if hidden:
                 entry["private"] = True
+            if i in blocked:
+                continue  # its bundle is left out whole (`budget`)
             if used + cost <= limit:
                 (kept_private if hidden else kept).append(xml)
                 extras.extend(needed)
