@@ -258,3 +258,182 @@ def test_reanchor_moves_an_anchor_onto_a_branchs_messages():
     assert repairs.reanchor(anchor, {k: v for k, v in mapping.items() if k != "a12"}) is None  # applies after it
     assert repairs.reanchor(anchor, {k: v for k, v in mapping.items() if k != "r5"}) is None  # edited in the origin
     assert repairs.reanchor(None, mapping) is None  # a legacy repair: its target is copied as it is
+
+
+# --- item 4: a correction keeps its row's message, and states only what it gives ------------------------------------
+
+def view_of(url: str, cid: str) -> dict:
+    from conftest import active_generation
+    from nmos_sidecar.facts import memory_view
+    with psycopg.connect(url, row_factory=dict_row) as conn:
+        head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (cid,)).fetchone()["head_commit_id"]
+        return memory_view(conn, head, active_generation(conn, "extract").key, told=True)
+
+
+def test_a_correction_keeps_its_message_and_inherits_no_feeling_or_cause(migrated):
+    chat = SimChat()
+    for text in ("Yui is angry at Kaito because he forgot the festival.", "Kaito is in the garden.",
+                 "Mina is a guard."):
+        chat.user(text)
+        chat.reply("Noted.")
+    chat.user("Go on.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        with psycopg.connect(migrated) as conn:  # a feeling detail as extract-v18 writes one (PHASE-58)
+            conn.execute("UPDATE assertion SET feeling = '{\"intensity\": \"strong\"}' WHERE predicate = 'feels_toward'")
+        angry = fact(c, chat, "Yui", "feels_toward")
+        assert angry["because"] == "he forgot the festival"
+        res = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "fact_correct", "item": str(angry["id"]),
+                                                               "new_because": "he forgot the festival"})
+        assert res.status_code == 422 and "cause" in res.json()["detail"]  # nothing differs
+        repair(c, cid, kind="fact_correct", item=str(angry["id"]), new_value="grateful")
+        mine = next(f for f in view_of(migrated, cid)["facts"] if f["subject"] == "Yui")
+        assert mine["owner"] and mine["value"] == "grateful"
+        assert mine.get("because") is None and "feeling" not in mine  # nothing of the row it replaced
+        assert mine["host_logical_id"] == chat.messages[1]["chatId"]  # turn 0's reply: in context, not sent again
+        kaito = fact(c, chat, "Kaito")
+        repair(c, cid, kind="fact_correct", item=str(kaito["id"]), new_object="porch", new_because="the rain")
+        k = next(f for f in view_of(migrated, cid)["facts"] if f["subject"] == "Kaito")
+        assert k["because"] == "the rain" and k["host_logical_id"] == chat.messages[3]["chatId"]
+        moved = repair(c, cid, kind="fact_correct", item=str(fact(c, chat, "Mina", "identity")["id"]), new_value="spy",
+                       turn=3)
+        later = next(f for f in view_of(migrated, cid)["facts"] if f.get("repair") == moved["repair"]["id"])
+        assert later["turn"] == 3 and later["host_logical_id"] is None  # the owner's word about a later turn
+
+
+# --- item 5: what else the owner can repair ---------------------------------------------------------------------------
+
+def test_the_owner_adds_a_statement_on_a_message_and_it_follows_the_message(migrated):
+    chat = anchor_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        msg = chat.messages[11]["chatId"]  # turn 5's reply
+
+        def add(**fact) -> dict:
+            return c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "fact_add", "item": msg, "fact": fact})
+
+        assert "not one memory states" in add(predicate="knows_secretly", subject="Mina").json()["detail"]
+        assert "not one memory states" in add(predicate="also_called", subject="Mina", value="Mimi").json()["detail"]
+        assert "missing object" in add(predicate="located_in", subject="Mina").json()["detail"]
+        assert "states that already" in add(predicate="located_in", subject="Mina", object="yard",
+                                            object_type="place").json()["detail"]
+        res = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "fact_add", "item": "no-such-message",
+                                                               "fact": {"predicate": "has_status", "subject": "Mina",
+                                                                        "value": "tired"}})
+        assert res.status_code == 422 and "no message" in res.json()["detail"]
+        out = add(predicate="possesses", subject="Mina", object="lantern", object_type="item",
+                  hidden_from=["Kaito"])
+        assert out.status_code == 200, out.text
+        rid = out.json()["repair"]["id"]
+        assert out.json()["repair"]["anchor"]["target"]["message"] == msg and out.json()["applied"] is not None
+        lantern = fact(c, chat, "Mina", "possesses")
+        assert lantern["object"] == "lantern" and lantern["turn"] == 5 and lantern["hidden_from"] == ["Kaito"]
+        assert any("lantern" in s["text"] and s["open"] == ["Kaito"] for s in
+                   c.get(f"/v1/conversations/{cid}/secrets").json())  # a statement kept from Kaito is a secret
+        assert next(f for f in view_of(migrated, cid)["facts"]
+                    if f["predicate"] == "possesses")["host_logical_id"] == msg
+        chat.delete(1)
+        chat.delete(0)  # turn 0 gone: the message's turn is 4 now
+        resync(c, migrated, chat)
+        assert fact(c, chat, "Mina", "possesses")["turn"] == 4
+        assert c.post(f"/v1/conversations/{cid}/repairs/{rid}/remove").status_code == 200
+        assert fact(c, chat, "Mina", "possesses") is None
+
+
+def test_a_name_is_kept_from_a_character_or_taken_back(migrated):
+    chat = anchor_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        hall = fact(c, chat, "Hana")
+        assert c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "fact_hidden", "item": str(hall["id"]),
+                                                               "character": "Kaito"}).status_code == 422  # which side
+        out = repair(c, cid, kind="fact_hidden", item=str(hall["id"]), character="Kaito", hidden=True)
+        assert out["applied"] == str(hall["id"]) and fact(c, chat, "Hana")["hidden_from"] == ["Kaito"]
+        assert any(s["text"].startswith("Hana located in hall") and s["open"] == ["Kaito"]
+                   for s in c.get(f"/v1/conversations/{cid}/secrets").json())
+        forged = next(f for f in facts(c, chat) if f.get("hidden_from") == ["Kaito"] and "forged" in (f["value"] or ""))
+        repair(c, cid, kind="fact_hidden", item=str(forged["id"]), character="Kaito", hidden=False)
+        assert not any("forged" in s["text"] and s["open"]  # the letter is no longer kept from Kaito
+                       for s in c.get(f"/v1/conversations/{cid}/secrets").json())
+        res = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "fact_hidden", "item": str(forged["id"]),
+                                                               "character": "Kaito", "hidden": False})
+        assert res.status_code == 422 and "not kept" in res.json()["detail"]
+
+
+def test_a_claim_is_retracted_as_a_fact_is(migrated):
+    chat = SimChat()
+    chat.user('Kaito says: "I am a knight."')
+    chat.reply("Noted.")
+    chat.user("Go on.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        [claim] = view_of(migrated, cid)["claims"]
+        out = repair(c, cid, kind="fact_retract", item=str(claim["id"]))
+        assert out["applied"] == str(claim["id"]) and view_of(migrated, cid)["claims"] == []
+
+
+def test_a_told_row_is_taken_back(migrated):
+    from test_extract_v19_read import TOLD_VALUE, complete as told_complete
+    from test_extract_v18 import chat_of
+    from test_extract_v19 import SCENE
+    chat = chat_of(SCENE)
+    with make_client(migrated, **LLM, extract_compiler="extract-v19") as c:
+        sync(c, chat)
+        drain(migrated, told_complete)
+        cid = conv_id(c, chat)
+        [told] = view_of(migrated, cid)["told"]
+        assert told["value"] == TOLD_VALUE
+        out = repair(c, cid, kind="told_retract", item=str(told["id"]))
+        assert out["applied"] == str(told["id"]) and out["repair"]["anchor"]["target"]["message"]
+        assert view_of(migrated, cid)["told"] == []  # packet-v20's told lines read this list
+        assert c.post(f"/v1/conversations/{cid}/repairs/{out['repair']['id']}/remove").status_code == 200
+        assert len(view_of(migrated, cid)["told"]) == 1
+
+
+def test_a_held_role_ending_is_dismissed_from_needs_attention(migrated):
+    from test_role_end_confirmation import MOVED, tenancy
+    complete, _ = tenancy("no")
+    chat = SimChat()
+    chat.user("하나는 카이토의 집에 세 들어 산다.")
+    chat.reply("카이토는 월세 봉투를 받아 들었다.")
+    for t in range(2):
+        chat.user(f"Idle chatter {t} about clouds.")
+        chat.reply("Noted.")
+    with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler="extract-v16") as c:
+        sync(c, chat)
+        drain(migrated, complete)
+        chat.user(MOVED)
+        chat.reply("카이토는 빈 다락방을 정리했다.")
+        chat.user("Go on.")
+        sync(c, chat)
+        drain(migrated, complete)
+        cid = conv_id(c, chat)
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            held = conn.execute("SELECT id FROM assertion WHERE status = 'pending' AND predicate = 'role_toward'"
+                                " AND polarity = 'negative'").fetchone()["id"]
+        page = lambda: c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text  # noqa: E731
+        assert "Role endings held" in page()
+        assert c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "attention_dismiss", "item": str(held)}
+                      ).status_code == 422  # say what
+        out = repair(c, cid, kind="attention_dismiss", item=str(held), attention="role_held")
+        assert out["applied"] == str(held) and listed(c, cid)[out["repair"]["id"]]["applied"] == str(held)
+        assert "Role endings held" not in page()
+        again = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "attention_dismiss", "item": str(held),
+                                                                 "attention": "role_held"})
+        assert again.status_code == 422  # dismissed already: it needs no look
+        assert c.post(f"/v1/conversations/{cid}/repairs/{out['repair']['id']}/remove").status_code == 200
+        assert "Role endings held" in page()
+
+
+def test_the_new_kinds_go_through_a_batch_and_its_undo(migrated):
+    chat = anchor_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        items = [{"kind": "fact_hidden", "item": str(fact(c, chat, "Hana")["id"]), "character": "Mina", "hidden": True},
+                 {"kind": "fact_add", "item": chat.messages[9]["chatId"],
+                  "fact": {"predicate": "has_status", "subject": "Kaito", "value": "tired"}}]
+        res = c.post(f"/v1/conversations/{cid}/repairs/batch", json={"items": items})
+        assert res.status_code == 200, res.text
+        assert fact(c, chat, "Hana")["hidden_from"] == ["Mina"] and fact(c, chat, "Kaito", "has_status")["value"] == "tired"
+        assert c.post(f"/v1/conversations/{cid}/repairs/batch/{res.json()['batch']}/remove").status_code == 200
+        assert fact(c, chat, "Hana")["hidden_from"] is None and fact(c, chat, "Kaito", "has_status") is None

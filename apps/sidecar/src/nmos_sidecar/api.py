@@ -1150,10 +1150,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return {"removed": removed}
 
     def repair_rows(conn, conv_id: UUID, live: list[dict[str, Any]],
-                    flags: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+                    flags: list[dict[str, Any]] | None = None,
+                    dismissed: dict[str, str] | None = None) -> list[dict[str, Any]]:
         """Every repair of a chat, newest first, with the item each in force applies to now (ADR 0044); a status
-        flag's dismissal, the flag while the chat still raises it (`flags`, PHASE-39 Q4)."""
-        applied = {str(x["id"]): x["applied"] for x in live}
+        flag's dismissal, the flag while the chat still raises it (`flags`, PHASE-39 Q4); a dismissal of what needs a
+        look, the held row it hides (`dismissed`, PHASE-67 part 4)."""
+        applied = {str(x["id"]): x["applied"] for x in live} | (dismissed or {})
         hidden = {str(x["id"]): x["hidden"] for x in live if "hidden" in x}  # an exclusion's (PHASE-47)
         raised = {f["id"] for f in flags or ()}
         # PHASE-67 part 4: why an anchored repair applies to nothing (its message gone, its turn edited)
@@ -1221,7 +1223,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             view = view_of(conn, conv["head_commit_id"], carried=True)  # a repair of a carried row applies (Tier 1)
-            return {"repairs": repair_rows(conn, conv_id, view["repairs"])}
+            dismissed = attention_held(conn, conv, conv["head_commit_id"], view)[2] if any(
+                x["kind"] == "attention_dismiss" for x in view["repairs"]) else {}
+            return {"repairs": repair_rows(conn, conv_id, view["repairs"], None, dismissed)}
 
     @app.post("/v1/conversations/{conv_id}/repairs/preview", dependencies=[Depends(auth)])
     def preview_repair(conv_id: UUID, body: RepairRequest, request: Request):
@@ -1250,7 +1254,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             head = conv["head_commit_id"]
             if body.lock and body.kind != "fact_correct":
                 raise HTTPException(status_code=422, detail="only a correction is locked with it")
-            view = repair_view(conn, conv, head, {body.kind})
+            view = repair_view(conn, conv, head, {body.kind}, [body.item] if body.kind == "fact_add" else [])
             if body.kind == "entity_exclude":
                 host_character(conn, conv_id, view, body.entity_type, body.item)
             if (body.kind == "fact_correct" and not body.lock
@@ -1279,8 +1283,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     except repairs.RepairError as e:
                         raise HTTPException(status_code=422, detail=str(e)) from e
                     insert_repair(conn, conv_id, "fact_lock", lt, lv, None)
-            applied = target["id"] if body.kind == "state_dismiss" else next(
-                (x["applied"] for x in view_of(conn, head, carried=True)["repairs"] if x["id"] == row["id"]), None)
+            after = view_of(conn, head, carried=True)
+            applied = target["id"] if body.kind == "state_dismiss" else (
+                attention_held(conn, conv, head, after)[2].get(str(row["id"])) if body.kind == "attention_dismiss"
+                else next((x["applied"] for x in after["repairs"] if x["id"] == row["id"]), None))
             restale(conn, conv_id, {body.kind})
         log.info("owner repair conversation=%s repair=%s kind=%s applied=%s", conv_id, row["id"], body.kind,
                  applied is not None)
@@ -1289,11 +1295,21 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     # A repair that needs its preview first is made one at a time (PHASE-20 Q4, PHASE-47 S4), never in a batch.
     PREVIEWED = frozenset({"name_split", "entity_exclude"})
 
-    def repair_view(conn, conv: dict[str, Any], head: UUID, kinds: set[str]) -> dict[str, Any]:
+    def repair_view(conn, conv: dict[str, Any], head: UUID, kinds: set[str],
+                    messages: list[str] | None = None) -> dict[str, Any]:
         """The chat's memory as a repair of these kinds is planned against: with the dropped facts and held endings a
         restore names, and the status flags a dismissal names. With a carry link in force its rows are there to repair
-        (Tier 1); what a re-extraction dropped is still found against the chat's own memory."""
-        view = view_of(conn, head, carried=True)
+        (Tier 1); what a re-extraction dropped is still found against the chat's own memory. PHASE-67 part 4: with who
+        told whom for a told row taken back, the turn and hash of each message a statement the owner adds names
+        (`messages`), and what needs a look for a dismissal."""
+        view = view_of(conn, head, told="told_retract" in kinds, carried=True)
+        if "fact_add" in kinds:
+            members = repairs.members_of(conn, head, list(dict.fromkeys(messages or ())), [])
+            view["messages"] = {m: (members.turn_of(m), members.hashes.get(members.turn_of(m)))
+                                for m in messages or () if members.turn_of(m) is not None}
+        if "attention_dismiss" in kinds:
+            held, aliases, _ = attention_held(conn, conv, head, view)
+            view["attention"] = {"role_held": held, "alias_held": aliases}
         if "fact_restore" in kinds:  # a fact a re-extraction dropped, or a held role ending (PHASE-28 Q7)
             own = view if "carried" not in view else view_of(conn, head)
             view["dropped"] = (dropped.find(conn, head, rt["active_extractor"], own)
@@ -1303,7 +1319,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             view["state_flags"] = [f for f in state_flags(conn, conv) if f["id"] not in off]
         return view
 
-    SECRET_REPAIRS = frozenset({"secret_keep", "secret_found_out"})
+    # PHASE-67 part 4: a name kept from someone, or taken back, and a statement added may make or end a secret
+    SECRET_REPAIRS = frozenset({"secret_keep", "secret_found_out", "fact_hidden", "fact_add"})
 
     def restale(conn, conv_id: UUID, kinds: set[str]) -> None:
         """After a repair that keeps a secret or ends one is made or taken back: the summaries written without it, and
@@ -1321,7 +1338,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         try:
             return repairs.plan(body.kind, body.item, view, head_turn(conn, head), body.outcome, body.character,
                                 body.turn, body.new_object, body.new_value, body.other, body.entity_type,
-                                version_key, body.scope)
+                                version_key, body.scope, body.new_because,
+                                body.fact.model_dump() if body.fact else None, body.hidden, body.attention)
         except repairs.RepairError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -1348,13 +1366,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
-            view = repair_view(conn, conv, head, {i.kind for i in body.items})
+            view = repair_view(conn, conv, head, {i.kind for i in body.items},
+                               [i.item for i in body.items if i.kind == "fact_add"])
             plan: list[dict[str, Any]] = []
             planned: list[tuple[RepairRequest, dict, dict]] = []
             seen: set[tuple] = set()
             for n, item in enumerate(body.items):
                 entry: dict[str, Any] = {"index": n, "kind": item.kind, "item": item.item}
-                key = (item.kind, item.item, item.outcome, item.character, item.new_object, item.new_value, item.turn)
+                key = (item.kind, item.item, item.outcome, item.character, item.new_object, item.new_value, item.turn,
+                       item.new_because, item.hidden, item.attention, item.fact.model_dump_json() if item.fact else None)
                 if item.kind in PREVIEWED or item.lock:
                     entry["error"] = "this repair is made one at a time, from its preview"
                 elif key in seen:
@@ -1364,7 +1384,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     try:
                         target, value = repairs.plan(item.kind, item.item, view, head_turn(conn, head), item.outcome,
                                                      item.character, item.turn, item.new_object, item.new_value,
-                                                     item.other, item.entity_type, version_key, item.scope)
+                                                     item.other, item.entity_type, version_key, item.scope,
+                                                     item.new_because, item.fact.model_dump() if item.fact else None,
+                                                     item.hidden, item.attention)
                         planned.append((item, target, value))
                     except repairs.RepairError as e:
                         entry["error"] = str(e)
@@ -2194,11 +2216,21 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         owner's repairs with the flags'."""
         ex_key = rt["active_extractor"]
         lost = dropped.find(conn, head, ex_key, view)
-        role_ends = {"automatic": endings.automatic(conn, view, head_turn(conn, head)),
-                     "held": endings.held(conn, head, ex_key, view),
-                     "aliases_held": endings.held_aliases(conn, head, ex_key, view, facts_links_of(conn, conv["id"]))}
+        held, aliases, dismissed = attention_held(conn, conv, head, view)
+        role_ends = {"automatic": endings.automatic(conn, view, head_turn(conn, head)), "held": held,
+                     "aliases_held": aliases}
         flags = state_flags(conn, conv)
-        return lost, role_ends, flags, repair_rows(conn, conv["id"], view["repairs"], flags)
+        return lost, role_ends, flags, repair_rows(conn, conv["id"], view["repairs"], flags, dismissed)
+
+    def attention_held(conn, conv: dict[str, Any], head: UUID, view: dict[str, Any]) -> tuple[list, list, dict]:
+        """The held role endings and aliases "Needs attention" lists (PHASE-28 Q7, PHASE-29 Q5), without those the
+        owner dismissed (`attention_dismiss`, PHASE-67 part 4), and {dismissal id: the row it hides}."""
+        ex_key, r = rt["active_extractor"], view.get("resolution")
+        held, hits = repairs.undismissed(endings.held(conn, head, ex_key, view), view["repairs"], "role_held", r)
+        aliases, more = repairs.undismissed(endings.held_aliases(conn, head, ex_key, view,
+                                                                 facts_links_of(conn, conv["id"])),
+                                            view["repairs"], "alias_held", r)
+        return held, aliases, hits | more
 
     def hub_data(conn, conv: dict[str, Any] | None, off: bool, all_off: bool) -> dict[str, Any]:
         """What the panel's hub says (PHASE-52 D1), from what the Inspector's chat page reads."""

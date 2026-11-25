@@ -23,10 +23,10 @@ from .keywords import keywords
 from .predicates import (EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, address_label,
                          stored_knowledge, whereabouts)
 from . import canon, canonfacts
-from .repairs import (IN_FORCE, READ_REGISTRY, REPAIR_COLUMNS, anchors_needed, apply_facts, apply_locks, cardinality,
-                      conditional, epistemic, exclusions, fungible, is_v21, legacy_anchors, live, members_of, pins,
-                      quoted_turns, read_predicate, rebase, record_anchors, secret_events, slot, slotted, splits_of,
-                      thread_events, unedited_quotes, unifies)
+from .repairs import (FACT_KINDS, IN_FORCE, READ_REGISTRY, REPAIR_COLUMNS, anchors_needed, apply_facts, apply_locks,
+                      apply_told, cardinality, conditional, epistemic, exclusions, fungible, is_v21, legacy_anchors,
+                      live, members_of, pins, quoted_turns, read_predicate, rebase, record_anchors, secret_events, slot,
+                      slotted, splits_of, thread_events, unedited_quotes, unifies)
 from .secrets import secret_text
 from .secrets import fold as fold_secrets
 from .threads import MATCH_MIN, PREDICATES as THREAD_PREDICATES, fold as fold_threads, similarity
@@ -896,13 +896,17 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         in_force = unedited_quotes(in_force, {x["turn"]: x["h"] for x in conn.execute(
             "SELECT turn, max(turn_hash) AS h FROM active_membership WHERE commit_id = %s AND turn = ANY(%s)"
             " GROUP BY turn", (head, quoting)).fetchall()})
-    restored_at = sorted({rep["target"].get("turn") for rep in in_force if rep["kind"] == "fact_restore"} - {None})
+    restored_at = sorted({rep["target"].get("turn") for rep in in_force if rep["kind"] in ("fact_restore", "fact_add")}
+                         - {None})  # PHASE-67 part 4: a statement the owner adds goes where a restore goes
     turn_info = {x["turn"]: (x["p"], x["h"]) for x in conn.execute(  # PHASE-22 Q7: where a restored fact goes
         "SELECT turn, max(position) AS p, max(turn_hash) AS h FROM active_membership WHERE commit_id = %s"
         " AND turn = ANY(%s) AND (%s::int IS NULL OR position <= %s::int) GROUP BY turn",
         (head, restored_at, upto, upto)).fetchall()} if restored_at else {}
     rows, retracted = apply_facts(rows, in_force, r, applied, _annotate, turn_positions, turn_info)
-    if any(rep["kind"] in ("fact_retract", "fact_correct", "fact_restore") for rep in in_force):
+    # PHASE-67 part 4: the told rows the owner took back, from every read (the repairs list reports them applied)
+    told_served = apply_told(told_rows(served), in_force, r, applied) if told or any(
+        rep["kind"] == "told_retract" for rep in in_force) else None
+    if any(rep["kind"] in FACT_KINDS for rep in in_force):
         # The threads fold what the repairs left: a retracted opening opens nothing, a corrected one opens as corrected
         # and a restored one opens (PHASE-22 Q7), in the rows' order (carried openings first, as above; never canon).
         promises = [x for x in rows if x["predicate"] in THREAD_PREDICATES and not x.get("canon")]
@@ -1042,7 +1046,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                                                                   "upto": upto}).fetchone()) is not None:
         view["open_turn"] = dict(finale)  # PHASE-67: the read took the provisional finale; absent otherwise
     if told:
-        view["told"] = told_view(told_rows(served), r, excluded)
+        view["told"] = told_view(told_served if told_served is not None else told_rows(served), r, excluded)
     if carried is not None:
         view["carried"] = {"link": carried.link, "source": carried.source, "mode": carried.mode,
                            "names": carried.names, "rows": len(carried_rows), "story": carried.story}
