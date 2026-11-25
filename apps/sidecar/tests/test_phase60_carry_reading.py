@@ -415,18 +415,25 @@ def test_regression_case_5_revealed_secret_is_carried() -> None:
     assert f["orig_known_by"] == ["하나", "세라"]
 
 
-def test_regression_row_involving_no_named_character_is_never_carried() -> None:
+def test_regression_row_involving_no_named_character_is_carried_by_its_knowledge_marks() -> None:
+    """Changed in Tier 1 (F1, owner-agreed): this test asserted that a row involving no named character was never
+    carried, which dropped every world fact, item whereabouts, third party's public event and a third party's secret
+    the regressor was told. Such a row is now remembered by its knowledge marks: a public one by every named, a
+    limited one by the named in `known_by`; an unmarked one still by the involved named only (here: no one)."""
     seed, r = _regression_fixture()
     other_public = _row(160, "하나", "relationship", obj="유나", object_type="character", value="친구",
                         knowledge="public", position=5)
     other_known = _row(161, "하나", "has_status", value="피곤함",
                        knowledge="limited", known_by=["세라"], position=6)
-    assert carry.rememberers(other_public, ["세라"], r) == []
-    assert carry.rememberers(other_known, ["세라"], r) == []
+    other_unmarked = _row(162, "하나", "has_status", value="배고픔", knowledge="unknown", position=7)
+    assert carry.rememberers(other_public, ["세라"], r) == ["세라"]
+    assert carry.rememberers(other_known, ["세라"], r) == ["세라"]
+    assert carry.rememberers(other_unmarked, ["세라"], r) == []
 
-    view = _make_view([other_public, other_known], extra_rows=seed)
+    view = _make_view([other_public, other_known, other_unmarked], extra_rows=seed)
     snap = carry.snapshot_of(view, None, "regression", ["세라"], SRC_ID, {})
-    assert snap["facts"] == []
+    assert sorted(f["from"]["assertion"] for f in snap["facts"]) == [160, 161]
+    assert all(f["known_by"] == ["세라"] for f in snap["facts"])
 
 
 def test_regression_names_validation_deduplication_and_characters_list() -> None:
@@ -446,9 +453,12 @@ def test_regression_names_validation_deduplication_and_characters_list() -> None
     }
     view = _make_view([f1, f2, f3, f4, f5], extra_rows=[alias], persona=("도현",), excluded=excluded)
 
-    # Characters list: persona and memory-excluded left out; cast-excluded kept; most mentioned first.
+    # Characters list: memory-excluded left out; cast-excluded kept; most mentioned first. Changed in Tier 1 (F1,
+    # owner-agreed): the persona was left out of this list; it is listed now (a protagonist may regress), and
+    # `persona_character` says which one it is.
     cont = carry.snapshot_of(view, None, "continue", [], SRC_ID, {})
-    assert cont["characters"] == ["세라", "카이토"]
+    assert cont["characters"] == ["세라", "카이토", "도현"]
+    assert cont["persona_character"] == "도현"
 
     # Aliases of one entity kept once, first spelling.
     reg = carry.snapshot_of(view, None, "regression", ["세라 언니", "세라", "카이토"], SRC_ID, {})
@@ -457,8 +467,9 @@ def test_regression_names_validation_deduplication_and_characters_list() -> None
     # Validation errors.
     with pytest.raises(carry.CarryError, match="유나 is no character of the source"):
         carry.snapshot_of(view, None, "regression", ["유나"], SRC_ID, {})
-    with pytest.raises(carry.CarryError, match="도현 is no character of the source"):
-        carry.snapshot_of(view, None, "regression", ["도현"], SRC_ID, {})
+    # Changed in Tier 1 (F1, owner-agreed): the persona was refused here ("도현 is no character of the source"); it is
+    # a character a regression may name now, stored as the persona marker.
+    assert carry.snapshot_of(view, None, "regression", ["도현"], SRC_ID, {})["names"] == [PERSONA]
     with pytest.raises(carry.CarryError, match="모르는이 is no character of the source"):
         carry.snapshot_of(view, None, "regression", ["모르는이"], SRC_ID, {})
     with pytest.raises(carry.CarryError):

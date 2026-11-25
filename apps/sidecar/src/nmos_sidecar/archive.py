@@ -239,14 +239,26 @@ def write_archive(conn: psycopg.Connection, out: IO[bytes], conversations: list[
                     (convs,))
         latest = dict(_q(conn, "SELECT DISTINCT ON (kind) kind, key FROM projection_generation"
                                " ORDER BY kind, activated_at DESC, key"))
-        carry_left_out = 0
+        # A carry link whose other chat is not exported is left out: its source is a NOT NULL foreign key (migration
+        # 0036), so it cannot be restored without that chat. The manifest says which links and which chats, ids only
+        # (no name of a chat the owner did not export), so an export can be made again with them.
+        left_out: list[tuple[Any, ...]] = []
         if _q(conn, "SELECT to_regclass(%s::text)", ("conversation_carry",))[0][0] is not None:
-            carry_left_out = _q(
+            left_out = _q(
                 conn,
-                "SELECT count(*) FROM conversation_carry"
-                " WHERE (target_conversation_id = ANY(%s)) <> (source_conversation_id = ANY(%s))",
-                (convs, convs),
-            )[0][0]
+                "SELECT id, target_conversation_id, source_conversation_id, mode, removed_at IS NULL,"
+                " target_conversation_id = ANY(%s)"
+                " FROM conversation_carry"
+                " WHERE (target_conversation_id = ANY(%s)) <> (source_conversation_id = ANY(%s))"
+                " ORDER BY created_at, id",
+                (convs, convs, convs),
+            )
+        carry_left_out = len(left_out)
+        carry_left_out_details = [{"link": str(i), "target": str(t), "source": str(s), "mode": m, "in_force": f,
+                                   "missing": "source" if exported_target else "target"}
+                                  for i, t, s, m, f, exported_target in left_out]
+        carry_left_out_conversations = sorted({str(s if exported_target else t)
+                                               for _, t, s, _, _, exported_target in left_out})
         export = Export(manifest={})
         omitted: list[str] = []
         with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
@@ -287,6 +299,8 @@ def write_archive(conn: psycopg.Connection, out: IO[bytes], conversations: list[
                                    "chat": r[4], "branched_from": str(r[5]) if r[5] else None} for r in labels],
                 "omitted_settings": sorted(omitted),
                 "carry_left_out": carry_left_out,
+                "carry_left_out_details": carry_left_out_details,
+                "carry_left_out_conversations": carry_left_out_conversations,
                 "files": [{"path": w.path, "table": w.table, "rows": w.rows, "bytes": w.bytes, "sha256": w.sha256}
                           for w in export.files],
             }

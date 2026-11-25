@@ -242,7 +242,11 @@ def test_a_chat_never_carries_itself_or_an_unknown_chat(migrated: str) -> None:
                 )
 
 
-def test_a_reading_never_follows_the_sources_own_link(migrated: str) -> None:
+def test_a_reading_takes_the_sources_own_link_rows_never_its_source_again(migrated: str) -> None:
+    """Changed in Tier 1 (F3, owner-agreed): this test was `test_a_reading_never_follows_the_sources_own_link` and
+    asserted that a reading of A, which continues B, carried nothing of B. A reading now takes the rows A's own
+    `continue` link carries (its frozen snapshot), each keeping B's provenance, so C keeps B's still-current facts;
+    B itself is still never read again (test_tier1_carry_archive pins the provenance and the open threads)."""
     with make_client(migrated, **ON) as c:
         # B: 하나 and 유나 at the harbour market. A: 세라 at the lighthouse. C: the target.
         b_sim = SimChat("chain-b")
@@ -266,6 +270,7 @@ def test_a_reading_never_follows_the_sources_own_link(migrated: str) -> None:
             snap = carry.by_id(conn, made["id"])["snapshot"]
             assert snap["facts"]
             for row in (*snap["facts"], *snap["aliases"], *snap["threads"]):
-                assert row["from"]["conversation"] == str(a)
-            assert not any(f["subject"] in ("하나", "유나") for f in snap["facts"])
-            assert "하나" not in snap["characters"]
+                came_from_b = row.get("subject", row.get("name")) in ("하나", "유나")
+                assert row["from"]["conversation"] == str(b if came_from_b else a)
+            assert any(f["subject"] == "하나" for f in snap["facts"])
+            assert "하나" in snap["characters"]

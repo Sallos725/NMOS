@@ -255,8 +255,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def view_of(conn, head: UUID, told: bool = False, carried: bool = False) -> dict[str, Any]:
         """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047). `told`: with who told
         whom (`view["told"]`, PHASE-60 S8), for the pages that draw chains. `carried`: with the chat's carry link in
-        force (ADR 0085), only for the read-only lists and screens that show carried memory; previews, repairs, the
-        author's note and every other reader keep the chat's own memory (PHASE-60 S6)."""
+        force (ADR 0085): the read-only lists and screens that show carried memory, and (Tier 1, owner-agreed) the
+        join, split and exclusion previews, repairs and the author's note, so a carried row can be repaired, pinned,
+        left out, joined and noted as the chat's requests read it. Every other reader keeps the chat's own memory
+        (PHASE-60 S6)."""
         link = carried_of(conn, head) if carried else None
         if link is None:
             return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), told=told)
@@ -808,8 +810,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     def preview_of(conn, conv_id: UUID, head: UUID, action: str, **a: Any) -> dict[str, Any]:
         """What a join, a split or the undo of either would change (PHASE-20 Q1–Q4): the chat's memory now and as it
-        would be, both read as every request reads them, and the difference; nothing is written."""
-        now = view_of(conn, head)
+        would be, both read as every request reads them, and the difference; nothing is written. With a carry link in
+        force both sides read it (ADR 0085), so its rows are never a change of their own."""
+        carrying = carried_of(conn, head)
+        now = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), carried=carrying)
         # now(), as the link the join would insert is stamped (DEFAULT now()): the database's clock, the same moment
         at = conn.execute("SELECT now() AS t").fetchone()["t"]
         exclude: set[str] = set()
@@ -831,13 +835,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                         "note": None, "created_at": at}]}
             exclude = {"preview"}
         elif action == "exclude":  # PHASE-47 S4: what leaving the name out would change, under both scopes
-            return exclusion_preview(conn, conv_id, head, now, at, a["entity_type"], a["name"], a.get("scope") or "cast")
+            return exclusion_preview(conn, conv_id, head, now, at, a["entity_type"], a["name"], a.get("scope") or "cast",
+                                     carrying=carrying)
         elif action == "unexclude":
             rep = in_force(conn, "owner_repair", conv_id, a["row"])
             if rep is None:
                 raise HTTPException(status_code=404, detail="repair not found")
             return exclusion_preview(conn, conv_id, head, now, at, rep["target"]["entity_type"], rep["target"]["name"],
-                                     rep["target"].get("scope") or "cast", undo=rep)
+                                     rep["target"].get("scope") or "cast", undo=rep, carrying=carrying)
         elif action == "unlink":
             link = in_force(conn, "entity_link", conv_id, a["row"])
             if link is None:
@@ -854,7 +859,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             names = [(t["entity_type"], t["name"]), (t["entity_type"], t["other"])]
             what_if = {"drop_repairs": {str(rep["id"])}}
             exclude = {str(rep["id"])}
-        then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if)
+        then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if,
+                           carried=carrying)
         out = preview.diff(now, then, names, exclude)
         if action == "unlink":  # the turns an undo leaves as the join had them extracted (Q7)
             ra = then["resolution"]
@@ -865,7 +871,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             out["reextract"] = {"turns": len(turns), "list": turns}  # none while the names stay one entity anyway
         state = {"head": head, "links": sorted(str(x["id"]) for x in facts_links_of(conn, conv_id)),
                  "repairs": sorted(str(x["id"]) for x in now["repairs"]), "extractor": rt["active_extractor"],
-                 "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names")}
+                 "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names"),
+                 **({"carry": carrying.link} if carrying is not None else {})}
         return {"action": action, **out, "fingerprint": preview.fingerprint(out, state)}
 
     def host_character(conn, conv_id: UUID, view: dict[str, Any], entity_type: str, name: str) -> None:
@@ -878,7 +885,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=422, detail="the chat's own character is always a character")
 
     def exclusion_preview(conn, conv_id: UUID, head: UUID, now: dict[str, Any], at: Any, entity_type: str, name: str,
-                          scope: str, undo: dict[str, Any] | None = None) -> dict[str, Any]:
+                          scope: str, undo: dict[str, Any] | None = None,
+                          carrying: carry.Carried | None = None) -> dict[str, Any]:
         """What leaving an entity out would change (PHASE-47 S4), or taking that back (`undo`): for each scope, the
         relationship pairs and the facts that leave, and the difference for the one asked; nothing is written. The
         panel offers "memory" with its counts beside the default "cast" (Q1 a)."""
@@ -895,7 +903,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             what_if = ({"drop_repairs": {str(undo["id"])}} if undo is not None else {"add_repairs": [{
                 "id": "preview", "kind": "entity_exclude", "note": None, "created_at": at, "value": {},
                 "target": {"entity_type": entity_type, "name": name.strip(), "scope": s}}]})
-            then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if)
+            then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if,
+                               carried=carrying)
             gone = (now if undo is not None else then).get("excluded") or {}
             hidden = sum(x.get("hidden", 0) for i, x in gone.items() if undo is None or str(x["repair"]) == str(undo["id"]))
             scopes[s] = {"pairs": abs(pairs_now - len(inspector.pairs(standing(then), excluded_ids(then)))),
@@ -905,7 +914,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         out = {**chosen, "changes": True, "scope": scope, "scopes": scopes}
         state = {"head": head, "links": sorted(str(x["id"]) for x in facts_links_of(conn, conv_id)),
                  "repairs": sorted(str(x["id"]) for x in now["repairs"]), "extractor": rt["active_extractor"],
-                 "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names"), "scope": scope}
+                 "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names"), "scope": scope,
+                 **({"carry": carrying.link} if carrying is not None else {})}
         return {"action": "unexclude" if undo else "exclude", **out,
                 "fingerprint": preview.fingerprint({**out, "lines": [*out["lines"], scopes]}, state)}
 
@@ -937,7 +947,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         fingerprint of the preview the owner saw: 409 when memory changed since (PHASE-20 Q4)."""
         with request.app.state.pool.connection() as conn:
             head = head_of(conn, conv_id)
-            now = view_of(conn, head)
+            now = view_of(conn, head, carried=True)  # a carried name may be joined (Tier 1)
             if body.held_alias is not None:  # PHASE-29 Q5: linked from "Needs attention"
                 held_alias_of(conn, conv_id, head, now, body.held_alias, body.entity_type, body.name, body.same_as)
             check_join(now["resolution"], body.entity_type, body.name, body.same_as, body.held_alias is not None)
@@ -949,7 +959,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     " RETURNING id, entity_type, name, same_as, created_at",
                     (uuid7(), conv_id, body.entity_type, body.name.strip(), body.same_as.strip())).fetchone()
             log.info("entity link conversation=%s link=%s", conv_id, link["id"])
-            entity = view_of(conn, head)["resolution"].entity(body.entity_type, body.name)
+            entity = view_of(conn, head, carried=True)["resolution"].entity(body.entity_type, body.name)
             return {"link": link, "entity": entity}
 
     @app.post("/v1/conversations/{conv_id}/entity-links/{link_id}/remove/preview", dependencies=[Depends(auth)])
@@ -1166,7 +1176,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            view = view_of(conn, conv["head_commit_id"])
+            view = view_of(conn, conv["head_commit_id"], carried=True)  # a repair of a carried row applies (Tier 1)
             return {"repairs": repair_rows(conn, conv_id, view["repairs"])}
 
     @app.post("/v1/conversations/{conv_id}/repairs/preview", dependencies=[Depends(auth)])
@@ -1213,7 +1223,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                 scope=body.scope)
                 row = insert_repair(conn, conv_id, body.kind, target, value, body.note)
                 if body.lock:  # the corrected canon is kept against the story (PHASE-57 B2)
-                    later = view_of(conn, head)
+                    later = view_of(conn, head, carried=True)
                     # the owner's version, current or held off by the story's later statement
                     mine = next((a for a in later["assertions"] if a.get("owner") and a.get("repair") == str(row["id"])),
                                 None)
@@ -1226,7 +1236,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                         raise HTTPException(status_code=422, detail=str(e)) from e
                     insert_repair(conn, conv_id, "fact_lock", lt, lv, None)
             applied = target["id"] if body.kind == "state_dismiss" else next(
-                (x["applied"] for x in view_of(conn, head)["repairs"] if x["id"] == row["id"]), None)
+                (x["applied"] for x in view_of(conn, head, carried=True)["repairs"] if x["id"] == row["id"]), None)
+            restale(conn, conv_id, {body.kind})
         log.info("owner repair conversation=%s repair=%s kind=%s applied=%s", conv_id, row["id"], body.kind,
                  applied is not None)
         return {"repair": row, "applied": applied}
@@ -1236,15 +1247,31 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     def repair_view(conn, conv: dict[str, Any], head: UUID, kinds: set[str]) -> dict[str, Any]:
         """The chat's memory as a repair of these kinds is planned against: with the dropped facts and held endings a
-        restore names, and the status flags a dismissal names."""
-        view = view_of(conn, head)
+        restore names, and the status flags a dismissal names. With a carry link in force its rows are there to repair
+        (Tier 1); what a re-extraction dropped is still found against the chat's own memory."""
+        view = view_of(conn, head, carried=True)
         if "fact_restore" in kinds:  # a fact a re-extraction dropped, or a held role ending (PHASE-28 Q7)
-            view["dropped"] = (dropped.find(conn, head, rt["active_extractor"], view)
-                               + endings.held(conn, head, rt["active_extractor"], view))
+            own = view if "carried" not in view else view_of(conn, head)
+            view["dropped"] = (dropped.find(conn, head, rt["active_extractor"], own)
+                               + endings.held(conn, head, rt["active_extractor"], own))
         if "state_dismiss" in kinds:  # a status flag not yet dismissed (PHASE-39 Q4)
             off = statewatch.dismissed(repair_rows(conn, conv["id"], []))
             view["state_flags"] = [f for f in state_flags(conn, conv) if f["id"] not in off]
         return view
+
+    SECRET_REPAIRS = frozenset({"secret_keep", "secret_found_out"})
+
+    def restale(conn, conv_id: UUID, kinds: set[str]) -> None:
+        """After a repair that keeps a secret or ends one is made or taken back: the summaries written without it, and
+        the story, queued again with it listed (`summaries.schedule_stale`), as after an extraction that states one,
+        so a held <Story> is written again instead of staying held. Nothing while summaries are off."""
+        if rt["summarizer"] is not None and kinds & SECRET_REPAIRS:
+            try:  # the repair is written already: a failed queueing must not report it as failed
+                with conn.transaction():
+                    summaries.schedule_stale(conn, conv_id, rt["summarizer"].key)
+            except psycopg.Error:
+                log.warning("summaries not queued again after a secret repair conversation=%s", conv_id,
+                            exc_info=True)
 
     def plan_repair(conn, head: UUID, view: dict[str, Any], body: RepairRequest) -> tuple[dict, dict]:
         try:
@@ -1327,6 +1354,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 if undone:
                     conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s"
                                  " AND id = ANY(%s) AND removed_at IS NULL", (conv_id, undone))
+            restale(conn, conv_id, {item.kind for item, _, _ in planned} | {found[rid]["kind"] for rid in undone})
         log.info("owner repairs conversation=%s batch=%s counts=%s", conv_id, batch, counts)
         return {**out, "batch": str(batch)}
 
@@ -1334,8 +1362,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def remove_repairs(conv_id: UUID, batch_id: UUID, request: Request):
         """The owner takes a batch back (PHASE-57 B1): every repair of it still in force, together."""
         with request.app.state.pool.connection() as conn:
-            n = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s AND batch_id = %s"
-                             " AND removed_at IS NULL", (conv_id, batch_id)).rowcount
+            gone = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s AND batch_id = %s"
+                                " AND removed_at IS NULL RETURNING kind", (conv_id, batch_id)).fetchall()
+            n = len(gone)
+            if n:
+                restale(conn, conv_id, {x["kind"] for x in gone})
         if not n:
             raise HTTPException(status_code=404, detail="no repair of that batch in force")
         log.info("owner repairs removed conversation=%s batch=%s repairs=%d", conv_id, batch_id, n)
@@ -1362,6 +1393,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 expect_same(conn, conv_id, body.expect if body else None, action, row=repair_id)
                 n = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE id = %s AND conversation_id = %s"
                                  " AND removed_at IS NULL", (repair_id, conv_id)).rowcount
+            if n and rep is not None:
+                restale(conn, conv_id, {rep["kind"]})
         if not n:
             raise HTTPException(status_code=404, detail="repair not found")
         log.info("owner repair removed conversation=%s repair=%s", conv_id, repair_id)
@@ -1515,7 +1548,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
-            view = view_of(conn, head)
+            view = view_of(conn, head, carried=True)  # carried facts and threads in the note too (Tier 1)
             last = head_turn(conn, head)
             key = rt.get("active_summarizer")
             # the parts that read summaries and call a model
