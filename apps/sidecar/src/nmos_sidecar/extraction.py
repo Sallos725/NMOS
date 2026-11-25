@@ -23,7 +23,7 @@ from .config import Settings
 from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, ReplyError, metered
-from .entities import PERSONA, UNNAMED, Resolution, node, norm, resolve
+from .entities import PERSONA, UNNAMED, Resolution, names_persona, node, norm, resolve
 from .facts import _versions, fact_text, links_of, persona_of, served_assertions, version_key
 from . import canon
 from .repairs import (apply_facts, live, quoted_turns, repairs_of, secret_events, splits_of, thread_events,
@@ -1270,8 +1270,7 @@ def role_party_named(role: dict[str, Any], turn_text: str, hints: list[dict[str,
     those while rejecting the unrelated employer at turn 99. A pronoun-only counterpart is conservatively missed.
     The counterpart's given name alone counts when no other known full name or alias owner shares it.
     """
-    persona_names = frozenset(norm(n) for n in persona or ())
-    to_persona = node("character", role["to"], persona_names)[1] == PERSONA
+    to_persona = names_persona("character", role["to"], persona or ())
     other = norm(role["by"] if to_persona else role["to"])
     groups = [{norm(h["name"]), *(norm(n) for n in h.get("also", []))}
               for h in hints or () if h.get("type") == "character"]
@@ -1288,7 +1287,7 @@ def role_party_named(role: dict[str, Any], turn_text: str, hints: list[dict[str,
             # A bare short-name entity may be the unresolved split. An alias to another name is stronger evidence
             # and must keep blocking the mention, even when that name has no matching given-name part.
             holders = [g for g in groups if (part in g and len(g) > 1) or any(part in name_parts(n) for n in g)]
-            if all(g is own for g in holders) and node("character", part, persona_names)[1] != PERSONA:
+            if all(g is own for g in holders) and not names_persona("character", part, persona or ()):
                 names.add(part)
     text = norm(turn_text)
     # Keep Korean particles usable, but do not count Ann inside Joanne/Anna or a given name inside another full name.

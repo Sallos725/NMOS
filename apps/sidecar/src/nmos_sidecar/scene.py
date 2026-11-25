@@ -16,7 +16,7 @@ import re
 from collections.abc import Collection, Iterable, Mapping
 from typing import Any
 
-from .entities import USER_NAMES, Resolution, norm
+from .entities import USER_NAMES, Resolution, names_persona, norm
 from .variants import widened
 
 CAST_TURNS = 2
@@ -41,10 +41,13 @@ def _said(name: str, said: str, words: str) -> bool:
 
 
 def is_persona(r: Resolution, name: str) -> bool:
-    """Every name the persona goes by (ADR 0023), and a full name ending with one: extraction writes the
-    persona's family and given name ("아오키 타쿠미") where the host reports the given name only."""
-    n = norm(name)
-    return n in r.persona_names or (" " in n and n.rsplit(" ", 1)[1] in r.persona_names - USER_NAMES)
+    """Every name the persona goes by in `r` (ADR 0023, resolve-v6): uses the conversation's resolution when the name
+    is a known entity (so a split NPC or title-prefixed NPC is never hijacked), and `names_persona` for mark-only names."""
+    if r.is_persona("character", name):
+        return True
+    if r.entity("character", name) is not None:
+        return False
+    return norm(name) in r.persona_names or names_persona("character", name, r.persona)
 
 
 def key(r: Resolution, name: str) -> str:

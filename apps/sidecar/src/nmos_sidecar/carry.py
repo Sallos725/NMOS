@@ -23,7 +23,7 @@ from psycopg.types.json import Jsonb
 
 from . import canonfacts, summaries
 from .ids import uuid7
-from .entities import PERSONA, Resolution, norm
+from .entities import PERSONA, Resolution, names_persona, norm
 from .facts import fact_text, memory_view
 from .threads import relevant_threads
 
@@ -121,9 +121,13 @@ def _is_persona(r: Resolution | None, entity_type: str | None, name: str | None)
 
 
 def _is_persona_spelling(r: Resolution | None, entity_type: str | None, name: str | None) -> bool:
-    """Whether `name` itself spells the source's persona (a host persona name, a full name ending with one, or a
+    """Whether `name` itself spells the source's persona (a host persona name, a full/derived name spelling it, or a
     `USER_NAMES` placeholder), not merely a nickname the story joined to it: an alias entry keeps its nicknames."""
-    return bool(name) and r is not None and r.node(entity_type, name) == ("character", PERSONA)
+    if not name or r is None:
+        return False
+    return r.node(entity_type, name) == ("character", PERSONA) or (
+        r.is_persona(entity_type, name) and names_persona(entity_type, name, r.persona)
+    )
 
 
 def _map_char_name(name: str, r: Resolution | None) -> str:
