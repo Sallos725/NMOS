@@ -661,3 +661,78 @@ def test_a_conditional_role_and_cover_fold_per_slot_within_their_value(migrated:
     assert [(f["value"], repairs.slot(f)) for f in current(view, "role_toward")] == [("비서", ("default",))]
     assert {(f["value"], repairs.slot(f)) for f in current(view, "cover_identity")} == {
         ("꽃집 주인", ("public",)), ("학생", ("default",))}
+
+
+# --- PHASE-66 guise scoping (soft) ----------------------------------------------------------------------------------
+
+GUISE = {
+    "t0": [a("루카", "disguised_as", "카이", None, knowledge="limited", known_by=["루카", "세라"], hidden_from=["유나"],
+             guise="카이"),
+           a("유나", "feels_toward", "루카", "무관심"),
+           a("유나", "addresses", "루카", "반말, '루카'")],
+    "t1": [a("유나", "feels_toward", "카이", "동경"),
+           a("유나", "addresses", "카이", "존댓말, '기사님'"),
+           a("세라", "feels_toward", "카이", "걱정"),  # 세라 knows: an ordinary feeling toward 루카
+           a("카이", "has_status", None, "부상"),
+           a("하나", "relationship", "루카", "친구", condition={"scope": "private", "when": "둘만", "as_guise": "카이"})],
+    "t2": [],  # 유나 finds out here (the owner's secret_found_out at this turn, below)
+    "t3": [a("유나", "feels_toward", "카이", "배신감")],
+}
+
+
+def test_what_someone_unaware_holds_toward_a_guise_stays_the_guises(migrated: str):
+    v21 = Chat(migrated, GUISE)
+    with v21.client() as c:
+        v21.run(c)
+        before = v21.view()
+        # before she finds out, her later feeling toward the knight is still the guise's
+        assert {(f["value"], bool(f.get("toward_guise"))) for f in current(before, "feels_toward", "유나")} == {
+            ("무관심", False), ("배신감", True)}
+        secret = next(s for s in before["secrets"] if "disguised as" in s["text"])
+        post(c, v21.cid, kind="secret_found_out", item=str(secret["id"]), character="유나", turn=2)
+        view = v21.view()
+    feelings = {(f["subject"], f["value"], (f.get("toward_guise") or {}).get("guise"))
+                for f in current(view, "feels_toward")}
+    # 유나 adored the knight 카이 while she did not know: that stays the guise's; once she knows (turn 2), her feeling
+    # toward 카이 is toward 루카 and replaces her old one in his slot
+    assert ("유나", "동경", "카이") in feelings and ("유나", "배신감", None) in feelings
+    assert ("유나", "무관심", None) not in feelings
+    # 세라 knows: her feeling toward the guise is toward 루카, an ordinary one
+    assert ("세라", "걱정", None) in feelings
+    # one body: the guise's wound is 루카's (one entity), and recall knows the guise's name
+    hurt = current(view, "has_status")[0]
+    assert hurt["subject_entity"]["id"] == next(e["id"] for e in view["entities"] if e["name"] in ("루카", "카이"))
+    assert {"루카", "카이"} <= set(next(e for e in view["entities"] if e["id"] == hurt["subject_entity"]["id"])["names"])
+    # an explicit as_guise holds toward the guise whoever states it
+    tie = current(view, "relationship")[0]
+    assert tie["toward_guise"]["guise"] == "카이"
+    # the address toward the guise keeps its own slot
+    assert {(f["value"], bool(f.get("toward_guise"))) for f in current(view, "addresses")} == {
+        ("반말, '루카'", False), ("존댓말, '기사님'", True)}
+    disguise = view["disguises"][0]
+    assert (disguise["subject"], disguise["guise"], disguise["current"]) == ("루카", "카이", True)
+    assert {f["id"] for f in view["facts"] if f.get("toward_guise", {}).get("disguise") == disguise["id"]} == set(
+        disguise["held"])
+
+
+def test_once_she_learns_the_truth_her_later_rows_fold_into_the_wearer():
+    rows = [row(0, "disguised_as", None, obj="카이", subject="루카", turn=0, hidden_from=["유나"]),
+            row(1, "feels_toward", "동경", subject="유나", obj="카이", turn=1),
+            row(2, "feels_toward", "배신감", subject="유나", obj="카이", turn=3)]
+    rows[0]["revealed"] = [{"to": "유나", "turn": 2}]
+    from nmos_sidecar.entities import resolve
+    r = resolve("00000000-0000-0000-0000-000000000000", rows + facts._guise_aliases(rows), [], [], [], [])
+    facts._hold_toward_guise(rows, facts._disguises(rows, r), r)
+    assert rows[1]["toward_guise"]["guise"] == "카이" and "toward_guise" not in rows[2]
+
+
+def test_a_chat_without_a_disguise_has_no_disguises_key(migrated: str):
+    v21 = Chat(migrated, ONTO | {"t9": []})
+    with v21.client() as c:
+        v21.run(c)
+        view = v21.view()
+    assert "disguises" in view  # ONTO has one
+    plain = Chat(migrated, COND, name="w3-plain")
+    with plain.client() as c:
+        plain.run(c)
+        assert "disguises" not in plain.view()

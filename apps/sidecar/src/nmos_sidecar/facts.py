@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import psycopg
 from xml.sax.saxutils import escape, quoteattr
@@ -697,6 +697,8 @@ def _one_slot(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     return out
 
 
+_GUISE_NS = UUID("6f1e4f4e-2f6b-5c39-9a51-6e3f2b7a9c10")  # the namespace of a guise alias's stable negative id
+
 LIVE: Any = object()  # `canon_facts` of a live read: decided from the manifest the request names (ADR 0047)
 
 
@@ -799,7 +801,10 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     carried_all = [{**x, "known_by": list(x["known_by"]) if x.get("known_by") else None,
                     "hidden_from": list(x["hidden_from"]) if x.get("hidden_from") else None}
                    for x in carried.rows] if carried is not None and carried.mode == "continue" else []
-    r = resolve(conv["conversation_id"], rows + carried_all if carried_all else rows,
+    # PHASE-66 guise scoping (soft): a guise and the one wearing it are one entity, so recall still finds them and the
+    # response model plays them in disguise; what someone unaware holds toward the guise is kept apart below
+    guise_aliases = _guise_aliases(rows + carried_all if carried_all else rows)
+    r = resolve(conv["conversation_id"], (rows + carried_all if carried_all else rows) + guise_aliases,
                 persona_of(conv["host_persona_name"]), links, splits_of(in_force), canon_names)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
@@ -889,6 +894,14 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             row["hidden_from"] = [n for n in row["hidden_from"] if r.key("character", n) not in revealed_to] or None
             row["known_by"] = list(row.get("known_by") or []) + sorted(ended[row["id"]] - set(row.get("known_by") or []))
             row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
+    disguises = _disguises(rows, r) if guise_aliases else []
+    if disguises:  # PHASE-66: after the reveals above, so a character who found out holds toward the one beneath
+        _hold_toward_guise(rows, disguises, r)
+
+    def vkey(a: dict[str, Any]) -> tuple:
+        """The version key, and a guise-held row's own slot (`toward_guise`): never folded into its wearer's."""
+        g = (a.get("toward_guise") or {}).get("guise")
+        return version_key(a, r) + (("guise", g),) if g else version_key(a, r)
     threads, unmatched, consumed = fold_threads(promises, r, thread_events(in_force, r, applied))
     if carried_openings:
         assert carried is not None
@@ -909,11 +922,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             # latest wins, per speaker as an entity: "백이안" and "이안" are one speaker; an address (and an extract-v21
             # conditioned fact) per condition slot
             where = (slot(row),) if slotted(row["predicate"]) else ()
-            claimed[version_key(row, r) + where + (r.key("character", row["asserted_by"]),)] = row
+            claimed[vkey(row) + where + (r.key("character", row["asserted_by"]),)] = row
         elif row["modality"] != "actual":
             other.append(row)
         else:
-            narrated.setdefault(version_key(row, r), []).append(row)
+            narrated.setdefault(vkey(row), []).append(row)
     held: list[dict[str, Any]] = []
     if locks:
         for key, history in narrated.items():
@@ -932,10 +945,10 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         beliefs, forgotten, facts = _epistemic([x for x in believed if id(x) not in aside], rows, facts, r)
     by_key: dict[tuple, list[dict[str, Any]]] = {}
     for f in facts:
-        by_key.setdefault(version_key(f, r), []).append(f)
+        by_key.setdefault(vkey(f), []).append(f)
     claims = sorted(claimed.values(), key=lambda c: c["position"], reverse=True)
     for c in claims:
-        for f in by_key.get(version_key(c, r), []):
+        for f in by_key.get(vkey(c), []):
             if slotted(c["predicate"]) and slot(f) != slot(c):
                 continue
             f["claims"].append({"by": c["asserted_by"], "turn": c["turn"], "position": c["position"],
@@ -972,6 +985,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
     if believed:
         view["beliefs"], view["forgotten"] = beliefs, forgotten
+    if disguises:  # PHASE-66: each disguise with the facts held toward its guise (absent without one)
+        view["disguises"] = _disguise_view(disguises, facts)
     if include_open_turn and (finale := conn.execute(OPEN_TURN, {"head": head, "key": extractor_key,
                                                                   "upto": upto}).fetchone()) is not None:
         view["open_turn"] = dict(finale)  # PHASE-67: the read took the provisional finale; absent otherwise
@@ -986,6 +1001,93 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         view["regression"] = [line for x in carried.regression
                               if (line := _regression_kept(_regression_line(x, r), r, forgotten)) is not None]
     return view
+
+
+# PHASE-66 guise scoping (soft; plan 3C): while a `disguised_as` (X passes as the guise G) holds, a form of address, a
+# feeling or a tie that a character who does not know (in its `hidden_from`, not yet revealed to) holds toward G, or a
+# row whose `condition.as_guise` is G, stays the guise's: its own slot, marked `toward_guise`. X's body (status, place,
+# belongings, life) is one with the guise: one entity. Nothing is hidden beyond the knowledge marks (AGENTS.md §2).
+GUISE_HELD = frozenset({"addresses", "feels_toward", "relationship"})
+
+
+def _is_disguise(x: Mapping[str, Any]) -> bool:
+    return (x.get("predicate") == "disguised_as" and bool(x.get("object")) and x.get("polarity") != "negative"
+            and (x.get("source") or "narration") == "narration" and (x.get("modality") or "actual") == "actual"
+            and read_predicate(x))
+
+
+def _guise_aliases(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """For each extract-v21 disguise, an `also_called` row joining the guise's name to its wearer for the resolution
+    only (never a fact, never stored; `guise_alias` marks it, its id negative): the owner's split still separates
+    them."""
+    out = []
+    for d in rows:
+        if _is_disguise(d):
+            out.append({"id": -(uuid5(_GUISE_NS, f"{d['id']}:{d['object']}").int % 2**61) - 2**61,
+                        "predicate": "also_called", "subject": d["subject"], "subject_type": d.get("subject_type"),
+                        "object": None, "object_type": None, "value": d["object"], "modality": "actual",
+                        "source": "narration", "polarity": "positive", "participants": None, "turn": d.get("turn"),
+                        "position": d["position"], "compiler": d.get("compiler"), "guise_alias": True})
+    return out
+
+
+def _disguises(rows: list[dict[str, Any]], r: Resolution) -> list[dict[str, Any]]:
+    """Each disguise's span: from its turn until its wearer's next `disguised_as` statement (a new guise, or the
+    disguise denied), oldest first."""
+    stated = [x for x in rows if x["predicate"] == "disguised_as"]
+    out = []
+    for d in stated:
+        if not _is_disguise(d):
+            continue
+        k = _subject(d, r)
+        nxt = next((x for x in stated if x["position"] > d["position"] and _subject(x, r) == k), None)
+        out.append({"row": d, "of": k, "guise": _norm(d["object"]), "start": _unit(d),
+                    "end": _unit(nxt) if nxt is not None else None})
+    return out
+
+
+def _unaware(d: Mapping[str, Any], who: str, turn: int, r: Resolution) -> bool:
+    """Whether `who` (an entity key) does not know the disguise at `turn`: kept from them, and not revealed to them by
+    then (a reveal's turn on, they know; `revealed` as the secret fold set it)."""
+    told = {r.key("character", x["to"]): x.get("turn") for x in d.get("revealed") or ()}
+    if who in told:
+        return told[who] is not None and turn < told[who]
+    return who in {r.key("character", n) for n in d.get("hidden_from") or ()}
+
+
+def _hold_toward_guise(rows: list[dict[str, Any]], disguises: list[dict[str, Any]], r: Resolution) -> None:
+    """Mark, in place, the rows held toward a guise (`toward_guise`: {guise, of, disguise})."""
+    for x in rows:
+        if x["predicate"] not in GUISE_HELD:
+            continue
+        as_guise = _norm((x.get("condition") or {}).get("as_guise")) if isinstance(x.get("condition"), Mapping) else ""
+        t = _unit(x)
+        for d in disguises:
+            explicit = as_guise == d["guise"]
+            if not explicit and _norm(x.get("object")) != d["guise"]:
+                continue
+            if t < d["start"] or (d["end"] is not None and t >= d["end"]):
+                continue
+            who = r.key("character", x["subject"])
+            if who == d["of"] or not (explicit or _unaware(d["row"], who, t, r)):
+                continue
+            x["toward_guise"] = {"guise": d["row"]["object"], "of": d["row"]["subject"], "disguise": d["row"]["id"]}
+            break
+
+
+def _disguise_view(disguises: list[dict[str, Any]], facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`view["disguises"]`: each disguise, newest first, with who it is kept from now, who found it out, whether it
+    still holds, and the current facts held toward its guise (`held`, their ids)."""
+    current = {f["id"] for f in facts if f["predicate"] == "disguised_as"}
+    out = []
+    for d in sorted(disguises, key=lambda x: x["row"]["position"], reverse=True):
+        row = d["row"]
+        out.append({"id": row["id"], "subject": row["subject"], "subject_entity": row.get("subject_entity"),
+                    "guise": row["object"], "turn": row.get("turn"), "position": row["position"],
+                    "kept_from": list(row.get("hidden_from") or []), "revealed": list(row.get("revealed") or []),
+                    "current": row["id"] in current,
+                    "held": [f["id"] for f in facts if (f.get("toward_guise") or {}).get("disguise") == row["id"]]})
+    return out
 
 
 _SINCE = re.compile(r"since\s+turn\s+(\d+)", re.IGNORECASE)
