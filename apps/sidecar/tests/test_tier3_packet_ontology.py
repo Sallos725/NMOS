@@ -338,3 +338,79 @@ def test_a_belief_kept_from_someone_in_the_scene_is_private_and_strict_withholds
         assert c.put(f"/v1/conversations/{v21.cid}/memory-mode", json={"strict": True}).status_code == 200
         strict = recall(c, v21.chat, "하나랑 도윤은 뭐 해?", budget=1500)["packet"]["text"]
     assert "도윤이 범인이다" not in strict and "<Secret " in strict
+
+
+# --- PHASE-66 follow-up: what was waiting --------------------------------------------------------------------------
+
+
+def test_clean_v4_drops_an_echoed_character_group_and_note():
+    from nmos_sidecar.packet import clean_text, clean_text_v4
+    echo = ('  <Note>Memory from earlier.</Note>\n    <Character name="하나">\n'
+            '      <Fact kind="located_in" turn="3">하나 located in 광장</Fact>\n    </Character>\n'
+            '<Belief by="하나" turn="1">하나 believes: x</Belief>그녀가 웃었다.')
+    assert clean_text_v4(echo) == "그녀가 웃었다."
+    assert "Memory from earlier." in clean_text(echo)  # clean-v3 as it was
+
+
+def test_a_slot_bundle_with_a_disputed_line_moves_whole_and_shows_its_dispute():
+    against = v21row(9, "하나", "relationship", "도윤", "원수", **CC)
+    pub = dataclasses.replace(fact_entry({**cond(1, "동료", "public"), "disputed_by": against}),
+                              marks={SLOT_BUNDLE: "slot:x"})
+    priv = dataclasses.replace(fact_entry(cond(2, "연인", "private", "둘만 있을 때")), marks={SLOT_BUNDLE: "slot:x"})
+    plain = fact_entry(v21row(5, "하나", "relationship", "카이토", "친구", **CC))
+    out = compile_lines([], 3000, lead=[pub, priv, plain], policy="packet-v21", risky=frozenset({"1"}))
+    order = [e["ref"]["assertion"] for e in out.ledger if e["placed"]]
+    assert order.index(1) + 1 == order.index(2) and order.index(5) < order.index(1)  # together, after the plain one
+    assert 'disputed="true"' in out.text
+    v20 = compile_lines([], 3000, lead=[pub, priv, plain], policy="packet-v20", risky=frozenset({"1"}))
+    assert [e["ref"]["assertion"] for e in v20.ledger if e["placed"]][-1] == 1  # v20 moves the line alone
+
+
+def test_cast_says_where_an_item_carried_is_kept():
+    held = v21row(1, "하나", "possesses", "편지", None, **C, object_type="item")
+    box = v21row(2, "편지", "contained_in", "상자", None, subject_type="item", object_type="item")
+    r = res([held, box])
+    groups = dict(cast_groups(view_of([held, box]), scene_of(r, "하나"), r, "", V21, shown_v21=Shown())[0])
+    assert [line.ref["assertion"] for line in groups["하나"]] == [1, 2]
+    groups = dict(cast_groups(view_of([held, box]), scene_of(r, "하나"), r, "", V20)[0])
+    assert [line.ref["assertion"] for line in groups["하나"]] == [1]
+
+
+def test_carried_and_regression_beliefs_are_beliefs():
+    carried = {**belief(1, "하나", "도윤이 범인이다"), "carried": "link-1", "turn": -1}
+    _, lines = beliefs(view_of(beliefs=[carried]), ["하나"])
+    assert lines[0].kind == "belief" and 'source="carried"' in lines[0].xml and "<Fact" not in lines[0].xml
+    r = res([row(1, "하나", "event", None, "x", **C)])
+    remembered = {**belief(3, "하나", "세계가 멸망했다"), "line": "belief", "known_by": ["하나"],
+                  "knowledge": "limited", "names": ["하나"]}
+    view = view_of(regression=[remembered])
+    lines = retrieval.regression_lines(Gathered(), view, r, "하나는 뭘 기억해?", "", set(), V21)
+    assert [line.kind for line in lines] == ["belief"] and 'timeline="previous"' in lines[0].xml and lines[0].private
+    assert retrieval.regression_lines(Gathered(), view, r, "하나는 뭘 기억해?", "", set(), V20) == []
+
+
+def test_a_guise_held_fact_is_private_while_one_who_does_not_know_is_present():
+    f = {**v21row(4, "유나", "feels_toward", "카이", "동경", **CC),
+         "toward_guise": {"guise": "카이", "of": "루카", "disguise": 7}}
+    view = view_of([f], disguises=[{"id": 7, "subject": "루카", "guise": "카이", "kept_from": ["유나"]}])
+    shadow = retrieval.guise_row(f, view)
+    r = res([f, row(9, "루카", "event", None, "x", **C), row(8, "세라", "event", None, "x", **C)])
+    assert retrieval._private(shadow, scene_of(r, "유나", "세라"), r, True)
+    assert not retrieval._private(shadow, scene_of(r, "세라"), r, True)
+    line = retrieval.entry_v21(shadow, False, False, False, False, Shown())
+    assert 'toward_guise="카이" wearer="루카"' in line.xml
+    out = compile_lines([], 2000, facts=[line], policy="packet-v21").text
+    assert packet.GUISE_NOTE in out
+
+
+def test_a_guise_held_feeling_renders_in_private_before_the_unaware_one(migrated):
+    from test_sidecar_integration import recall
+    from test_tier3_read_ontology import GUISE, Chat
+    v21 = Chat(migrated, GUISE, name="w4-guise")
+    with v21.client() as c:
+        v21.run(c)
+        text = recall(c, v21.chat, "유나는 카이를 어떻게 생각해?", budget=2000)["packet"]["text"]
+    assert 'toward_guise="카이"' in text
+    private = text.split("<Private>", 1)[1].split("</Private>", 1)[0] if "<Private>" in text else ""
+    outside = text.replace(private, "")
+    assert 'toward_guise="카이"' in private and 'wearer="루카"' not in outside
