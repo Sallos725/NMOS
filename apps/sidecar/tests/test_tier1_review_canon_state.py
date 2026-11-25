@@ -193,3 +193,47 @@ def test_evidence_partly_only_inside_a_block_is_not_served():
         "A spy.")}
     assert served == {"Hana is a loyal knight who serves the crown.": True,
                       "Hana is a loyal knight who serves the crown. A spy.": False, "A spy.": False}
+
+
+# --- item 3: a secret with no value is repeated when the text names its subject too ----------------------------------
+
+def _place(subject: str, predicate: str, obj: str, holders: list[str], kept: list[str]) -> dict[str, Any]:
+    return {"text": f"{subject} {predicate.replace('_', ' ')} {obj}", "subject": subject, "predicate": predicate,
+            "object": obj, "turn": 3, "position": 6, "holders": holders, "open": kept}
+
+
+def test_a_common_place_or_item_named_alone_does_not_repeat_the_secret():
+    room = _place("세라", "located_in", "교실", ["세라"], ["카이토"])
+    near = frozenset({"카이토"})
+    assert summaries.leaks("방과 후 교실에서 친구들이 떠들었다.", [room], near) == []  # the place alone
+    assert summaries.leaks("세라는 몰래 교실로 들어갔다.", [room], near) == [room]
+    sword = _place("도현", "possesses", "검", ["도현"], ["카이토"])  # a one-syllable object
+    assert summaries.leaks("대장장이가 검을 벼렸다.", [sword], near) == []
+    assert summaries.leaks("도현은 검을 품에 숨겼다.", [sword], near) == [sword]
+    key = _place("김하나", "possesses", "은열쇠", ["김하나"], ["도윤"])  # Tier 1's Korean case stays caught
+    assert summaries.leaks("김하나는 낡은 은열쇠를 몰래 품에 숨겼다.", [key], frozenset({"도윤"})) == [key]
+    user = _place("{{user}}", "member_of", "암살단", ["{{user}}"], ["카이토"])  # a macro subject is not looked for
+    assert summaries.leaks("유찬은 암살단의 일원이다.", [user], near) == [user]
+    assert summaries.leaks("세라는 교실에 있다.", [{**room, "open": []}], near) == []  # no longer kept from anyone
+
+
+def test_no_stored_summary_listed_under_an_earlier_key_form_is_held():
+    """`secret_key` is what a summary's `coverage.secrets` lists. Before Tier 1 a valueless secret was listed by its
+    whole line; since Tier 1 by its object; the registry's other valueless predicates (`lives in`, …) by their whole
+    line until now. A summary listed under any of those forms is not `unlisted`."""
+    forms = [
+        (_place("김하나", "possesses", "은열쇠", ["김하나"], ["도윤"]), ["김하나 possesses 은열쇠", "은열쇠"]),
+        (_place("서윤", "located_in", "지하감옥", ["서윤"], ["도윤"]), ["서윤 located in 지하감옥", "지하감옥"]),
+        (_place("레나", "member_of", "암살단", ["레나"], ["도윤"]), ["레나 member of 암살단", "암살단"]),
+        (_place("레나", "lives_in", "등대", ["레나"], ["도윤"]), ["레나 lives in 등대"]),
+        (_place("레나", "contained_in", "상자", ["레나"], ["도윤"]), ["레나 contained in 상자"]),
+        ({"text": "하나 knows: 편지는 위조됐다", "subject": "하나", "predicate": "knows", "turn": 3, "position": 6,
+          "holders": ["하나"], "open": ["도윤"]}, ["편지는 위조됐다"]),
+    ]
+    for secret, stored in forms:
+        for key in stored:
+            row = {"last_turn": 7, "coverage": {"secrets": [key]}}
+            assert summaries.unlisted(row, [secret]) == [], (secret["text"], key)
+        assert summaries.unlisted({"last_turn": 7, "coverage": {"secrets": []}}, [secret]) == [secret]
+    # the three Tier 1 predicates keep exactly the key Tier 1 stored
+    assert [summaries.secret_key(s) for s, _ in forms[:3]] == ["은열쇠", "지하감옥", "암살단"]

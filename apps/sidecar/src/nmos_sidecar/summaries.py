@@ -37,6 +37,7 @@ from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
 from .packet import Line, hidden_entry
+from .predicates import EXTENSIONS, REGISTRY
 from .threads import _grams, _overlap, similarity
 
 log = logging.getLogger("nmos.summaries")
@@ -550,8 +551,26 @@ def reply_text(parsed: dict[str, Any], cap: int) -> str:
 
 # Predicates whose secret line has no value, only an object ("김하나 possesses 은열쇠"): its content is the object, so
 # a summary in the chat's language that names it is compared with it, not with the English predicate.
-VALUELESS = ("possesses", "located in", "member of")
+# Every predicate that takes an object and no value, in any compiler's registry (REGISTRY and EXTENSIONS), as the
+# line spells it.
+VALUELESS = tuple(sorted({p.name.replace("_", " ") for p in [*REGISTRY.values(),
+                                                              *(q for ext in EXTENSIONS.values() for q in ext.values())]
+                          if not p.needs_value and p.object_types}, key=lambda n: (-len(n), n)))
 _VALUELESS = re.compile(r"^(?P<subject>.+?) (?:" + "|".join(VALUELESS) + r") (?P<object>.+)$", re.DOTALL)
+
+
+def valueless(secret: dict[str, Any]) -> tuple[str, str] | None:
+    """(subject, object) of a secret whose line has no value, only an object ("김하나 possesses 은열쇠"); else None."""
+    head, sep, _ = secret["text"].partition(": ")
+    if sep:
+        return None
+    subject, predicate = secret.get("subject"), str(secret.get("predicate") or "").replace("_", " ")
+    if subject and predicate in VALUELESS:
+        prefix = f"{subject} {predicate} "
+        if head.startswith(prefix) and head[len(prefix):].strip():
+            return subject, head[len(prefix):]
+    m = _VALUELESS.match(head) if not predicate or predicate in VALUELESS else None
+    return (m["subject"], m["object"]) if m and m["object"].strip() else None
 
 
 def content(secret: dict[str, Any]) -> str:
@@ -559,13 +578,8 @@ def content(secret: dict[str, Any]) -> str:
     head, sep, body = secret["text"].partition(": ")
     if sep:
         return body
-    subject, predicate = secret.get("subject"), str(secret.get("predicate") or "").replace("_", " ")
-    if subject and predicate in VALUELESS:
-        prefix = f"{subject} {predicate} "
-        if head.startswith(prefix) and head[len(prefix):].strip():
-            return head[len(prefix):]
-    m = _VALUELESS.match(head) if not predicate or predicate in VALUELESS else None
-    return m["object"] if m and m["object"].strip() else head
+    parts = valueless(secret)
+    return parts[1] if parts else head
 
 
 def window_secrets(secrets: list[dict[str, Any]], last_turn: int, limit: int = OPEN_SECRETS) -> list[dict[str, Any]]:
@@ -610,7 +624,22 @@ def leak_score(secret: dict[str, Any], text: str) -> float:
     """How much of a secret's content the text repeats, the names of its holders and of those it is kept from left out
     of both: names and a scene's setting are shared with everything written about it."""
     names = [*secret.get("holders", []), *secret.get("open", [])]
+    parts = valueless(secret)
+    if parts is not None:
+        # Its content is only an object ("교실", "검"): a text repeats the secret when it names the subject too, not
+        # when it names a common place or item; then the object said at all is the secret said (a short object has
+        # too few trigrams to score). A subject that is a name macro is not looked for.
+        subject, obj = (_bare(x) for x in parts)
+        hay = _bare(text)
+        if subject and "{{" not in subject and subject not in hay:
+            return 0.0
+        if obj and obj in hay:
+            return 1.0
     return similarity(unnamed(content(secret), names), unnamed(text, names))
+
+
+def _bare(text: str) -> str:
+    return "".join(norm(text).split())
 
 
 def leaks(text: str, secrets: list[dict[str, Any]], present: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
