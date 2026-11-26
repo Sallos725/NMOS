@@ -76,7 +76,8 @@ STYLE = """
 .nmos .v-line.open .rp,.nmos .v-line:hover .rp{opacity:1}
 .nmos .v-line .rp .rp-ask{font-size:var(--t-caption,13px);color:var(--c-text-muted);margin-right:2px}
 .nmos .v-meta{font-size:var(--t-caption,13px);color:var(--c-text-muted);margin-top:4px;line-height:1.5}
-.nmos .v-tag{display:inline-flex;align-items:center;font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;margin-right:6px;background:var(--c-raised);border:1px solid var(--c-line-strong);color:var(--c-text-soft);vertical-align:1px}
+.nmos .v-tag{display:inline-flex;align-items:center;font-size:12px;font-weight:550;padding:1px 8px;border-radius:99px;margin-right:6px;background:rgba(146,148,160,0.11);border:1px solid rgba(146,148,160,0.22);color:var(--c-text-muted);cursor:default;user-select:text;vertical-align:1px}
+.nmos .v .chip{display:inline-flex;align-items:center;font-size:12px;font-weight:500;padding:1px 8px;border-radius:99px;background:rgba(146,148,160,0.10);border:1px solid rgba(255,255,255,0.07);color:var(--c-text-muted);cursor:default;user-select:text;vertical-align:middle}
 .nmos .v-tag.k-promise{background:rgba(74,106,245,0.14);border-color:rgba(74,106,245,0.34);color:var(--c-link)}
 .nmos .v-tag.k-goal{background:rgba(79,209,139,0.12);border-color:rgba(79,209,139,0.32);color:var(--c-ok)}
 .nmos .v-tag.k-threat{background:rgba(240,93,94,0.14);border-color:rgba(240,93,94,0.34);color:var(--c-err)}
@@ -164,10 +165,12 @@ STYLE = """
 .nmos .v-tag.k-warn{background:rgba(232,172,67,0.14);border-color:rgba(232,172,67,0.36);color:var(--c-warn)}
 .nmos .v-tag.k-err{background:rgba(240,93,94,0.14);border-color:rgba(240,93,94,0.36);color:var(--c-err)}
 .nmos .v-tag.k-info{background:rgba(56,189,248,0.12);border-color:rgba(56,189,248,0.32);color:var(--c-cyan)}
-.nmos .v-edit{margin-top:8px;padding-top:6px;border-top:1px dashed var(--c-line)}
-.nmos .v-edit>summary{cursor:pointer;list-style:none;font-size:12.5px;font-weight:550;color:var(--c-text-muted);display:inline-flex;align-items:center;gap:4px;user-select:none}
+.nmos .v-edit{margin-top:8px;padding-top:7px;border-top:1px dashed var(--c-line)}
+.nmos .v-edit>summary{cursor:pointer;list-style:none;font-size:12.5px;font-weight:550;color:var(--c-text-soft);background:var(--c-raised);border:1px solid var(--c-line-strong);border-radius:7px;padding:4px 10px;display:inline-flex;align-items:center;gap:5px;user-select:none;box-shadow:0 1px 2px rgba(0,0,0,0.22);transition:background .15s ease,border-color .15s ease,color .15s ease}
 .nmos .v-edit>summary::-webkit-details-marker{display:none}
-.nmos .v-edit>summary:hover{color:var(--c-link)}
+.nmos .v-edit>summary::before{content:"\\25B8";font-size:11px;color:var(--c-text-muted);line-height:1}
+.nmos .v-edit[open]>summary::before{content:"\\25BE";color:var(--c-link)}
+.nmos .v-edit>summary:hover,.nmos .v-edit[open]>summary{background:rgba(74,106,245,0.14);border-color:rgba(74,106,245,0.42);color:var(--c-text-strong)}
 .nmos .v-edit-body{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
 .nmos .v-edit-row{width:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 0;border-top:1px solid var(--c-line)}
 .nmos .v-edit-row:first-child{border-top:0;padding-top:0}

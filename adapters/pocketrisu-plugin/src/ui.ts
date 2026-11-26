@@ -333,8 +333,11 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp th,.nmos .insp td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--c-line);vertical-align:top}
 .nmos .insp th{font-weight:500;color:var(--c-text-faint);font-size:13px;letter-spacing:0.02em;white-space:nowrap}
 .nmos .insp tr:hover td{background:rgba(255,255,255,0.02)}
-.nmos .insp .chip{display:inline-block;padding:1px 7px;border-radius:999px;background:var(--c-raised);border:1px solid var(--c-line);font-size:12.5px;color:var(--c-text-soft)}
+.nmos .insp .chip{display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;background:rgba(146,148,160,0.10);border:1px solid rgba(255,255,255,0.07);font-size:12px;font-weight:500;color:var(--c-text-muted);cursor:default;user-select:text;vertical-align:middle}
 .nmos .insp span.rp{display:inline-flex;flex-wrap:wrap;align-items:center;gap:5px;margin-left:6px;vertical-align:middle}
+.nmos .insp .rp-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px}
+.nmos .insp .rp-bar.has-sep{margin-top:7px;padding-top:7px;border-top:1px dashed var(--c-line)}
+.nmos .insp .rp-bar span.rp,.nmos .insp .v-edit-body span.rp,.nmos .insp .v-card-acts span.rp{margin-left:0}
 .nmos .insp span.rp input,.nmos .insp span.rp select{width:auto;padding:3px 7px;font-size:13px;border-radius:6px}
 .nmos .insp span.rp input[type=text]{width:12em}.nmos .insp span.rp input.turn{width:7em}
 .nmos .insp .rp-note-form{display:flex;flex-direction:column;gap:6px;min-width:240px;width:100%;margin-top:4px}
@@ -343,6 +346,13 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .note-meta{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12.5px;color:var(--c-text-muted)}
 .nmos .note-meta .btns{margin-top:0}
 .nmos button.mini{padding:4px 9px;font-size:12.5px;border-radius:6px}
+.nmos button.rp-btn{padding:4px 10px;font-size:12.5px;font-weight:550;border-radius:6px;gap:4px;box-shadow:0 1px 2px rgba(0,0,0,0.28)}
+.nmos button.rp-btn.rp-act{background:${alpha('accent', 0.14)};border-color:${alpha('accent', 0.42)};color:#d6e2ff}
+.nmos button.rp-btn.rp-act:hover:not(:disabled){background:${alpha('accent', 0.24)};border-color:${alpha('accent', 0.65)};color:#fff}
+.nmos button.rp-btn.rp-danger{background:${alpha('err', 0.13)};border-color:${alpha('err', 0.42)};color:#ff9495}
+.nmos button.rp-btn.rp-danger:hover:not(:disabled){background:${alpha('err', 0.24)};border-color:${alpha('err', 0.65)};color:#fff}
+.nmos button.rp-btn.rp-undo{background:${alpha('warn', 0.13)};border-color:${alpha('warn', 0.4)};color:var(--c-warn)}
+.nmos button.rp-btn.rp-undo:hover:not(:disabled){background:${alpha('warn', 0.22)};border-color:${alpha('warn', 0.62)};color:var(--c-text-strong)}
 .nmos .groups{display:flex;flex-direction:column;gap:8px;margin:8px 0}
 .nmos .groups button.group{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:14px 16px;border-radius:12px;font-size:16px}
 .nmos .groups button.group .sub{margin:0}
@@ -459,6 +469,27 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = {}, ..
   }
   for (const child of children) node.append(child);
   return node;
+}
+
+/** Visual tone of a repair action button (PHASE-71): clearly separates clickable actions from passive chips. */
+export function repairTone(kind: string): 'danger' | 'undo' | 'act' {
+  if (kind === 'fact_retract' || kind === 'told_retract' || kind === 'entity_exclude'
+      || kind === 'state_dismiss' || kind === 'attention_dismiss') return 'danger';
+  if (kind === 'undo' || kind === 'undo_batch') return 'undo';
+  return 'act';
+}
+
+/** Decorative inline SVG icon for a repair action button (PHASE-71; aria-hidden, preserves exact textContent). */
+export function repairIcon(kind: string): IconName | null {
+  if (kind === 'fact_retract' || kind === 'told_retract' || kind === 'entity_exclude'
+      || kind === 'state_dismiss' || kind === 'attention_dismiss') return 'close';
+  if (kind === 'fact_correct' || kind === 'entity_note' || kind === 'fact_add') return 'edit';
+  if (kind === 'fact_lock') return 'lock';
+  if (kind === 'fact_hidden') return 'eyeOff';
+  if (kind === 'undo' || kind === 'undo_batch' || kind === 'fact_restore' || kind === 'thread_reopen') return 'undo';
+  if (kind === 'thread_close' || kind === 'alias_join' || kind === 'secret_found_out'
+      || kind === 'secret_keep' || kind === 'branch_inherit') return 'check';
+  return null;
 }
 
 /** An archive's file name: what it holds and when, in local time (`nmos-chat-20260929-181500.nmos.zip`). */
@@ -975,7 +1006,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const label = action.kind === 'fact_correct' && action.extra?.endsWith('.lock') ? 'rp.fact_correct_lock'
       : action.kind === 'entity_note' ? (action.extra === 'edit' ? 'rp.entity_note_edit' : 'rp.entity_note_add')
         : `rp.${action.kind}`;
-    const button = el('button', { class: 'mini', text: L(label as StringKey, { n }) });
+    const tone = repairTone(action.kind);
+    const ic = repairIcon(action.kind);
+    const labelText = L(label as StringKey, { n });
+    const button = ic
+      ? el('button', { type: 'button', class: `mini rp-btn rp-${tone}` }, icon(ic, 12), labelText)
+      : el('button', { type: 'button', class: `mini rp-btn rp-${tone}`, text: labelText });
     const spot = el('div');
     button.addEventListener('click', () => {
       if (action.kind === 'fact_correct') correctForm(action, button);
@@ -996,7 +1032,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const choices = closeOutcomes(action.extra);
     if (inspectorPath.startsWith('/v1/views/')) { // the new screens: one button an ending, no bulk box (PHASE-52)
       const ends = (choices.length ? choices : ['']).map((o) => {
-        const b = el('button', { class: 'mini', text: o ? outcomeLabel(o) : L('rp.thread_close') });
+        const b = el('button', { type: 'button', class: 'mini rp-btn rp-act' }, icon('check', 12), o ? outcomeLabel(o) : L('rp.thread_close'));
         b.addEventListener('click', () => void repairNow(action, b, o ? { outcome: o } : {}));
         return b;
       });
@@ -1027,7 +1063,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       group.selects.push(select);
       nodes.push(select);
     }
-    const button = el('button', { class: 'mini', text: L('rp.thread_close') });
+    const button = el('button', { type: 'button', class: 'mini rp-btn rp-act' }, icon('check', 12), L('rp.thread_close'));
     button.addEventListener('click', () => void repairNow(action, button, outcomeOf(item)));
     nodes.push(button);
     return nodes;
@@ -1048,8 +1084,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       'aria-label': L(`rp.field_${field}`) });
     const turn = el('input', { type: 'number', min: '0', step: '1', class: 'turn', placeholder: L('rp.turn_hint'),
       'aria-label': L('rp.turn') });
-    const save = el('button', { class: 'mini', text: L('save') });
-    const cancel = el('button', { class: 'mini', text: L('cancel') });
+    const save = el('button', { type: 'button', class: 'mini primary', text: L('save') });
+    const cancel = el('button', { type: 'button', class: 'mini', text: L('cancel') });
     cancel.addEventListener('click', () => spot.replaceChildren(...repairControls(action)));
     save.addEventListener('click', () => {
       const next = text.value.trim();
@@ -1110,8 +1146,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const mode = el('select', { class: 'mini' },
       el('option', { value: '1', text: L('fh.hide') }),
       el('option', { value: '0', text: L('fh.unhide') }));
-    const save = el('button', { class: 'mini', text: L('save') });
-    const cancel = el('button', { class: 'mini', text: L('cancel') });
+    const save = el('button', { type: 'button', class: 'mini primary', text: L('save') });
+    const cancel = el('button', { type: 'button', class: 'mini', text: L('cancel') });
     cancel.addEventListener('click', () => spot.replaceChildren(...repairControls(action)));
     save.addEventListener('click', () => {
       const name = who.value.trim();
@@ -1551,6 +1587,20 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
         hid.replaceChildren(...repairControls({ kind: 'fact_hidden', item: action.item, extra: null }));
         spot.after(hid);
       }
+    }
+    // PHASE-71 S4: group populated repair buttons in Raw Inspector table cells into a dedicated action row below text/chips.
+    for (const td of Array.from(page.querySelectorAll('td'))) {
+      const rps = Array.from(td.children).filter(
+        (c): c is HTMLElement => c.matches('span.rp') && c.childElementCount > 0,
+      );
+      if (!rps.length) continue;
+      const hasContent = Array.from(td.childNodes).some((n) => (
+        (n.nodeType === 3 && (n.textContent ?? '').trim().length > 0)
+        || (n.nodeType === 1 && !(n as Element).matches('span.rp, span.rq'))
+      ));
+      const bar = el('div', { class: hasContent ? 'rp-bar has-sep' : 'rp-bar' });
+      bar.append(...rps);
+      td.append(bar);
     }
     for (const item of Array.from(picked)) if (!closers.has(item)) picked.delete(item); // closed or gone since
     bulkGroups = new Map();

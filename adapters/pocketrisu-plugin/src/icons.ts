@@ -23,7 +23,11 @@ export type IconName =
   | 'eye'
   | 'archive'
   | 'check'
-  | 'search';
+  | 'search'
+  | 'edit'
+  | 'lock'
+  | 'undo'
+  | 'eyeOff';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -134,6 +138,23 @@ const SHAPES: Record<IconName, readonly Shape[]> = {
   search: [
     ['circle', { cx: '11', cy: '11', r: '7' }],
     ['line', { x1: '20', y1: '20', x2: '16.65', y2: '16.65' }],
+  ],
+  edit: [
+    ['path', { d: 'M12 20h9' }],
+    ['path', { d: 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z' }],
+  ],
+  lock: [
+    ['rect', { x: '5', y: '11', width: '14', height: '10', rx: '2' }],
+    ['path', { d: 'M8 11V7a4 4 0 0 1 8 0v4' }],
+  ],
+  undo: [
+    ['path', { d: 'M9 14 4 9l5-5' }],
+    ['path', { d: 'M20 20v-7a4 4 0 0 0-4-4H4' }],
+  ],
+  eyeOff: [
+    ['path', { d: 'M10.7 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.2' }],
+    ['path', { d: 'M6.6 6.6A18.2 18.2 0 0 0 2 12s3.5 7 10 7a10.6 10.6 0 0 0 5.4-1.6' }],
+    ['line', { x1: '2', y1: '2', x2: '22', y2: '22' }],
   ],
 };
 

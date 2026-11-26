@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:b709c0279a4a".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:8b0220b23b4e".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -4206,6 +4206,23 @@ ${GUARD_LINE}` : "";
     search: [
       ["circle", { cx: "11", cy: "11", r: "7" }],
       ["line", { x1: "20", y1: "20", x2: "16.65", y2: "16.65" }]
+    ],
+    edit: [
+      ["path", { d: "M12 20h9" }],
+      ["path", { d: "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" }]
+    ],
+    lock: [
+      ["rect", { x: "5", y: "11", width: "14", height: "10", rx: "2" }],
+      ["path", { d: "M8 11V7a4 4 0 0 1 8 0v4" }]
+    ],
+    undo: [
+      ["path", { d: "M9 14 4 9l5-5" }],
+      ["path", { d: "M20 20v-7a4 4 0 0 0-4-4H4" }]
+    ],
+    eyeOff: [
+      ["path", { d: "M10.7 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.2" }],
+      ["path", { d: "M6.6 6.6A18.2 18.2 0 0 0 2 12s3.5 7 10 7a10.6 10.6 0 0 0 5.4-1.6" }],
+      ["line", { x1: "2", y1: "2", x2: "22", y2: "22" }]
     ]
   };
   function icon(name, size = 16, cls = "ic") {
@@ -5404,8 +5421,11 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp th,.nmos .insp td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--c-line);vertical-align:top}
 .nmos .insp th{font-weight:500;color:var(--c-text-faint);font-size:13px;letter-spacing:0.02em;white-space:nowrap}
 .nmos .insp tr:hover td{background:rgba(255,255,255,0.02)}
-.nmos .insp .chip{display:inline-block;padding:1px 7px;border-radius:999px;background:var(--c-raised);border:1px solid var(--c-line);font-size:12.5px;color:var(--c-text-soft)}
+.nmos .insp .chip{display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;background:rgba(146,148,160,0.10);border:1px solid rgba(255,255,255,0.07);font-size:12px;font-weight:500;color:var(--c-text-muted);cursor:default;user-select:text;vertical-align:middle}
 .nmos .insp span.rp{display:inline-flex;flex-wrap:wrap;align-items:center;gap:5px;margin-left:6px;vertical-align:middle}
+.nmos .insp .rp-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px}
+.nmos .insp .rp-bar.has-sep{margin-top:7px;padding-top:7px;border-top:1px dashed var(--c-line)}
+.nmos .insp .rp-bar span.rp,.nmos .insp .v-edit-body span.rp,.nmos .insp .v-card-acts span.rp{margin-left:0}
 .nmos .insp span.rp input,.nmos .insp span.rp select{width:auto;padding:3px 7px;font-size:13px;border-radius:6px}
 .nmos .insp span.rp input[type=text]{width:12em}.nmos .insp span.rp input.turn{width:7em}
 .nmos .insp .rp-note-form{display:flex;flex-direction:column;gap:6px;min-width:240px;width:100%;margin-top:4px}
@@ -5414,6 +5434,13 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .note-meta{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12.5px;color:var(--c-text-muted)}
 .nmos .note-meta .btns{margin-top:0}
 .nmos button.mini{padding:4px 9px;font-size:12.5px;border-radius:6px}
+.nmos button.rp-btn{padding:4px 10px;font-size:12.5px;font-weight:550;border-radius:6px;gap:4px;box-shadow:0 1px 2px rgba(0,0,0,0.28)}
+.nmos button.rp-btn.rp-act{background:${alpha("accent", 0.14)};border-color:${alpha("accent", 0.42)};color:#d6e2ff}
+.nmos button.rp-btn.rp-act:hover:not(:disabled){background:${alpha("accent", 0.24)};border-color:${alpha("accent", 0.65)};color:#fff}
+.nmos button.rp-btn.rp-danger{background:${alpha("err", 0.13)};border-color:${alpha("err", 0.42)};color:#ff9495}
+.nmos button.rp-btn.rp-danger:hover:not(:disabled){background:${alpha("err", 0.24)};border-color:${alpha("err", 0.65)};color:#fff}
+.nmos button.rp-btn.rp-undo{background:${alpha("warn", 0.13)};border-color:${alpha("warn", 0.4)};color:var(--c-warn)}
+.nmos button.rp-btn.rp-undo:hover:not(:disabled){background:${alpha("warn", 0.22)};border-color:${alpha("warn", 0.62)};color:var(--c-text-strong)}
 .nmos .groups{display:flex;flex-direction:column;gap:8px;margin:8px 0}
 .nmos .groups button.group{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:14px 16px;border-radius:12px;font-size:16px}
 .nmos .groups button.group .sub{margin:0}
@@ -5527,6 +5554,20 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     for (const child of children) node.append(child);
     return node;
+  }
+  function repairTone(kind) {
+    if (kind === "fact_retract" || kind === "told_retract" || kind === "entity_exclude" || kind === "state_dismiss" || kind === "attention_dismiss") return "danger";
+    if (kind === "undo" || kind === "undo_batch") return "undo";
+    return "act";
+  }
+  function repairIcon(kind) {
+    if (kind === "fact_retract" || kind === "told_retract" || kind === "entity_exclude" || kind === "state_dismiss" || kind === "attention_dismiss") return "close";
+    if (kind === "fact_correct" || kind === "entity_note" || kind === "fact_add") return "edit";
+    if (kind === "fact_lock") return "lock";
+    if (kind === "fact_hidden") return "eyeOff";
+    if (kind === "undo" || kind === "undo_batch" || kind === "fact_restore" || kind === "thread_reopen") return "undo";
+    if (kind === "thread_close" || kind === "alias_join" || kind === "secret_found_out" || kind === "secret_keep" || kind === "branch_inherit") return "check";
+    return null;
   }
   function archiveName(kind, at) {
     const p = (n) => String(n).padStart(2, "0");
@@ -6117,7 +6158,10 @@ html,body{margin:0;background:${PALETTE.bg}}
       const fieldKey = field2 === "subject" ? "rp.field_subject" : field2 === "object" ? "rp.field_object" : "rp.field_value";
       const n = action.kind === "fact_correct" ? L(fieldKey) : action.extra ?? "";
       const label = action.kind === "fact_correct" && action.extra?.endsWith(".lock") ? "rp.fact_correct_lock" : action.kind === "entity_note" ? action.extra === "edit" ? "rp.entity_note_edit" : "rp.entity_note_add" : `rp.${action.kind}`;
-      const button = el("button", { class: "mini", text: L(label, { n }) });
+      const tone = repairTone(action.kind);
+      const ic = repairIcon(action.kind);
+      const labelText = L(label, { n });
+      const button = ic ? el("button", { type: "button", class: `mini rp-btn rp-${tone}` }, icon(ic, 12), labelText) : el("button", { type: "button", class: `mini rp-btn rp-${tone}`, text: labelText });
       const spot = el("div");
       button.addEventListener("click", () => {
         if (action.kind === "fact_correct") correctForm(action, button);
@@ -6137,7 +6181,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       const choices = closeOutcomes(action.extra);
       if (inspectorPath.startsWith("/v1/views/")) {
         const ends = (choices.length ? choices : [""]).map((o) => {
-          const b = el("button", { class: "mini", text: o ? outcomeLabel(o) : L("rp.thread_close") });
+          const b = el("button", { type: "button", class: "mini rp-btn rp-act" }, icon("check", 12), o ? outcomeLabel(o) : L("rp.thread_close"));
           b.addEventListener("click", () => void repairNow(action, b, o ? { outcome: o } : {}));
           return b;
         });
@@ -6172,7 +6216,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         group.selects.push(select2);
         nodes.push(select2);
       }
-      const button = el("button", { class: "mini", text: L("rp.thread_close") });
+      const button = el("button", { type: "button", class: "mini rp-btn rp-act" }, icon("check", 12), L("rp.thread_close"));
       button.addEventListener("click", () => void repairNow(action, button, outcomeOf(item)));
       nodes.push(button);
       return nodes;
@@ -6200,8 +6244,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         placeholder: L("rp.turn_hint"),
         "aria-label": L("rp.turn")
       });
-      const save2 = el("button", { class: "mini", text: L("save") });
-      const cancel = el("button", { class: "mini", text: L("cancel") });
+      const save2 = el("button", { type: "button", class: "mini primary", text: L("save") });
+      const cancel = el("button", { type: "button", class: "mini", text: L("cancel") });
       cancel.addEventListener("click", () => spot.replaceChildren(...repairControls(action)));
       save2.addEventListener("click", () => {
         const next = text2.value.trim();
@@ -6271,8 +6315,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("option", { value: "1", text: L("fh.hide") }),
         el("option", { value: "0", text: L("fh.unhide") })
       );
-      const save2 = el("button", { class: "mini", text: L("save") });
-      const cancel = el("button", { class: "mini", text: L("cancel") });
+      const save2 = el("button", { type: "button", class: "mini primary", text: L("save") });
+      const cancel = el("button", { type: "button", class: "mini", text: L("cancel") });
       cancel.addEventListener("click", () => spot.replaceChildren(...repairControls(action)));
       save2.addEventListener("click", () => {
         const name = who.value.trim();
@@ -6734,6 +6778,16 @@ html,body{margin:0;background:${PALETTE.bg}}
           hid.replaceChildren(...repairControls({ kind: "fact_hidden", item: action.item, extra: null }));
           spot.after(hid);
         }
+      }
+      for (const td of Array.from(page.querySelectorAll("td"))) {
+        const rps = Array.from(td.children).filter(
+          (c) => c.matches("span.rp") && c.childElementCount > 0
+        );
+        if (!rps.length) continue;
+        const hasContent = Array.from(td.childNodes).some((n) => n.nodeType === 3 && (n.textContent ?? "").trim().length > 0 || n.nodeType === 1 && !n.matches("span.rp, span.rq"));
+        const bar2 = el("div", { class: hasContent ? "rp-bar has-sep" : "rp-bar" });
+        bar2.append(...rps);
+        td.append(bar2);
       }
       for (const item of Array.from(picked)) if (!closers.has(item)) picked.delete(item);
       bulkGroups = /* @__PURE__ */ new Map();
