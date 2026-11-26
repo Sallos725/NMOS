@@ -169,6 +169,10 @@ STYLE = """
 .nmos .v-edit>summary::-webkit-details-marker{display:none}
 .nmos .v-edit>summary:hover{color:var(--c-link)}
 .nmos .v-edit-body{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.nmos .v-edit-row{width:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 0;border-top:1px solid var(--c-line)}
+.nmos .v-edit-row:first-child{border-top:0;padding-top:0}
+.nmos .v-edit-lbl{font-size:12.5px;color:var(--c-text-soft);margin-right:4px;word-break:break-word}
+.nmos .v-note-box{margin-top:7px;padding:7px 10px;border-radius:8px;background:rgba(79,209,139,0.08);border:1px solid rgba(79,209,139,0.24);font-size:13.5px;line-height:1.5;color:var(--c-text-strong);display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;word-break:break-word}
 .nmos .v-diff-block{display:flex;flex-direction:column;gap:5px;margin-top:6px}
 .nmos .v-diff-row{font-size:13.5px;line-height:1.5;padding:6px 10px;border-radius:8px;background:var(--c-surface);border:1px solid var(--c-line);word-break:break-word}
 .nmos .v-empty{padding:26px 18px;text-align:center;color:var(--c-text-muted);font-size:14.5px;border:1px dashed var(--c-line-strong);border-radius:12px;background:var(--c-sunken)}
@@ -388,6 +392,8 @@ T: dict[str, tuple[str, str]] = {
     "at_existing": ("기존 / 설정", "Existing / setting"),
     "at_new_story": ("새 이야기", "New story"),
     "at_open_explore": ("탐색 · 수정으로", "Explore & edit"),
+    "ex_note": ("메모", "Note"),
+    "ex_item_now": ("현재 상태", "Current state"),
 }
 
 ACTS = ("notes", "settings", "backup", "retry")  # what the plugin does itself; its sanitizer keeps only these values
@@ -1057,11 +1063,14 @@ def person(d: dict[str, Any], lang: str, rich: bool = False) -> str:
     nothing = f'<p class="v-text">{_v(t(lang, "none_yet"))}</p>'
     aka = [n for n in e.get("names") or [] if n != e.get("name")]
     now = f'<p class="v-text">{" · ".join(_v(x) for x in d.get("now") or [])}</p>' if d.get("now") else nothing
+    if rich and e.get("note"):
+        now += _entity_note_box(e["note"], lang)
     rels = []
     for p in d.get("pairs") or []:
         other = [n for i, n in p["names"].items() if str(i) != str(e["id"])]
         rel = [str(_slotted(f, lang)) for f in p["relationship"] if f.get("value")]
-        rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), " · ".join(_pair_bits(p, lang))))
+        pair_edit = _edit_drawer(_pair_edit_rows(p, lang), lang) if rich else ""
+        rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), " · ".join(_pair_bits(p, lang)), pair_edit))
     threads = [line(f"{_v(th['text'])}" + (f" → {nm(th['to'])}" if th.get("to") and th.get("by") == e.get("name") else ""),
                     _thread_meta(th, lang),
                     _close_own(th)) for th in d.get("threads") or []]
@@ -1555,6 +1564,59 @@ def _edit_drawer(acts_html: str, lang: str) -> str:
             f'<div class="v-edit-body">{acts_html}</div></details>')
 
 
+def _fact_acts(f: dict[str, Any], *, include_hidden: bool = False) -> str:
+    """Repair markers for one current fact row (PHASE-69 / PHASE-70): retract, correct, hidden-from, lock, undo."""
+    if f.get("carried") or f.get("id") is None:
+        return ""
+    acts = ""
+    if f.get("owner"):
+        if f.get("repair"):
+            acts += _act("undo", f["repair"])
+        if not f.get("locked"):
+            acts += _act("fact_lock", f["id"])
+        if f.get("locked"):
+            acts += _act("undo", f["locked"])
+        return acts
+    acts += _act("fact_retract", f["id"]) + "".join(_act("fact_correct", f["id"], x) for x in _corrections(f))
+    if include_hidden and not f.get("canon"):
+        acts += _act("fact_hidden", f["id"])
+    if f.get("canon") and not f.get("locked"):
+        acts += _act("fact_lock", f["id"])
+    if f.get("locked"):
+        acts += _act("undo", f["locked"])
+    return acts
+
+
+def _pair_edit_rows(p: dict[str, Any], lang: str) -> str:
+    """Per-fact editable rows for a relationship/role/feeling/address pair card (PHASE-70)."""
+    rows: list[str] = []
+    for key in ("relationship", "role", "feels", "speech"):
+        for f in p.get(key) or ():
+            f_acts = _fact_acts(f, include_hidden=True)
+            if not f_acts:
+                continue
+            lbl = f"{word(str(f.get('predicate') or ''), lang)} · {_named(f, 'subject')}→{_named(f, 'object')}: {_slotted(f, lang)}"
+            rows.append(f'<div class="v-edit-row"><span class="v-edit-lbl">{_v(lbl)}</span>{f_acts}</div>')
+    return "".join(rows)
+
+
+def _entity_note_box(note: dict[str, Any] | None, lang: str) -> str:
+    """Visible callout showing an entity's owner description note (PHASE-70, ADR 0096)."""
+    text = str((note or {}).get("text") or "").strip()
+    if not text:
+        return ""
+    return (f'<div class="v-note-box"><span class="v-tag k-owner">{_v(t(lang, "ex_note"))}</span>'
+            f'<span class="v-note-text">{_v(text)}</span></div>')
+
+
+def _entity_note_acts(eid: str | None, note: dict[str, Any] | None) -> str:
+    """Inline repair buttons for adding/editing/removing an entity's owner note (PHASE-70)."""
+    if not eid:
+        return ""
+    rid = (note or {}).get("repair") or (note or {}).get("id")
+    return _act("entity_note", eid, "edit" if note else "add") + (_act("undo", rid) if rid else "")
+
+
 def _turn_badge(row: dict[str, Any], lang: str) -> str:
     """A source-turn link (`tN`) or setting/carried label on the right of a card header."""
     if row.get("carried"):
@@ -1627,14 +1689,7 @@ def _fact_card(f: dict[str, Any], cid: str, ents: dict[str, str], lang: str, *, 
     if f.get("known_by") or f.get("hidden_from") or f.get("forgotten_by") or f.get("knowledge") in ("limited", "secret"):
         sub_bits.append(_knowledge(f, lang))
 
-    acts = ""
-    if not f.get("carried") and f.get("id") is not None:
-        if not f.get("owner"):
-            acts += _act("fact_retract", f["id"]) + "".join(_act("fact_correct", f["id"], x) for x in _corrections(f))
-        if (f.get("canon") or f.get("owner")) and not f.get("locked"):
-            acts += _act("fact_lock", f["id"])
-        if f.get("locked"):
-            acts += _act("undo", f["locked"])
+    acts = _fact_acts(f, include_hidden=True)
 
     who_names = [subj, obj] + [
         (p.get("entity") or {}).get("name") or p.get("name") for p in f.get("participant_entities") or []
@@ -1727,6 +1782,13 @@ def explore(d: dict[str, Any], lang: str) -> str:
 
     # 1. Facts
     raw_facts = (d.get("facts") or [])[:300]
+    fact_by_id = {f["id"]: f for f in d.get("facts") or [] if f.get("id") is not None}
+    notes_by_eid = {str(n["entity_id"]): n for n in d.get("entity_notes") or [] if n.get("entity_id")}
+    excluded_map = d.get("excluded") or {}
+    item_eid_by_name = {
+        str(e.get("name") or "").casefold(): str(e["id"])
+        for e in d.get("entities") or [] if e.get("type") == "item" and e.get("id")
+    }
     grouped_facts, under = _guise_grouped(raw_facts)
     fact_cards = [_fact_card(f, cid, ents, lang, under=id(f) in under) for f in grouped_facts]
 
@@ -1752,7 +1814,9 @@ def explore(d: dict[str, Any], lang: str) -> str:
         canon_only = bool(said_all) and all(f.get("canon") and not f.get("owner") for f in said_all)
         canon_attr = ' data-canon="1"' if canon_only else ""
         badges = [f'<span class="v-tag k-setting">{_v(t(lang, "ex_setting"))}</span>'] if canon_only else []
-        acts = _exclude_marks(p, persona_ids)
+        edit_rows = _pair_edit_rows(p, lang)
+        excl_marks = _exclude_marks(p, persona_ids)
+        acts = edit_rows + (f'<div class="v-edit-row">{excl_marks}</div>' if excl_marks else "")
         pair_cards.append(
             f'<div class="v-card v-exp-card" data-cat="pairs"{_who_attr(names_list)}{canon_attr}>'
             + (f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}</div></div>' if badges else "")
@@ -1816,12 +1880,15 @@ def explore(d: dict[str, Any], lang: str) -> str:
             subs.append(_v(t(lang, "kept", who=", ".join(s["open"]))))
         if h := happened_text(s, lang):
             subs.append(_v(h))
+        sf = fact_by_id.get(s.get("id"))
+        s_acts = _fact_acts(sf, include_hidden=True) if sf is not None else ""
         ep_cards.append(
             f'<div class="v-card v-exp-card" data-cat="epistemic"{_who_attr([*holders, *kept_from])}>'
             f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}</div>'
             f'<span class="v-card-turn">{_turn_badge(s, lang)}</span></div>'
             f'<div class="v-card-main">{_v(content(s))}</div>'
-            + (f'<div class="v-card-sub">{"<br>".join(subs)}</div>' if subs else "") + "</div>"
+            + (f'<div class="v-card-sub">{"<br>".join(subs)}</div>' if subs else "")
+            + _edit_drawer(s_acts, lang) + "</div>"
         )
     for b in (d.get("beliefs") or [])[:100]:
         subj = _named(b, "subject")
@@ -1888,16 +1955,31 @@ def explore(d: dict[str, Any], lang: str) -> str:
             hist_fold = (f'<details class="v-more"><summary>{_v(t(lang, "ex_item_hist", n=len(hist)))}</summary>'
                          f'{steps}</details>')
         who_names = [h.get("subject") for h in hist if h.get("subject")]
+        item_name = str(item.get("item") or "")
+        item_eid = str(item["entity_id"]) if item.get("entity_id") else item_eid_by_name.get(item_name.casefold())
+        ent_note = notes_by_eid.get(item_eid) if item_eid else None
+        cur_fact = fact_by_id.get(item.get("fact_id"))
+        edit_rows: list[str] = []
+        if cur_fact is not None and (f_acts := _fact_acts(cur_fact, include_hidden=True)):
+            edit_rows.append(f'<div class="v-edit-row"><span class="v-edit-lbl">{_v(t(lang, "ex_item_now"))}</span>{f_acts}</div>')
+        if item_eid and (excluded_map.get(item_eid) or {}).get("scope") != "memory":
+            edit_rows.append(
+                f'<div class="v-edit-row"><span class="v-edit-lbl">{_v(t(lang, "ex_note"))}</span>'
+                f'{_entity_note_acts(item_eid, ent_note)}</div>'
+            )
+        item_title = (f'<a class="v-name" href="/inspector/c/{cid}/e/{_v(item_eid)}">{_v(item_name)}</a>'
+                      if item_eid else f'<b>{_v(item_name)}</b>')
         item_cards.append(
             f'<div class="v-card v-exp-card" data-cat="items"{_who_attr(who_names)}{canon_attr}>'
-            f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}<b>{_v(item.get("item"))}</b></div></div>'
+            f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}{item_title}</div></div>'
             + (f'<div class="v-card-main">{cur_html}</div>' if cur_html else "")
-            + hist_fold + "</div>"
+            + _entity_note_box(ent_note, lang)
+            + hist_fold
+            + _edit_drawer("".join(edit_rows), lang) + "</div>"
         )
 
     # 6. Entities
     pinned_ids = {str(p.get("entity_id")) for p in d.get("pins") or []}
-    excluded_map = d.get("excluded") or {}
     sorted_ents = sorted(
         (d.get("entities") or [])[:150],
         key=lambda e: (0 if e.get("type") == "character" else 1, -int(e.get("mentions") or 0), str(e.get("name") or "")),
@@ -1919,13 +2001,17 @@ def explore(d: dict[str, Any], lang: str) -> str:
         who_names = [e.get("name"), *aka] if etype == "character" else []
         sheet_link = (f'<a class="v-pill-link" href="{href}">{_v(t(lang, "ex_open_sheet"))}</a>'
                       if etype == "character" else "")
+        ent_note = notes_by_eid.get(eid)
+        note_acts = _entity_note_acts(eid, ent_note) if (excluded_map.get(eid) or {}).get("scope") != "memory" else ""
         ent_cards.append(
             f'<div class="v-card v-exp-card" data-cat="entities"{_who_attr(who_names)}>'
             f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}'
             f'<a class="v-name" href="{href}">{_v(e.get("name"))}</a></div>'
             f'<span class="v-card-turn">{_v(t(lang, "ex_mentions", n=e.get("mentions") or 0))}</span></div>'
             + (f'<div class="v-card-sub">{_v(t(lang, "aka", names=", ".join(aka)))}</div>' if aka else "")
-            + (f'<div class="v-dash-links">{sheet_link}</div>' if sheet_link else "") + "</div>"
+            + _entity_note_box(ent_note, lang)
+            + (f'<div class="v-dash-links">{sheet_link}</div>' if sheet_link else "")
+            + _edit_drawer(note_acts, lang) + "</div>"
         )
 
     # 7. Canon (card / lorebook / persona / author's note)

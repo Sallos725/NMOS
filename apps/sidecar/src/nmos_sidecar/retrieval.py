@@ -22,7 +22,7 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
-from .entities import PERSONA, norm
+from .entities import PERSONA, USER_NAMES, norm
 from .facts import _started_before, FIRST_CUE, FIRST_PERSON, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, excluded_ids, fact_entry, fact_line, fact_text, lexically_related, memory_view, relevant_facts, settled_entry, thread_entry, told_entry
 from . import absence, coverage, mentions, overuse, quotes, rerank, scene, spans, statechange, summaries, variants, source_time
 from .gone import is_gone_place, is_gone_status, is_gone_vital
@@ -36,7 +36,8 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      STATE_HISTORY_MAX, STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES,
                      SOURCE_CLOCK_POLICIES, STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, RETURN_GAP_POLICIES, SETTLED_POLICIES,
-                     PIN_POLICIES, SEM_QUERY_POLICIES, HAPPENED_POLICIES, TOLD_POLICIES, V21_POLICIES, EXCERPT_FLOOR,
+                     PIN_POLICIES, SEM_QUERY_POLICIES, HAPPENED_POLICIES, TOLD_POLICIES, V21_POLICIES,
+                     ENTITY_NOTE_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
@@ -50,7 +51,7 @@ from .keywords import keywords, particle_lookup
 from . import carry
 from .carry import Carried
 from .packet import CARRY_POLICIES, CAST_EXTRA
-from .predicates import CONDITIONED_PREDICATES, address_slot
+from .predicates import CONDITIONED_PREDICATES, address_slot, mentioned
 from .repairs import slot as condition_slot
 from .facts import _knowledge_attrs, _ref as assertion_ref
 from .packet import SLOT_BUNDLE
@@ -1330,6 +1331,13 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 g.lead = [line for line in g.lead if line.ref.get("assertion") not in used]
                 g.facts = [line for line in g.facts if line.ref.get("assertion") not in used]
                 g.threads = [line for line in g.threads if line.ref.get("assertion") not in used]
+        if options.policy in ENTITY_NOTE_POLICIES and options.facts_limit > 0 and r is not None and view.get("entity_notes"):
+            # PHASE-70 (ADR 0096): owner reference notes for mentioned/scene entities and carried items; zero-op without notes
+            lead_notes, bg_notes = entity_note_lines(g, view, r, query, previous_ai, aliases)
+            if lead_notes:
+                g.lead = g.lead + lead_notes
+            if bg_notes:
+                g.facts = bg_notes + g.facts
         if options.policy in GONE_POLICIES and options.facts_limit > 0 and r is not None:
             # packet-v20 (PHASE-60 S3): a gone character's status, whether or not the message names them; like <Cast>,
             # whether or not its message is in the prompt (the mark is what the prompt lacks)
@@ -1784,6 +1792,107 @@ def _join_pins(g: Gathered, view: dict[str, Any], r: Any, query: str, options: R
 def recorded_pins(pins: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """What a request records of its pins (`recall_options.pins`, ADR 0087 item 4): each name it resolved to."""
     return [{"name": p["name"], "entity_type": "character", "source": p["source"]} for p in pins]
+
+
+ENTITY_NOTES_MAX = 5  # PHASE-70 (ADR 0096): max owner entity notes injected into one packet
+
+
+def entity_note_lines(g: Gathered, view: Mapping[str, Any], r: Any, query: str, previous_ai: str,
+                      aliases: Mapping[str, frozenset[str]] | None = None) -> tuple[list[Line], list[Line]]:
+    """PHASE-70 (ADR 0096): owner reference notes for entities mentioned in the turn or active in the scene.
+
+    Returns `(lead_lines, background_lines)`.
+    - Tier 1 (3.0, required -> `lead_lines`): entity name/alias appears in `query` (or `FIRST_PERSON` for persona).
+    - Tier 2 (2.0, required -> `lead_lines`): entity name/alias appears in `previous_ai`.
+    - Tier 3 (1.0, supportive -> `background_lines`): character explicitly pinned (`g.pins`), or item currently held
+      (`possesses`, positive) by a character explicitly named in `query` or `previous_ai`.
+    Unrelated turns mentioning no noted entity (and no holder of a noted item) emit zero lines (0 tokens).
+    At most `ENTITY_NOTES_MAX` notes per packet. Rendered as `<Fact kind="entity_note" source="owner" locked="true"
+    type="...">` so both `clean-v3` and `clean-v4` strip echoed lines and existing `locked="true"` note guidance applies.
+    """
+    notes = view.get("entity_notes") or ()
+    if not notes:
+        return [], []
+    q = norm(query)
+    ai = norm(previous_ai)
+    first_person = bool(FIRST_PERSON.search(query))
+    persona_ent = r.entity("character", "{{user}}")
+    persona_id = str(persona_ent["id"]) if persona_ent else None
+    pinned_ids = {str(p["key"]) for p in g.pins}
+
+    def matches(names: set[str], text: str) -> bool:
+        if not text:
+            return False
+        for k in names:
+            if len(k) >= 2 and k in text:
+                return True
+            if len(k) == 1 and mentioned(k, text):
+                return True
+        return False
+
+    def names_of_entity(raw_list: list[Any], is_persona: bool) -> set[str]:
+        ns = {norm(x) for x in raw_list if x}
+        if aliases:
+            ns |= {v for nm in list(ns) for v in aliases.get(nm, ())}
+        if is_persona:
+            ns -= USER_NAMES
+        return ns
+
+    mentioned_holders: set[str] = set()
+    for ent in view.get("entities") or ():
+        if ent.get("type") != "character":
+            continue
+        eid = str(ent["id"])
+        ns = names_of_entity(ent.get("names") or [ent.get("name")], persona_id is not None and eid == persona_id)
+        if matches(ns, q) or matches(ns, ai):
+            mentioned_holders.add(eid)
+
+    held_items: set[str] = set()
+    if mentioned_holders:
+        for f in view.get("facts") or ():
+            if f.get("predicate") == "possesses" and f.get("polarity") != "negative":
+                sid = str((f.get("subject_entity") or {}).get("id") or "")
+                oid = str((f.get("object_entity") or {}).get("id") or "")
+                if sid in mentioned_holders and oid:
+                    held_items.add(oid)
+
+    scored: list[tuple[float, int, dict[str, Any]]] = []
+    for idx, n in enumerate(notes):
+        eid = str(n["entity_id"])
+        etype = str(n.get("entity_type") or "character")
+        is_persona = etype == "character" and persona_id is not None and eid == persona_id
+        raw_names = names_of_entity(n.get("names") or [n.get("name")], is_persona)
+        tier = 0.0
+        if matches(raw_names, q) or (is_persona and first_person):
+            tier = 3.0
+        elif matches(raw_names, ai):
+            tier = 2.0
+        elif etype == "character" and eid in pinned_ids:
+            tier = 1.0
+        elif etype == "item" and eid in held_items:
+            tier = 1.0
+        if tier > 0:
+            scored.append((tier, idx, n))
+    if not scored:
+        return [], []
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    lead_out: list[Line] = []
+    bg_out: list[Line] = []
+    for tier, _, n in scored[:ENTITY_NOTES_MAX]:
+        name = str(n["name"])
+        etype = str(n.get("entity_type") or "character")
+        body = str(n["text"])
+        rid = str(n["repair"])
+        xml = (f'    <Fact kind="entity_note" source="owner" locked="true" type={quoteattr(etype)}>'
+               f"{xml_escape(f'{name}: {body}')}</Fact>")
+        ref = {"repair": rid, "entity": str(n["entity_id"])}
+        line = Line("fact", xml, ref, None, f"{name} [{etype}]: {body}", body)
+        if tier >= 2.0:
+            g.named.add(rid)
+            lead_out.append(line)
+        else:
+            bg_out.append(line)
+    return lead_out, bg_out
 
 
 FEELING_INTENSITY = ("faint", "clear", "strong")

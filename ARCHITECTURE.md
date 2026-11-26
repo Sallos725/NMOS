@@ -970,6 +970,20 @@ A window's keys are prefixed `<character>.<key>` only when one reply holds windo
 non-scene key; scene keys never are; a bare pin or watch covers a key by its last part. The rules version is
 unchanged. Under `packet-v21` a status question that names no character asks that key of every window.
 
+**D98 — Entity notes (`entity_note`, ADR 0096) and direct editing across categories (PHASE-70).** An owner repair kind
+(`entity_note`, migration `0045`; no new table, no new extractor/canon/embedding generation) attaches one concise
+reference description (up to 300 characters) to any entity across all five types (`character`, `place`, `item`,
+`group`, `concept`), resolved through aliases and splits on every read; saving a new note supersedes the prior active
+row for that entity in the same transaction; entities excluded with `scope="memory"` cannot be noted. Under
+`packet-v20` and `packet-v21` (matching `PIN_POLICIES`; frozen `packet-v19` and older remain untouched), notes are mention-triggered (zero tokens on unrelated turns; up to 5 per
+packet): Tier 1 (`query` mention or `FIRST_PERSON` for persona) and Tier 2 (`previous_ai` mention) enter as `required`
+`<Fact kind="entity_note" source="owner" locked="true" type="...">` lines exempt from overuse rest, while Tier 3
+(pinned characters or items held via `possesses` by a character named in `query`/`previous_ai`) enter as `supportive`;
+stripped by `clean-v3`/`clean-v4` and reproduced by as-of replay (ADR 0027). `fact_correct` also accepts `new_subject`
+under the same `version_key` guard (allowing holder corrections on `possesses`), Memory Explorer exposes inline edit
+controls across `pairs`, `epistemic`, `items`, and `entities`, and the panel provides an Entity Note editor on entity
+pages and an upgraded `fact_add` form with dynamic `subject_type` selection.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

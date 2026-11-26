@@ -49,12 +49,13 @@ export interface EntityRow {
   persona?: boolean;
   links?: { id: string; name: string; same_as: string }[];
   aliases?: { name: string; other: string; turn: number | null }[];
+  note?: { id: string; text: string };
 }
 
 /** A repair the inspector marks for the panel (ADR 0044): what to do, to which item, and a character or field. */
 export interface RepairAction { kind: string; item: string; extra: string | null }
 
-const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|undo_batch|alias_join|branch_inherit|told_retract|fact_hidden|attention_dismiss|fact_add):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|entity_note|undo|undo_batch|alias_join|branch_inherit|told_retract|fact_hidden|attention_dismiss|fact_add):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
 
 /** A request a bulk action sends for one row (PHASE-57 B1): a repair, or a repair taken back. */
 export type BulkRequest = { kind: string; item: string; outcome?: string; attention?: 'role_held' | 'alias_held' } | { undo: string };

@@ -245,12 +245,13 @@ class RepairRequest(BaseModel):
     character (`item`, a name or an entity id) for every request of the chat (PHASE-60 S8, ADR 0087)."""
     kind: Literal["thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
                   "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude", "entity_pin",
-                  "fact_add", "told_retract", "fact_hidden", "attention_dismiss"]
+                  "fact_add", "told_retract", "fact_hidden", "attention_dismiss", "entity_note"]
     item: Text = Field(min_length=1, max_length=120)
     outcome: Text | None = Field(default=None, max_length=32)
     character: Text | None = Field(default=None, max_length=120)
     turn: int | None = Field(default=None, ge=0)
     note: Text | None = Field(default=None, max_length=300)
+    new_subject: Text | None = Field(default=None, max_length=120)
     new_object: Text | None = Field(default=None, max_length=200)
     new_value: Text | None = Field(default=None, max_length=500)
     other: Text | None = Field(default=None, max_length=120)

@@ -95,9 +95,9 @@ interface ServerConfig {
   install?: string | null;
 }
 
-/** An entities row with what pins add (ADR 0087): `pinned` is the pin's repair id, only on a pinned row; `excluded`
- *  marks a character the owner left out of memory, which is never pinned. */
-type PinRow = EntityRow & { excluded?: boolean; pinned?: string };
+/** An entities row with what pins/notes add (ADR 0087, ADR 0096): `pinned` is the pin's repair id, only on a pinned
+ *  row; `excluded` marks a character the owner left out of cast/memory (`"cast"` or `"memory"`). */
+type PinRow = EntityRow & { excluded?: boolean | string; pinned?: string };
 
 /** `minSim`: the vector similarity bar measured for the preset's model (`docs/perf/embedders.md`); `hint`: said when
  *  the preset is picked. */
@@ -337,6 +337,11 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp span.rp{display:inline-flex;flex-wrap:wrap;align-items:center;gap:5px;margin-left:6px;vertical-align:middle}
 .nmos .insp span.rp input,.nmos .insp span.rp select{width:auto;padding:3px 7px;font-size:13px;border-radius:6px}
 .nmos .insp span.rp input[type=text]{width:12em}.nmos .insp span.rp input.turn{width:7em}
+.nmos .insp .rp-note-form{display:flex;flex-direction:column;gap:6px;min-width:240px;width:100%;margin-top:4px}
+.nmos .insp .rp-note-form textarea{min-height:64px;font-family:inherit;font-size:13.5px;line-height:1.45;padding:7px 10px}
+.nmos .note-card textarea{min-height:76px;font-family:inherit;font-size:14px;line-height:1.5}
+.nmos .note-meta{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12.5px;color:var(--c-text-muted)}
+.nmos .note-meta .btns{margin-top:0}
 .nmos button.mini{padding:4px 9px;font-size:12.5px;border-radius:6px}
 .nmos .groups{display:flex;flex-direction:column;gap:8px;margin:8px 0}
 .nmos .groups button.group{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:14px 16px;border-radius:12px;font-size:16px}
@@ -874,6 +879,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
   // Back and Refresh stay in reach while reading far down a page.
   // On an entity's page: the owner joins it with another entity of its type, or undoes a join (ADR 0025).
   const linkCard = el('div', { class: 'card', style: 'display:none' });
+  // On an entity's page: the owner attaches a mention-triggered reference note (PHASE-70, ADR 0096).
+  const noteCard = el('div', { class: 'card note-card', style: 'display:none' });
   // On a character's page: the owner pins it so its facts go into every reply's memory (ADR 0087). Built here, beside
   // the sidecar's page, which stays as it is sent.
   const pinCard = el('div', { class: 'card', style: 'display:none' });
@@ -900,7 +907,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
   const homeQuickBar = el('div', { class: 'home-quick', style: 'display:none' });
   const memSubBar = el('div', { class: 'mem-subbar', style: 'display:none' });
   inspectorView.append(inspbar, homeQuickBar, memSubBar, actions, actionMsg, notesCard, factAddCard,
-    bulkBar, modeCard, statusCard, pinCard, linkCard, inspectorBody, inspectorAddress);
+    bulkBar, modeCard, statusCard, noteCard, pinCard, linkCard, inspectorBody, inspectorAddress);
   function updateBulk(): void {
     bulkBar.style.display = picked.size || bulkGroups.size ? '' : 'none';
     bulkClose.style.display = picked.size ? '' : 'none';
@@ -962,15 +969,18 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
   function repairControls(action: RepairAction): Node[] {
     if (action.kind === 'thread_close') return closeControls(action);
     const field = (action.extra ?? '').split('.')[0];
-    const n = action.kind === 'fact_correct' ? L(field === 'object' ? 'rp.field_object' : 'rp.field_value')
-      : action.extra ?? '';
+    const fieldKey = field === 'subject' ? 'rp.field_subject' : field === 'object' ? 'rp.field_object' : 'rp.field_value';
+    const n = action.kind === 'fact_correct' ? L(fieldKey) : action.extra ?? '';
     // canon's statement in a conflict is corrected and kept (PHASE-57 B2)
-    const label = action.kind === 'fact_correct' && action.extra?.endsWith('.lock') ? 'rp.fact_correct_lock' : `rp.${action.kind}`;
+    const label = action.kind === 'fact_correct' && action.extra?.endsWith('.lock') ? 'rp.fact_correct_lock'
+      : action.kind === 'entity_note' ? (action.extra === 'edit' ? 'rp.entity_note_edit' : 'rp.entity_note_add')
+        : `rp.${action.kind}`;
     const button = el('button', { class: 'mini', text: L(label as StringKey, { n }) });
     const spot = el('div');
     button.addEventListener('click', () => {
       if (action.kind === 'fact_correct') correctForm(action, button);
       else if (action.kind === 'fact_hidden') hiddenForm(action, button);
+      else if (action.kind === 'entity_note') noteForm(action, button);
       else if (action.kind === 'branch_inherit') void branchInherit(action, button, spot);
       else if (action.kind === 'undo' && (action.extra === 'name_split' || action.extra === 'entity_exclude')) {
         void undoSplit(action, button, spot); // previewed: a split's and an exclusion's undo (PHASE-20 Q2, PHASE-47)
@@ -1026,12 +1036,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const key = `oc.${outcome}` as StringKey;
     return STRING_KEYS.includes(key) ? L(key) : outcome;
   }
-  /** A correction's form in place of its button (PHASE-13 Q5): the new object or value, and the turn it takes effect
-   * (empty: the fact's own turn). */
+  /** A correction's form in place of its button (PHASE-13 Q5, PHASE-70): the new subject, object or value, and the
+   * turn it takes effect (empty: the fact's own turn). */
   function correctForm(action: RepairAction, button: HTMLButtonElement): void {
     const spot = button.parentElement;
     if (!spot) return;
-    const field = (action.extra ?? '').split('.')[0] === 'object' ? 'object' : 'value';
+    const rawField = (action.extra ?? '').split('.')[0];
+    const field = rawField === 'subject' ? 'subject' : rawField === 'object' ? 'object' : 'value';
+    const bodyKey = field === 'subject' ? 'new_subject' : field === 'object' ? 'new_object' : 'new_value';
     const text = el('input', { type: 'text', placeholder: L('rp.correct_prompt', { f: L(`rp.field_${field}`) }),
       'aria-label': L(`rp.field_${field}`) });
     const turn = el('input', { type: 'number', min: '0', step: '1', class: 'turn', placeholder: L('rp.turn_hint'),
@@ -1042,7 +1054,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     save.addEventListener('click', () => {
       const next = text.value.trim();
       if (!next) return void text.focus();
-      const body: Record<string, unknown> = { [field === 'object' ? 'new_object' : 'new_value']: next };
+      const body: Record<string, unknown> = { [bodyKey]: next };
       if (action.extra?.endsWith('.lock')) body.lock = true;  // canon's statement, kept as corrected (PHASE-57 B2)
       const at = turn.value.trim();
       if (at) {
@@ -1054,6 +1066,41 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     });
     spot.replaceChildren(el('span', { class: 'rpform' }, text, turn, save, cancel));
     text.focus();
+  }
+  const NOTE_MAX_CHARS = 300;
+  function normNote(raw: string): string {
+    return raw.trim().replace(/\s+/g, ' ');
+  }
+  /** Inline form for `entity_note` (PHASE-70, ADR 0096): prefilled safely from the card's `.v-note-text` if present. */
+  function noteForm(action: RepairAction, button: HTMLButtonElement): void {
+    const spot = button.parentElement;
+    if (!spot) return;
+    const existing = button.closest('.v-card')?.querySelector('.v-note-text')?.textContent?.trim() ?? '';
+    const area = el('textarea', { maxlength: String(NOTE_MAX_CHARS), rows: '2',
+      placeholder: L('en.placeholder'), 'aria-label': L('rp.entity_note') });
+    area.value = existing;
+    const counter = el('span', { class: 'muted', text: L('en.count', { n: normNote(existing).length, max: NOTE_MAX_CHARS }) });
+    area.addEventListener('input', () => {
+      counter.textContent = L('en.count', { n: normNote(area.value).length, max: NOTE_MAX_CHARS });
+    });
+    const save = el('button', { class: 'mini primary', text: L('save') });
+    const cancel = el('button', { class: 'mini', text: L('cancel') });
+    cancel.addEventListener('click', () => spot.replaceChildren(...repairControls(action)));
+    save.addEventListener('click', () => {
+      const cleaned = normNote(area.value);
+      if (!cleaned) {
+        say(actionMsg, L('en.empty'), 'err');
+        return void area.focus();
+      }
+      if (cleaned.length > NOTE_MAX_CHARS) {
+        say(actionMsg, L('en.too_long', { max: NOTE_MAX_CHARS }), 'err');
+        return void area.focus();
+      }
+      void repairNow(action, save, { new_value: cleaned });
+    });
+    spot.replaceChildren(el('div', { class: 'rp-note-form' }, area,
+      el('div', { class: 'note-meta' }, counter, el('span', { class: 'btns' }, save, cancel))));
+    area.focus();
   }
   /** Inline form for `fact_hidden`: add or remove a character from a story fact's `hidden_from`. */
   function hiddenForm(action: RepairAction, button: HTMLButtonElement): void {
@@ -1498,7 +1545,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       if (!action) continue;
       spot.replaceChildren(...repairControls(action));
       if (action.kind === 'fact_retract' && spot.closest('#s-facts') && !spot.closest('details.fold')
-          && !spot.closest('[data-canon="1"]')) {
+          && !spot.closest('[data-canon="1"]')
+          && !spot.parentElement?.querySelector('[data-repair^="fact_hidden:"]')) {
         const hid = el('span', { class: 'rp' });
         hid.replaceChildren(...repairControls({ kind: 'fact_hidden', item: action.item, extra: null }));
         spot.after(hid);
@@ -1657,7 +1705,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     }
     actions.style.display = rawInspector ? '' : 'none';
     const shownEntity = inspectorEntity(path);
-    if (!shownEntity) { linkCard.style.display = 'none'; pinCard.style.display = 'none'; }
+    if (!shownEntity) { linkCard.style.display = 'none'; pinCard.style.display = 'none'; noteCard.style.display = 'none'; }
     if (!again && !rawInspector && !path.includes('/explore')) { factAddCard.style.display = 'none'; }
     if (!rawInspector || shownEntity) { modeCard.style.display = 'none'; statusCard.style.display = 'none'; }
     if (viewsOn) syncShellForPath(path);
@@ -1667,6 +1715,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       shownPath = null;
       inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('insp.loading') }));
       pinCard.style.display = 'none';  // another page's switch never acts on the page that is loading
+      noteCard.style.display = 'none';
     }
     // Only a sidecar the browser reaches itself can be opened in a tab; a server-routed one (Docker
     // name, LAN address behind HTTPS) is reachable from the PocketRisu server only.
@@ -1729,6 +1778,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       retryButton.style.display = 'none';
       showCut(null);
       pinCard.style.display = 'none';
+      noteCard.style.display = 'none';
       inspectorBody.replaceChildren(el('div', { class: 'card err', text: errorText(lang, error) }));
     } finally {
       if (load === loads) inspectorBody.classList.remove('busy');
@@ -1924,8 +1974,80 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       entities = null; // the page itself already reports a failing sidecar
     }
     if (load !== loads) return;
+    showNote(conversation, entity, entities);
     showPin(conversation, entity, entities);
     showLinks(conversation, entity, entities ?? []);
+  }
+  /** Said once in the entity note card after the refresh that follows a save or delete. */
+  let noteSaid: { entity: string; key: StringKey } | null = null;
+  /** The entity reference note card (PHASE-70, ADR 0096), shown for all 5 entity types unless excluded from memory. */
+  function showNote(conversation: string, entity: string, entities: PinRow[] | null): void {
+    const row = entities?.find((e) => e.id === entity);
+    const said = noteSaid?.entity === entity ? noteSaid.key : null;
+    noteSaid = null;
+    if (!row || row.excluded === 'memory') {
+      noteCard.style.display = 'none';
+      noteCard.replaceChildren();
+      return;
+    }
+    const existing = row.note?.text ?? '';
+    const area = el('textarea', { maxlength: String(NOTE_MAX_CHARS), rows: '3',
+      placeholder: L('en.placeholder'), 'aria-label': L('en.title', { n: row.name }) });
+    area.value = existing;
+    const counter = el('span', { text: L('en.count', { n: normNote(existing).length, max: NOTE_MAX_CHARS }) });
+    area.addEventListener('input', () => {
+      counter.textContent = L('en.count', { n: normNote(area.value).length, max: NOTE_MAX_CHARS });
+    });
+    const save = el('button', { class: 'primary', text: L('save') });
+    const btns = el('div', { class: 'btns' }, save);
+    const msg = el('div', { class: 'msg', role: 'status' });
+    if (said) say(msg, L(said), 'ok');
+    save.addEventListener('click', async () => {
+      const cleaned = normNote(area.value);
+      if (!cleaned) {
+        say(msg, L('en.empty'), 'err');
+        return void area.focus();
+      }
+      if (cleaned.length > NOTE_MAX_CHARS) {
+        say(msg, L('en.too_long', { max: NOTE_MAX_CHARS }), 'err');
+        return void area.focus();
+      }
+      save.disabled = true;
+      say(msg, L('act.working'));
+      try {
+        await deps.api('POST', `/v1/conversations/${conversation}/repairs`,
+          { kind: 'entity_note', item: entity, new_value: cleaned }, 15_000);
+        noteSaid = { entity, key: 'en.saved' };
+        say(msg, L('en.saved'), 'ok');
+        await showInspector();
+      } catch (error) {
+        say(msg, errorText(lang, error), 'err');
+        save.disabled = false;
+      }
+    });
+    if (row.note?.id) {
+      const noteId = row.note.id;
+      const del = el('button', { class: 'danger', text: L('en.delete') });
+      del.addEventListener('click', async () => {
+        del.disabled = true;
+        save.disabled = true;
+        say(msg, L('act.working'));
+        try {
+          await deps.api('POST', `/v1/conversations/${conversation}/repairs/${noteId}/remove`, {}, 15_000);
+          noteSaid = { entity, key: 'en.removed' };
+          say(msg, L('en.removed'), 'ok');
+          await showInspector();
+        } catch (error) {
+          say(msg, errorText(lang, error), 'err');
+          del.disabled = false;
+          save.disabled = false;
+        }
+      });
+      btns.append(del);
+    }
+    noteCard.replaceChildren(el('h2', { text: L('en.title', { n: row.name }) }),
+      el('p', { class: 'sub', text: L('en.sub') }), area, el('div', { class: 'note-meta' }, counter, btns), msg);
+    noteCard.style.display = '';
   }
   /** Said once in the pin card after the refresh that follows a pin or an unpin of that entity. */
   let pinSaid: { entity: string; key: StringKey } | null = null;
@@ -2070,7 +2192,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     }
     // A line of a new screen shows its repair when tapped (PHASE-52 D2), not on every line at once.
     const row = clicked?.closest('.v-line');
-    if (row && !clicked?.closest('a, button, select, input, label, .rp')) return void row.classList.toggle('open');
+    if (row && !clicked?.closest('a, button, select, input, textarea, label, .rp')) return void row.classList.toggle('open');
     const choice = clicked?.closest('.tl-span[data-span]');
     const box = choice?.closest<HTMLElement>('.tl-lazy');
     if (choice && box) return void loadTimeline(box, choice.getAttribute('data-span') ?? '');
@@ -2265,20 +2387,67 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       factAddCard.replaceChildren(el('b', { text: L('fa.title') }), el('p', { class: 'sub', text: L('fa.no_msgs') }));
       return;
     }
-    const preds: [string, string, string | null][] = [
-      ['has_status', 'character', null], ['located_in', 'character', 'place'], ['identity', 'character', null],
-      ['has_trait', 'character', null], ['relationship', 'character', 'character'], ['role_toward', 'character', 'character'],
-      ['feels_toward', 'character', 'character'], ['addresses', 'character', 'character'], ['possesses', 'character', 'item'],
-      ['member_of', 'character', 'group'], ['knows', 'character', null], ['goal', 'character', null],
-      ['promised', 'character', 'character'], ['event', 'character', null], ['world_fact', 'concept', null],
+    interface FactPredSpec {
+      pred: string;
+      subjectTypes: readonly string[];
+      objectTypes: readonly string[] | null;
+      needsValue: boolean;
+    }
+    const preds: FactPredSpec[] = [
+      { pred: 'has_status', subjectTypes: ['character'], objectTypes: null, needsValue: true },
+      { pred: 'located_in', subjectTypes: ['character', 'item', 'group'], objectTypes: ['place'], needsValue: false },
+      { pred: 'identity', subjectTypes: ['character'], objectTypes: null, needsValue: true },
+      { pred: 'has_trait', subjectTypes: ['character'], objectTypes: null, needsValue: true },
+      { pred: 'relationship', subjectTypes: ['character'], objectTypes: ['character'], needsValue: true },
+      { pred: 'role_toward', subjectTypes: ['character'], objectTypes: ['character'], needsValue: true },
+      { pred: 'feels_toward', subjectTypes: ['character'], objectTypes: ['character'], needsValue: true },
+      { pred: 'addresses', subjectTypes: ['character'], objectTypes: ['character'], needsValue: true },
+      { pred: 'possesses', subjectTypes: ['character', 'group'], objectTypes: ['item'], needsValue: false },
+      { pred: 'destroyed', subjectTypes: ['item'], objectTypes: null, needsValue: true },
+      { pred: 'member_of', subjectTypes: ['character'], objectTypes: ['group'], needsValue: false },
+      { pred: 'knows', subjectTypes: ['character'], objectTypes: null, needsValue: true },
+      { pred: 'goal', subjectTypes: ['character', 'group'], objectTypes: null, needsValue: true },
+      { pred: 'question', subjectTypes: ['character', 'group'], objectTypes: null, needsValue: true },
+      { pred: 'threat', subjectTypes: ['character', 'group', 'place'], objectTypes: null, needsValue: true },
+      { pred: 'owes', subjectTypes: ['character', 'group'], objectTypes: ['character', 'group'], needsValue: true },
+      { pred: 'promised', subjectTypes: ['character'], objectTypes: ['character'], needsValue: true },
+      { pred: 'event', subjectTypes: ['character', 'place', 'item', 'group', 'concept'], objectTypes: null, needsValue: true },
+      { pred: 'world_fact', subjectTypes: ['item', 'place', 'group', 'concept'], objectTypes: null, needsValue: true },
     ];
     const msgSel = el('select', { 'aria-label': L('fa.msg') }, ...msgs.map((m) =>
       el('option', { value: m.host_logical_id, text: `t${m.turn} #${m.position} (${m.name || m.role}) ${m.preview.slice(0, 48)}` })));
-    const predSel = el('select', { 'aria-label': L('fa.pred') }, ...preds.map(([p]) => el('option', { value: p, text: p })));
+    const predSel = el('select', { 'aria-label': L('fa.pred') }, ...preds.map((spec) =>
+      el('option', { value: spec.pred, text: L(`fp.${spec.pred}` as StringKey) })));
+    const subjTypeSel = el('select', { 'aria-label': L('fa.subj_type') });
+    const objTypeSel = el('select', { 'aria-label': L('fa.obj_type') });
     const subj = el('input', { type: 'text', placeholder: L('fa.subj'), 'aria-label': L('fa.subj') });
     const obj = el('input', { type: 'text', placeholder: L('fa.obj'), 'aria-label': L('fa.obj') });
     const val = el('input', { type: 'text', placeholder: L('fa.val'), 'aria-label': L('fa.val') });
     const hid = el('input', { type: 'text', placeholder: L('fa.hidden'), 'aria-label': L('fa.hidden') });
+    const currentSpec = (): FactPredSpec => preds.find((x) => x.pred === predSel.value) ?? preds[0]!;
+    const syncPredFields = () => {
+      const spec = currentSpec();
+      const prevSubj = subjTypeSel.value;
+      subjTypeSel.replaceChildren(...spec.subjectTypes.map((t) =>
+        el('option', { value: t, text: L(`et.${t}` as StringKey) })));
+      subjTypeSel.value = spec.subjectTypes.includes(prevSubj) ? prevSubj : spec.subjectTypes[0]!;
+      subjTypeSel.style.display = spec.subjectTypes.length > 1 ? '' : 'none';
+      const hasObj = spec.objectTypes !== null && spec.objectTypes.length > 0;
+      obj.style.display = hasObj ? '' : 'none';
+      if (hasObj && spec.objectTypes) {
+        const prevObj = objTypeSel.value;
+        objTypeSel.replaceChildren(...spec.objectTypes.map((t) =>
+          el('option', { value: t, text: L(`et.${t}` as StringKey) })));
+        objTypeSel.value = spec.objectTypes.includes(prevObj) ? prevObj : spec.objectTypes[0]!;
+        objTypeSel.style.display = spec.objectTypes.length > 1 ? '' : 'none';
+      } else {
+        objTypeSel.replaceChildren();
+        objTypeSel.style.display = 'none';
+      }
+      val.style.display = spec.needsValue ? '' : 'none';
+    };
+    predSel.addEventListener('change', syncPredFields);
+    syncPredFields();
     const save = el('button', { class: 'primary', text: L('save') });
     const cancel = el('button', { text: L('cancel') });
     const formMsg = el('div', { class: 'msg' });
@@ -2286,13 +2455,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     save.addEventListener('click', async () => {
       const s = subj.value.trim();
       if (!s) return void say(formMsg, L('fa.need_subj'), 'err');
-      const spec = preds.find(([p]) => p === predSel.value) ?? preds[0]!;
-      const o = obj.value.trim() || null;
-      const v = val.value.trim() || null;
+      const spec = currentSpec();
+      const o = spec.objectTypes ? obj.value.trim() || null : null;
+      const v = spec.needsValue ? val.value.trim() || null : null;
       const hidden = hid.value.split(',').map((x) => x.trim()).filter(Boolean);
       const fact: Record<string, unknown> = {
-        predicate: spec[0], subject: s, subject_type: spec[1],
-        ...(o ? { object: o, object_type: spec[2] ?? 'character' } : {}),
+        predicate: spec.pred, subject: s, subject_type: subjTypeSel.value || spec.subjectTypes[0]!,
+        ...(o && spec.objectTypes ? { object: o, object_type: objTypeSel.value || spec.objectTypes[0]! } : {}),
         ...(v ? { value: v } : {}),
         ...(hidden.length ? { hidden_from: hidden } : {}),
       };
@@ -2311,8 +2480,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       }
     });
     factAddCard.replaceChildren(el('b', { text: L('fa.title') }),
-      el('div', { class: 'row' }, msgSel), el('div', { class: 'row' }, predSel),
-      el('div', { class: 'row' }, subj, obj), el('div', { class: 'row' }, val, hid),
+      el('div', { class: 'row' }, msgSel), el('div', { class: 'row' }, predSel, subjTypeSel),
+      el('div', { class: 'row' }, subj, objTypeSel, obj), el('div', { class: 'row' }, val, hid),
       el('div', { class: 'btns' }, save, cancel), formMsg);
   }
   const notesCache = new Map<string, NotesResult>();

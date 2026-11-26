@@ -816,7 +816,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             view = (view_of(conn, conv["head_commit_id"], carried=True)
                     if conv["head_commit_id"] else {"entities": []})
         pinned = {str(p["entity_id"]): str(p["repair"]) for p in view.get("pins") or ()}  # PHASE-60 S8: the pin's id
-        return [{**e, "pinned": pinned[str(e["id"])]} if str(e["id"]) in pinned else e for e in view["entities"]]
+        noted = {str(n["entity_id"]): {"id": str(n["repair"]), "text": n["text"]}
+                 for n in view.get("entity_notes") or ()}  # PHASE-70 (ADR 0096)
+        return [{**e, **({"pinned": pinned[eid]} if eid in pinned else {}),
+                 **({"note": noted[eid]} if eid in noted else {})}
+                for e in view["entities"] for eid in (str(e["id"]),)]
 
     @app.get("/v1/conversations/{conv_id}/memory-mode", dependencies=[Depends(auth)])
     def get_memory_mode(conv_id: UUID, request: Request):
@@ -1315,7 +1319,27 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 if body.kind == "entity_exclude":
                     expect_same(conn, conv_id, body.expect, "exclude", entity_type=body.entity_type, name=body.item,
                                 scope=body.scope)
-                row = insert_repair(conn, conv_id, body.kind, target, value, body.note, head=head)
+                if body.kind == "entity_note":
+                    conn.execute("SELECT 1 FROM conversation WHERE id = %s FOR UPDATE", (conv_id,))
+                    r = view.get("resolution")
+                    r_ent = r.entity(target["entity_type"], target["name"]) if r else None
+                    if r_ent is not None:
+                        active_notes = conn.execute(
+                            "SELECT id, target FROM owner_repair WHERE conversation_id = %s"
+                            " AND kind = 'entity_note' AND removed_at IS NULL",
+                            (conv_id,),
+                        ).fetchall()
+                        old_ids = [
+                            rep["id"] for rep in active_notes
+                            if (matched := r.entity((rep.get("target") or {}).get("entity_type") or "character",
+                                                    (rep.get("target") or {}).get("name"))) is not None
+                            and str(matched["id"]) == str(r_ent["id"])
+                        ]
+                        if old_ids:
+                            conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s"
+                                         " AND id = ANY(%s) AND removed_at IS NULL", (conv_id, old_ids))
+                stored_note = None if body.kind == "entity_note" and not (body.new_value or "").strip() else body.note
+                row = insert_repair(conn, conv_id, body.kind, target, value, stored_note, head=head)
                 if body.lock:  # the corrected canon is kept against the story (PHASE-57 B2)
                     later = view_of(conn, head, carried=True)
                     # the owner's version, current or held off by the story's later statement
@@ -1385,7 +1409,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return repairs.plan(body.kind, body.item, view, head_turn(conn, head), body.outcome, body.character,
                                 body.turn, body.new_object, body.new_value, body.other, body.entity_type,
                                 version_key, body.scope, body.new_because,
-                                body.fact.model_dump() if body.fact else None, body.hidden, body.attention)
+                                body.fact.model_dump() if body.fact else None, body.hidden, body.attention,
+                                body.new_subject, body.note)
         except repairs.RepairError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -1417,10 +1442,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             plan: list[dict[str, Any]] = []
             planned: list[tuple[RepairRequest, dict, dict]] = []
             seen: set[tuple] = set()
+            seen_notes: set[str] = set()
             for n, item in enumerate(body.items):
                 entry: dict[str, Any] = {"index": n, "kind": item.kind, "item": item.item}
-                key = (item.kind, item.item, item.outcome, item.character, item.new_object, item.new_value, item.turn,
-                       item.new_because, item.hidden, item.attention, item.fact.model_dump_json() if item.fact else None)
+                key = (item.kind, item.item, item.outcome, item.character, item.new_subject, item.new_object, item.new_value,
+                       item.turn, item.new_because, item.hidden, item.attention,
+                       item.fact.model_dump_json() if item.fact else None,
+                       item.note if item.kind == "entity_note" else None)
                 if item.kind in PREVIEWED or item.lock:
                     entry["error"] = "this repair is made one at a time, from its preview"
                 elif key in seen:
@@ -1432,8 +1460,19 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                                      item.character, item.turn, item.new_object, item.new_value,
                                                      item.other, item.entity_type, version_key, item.scope,
                                                      item.new_because, item.fact.model_dump() if item.fact else None,
-                                                     item.hidden, item.attention)
-                        planned.append((item, target, value))
+                                                     item.hidden, item.attention, item.new_subject, item.note)
+                        if item.kind == "entity_note":
+                            r = view.get("resolution")
+                            r_ent = r.entity(target["entity_type"], target["name"]) if r else None
+                            eid = str(r_ent["id"]) if r_ent is not None else None
+                            if eid is not None and eid in seen_notes:
+                                entry["error"] = "only one note per entity in a batch"
+                            else:
+                                if eid is not None:
+                                    seen_notes.add(eid)
+                                planned.append((item, target, value))
+                        else:
+                            planned.append((item, target, value))
                     except repairs.RepairError as e:
                         entry["error"] = str(e)
                 plan.append(entry)
@@ -1465,8 +1504,29 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 return out
             batch = uuid7()
             with conn.transaction():
+                if any(item.kind == "entity_note" for item, _, _ in planned):
+                    conn.execute("SELECT 1 FROM conversation WHERE id = %s FOR UPDATE", (conv_id,))
                 for item, target, value in planned:
-                    insert_repair(conn, conv_id, item.kind, target, value, item.note, batch, head)
+                    if item.kind == "entity_note":
+                        r = view.get("resolution")
+                        r_ent = r.entity(target["entity_type"], target["name"]) if r else None
+                        if r_ent is not None:
+                            active_notes = conn.execute(
+                                "SELECT id, target FROM owner_repair WHERE conversation_id = %s"
+                                " AND kind = 'entity_note' AND removed_at IS NULL",
+                                (conv_id,),
+                            ).fetchall()
+                            old_ids = [
+                                rep["id"] for rep in active_notes
+                                if (matched := r.entity((rep.get("target") or {}).get("entity_type") or "character",
+                                                        (rep.get("target") or {}).get("name"))) is not None
+                                and str(matched["id"]) == str(r_ent["id"])
+                            ]
+                            if old_ids:
+                                conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s"
+                                             " AND id = ANY(%s) AND removed_at IS NULL", (conv_id, old_ids))
+                    stored_note = None if item.kind == "entity_note" and not (item.new_value or "").strip() else item.note
+                    insert_repair(conn, conv_id, item.kind, target, value, stored_note, batch, head)
                 if undone:
                     conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s"
                                  " AND id = ANY(%s) AND removed_at IS NULL", (conv_id, undone))
@@ -2512,6 +2572,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             held_ids = {id(f) for f in held}
             data["facts"] = [f for f in mine if id(f) not in held_ids]
             data["held"] = held
+            if ent_note := next((n for n in view.get("entity_notes") or () if str(n["entity_id"]) == eid), None):
+                data["entity"]["note"] = {"id": str(ent_note["repair"]), "text": ent_note["text"]}
             if worn := [dg for dg in view.get("disguises") or () if _me(dg.get("subject_entity"))]:
                 data["disguises"] = worn
             data["characters"] = [{"id": str(c["id"]), "name": c.get("name") or ""}
@@ -2544,6 +2606,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             "entities": view["entities"],
             "entities_map": character_ids(view),
             "pins": view.get("pins") or [],
+            "entity_notes": view.get("entity_notes") or [],
             "excluded": view.get("excluded") or {},
             "canon_rows": canon.manifest(conn, cid),
             "canon_history": canon.history(conn, cid),
