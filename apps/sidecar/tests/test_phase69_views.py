@@ -134,6 +134,14 @@ def test_views_style_stays_strictly_scoped_under_nmos():
     assert "@import" not in views.STYLE and "url(" not in views.STYLE
 
 
+def test_phase71_views_style_passive_tags_and_edit_disclosure():
+    assert ".nmos .v-tag{" in views.STYLE and "cursor:default" in views.STYLE
+    assert ".nmos .v .chip{" in views.STYLE
+    assert '.nmos .v-edit>summary::before{content:"\\25B8"' in views.STYLE
+    assert '.nmos .v-edit[open]>summary::before{content:"\\25BE"' in views.STYLE
+    assert "\x15B8" not in views.STYLE and "\x15BE" not in views.STYLE
+
+
 def test_hub_compact_deduplicates_nav_tiles_and_keeps_legacy_default_intact():
     data = {
         "conv": {"id": CID, "name": "Harbor", "character": "Hana", "turns": 14},
