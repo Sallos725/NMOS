@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:91cfb26a3199".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:23eb675c99b3".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -1324,26 +1324,46 @@ ${part}`;
     "home.chat_on_badge": ["\uC774 \uCC44\uD305 \uAE30\uC5B5 ON", "Memory ON"],
     "home.chat_off_badge": ["\uC774 \uCC44\uD305 \uAE30\uC5B5 OFF", "Memory OFF"],
     "home.all_off_badge": ["\uC804\uCCB4 \uAE30\uC5B5 \uAEBC\uC9D0", "All memory OFF"],
-    "mem.story": ["\uC2A4\uD1A0\uB9AC \uBB38\uC11C", "Story document"],
+    "mem.story": ["\uC694\uC57D", "Summary"],
     "mem.story_sub": [
-      "\uD604\uC7AC \uC7A5\uBA74, \uC9C4\uD589 \uC911\uC778 \uB5A1\uBC25, \uC124\uC815 \uBCC0\uACBD\uACFC \uC778\uBB3C \uC694\uC57D\uC744 \uBB38\uC11C\uCC98\uB7FC \uC77D\uACE0 \uBC14\uB85C \uC218\uC815\uD569\uB2C8\uB2E4.",
-      "Read the current scene, open threads, setting changes and cast like a document, and fix lines inline."
+      "\uD604\uC7AC \uC7A5\uBA74, \uC5F4\uB9B0 \uC77C, \uC9C0\uAE08\uAE4C\uC9C0\uC758 \uC904\uAC70\uB9AC\uC640 \uBC14\uB010 \uC124\uC815\uC744 \uD55C\uB208\uC5D0 \uD6D1\uC5B4\uBD05\uB2C8\uB2E4.",
+      "Quick narrative overview: current scene, open threads, story so far, and setting changes."
     ],
-    "mem.map": ["\uC778\uBB3C \xB7 \uAD00\uACC4\uB3C4", "Cast & Map"],
+    "mem.explore": ["\uD0D0\uC0C9 \xB7 \uC218\uC815", "Explore & edit"],
+    "mem.explore_sub": [
+      "\uBAA8\uB4E0 \uC0AC\uC2E4, \uAD00\uACC4\xB7\uD638\uCE6D, \uC57D\uC18D\xB7\uBAA9\uD45C, \uBE44\uBC00, \uC544\uC774\uD15C, \uC778\uBB3C, \uCE74\uB4DC\xB7\uB85C\uC5B4\uBD81 \uC124\uC815\uC744 \uAC80\uC0C9\uD558\uACE0 \uBC14\uB85C \uC218\uC815\uD569\uB2C8\uB2E4.",
+      "Search and edit all facts, relationships, promises, secrets, items, people, and card/lorebook entries."
+    ],
+    "mem.map": ["\uAD00\uACC4\uB3C4", "Map"],
     "mem.map_sub": [
-      "\uB4F1\uC7A5\uC778\uBB3C \uAC04\uC758 \uAD00\uACC4\uC640 \uC0AC\uAC74\uC758 \uCD9C\uCC98(\uC124\uC815 vs \uC774\uC57C\uAE30)\uB97C \uD55C\uB208\uC5D0 \uD0D0\uC0C9\uD569\uB2C8\uB2E4.",
+      "\uC778\uBB3C\xB7\uB300\uC0C1 \uAC04\uC758 \uAD00\uACC4\uC640 \uC0AC\uAC74\uC758 \uCD9C\uCC98(\uC124\uC815 vs \uC774\uC57C\uAE30)\uB97C \uD55C\uB208\uC5D0 \uD0D0\uC0C9\uD569\uB2C8\uB2E4.",
       "Explore character ties, places, and what came from the setting versus the story."
     ],
     "mem.attention": ["\uD655\uC778 \uD544\uC694", "Needs attention"],
     "mem.attention_sub": [
-      "\uC124\uC815\uC774 \uCDA9\uB3CC\uD558\uAC70\uB098 \uC624\uB798\uB41C \uB5A1\uBC25, \uBCF4\uB958\uB41C \uBCC4\uCE6D\uC744 \uAC80\uD1A0\uD558\uACE0 \uC77C\uAD04 \uC815\uB9AC\uD569\uB2C8\uB2E4.",
-      "Review conflicts, stale threads, and held aliases, and settle them in bulk."
+      "\uD655\uC778\uC774 \uD544\uC694\uD55C \uD56D\uBAA9, \uC124\uC815 \uCDA9\uB3CC, \uC9C1\uC811 \uC218\uC815\uD55C \uAE30\uB85D\uC744 \uD55C\uACF3\uC5D0\uC11C \uAC80\uD1A0\uD558\uACE0 \uC77C\uAD04 \uC815\uB9AC\uD569\uB2C8\uB2E4.",
+      "Review flagged items, conflicts, and your direct edits in one focused place."
     ],
-    "mem.diag": ["\uC6D0\uBCF8 \xB7 \uC9C4\uB2E8", "Working & Raw"],
+    "mem.diag": ["\uC9C4\uB2E8", "Diagnostics"],
     "mem.diag_sub": [
-      "\uBC31\uADF8\uB77C\uC6B4\uB4DC \uCD94\uCD9C\xB7\uC784\uBCA0\uB529 \uC9C4\uD589 \uC0C1\uD0DC, \uC2E4\uD328\uD55C \uC791\uC5C5 \uC7AC\uC2DC\uB3C4, \uC6D0\uBCF8 \uC778\uC2A4\uD399\uD130\uB97C \uD655\uC778\uD569\uB2C8\uB2E4.",
-      "Check extraction and embedding progress, retry failed jobs, or inspect raw memory records."
+      "\uBC31\uADF8\uB77C\uC6B4\uB4DC \uCC98\uB9AC \uC0C1\uD0DC, \uBC29\uAE08 \uB2F5\uC7A5\uC5D0 \uB4E4\uC5B4\uAC04 \uAE30\uC5B5, \uBAA8\uB378 \uD638\uCD9C \uB85C\uADF8, \uC6D0\uBCF8 \uC778\uC2A4\uD399\uD130\uB97C \uD655\uC778\uD569\uB2C8\uB2E4.",
+      "Check processing status, memory sent in the last reply, model calls, and the raw inspector."
     ],
+    // PHASE-69 S1: Memory Explorer toolbar & category labels
+    "exp.search": ["\uC0AC\uC2E4, \uC778\uBB3C, \uC57D\uC18D, \uBE44\uBC00, \uB85C\uC5B4\uBD81 \uAC80\uC0C9\u2026", "Search facts, people, promises, secrets, lorebook\u2026"],
+    "exp.who_all": ["\uC804\uCCB4 \uC778\uBB3C", "All people"],
+    "exp.who_label": ["\uC778\uBB3C \uD544\uD130", "Filter by person"],
+    "exp.include_canon": ["\uCE74\uB4DC\xB7\uB85C\uC5B4\uBD81 \uC124\uC815 \uD3EC\uD568 ({n})", "Include setting facts ({n})"],
+    "exp.add_fact": ["+ \uC0AC\uC2E4 \uCD94\uAC00", "+ Add fact"],
+    "exp.empty": ["\uC870\uAC74\uC5D0 \uB9DE\uB294 \uAE30\uC5B5 \uD56D\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No memory items match the current filters."],
+    "exp.cat_all": ["\uC804\uCCB4", "All"],
+    "exp.cat_facts": ["\uC0AC\uC2E4", "Facts"],
+    "exp.cat_pairs": ["\uAD00\uACC4 \xB7 \uD638\uCE6D", "Relationships"],
+    "exp.cat_threads": ["\uC57D\uC18D \xB7 \uBAA9\uD45C", "Promises & goals"],
+    "exp.cat_epistemic": ["\uBE44\uBC00 \xB7 \uBBFF\uC74C", "Secrets & beliefs"],
+    "exp.cat_items": ["\uC544\uC774\uD15C", "Items"],
+    "exp.cat_entities": ["\uC778\uBB3C \xB7 \uB300\uC0C1", "People & entities"],
+    "exp.cat_canon": ["\uCE74\uB4DC \xB7 \uB85C\uC5B4\uBD81", "Card & lorebook"],
     "mem.diag_working": ["\uCC98\uB9AC \uC0C1\uD0DC", "Working status"],
     "mem.diag_raw": ["\uC6D0\uBCF8 \uC778\uC2A4\uD399\uD130", "Raw inspector"],
     "mem.no_chat": ["\uBA3C\uC800 \uC0C1\uB2E8\uC5D0\uC11C \uCC44\uD305\uC744 \uC120\uD0DD\uD558\uAC70\uB098 \uD648\uC5D0\uC11C \uB300\uD654\uB97C \uC5F4\uC5B4 \uC8FC\uC138\uC694.", "Select a chat from the top switcher or open one from Home."],
@@ -4139,6 +4159,10 @@ ${GUARD_LINE}` : "";
     ],
     check: [
       ["polyline", { points: "20 6 9 17 4 12" }]
+    ],
+    search: [
+      ["circle", { cx: "11", cy: "11", r: "7" }],
+      ["line", { x1: "20", y1: "20", x2: "16.65", y2: "16.65" }]
     ]
   };
   function icon(name, size = 16, cls = "ic") {
@@ -4188,11 +4212,11 @@ ${GUARD_LINE}` : "";
   function inspectorApiPath(href) {
     const m = new RegExp(`^/inspector(/calls|/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
     if (m) return `/v1/inspector${m[1] ?? ""}`;
-    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|${MAP}|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, "i").exec(href ?? "");
+    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|explore|attention|working|${MAP}|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, "i").exec(href ?? "");
     return v ? `/v1/views${v[1]}` : null;
   }
   function inspectorConversation(path) {
-    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|working|${MAP}|person/${UUID})$`, "i").exec(path);
+    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|explore|attention|working|${MAP}|person/${UUID})$`, "i").exec(path);
     return m ? m[1] : null;
   }
   function inspectorEntity(path) {
@@ -4308,6 +4332,13 @@ ${GUARD_LINE}` : "";
         return PERCENT.test(value);
       case "data-span":
         return value === "" || value === "recent";
+      // PHASE-69 S1: safe read-only filter metadata for the Memory Explorer (never rendered as markup)
+      case "data-cat":
+        return /^[a-z]{1,20}$/.test(value);
+      case "data-who":
+        return value.length <= 240 && !/[\u0000-\u001f\u007f]/.test(value);
+      case "data-canon":
+        return value === "1";
       default:
         return MARK_TEXT.has(name) && value.length <= MARK_TEXT_MAX;
     }
@@ -5351,7 +5382,16 @@ html,body{margin:0;background:${PALETTE.bg}}
   .nmos .settings-shell .grp-label{width:100%;padding:4px 4px 2px}
   .nmos .settings-shell .groups button.group{padding:7px 10px;font-size:13px}
 }
+/* PHASE-69: Memory Explorer filter toolbar */
+.nmos .exp-toolbar{padding:12px 14px;border-radius:12px;background:var(--c-surface);border:1px solid var(--c-line);display:flex;flex-direction:column;gap:10px}
+.nmos .exp-toolbar .filter-chips{margin:0}
+.nmos .exp-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.nmos .exp-controls input[type=search]{flex:1 1 200px;min-width:140px;padding:7px 11px;font-size:13.5px}
+.nmos .exp-controls select.exp-who{flex:0 1 170px;min-width:120px;width:auto;padding:7px 10px;font-size:13.5px}
+.nmos .exp-add{margin-left:auto;white-space:nowrap}
+.nmos .exp-empty{margin:10px 0;padding:22px 14px;text-align:center;color:var(--c-text-muted);font-size:14px;border:1px dashed var(--c-line-strong);border-radius:11px;background:var(--c-sunken)}
 @media (max-width: 720px){
+  .nmos .exp-add{margin-left:0;flex:1 1 auto}
   .nmos.shell-on .wrap{padding:12px 12px 84px}
   .nmos .nmos-topbar-in{padding:8px 12px;gap:8px}
   .nmos .nmos-nav{display:none}
@@ -6339,6 +6379,131 @@ html,body{margin:0;background:${PALETTE.bg}}
           }
         }
       }
+      if (inspectorPath.includes("/explore")) {
+        const slot = page.querySelector(".v-exp-toolbar-slot");
+        const cards = Array.from(page.querySelectorAll(".v-exp-card"));
+        const sections = Array.from(page.querySelectorAll(".v-sec[data-cat]"));
+        if (slot) {
+          const CATS = ["facts", "pairs", "threads", "epistemic", "items", "entities", "canon"];
+          const whoCounts = /* @__PURE__ */ new Map();
+          let canonCount = 0;
+          let nonCanonStoryCount = 0;
+          for (const c of cards) {
+            const isCanon = c.getAttribute("data-canon") === "1";
+            if (isCanon) canonCount += 1;
+            else if (["facts", "pairs", "items"].includes(c.getAttribute("data-cat") ?? "")) nonCanonStoryCount += 1;
+            const rawWho = c.getAttribute("data-who") ?? "";
+            for (const w of rawWho.split("|")) {
+              const name2 = w.trim();
+              if (name2) whoCounts.set(name2, (whoCounts.get(name2) ?? 0) + 1);
+            }
+          }
+          let activeCat = "all";
+          let includeCanon = canonCount > 0 && nonCanonStoryCount === 0;
+          const catBtns = /* @__PURE__ */ new Map();
+          const chipsRow = el("div", { class: "filter-chips" });
+          const presentCats = CATS.filter((k) => cards.some((c) => c.getAttribute("data-cat") === k));
+          for (const k of ["all", ...presentCats]) {
+            const btn = el("button", {
+              type: "button",
+              class: `filter-chip${k === "all" ? " on" : ""}`,
+              "data-exp-cat": k,
+              text: L(`exp.cat_${k}`)
+            });
+            btn.addEventListener("click", () => {
+              activeCat = k;
+              for (const [ck, b] of catBtns) b.classList.toggle("on", ck === k);
+              applyExploreFilter();
+            });
+            catBtns.set(k, btn);
+            chipsRow.append(btn);
+          }
+          const searchInput = el("input", { type: "search", placeholder: L("exp.search"), "aria-label": L("exp.search") });
+          const controls = el("div", { class: "exp-controls" }, searchInput);
+          const whoNames = Array.from(whoCounts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name2]) => name2);
+          let whoSelect = null;
+          if (whoNames.length) {
+            whoSelect = el(
+              "select",
+              { class: "exp-who", "aria-label": L("exp.who_label") },
+              el("option", { value: "", text: L("exp.who_all") }),
+              ...whoNames.map((name2) => el("option", { value: name2, text: name2 }))
+            );
+            whoSelect.addEventListener("change", () => applyExploreFilter());
+            controls.append(whoSelect);
+          }
+          if (canonCount > 0) {
+            const canonBtn = el("button", {
+              type: "button",
+              class: `filter-chip exp-canon-toggle${includeCanon ? " on" : ""}`,
+              text: L("exp.include_canon", { n: canonCount })
+            });
+            canonBtn.addEventListener("click", () => {
+              includeCanon = !includeCanon;
+              canonBtn.classList.toggle("on", includeCanon);
+              applyExploreFilter();
+            });
+            controls.append(canonBtn);
+          }
+          const convId = inspectorConversation(inspectorPath);
+          if (convId) {
+            const addBtn = el("button", { type: "button", class: "primary mini exp-add", text: L("exp.add_fact") });
+            addBtn.addEventListener("click", () => {
+              if (factAddCard.style.display !== "none") {
+                factAddCard.style.display = "none";
+                return;
+              }
+              factAddCard.style.display = "";
+              void buildFactAdd(convId);
+              factAddCard.scrollIntoView({ block: "nearest" });
+            });
+            controls.append(addBtn);
+          }
+          const emptyNote = el("div", { class: "exp-empty", style: "display:none", text: L("exp.empty") });
+          const toolbar = el("div", { class: "exp-toolbar" }, chipsRow, controls);
+          slot.replaceChildren(toolbar, emptyNote);
+          const applyExploreFilter = () => {
+            const q = searchInput.value.trim().toLowerCase();
+            const selectedWho = whoSelect?.value ?? "";
+            const perCat = /* @__PURE__ */ new Map();
+            let totalMatchingAll = 0;
+            let visibleTotal = 0;
+            for (const card of cards) {
+              const cat = card.getAttribute("data-cat") ?? "";
+              const isCanon = card.getAttribute("data-canon") === "1";
+              const whoOk = !selectedWho || (card.getAttribute("data-who") ?? "").split("|").includes(selectedWho);
+              const textOk = !q || (card.textContent ?? "").toLowerCase().includes(q);
+              const canonOkForAll = includeCanon || !isCanon;
+              if (whoOk && textOk && (cat === "canon" || canonOkForAll)) {
+                perCat.set(cat, (perCat.get(cat) ?? 0) + 1);
+                totalMatchingAll += 1;
+              }
+              const catOk = activeCat === "all" || cat === activeCat;
+              const canonOk = activeCat === "canon" || includeCanon || !isCanon;
+              const show = catOk && canonOk && whoOk && textOk;
+              card.style.display = show ? "" : "none";
+              if (show) visibleTotal += 1;
+            }
+            for (const [k, btn] of catBtns) {
+              const n = k === "all" ? totalMatchingAll : perCat.get(k) ?? 0;
+              btn.textContent = `${L(`exp.cat_${k}`)} (${n})`;
+            }
+            for (const sec of sections) {
+              const cat = sec.getAttribute("data-cat") ?? "";
+              const secCards = cards.filter((c) => c.getAttribute("data-cat") === cat);
+              const shown3 = secCards.filter((c) => c.style.display !== "none").length;
+              const catOk = activeCat === "all" || cat === activeCat;
+              const hasActiveFilter = q.length > 0 || selectedWho.length > 0 || activeCat !== "all";
+              sec.style.display = catOk && (shown3 > 0 || !hasActiveFilter && secCards.length === 0) ? "" : "none";
+              const badge = sec.querySelector(".v-h2 .v-n");
+              if (badge) badge.textContent = String(shown3);
+            }
+            emptyNote.style.display = cards.length > 0 && visibleTotal === 0 ? "" : "none";
+          };
+          searchInput.addEventListener("input", applyExploreFilter);
+          applyExploreFilter();
+        }
+      }
       if (inspectorPath.startsWith("/v1/inspector/calls")) {
         const tbl = page.querySelector("table");
         const rows = tbl ? Array.from(tbl.querySelectorAll("tbody tr")) : [];
@@ -6380,7 +6545,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         const action = repairAction(spot.getAttribute("data-repair"));
         if (!action) continue;
         spot.replaceChildren(...repairControls(action));
-        if (action.kind === "fact_retract" && spot.closest("#s-facts") && !spot.closest("details.fold")) {
+        if (action.kind === "fact_retract" && spot.closest("#s-facts") && !spot.closest("details.fold") && !spot.closest('[data-canon="1"]')) {
           const hid = el("span", { class: "rp" });
           hid.replaceChildren(...repairControls({ kind: "fact_hidden", item: action.item, extra: null }));
           spot.after(hid);
@@ -6544,6 +6709,9 @@ html,body{margin:0;background:${PALETTE.bg}}
         linkCard.style.display = "none";
         pinCard.style.display = "none";
       }
+      if (!again && !rawInspector && !path.includes("/explore")) {
+        factAddCard.style.display = "none";
+      }
       if (!rawInspector || shownEntity) {
         modeCard.style.display = "none";
         statusCard.style.display = "none";
@@ -6559,8 +6727,21 @@ html,body{margin:0;background:${PALETTE.bg}}
       const base = (await deps.getArg("sidecar_url") || "http://127.0.0.1:8790").replace(/\/+$/, "");
       const direct = routeFor(base, await deps.getArg("route")) === "direct";
       inspectorAddress.textContent = direct ? L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` }) : "";
+      const isExploreOrAttn = Boolean(conversation && /^\/v1\/views\/c\/[^/]+\/(explore|attention)(?:\?|$)/.test(path));
+      const fallbackToRaw = () => {
+        if (!conversation) return false;
+        pendingSection = path.includes("/attention") ? "s-attention" : null;
+        void showInspector(`/v1/inspector/c/${conversation}`, at);
+        return true;
+      };
       try {
-        const query = [conversation ? "timeline=lazy&status=lazy" : "", isView && mapOn ? "map=1" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
+        const wantRich = isView && (path.includes("/memory") || path.includes("/person/"));
+        const query = [
+          conversation ? "timeline=lazy&status=lazy" : "",
+          isView && mapOn ? "map=1" : "",
+          wantRich ? "rich=1" : "",
+          lang === "en" ? "lang=en" : ""
+        ].filter(Boolean).join("&");
         const r = await deps.api(
           "GET",
           `${path}${query ? `${path.includes("?") ? "&" : "?"}${query}` : ""}`,
@@ -6568,13 +6749,16 @@ html,body{margin:0;background:${PALETTE.bg}}
           15e3
         );
         if (load !== loads) return;
+        if (isExploreOrAttn && typeof r?.html !== "string") {
+          if (fallbackToRaw()) return;
+        }
         if (path.startsWith("/v1/views/hub")) {
           hubConversation = r.conversation ?? null;
           if (hubConversation && !path.includes("conversation=")) hostConversationId = hubConversation;
           if (hubConversation) activeChatId = hubConversation;
           if (viewsOn) applyHubMeta(r.meta);
         }
-        const page = safeFragment(r.html);
+        const page = safeFragment(r.html ?? "");
         placeMarks(page);
         enhance(page);
         retryButton.style.display = page.querySelector(".has-failed") ? "" : "none";
@@ -6601,6 +6785,9 @@ html,body{margin:0;background:${PALETTE.bg}}
         }
       } catch (error) {
         if (load !== loads) return;
+        if (isExploreOrAttn && /(?:HTTP\s+404|\b404\b)/i.test(String(error?.message ?? error))) {
+          if (fallbackToRaw()) return;
+        }
         shownPath = null;
         retryButton.style.display = "none";
         showCut(null);
@@ -6897,6 +7084,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         return;
       }
       const { self, others } = choices;
+      const entityDest = (eid) => inspectorPath.startsWith("/v1/views/") ? `/v1/views/c/${conversation}/person/${eid}` : `/v1/inspector/c/${conversation}/e/${eid}`;
       const msg = el("div", { class: "msg" });
       const rows = [];
       for (const link of self.links ?? []) {
@@ -6923,7 +7111,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             try {
               const now = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
               const next = entityNamed(now, self.type, self.name);
-              if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+              if (next && next.id !== entity) go(entityDest(next.id));
               else await showInspector();
             } catch {
             }
@@ -6966,7 +7154,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             const now = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
             const next = entityNamed(now, self.type, self.name);
             say(actionMsg, L("split.done", { a: alias.name, b: alias.other }), "ok");
-            if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+            if (next && next.id !== entity) go(entityDest(next.id));
             else await showInspector();
           }
         ));
@@ -6986,7 +7174,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           void withPreview(spot, join, `${path}/preview`, body, "pv.confirm_join", async (expect) => {
             const r = await deps.api("POST", path, { ...body, expect }, 15e3);
             say(actionMsg, L("link.done", { a: body.name, b: body.same_as }), "ok");
-            if (r.entity && r.entity.id !== entity) go(`/v1/inspector/c/${conversation}/e/${r.entity.id}`);
+            if (r.entity && r.entity.id !== entity) go(entityDest(r.entity.id));
             else await showInspector();
           });
         });
@@ -9245,8 +9433,9 @@ html,body{margin:0;background:${PALETTE.bg}}
       activeMemSub = sub;
       const defs = [
         { key: "story", label: "mem.story", ic: "book" },
-        { key: "map", label: "mem.map", ic: "map", hide: !mapOn },
+        { key: "explore", label: "mem.explore", ic: "search" },
         { key: "attention", label: "mem.attention", ic: "alert" },
+        { key: "map", label: "mem.map", ic: "map", hide: !mapOn },
         { key: "diag", label: "mem.diag", ic: "terminal" }
       ];
       const tabsRow = el("div", { class: "mem-subtabs" });
@@ -9306,11 +9495,10 @@ html,body{margin:0;background:${PALETTE.bg}}
         inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("mem.no_chat") }));
         return;
       }
-      const target = sub === "story" ? `/v1/views/c/${cid}/memory` : sub === "map" ? `/v1/views/c/${cid}/map` : sub === "attention" ? `/v1/inspector/c/${cid}` : `/v1/views/c/${cid}/working`;
-      const section = sub === "attention" ? "s-attention" : null;
-      if (pushHistory) go(target, section);
+      const target = sub === "story" ? `/v1/views/c/${cid}/memory` : sub === "explore" ? `/v1/views/c/${cid}/explore` : sub === "attention" ? `/v1/views/c/${cid}/attention` : sub === "map" ? `/v1/views/c/${cid}/map` : `/v1/views/c/${cid}/working`;
+      if (pushHistory) go(target, null);
       else {
-        pendingSection = section;
+        pendingSection = null;
         void showInspector(target);
       }
     }
@@ -9356,6 +9544,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       const isPerson = /\/(person|e)\//.test(path);
       inspbar.style.display = visited.length || isPerson ? "" : "none";
       if (path.includes("/memory")) renderMemSubBar("story", "working");
+      else if (path.includes("/explore")) renderMemSubBar("explore", "working");
+      else if (path.includes("/attention")) renderMemSubBar("attention", "working");
       else if (path.includes("/map")) renderMemSubBar("map", "working");
       else if (path.includes("/working")) renderMemSubBar("diag", "working");
       else if (path.startsWith("/v1/inspector/calls")) renderMemSubBar("diag", "calls");
@@ -10159,7 +10349,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       const q = [
         explicitConversation ? `conversation=${encodeURIComponent(explicitConversation)}` : chat ? `chat=${encodeURIComponent(chat)}` : "",
         off ? "off=true" : "",
-        allOff ? "all_off=true" : ""
+        allOff ? "all_off=true" : "",
+        viewsOn ? "compact=1" : ""
       ].filter(Boolean).join("&");
       return `/v1/views/hub${q ? `?${q}` : ""}`;
     }

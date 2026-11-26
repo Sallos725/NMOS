@@ -39,7 +39,7 @@ import { usageText, type UsageTotal } from './usage';
 
 export type Tab = 'status' | 'inspector' | 'settings';
 type PrimaryTab = 'home' | 'memory' | 'notes' | 'settings';
-type MemorySub = 'story' | 'map' | 'attention' | 'diag';
+type MemorySub = 'story' | 'explore' | 'attention' | 'map' | 'diag';
 
 interface HubChatItem { id: string; name: string; character?: string; title?: string; turns?: number }
 interface HubMeta {
@@ -418,7 +418,16 @@ html,body{margin:0;background:${PALETTE.bg}}
   .nmos .settings-shell .grp-label{width:100%;padding:4px 4px 2px}
   .nmos .settings-shell .groups button.group{padding:7px 10px;font-size:13px}
 }
+/* PHASE-69: Memory Explorer filter toolbar */
+.nmos .exp-toolbar{padding:12px 14px;border-radius:12px;background:var(--c-surface);border:1px solid var(--c-line);display:flex;flex-direction:column;gap:10px}
+.nmos .exp-toolbar .filter-chips{margin:0}
+.nmos .exp-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.nmos .exp-controls input[type=search]{flex:1 1 200px;min-width:140px;padding:7px 11px;font-size:13.5px}
+.nmos .exp-controls select.exp-who{flex:0 1 170px;min-width:120px;width:auto;padding:7px 10px;font-size:13.5px}
+.nmos .exp-add{margin-left:auto;white-space:nowrap}
+.nmos .exp-empty{margin:10px 0;padding:22px 14px;text-align:center;color:var(--c-text-muted);font-size:14px;border:1px dashed var(--c-line-strong);border-radius:11px;background:var(--c-sunken)}
 @media (max-width: 720px){
+  .nmos .exp-add{margin-left:0;flex:1 1 auto}
   .nmos.shell-on .wrap{padding:12px 12px 84px}
   .nmos .nmos-topbar-in{padding:8px 12px;gap:8px}
   .nmos .nmos-nav{display:none}
@@ -1300,6 +1309,126 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
         }
       }
     }
+    // PHASE-69 S1: Memory Explorer interactive toolbar (category pills, search, character dropdown, canon toggle, +Add fact).
+    if (inspectorPath.includes('/explore')) {
+      const slot = page.querySelector<HTMLElement>('.v-exp-toolbar-slot');
+      const cards = Array.from(page.querySelectorAll<HTMLElement>('.v-exp-card'));
+      const sections = Array.from(page.querySelectorAll<HTMLElement>('.v-sec[data-cat]'));
+      if (slot) {
+        const CATS = ['facts', 'pairs', 'threads', 'epistemic', 'items', 'entities', 'canon'] as const;
+        const whoCounts = new Map<string, number>();
+        let canonCount = 0;
+        let nonCanonStoryCount = 0;
+        for (const c of cards) {
+          const isCanon = c.getAttribute('data-canon') === '1';
+          if (isCanon) canonCount += 1;
+          else if (['facts', 'pairs', 'items'].includes(c.getAttribute('data-cat') ?? '')) nonCanonStoryCount += 1;
+          const rawWho = c.getAttribute('data-who') ?? '';
+          for (const w of rawWho.split('|')) {
+            const name = w.trim();
+            if (name) whoCounts.set(name, (whoCounts.get(name) ?? 0) + 1);
+          }
+        }
+        let activeCat = 'all';
+        let includeCanon = canonCount > 0 && nonCanonStoryCount === 0;
+        const catBtns = new Map<string, HTMLButtonElement>();
+        const chipsRow = el('div', { class: 'filter-chips' });
+        const presentCats = CATS.filter((k) => cards.some((c) => c.getAttribute('data-cat') === k));
+        for (const k of ['all', ...presentCats] as const) {
+          const btn = el('button', { type: 'button', class: `filter-chip${k === 'all' ? ' on' : ''}`,
+            'data-exp-cat': k, text: L(`exp.cat_${k}` as StringKey) });
+          btn.addEventListener('click', () => {
+            activeCat = k;
+            for (const [ck, b] of catBtns) b.classList.toggle('on', ck === k);
+            applyExploreFilter();
+          });
+          catBtns.set(k, btn);
+          chipsRow.append(btn);
+        }
+        const searchInput = el('input', { type: 'search', placeholder: L('exp.search'), 'aria-label': L('exp.search') });
+        const controls = el('div', { class: 'exp-controls' }, searchInput);
+        const whoNames = Array.from(whoCounts.entries())
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([name]) => name);
+        let whoSelect: HTMLSelectElement | null = null;
+        if (whoNames.length) {
+          whoSelect = el('select', { class: 'exp-who', 'aria-label': L('exp.who_label') },
+            el('option', { value: '', text: L('exp.who_all') }),
+            ...whoNames.map((name) => el('option', { value: name, text: name })));
+          whoSelect.addEventListener('change', () => applyExploreFilter());
+          controls.append(whoSelect);
+        }
+        if (canonCount > 0) {
+          const canonBtn = el('button', { type: 'button',
+            class: `filter-chip exp-canon-toggle${includeCanon ? ' on' : ''}`,
+            text: L('exp.include_canon', { n: canonCount }) });
+          canonBtn.addEventListener('click', () => {
+            includeCanon = !includeCanon;
+            canonBtn.classList.toggle('on', includeCanon);
+            applyExploreFilter();
+          });
+          controls.append(canonBtn);
+        }
+        const convId = inspectorConversation(inspectorPath);
+        if (convId) {
+          const addBtn = el('button', { type: 'button', class: 'primary mini exp-add', text: L('exp.add_fact') });
+          addBtn.addEventListener('click', () => {
+            if (factAddCard.style.display !== 'none') {
+              factAddCard.style.display = 'none';
+              return;
+            }
+            factAddCard.style.display = '';
+            void buildFactAdd(convId);
+            factAddCard.scrollIntoView({ block: 'nearest' });
+          });
+          controls.append(addBtn);
+        }
+        const emptyNote = el('div', { class: 'exp-empty', style: 'display:none', text: L('exp.empty') });
+        const toolbar = el('div', { class: 'exp-toolbar' }, chipsRow, controls);
+        slot.replaceChildren(toolbar, emptyNote);
+
+        const applyExploreFilter = () => {
+          const q = searchInput.value.trim().toLowerCase();
+          const selectedWho = whoSelect?.value ?? '';
+          const perCat = new Map<string, number>();
+          let totalMatchingAll = 0;
+          let visibleTotal = 0;
+          for (const card of cards) {
+            const cat = card.getAttribute('data-cat') ?? '';
+            const isCanon = card.getAttribute('data-canon') === '1';
+            const whoOk = !selectedWho || (card.getAttribute('data-who') ?? '').split('|').includes(selectedWho);
+            const textOk = !q || (card.textContent ?? '').toLowerCase().includes(q);
+            const canonOkForAll = includeCanon || !isCanon;
+            if (whoOk && textOk && (cat === 'canon' || canonOkForAll)) {
+              perCat.set(cat, (perCat.get(cat) ?? 0) + 1);
+              totalMatchingAll += 1;
+            }
+            const catOk = activeCat === 'all' || cat === activeCat;
+            const canonOk = activeCat === 'canon' || includeCanon || !isCanon;
+            const show = catOk && canonOk && whoOk && textOk;
+            card.style.display = show ? '' : 'none';
+            if (show) visibleTotal += 1;
+          }
+          for (const [k, btn] of catBtns) {
+            const n = k === 'all' ? totalMatchingAll : (perCat.get(k) ?? 0);
+            btn.textContent = `${L(`exp.cat_${k}` as StringKey)} (${n})`;
+          }
+          for (const sec of sections) {
+            const cat = sec.getAttribute('data-cat') ?? '';
+            const secCards = cards.filter((c) => c.getAttribute('data-cat') === cat);
+            const shown = secCards.filter((c) => c.style.display !== 'none').length;
+            const catOk = activeCat === 'all' || cat === activeCat;
+            const hasActiveFilter = q.length > 0 || selectedWho.length > 0 || activeCat !== 'all';
+            sec.style.display = catOk && (shown > 0 || (!hasActiveFilter && secCards.length === 0)) ? '' : 'none';
+            const badge = sec.querySelector('.v-h2 .v-n');
+            if (badge) badge.textContent = String(shown);
+          }
+          emptyNote.style.display = cards.length > 0 && visibleTotal === 0 ? '' : 'none';
+        };
+        searchInput.addEventListener('input', applyExploreFilter);
+        applyExploreFilter();
+      }
+    }
     // Model calls log filter (#1): All / Failed only chips above the calls table.
     if (inspectorPath.startsWith('/v1/inspector/calls')) {
       const tbl = page.querySelector('table');
@@ -1343,7 +1472,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       const action = repairAction(spot.getAttribute('data-repair'));
       if (!action) continue;
       spot.replaceChildren(...repairControls(action));
-      if (action.kind === 'fact_retract' && spot.closest('#s-facts') && !spot.closest('details.fold')) {
+      if (action.kind === 'fact_retract' && spot.closest('#s-facts') && !spot.closest('details.fold')
+          && !spot.closest('[data-canon="1"]')) {
         const hid = el('span', { class: 'rp' });
         hid.replaceChildren(...repairControls({ kind: 'fact_hidden', item: action.item, extra: null }));
         spot.after(hid);
@@ -1503,6 +1633,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     actions.style.display = rawInspector ? '' : 'none';
     const shownEntity = inspectorEntity(path);
     if (!shownEntity) { linkCard.style.display = 'none'; pinCard.style.display = 'none'; }
+    if (!again && !rawInspector && !path.includes('/explore')) { factAddCard.style.display = 'none'; }
     if (!rawInspector || shownEntity) { modeCard.style.display = 'none'; statusCard.style.display = 'none'; }
     if (viewsOn) syncShellForPath(path);
     if (again) {
@@ -1517,21 +1648,32 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const base = ((await deps.getArg('sidecar_url')) || 'http://127.0.0.1:8790').replace(/\/+$/, '');
     const direct = routeFor(base, await deps.getArg('route')) === 'direct';
     inspectorAddress.textContent = direct ? L('insp.browser', { url: `${base}/inspector${lang === 'en' ? '?lang=en' : ''}` }) : '';
+    const isExploreOrAttn = Boolean(conversation && /^\/v1\/views\/c\/[^/]+\/(explore|attention)(?:\?|$)/.test(path));
+    const fallbackToRaw = () => {
+      if (!conversation) return false;
+      pendingSection = path.includes('/attention') ? 's-attention' : null;
+      void showInspector(`/v1/inspector/c/${conversation}`, at);
+      return true;
+    };
     try {
       // A chat's and a character's page get a closed timeline section, filled when it is opened (PHASE-32 step 3), and
       // a chat's page one for its status window (PHASE-39); a sidecar without them ignores the ask.
-      const query = [conversation ? 'timeline=lazy&status=lazy' : '', isView && mapOn ? 'map=1' : '', lang === 'en' ? 'lang=en' : '']
-        .filter(Boolean).join('&');
-      const r = await deps.api<{ html: string; conversation?: string | null; meta?: HubMeta }>('GET',
+      const wantRich = isView && (path.includes('/memory') || path.includes('/person/'));
+      const query = [conversation ? 'timeline=lazy&status=lazy' : '', isView && mapOn ? 'map=1' : '',
+        wantRich ? 'rich=1' : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
+      const r = await deps.api<{ html?: string; conversation?: string | null; meta?: HubMeta }>('GET',
         `${path}${query ? `${path.includes('?') ? '&' : '?'}${query}` : ''}`, undefined, 15_000);
       if (load !== loads) return;
+      if (isExploreOrAttn && typeof r?.html !== 'string') {
+        if (fallbackToRaw()) return;
+      }
       if (path.startsWith('/v1/views/hub')) {
         hubConversation = r.conversation ?? null;
         if (hubConversation && !path.includes('conversation=')) hostConversationId = hubConversation;
         if (hubConversation) activeChatId = hubConversation;
         if (viewsOn) applyHubMeta(r.meta);
       }
-      const page = safeFragment(r.html);
+      const page = safeFragment(r.html ?? '');
       placeMarks(page); // a person's circles (PHASE-52 D4)
       enhance(page);
       retryButton.style.display = page.querySelector('.has-failed') ? '' : 'none';
@@ -1555,6 +1697,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       else if (conversation && !isView && !attentionMode) { void showMode(conversation, load); void showStatusWindows(conversation, load); }
     } catch (error) {
       if (load !== loads) return;
+      if (isExploreOrAttn && /(?:HTTP\s+404|\b404\b)/i.test(String((error as Error)?.message ?? error))) {
+        if (fallbackToRaw()) return;
+      }
       shownPath = null;
       retryButton.style.display = 'none';
       showCut(null);
@@ -1803,6 +1948,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       return;
     }
     const { self, others } = choices;
+    const entityDest = (eid: string) =>
+      inspectorPath.startsWith('/v1/views/') ? `/v1/views/c/${conversation}/person/${eid}` : `/v1/inspector/c/${conversation}/e/${eid}`;
     const msg = el('div', { class: 'msg' });
     const rows: HTMLElement[] = [];
     for (const link of self.links ?? []) {
@@ -1824,7 +1971,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
           try {
             const now = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
             const next = entityNamed(now, self.type, self.name);
-            if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+            if (next && next.id !== entity) go(entityDest(next.id));
             else await showInspector();
           } catch { /* the undo stands; the page reports a failing sidecar itself */ }
           if (failed && reextract) {
@@ -1860,7 +2007,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
           const now = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
           const next = entityNamed(now, self.type, self.name);
           say(actionMsg, L('split.done', { a: alias.name, b: alias.other }), 'ok');
-          if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+          if (next && next.id !== entity) go(entityDest(next.id));
           else await showInspector();
         }));
       splits.push(el('div', { class: 'btns' }, el('span', { text: `${alias.name} ~ ${alias.other}` }), split), spot);
@@ -1876,7 +2023,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
         void withPreview(spot, join, `${path}/preview`, body, 'pv.confirm_join', async (expect) => {
           const r = await deps.api<{ entity: EntityRow | null }>('POST', path, { ...body, expect }, 15_000);
           say(actionMsg, L('link.done', { a: body.name, b: body.same_as }), 'ok');
-          if (r.entity && r.entity.id !== entity) go(`/v1/inspector/c/${conversation}/e/${r.entity.id}`);
+          if (r.entity && r.entity.id !== entity) go(entityDest(r.entity.id));
           else await showInspector();
         });
       });
@@ -3781,8 +3928,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     activeMemSub = sub;
     const defs: { key: MemorySub; label: StringKey; ic: IconName; hide?: boolean }[] = [
       { key: 'story', label: 'mem.story', ic: 'book' },
-      { key: 'map', label: 'mem.map', ic: 'map', hide: !mapOn },
+      { key: 'explore', label: 'mem.explore', ic: 'search' },
       { key: 'attention', label: 'mem.attention', ic: 'alert' },
+      { key: 'map', label: 'mem.map', ic: 'map', hide: !mapOn },
       { key: 'diag', label: 'mem.diag', ic: 'terminal' },
     ];
     const tabsRow = el('div', { class: 'mem-subtabs' });
@@ -3834,13 +3982,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       return;
     }
     const target = sub === 'story' ? `/v1/views/c/${cid}/memory`
+      : sub === 'explore' ? `/v1/views/c/${cid}/explore`
+      : sub === 'attention' ? `/v1/views/c/${cid}/attention`
       : sub === 'map' ? `/v1/views/c/${cid}/map`
-      : sub === 'attention' ? `/v1/inspector/c/${cid}`
       : `/v1/views/c/${cid}/working`;
-    const section = sub === 'attention' ? 's-attention' : null;
-    if (pushHistory) go(target, section);
+    if (pushHistory) go(target, null);
     else {
-      pendingSection = section;
+      pendingSection = null;
       void showInspector(target);
     }
   }
@@ -3888,6 +4036,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const isPerson = /\/(person|e)\//.test(path);
     inspbar.style.display = visited.length || isPerson ? '' : 'none';
     if (path.includes('/memory')) renderMemSubBar('story', 'working');
+    else if (path.includes('/explore')) renderMemSubBar('explore', 'working');
+    else if (path.includes('/attention')) renderMemSubBar('attention', 'working');
     else if (path.includes('/map')) renderMemSubBar('map', 'working');
     else if (path.includes('/working')) renderMemSubBar('diag', 'working');
     else if (path.startsWith('/v1/inspector/calls')) renderMemSubBar('diag', 'calls');
@@ -4644,6 +4794,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
         : (chat ? `chat=${encodeURIComponent(chat)}` : ''),
       off ? 'off=true' : '',
       allOff ? 'all_off=true' : '',
+      viewsOn ? 'compact=1' : '',
     ].filter(Boolean).join('&');
     return `/v1/views/hub${q ? `?${q}` : ''}`;
   }

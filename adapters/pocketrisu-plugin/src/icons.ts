@@ -22,7 +22,8 @@ export type IconName =
   | 'shield'
   | 'eye'
   | 'archive'
-  | 'check';
+  | 'check'
+  | 'search';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -129,6 +130,10 @@ const SHAPES: Record<IconName, readonly Shape[]> = {
   ],
   check: [
     ['polyline', { points: '20 6 9 17 4 12' }],
+  ],
+  search: [
+    ['circle', { cx: '11', cy: '11', r: '7' }],
+    ['line', { x1: '20', y1: '20', x2: '16.65', y2: '16.65' }],
   ],
 };
 
