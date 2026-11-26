@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Any
 from uuid import UUID
 
@@ -34,6 +35,79 @@ def list_conversations(conn: psycopg.Connection, limit: int = 200, host_chat_ref
 
 def conversation(conn: psycopg.Connection, conv_id: UUID) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM conversation WHERE id = %s", (conv_id,)).fetchone()
+
+
+def orphan_conversations(conn: psycopg.Connection, host: str, active_chat_refs: Collection[str]) -> dict[str, Any]:
+    """Conversations recorded for `host` whose `host_chat_ref` is absent from `active_chat_refs` (PHASE-68, H22).
+
+    Reads every conversation for `host` (no 200-row cap, and includes `head_commit_id IS NULL` stubs per Q2).
+    Attaches active `conversation_carry` targets (`removed_at IS NULL`) and `branch_children` counts so the panel
+    can warn before the owner confirms deletion. Read-only.
+    """
+    active = set(active_chat_refs)
+    rows = conn.execute(
+        """
+        SELECT c.id, c.host_chat_ref, c.host_character_name, c.host_chat_name, c.created_at, c.head_commit_id,
+               CASE WHEN c.head_commit_id IS NULL THEN 0
+                    ELSE (SELECT count(*) FROM active_membership am WHERE am.commit_id = c.head_commit_id)
+               END AS messages,
+               (SELECT count(*) FROM worldline_commit w WHERE w.conversation_id = c.id) AS commits,
+               (SELECT max(t.created_at) FROM retrieval_trace t WHERE t.conversation_id = c.id) AS last_retrieval,
+               (SELECT count(*) FROM conversation ch WHERE ch.branched_from_conversation_id = c.id) AS branch_children
+        FROM conversation c
+        WHERE c.host = %s
+        ORDER BY coalesce((SELECT max(t.created_at) FROM retrieval_trace t WHERE t.conversation_id = c.id),
+                          c.created_at) DESC, c.id DESC
+        """,
+        (host,),
+    ).fetchall()
+    orphan_rows = [r for r in rows if r["host_chat_ref"] not in active]
+    matched_active = len(rows) - len(orphan_rows)
+
+    carried_map: dict[UUID, list[dict[str, Any]]] = {}
+    if orphan_rows:
+        orphan_ids = [r["id"] for r in orphan_rows]
+        carry_rows = conn.execute(
+            """
+            SELECT cc.source_conversation_id, cc.mode,
+                   t.id AS target_id, t.host AS target_host, t.host_chat_ref AS target_host_chat_ref,
+                   t.host_character_name AS target_character, t.host_chat_name AS target_chat
+            FROM conversation_carry cc
+            JOIN conversation t ON t.id = cc.target_conversation_id
+            WHERE cc.source_conversation_id = ANY(%s) AND cc.removed_at IS NULL
+            ORDER BY cc.created_at DESC, t.id DESC
+            """,
+            (orphan_ids,),
+        ).fetchall()
+        for cr in carry_rows:
+            carried_map.setdefault(cr["source_conversation_id"], []).append({
+                "id": str(cr["target_id"]),
+                "character": cr["target_character"],
+                "chat": cr["target_chat"],
+                "mode": cr["mode"],
+                "target_missing": cr["target_host"] != host or cr["target_host_chat_ref"] not in active,
+            })
+
+    return {
+        "host": host,
+        "total_host_conversations": len(rows),
+        "matched_active": matched_active,
+        "orphans": [
+            {
+                "id": str(r["id"]),
+                "host_chat_ref": r["host_chat_ref"],
+                "character": r["host_character_name"],
+                "chat": r["host_chat_name"],
+                "messages": int(r["messages"] or 0),
+                "commits": int(r["commits"] or 0),
+                "created_at": r["created_at"],
+                "last_retrieval": r["last_retrieval"],
+                "carried_by": carried_map.get(r["id"], []),
+                "branch_children": int(r["branch_children"] or 0),
+            }
+            for r in orphan_rows
+        ],
+    }
 
 
 def membership(conn: psycopg.Connection, head: UUID, extractor_key: str | None = None,

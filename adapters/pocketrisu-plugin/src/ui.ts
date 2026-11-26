@@ -33,6 +33,8 @@ import {
   type CarryMode, type CarryPreview, type CarryRequestBody, type CarryState,
 } from './carrytext';
 import { uploadArchive, waitFor, type ArchiveSummary, type Method } from './restore';
+import { chunkIds, formatOrphanDate, orphanLabel, selectionSummary,
+  type BatchDeleteResult, type HostChatScan, type OrphanPreview, type OrphanRow } from './orphans';
 import { usageText, type UsageTotal } from './usage';
 
 export type Tab = 'status' | 'inspector' | 'settings';
@@ -68,6 +70,8 @@ export interface PanelDeps {
   hud: HudControl;
   /** NMOS off and on for the chat open now (ADR 0048). */
   chat: ChatSwitch;
+  /** On-demand read of PocketRisu's active chat IDs for orphan cleanup (PHASE-68, H22). */
+  scanHostChats?: () => Promise<HostChatScan>;
   /** Fetch a file from the sidecar and save it under `name` (an archive, ADR 0050); its size in bytes. */
   download(path: string, name: string): Promise<number>;
 }
@@ -394,6 +398,18 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .nmos-toast{position:sticky;bottom:16px;z-index:50;max-width:520px;margin:12px auto 0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:11px;background:var(--c-raised-hover);border:1px solid ${alpha('accent', 0.52)};box-shadow:0 12px 32px rgba(0,0,0,0.5);color:var(--c-text-strong);font-size:13.5px}
 .nmos .note-presets{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}
 .nmos .note-sec-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 6px}
+.nmos .orph-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:10px 0 8px;padding:8px 12px;border-radius:9px;background:var(--c-sunken);border:1px solid var(--c-line)}
+.nmos .orph-all{display:inline-flex;align-items:center;gap:8px;margin:0;font-size:13.5px;font-weight:600;color:var(--c-text-strong);cursor:pointer}
+.nmos .orph-all input[type=checkbox],.nmos .orph-row input[type=checkbox]{width:auto;flex:none;margin:2px 0 0;cursor:pointer}
+.nmos .orph-list{display:flex;flex-direction:column;gap:6px;max-height:360px;overflow:auto;margin:0 0 10px}
+.nmos .orph-row{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:10px;background:var(--c-sunken);border:1px solid var(--c-line);cursor:pointer;margin:0}
+.nmos .orph-row:hover{border-color:var(--c-line-hover)}
+.nmos .orph-row.has-carry{border-color:${alpha('warn', 0.42)};background:linear-gradient(90deg,${alpha('warn', 0.08)},var(--c-sunken) 55%)}
+.nmos .orph-row-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.nmos .orph-title{font-size:14px;font-weight:600;color:var(--c-text-strong);word-break:break-word}
+.nmos .orph-meta{font-size:12.5px;color:var(--c-text-muted)}
+.nmos .orph-carry-warn{font-size:12.5px;color:var(--c-warn);line-height:1.45;margin-top:2px}
+.nmos .orph-banner{padding:10px 12px;border-radius:9px;border:1px solid ${alpha('warn', 0.48)};background:${alpha('warn', 0.1)};color:var(--c-warn);font-size:13px;line-height:1.5;margin:0 0 10px}
 
 @media (max-width: 860px){
   .nmos .notes-studio{grid-template-columns:1fr}
@@ -2905,6 +2921,237 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     el('h2', { text: L('rst.title') }), el('p', { class: 'sub', text: L('rst.sub') }),
     el('div', { class: 'btns' }, restorePick, restoreGo, restoreCancel), restoreFile, restoreSummary, restoreMsg));
 
+  // --- settings tab: clean up conversations missing from the host (PHASE-68, H22, ADR 0009) ------
+  let orphanRows: OrphanRow[] = [];
+  let orphanSelected = new Set<string>();
+  let orphanArmed = false;
+  let orphanBusy = false;
+  let orphanTotalHost = 0;
+  let orphanMatchedActive = 0;
+  const orphanScan = el('button', { text: L('orph.scan') });
+  const orphanSummary = el('p', { class: 'sub', style: 'display:none;margin-top:12px' });
+  const orphanSelectAll = el('input', { type: 'checkbox', class: 'orph-select-all' });
+  const orphanCount = el('span', { class: 'muted', style: 'font-size:13px' });
+  const orphanHead = el('div', { class: 'orph-head', style: 'display:none' },
+    el('label', { class: 'orph-all' }, orphanSelectAll, el('span', { text: L('orph.select_all') })),
+    orphanCount);
+  const orphanList = el('div', { class: 'orph-list', style: 'display:none' });
+  const orphanBanner = el('div', { class: 'orph-banner', style: 'display:none' });
+  const orphanDelete = el('button', { class: 'danger', style: 'display:none', disabled: true,
+    text: L('orph.delete', { n: 0 }) });
+  const orphanMsg = el('div', { class: 'msg' });
+
+  const formatCarryTargetList = (targets: { character?: string | null; chat?: string | null; id?: string | null;
+    target_missing?: boolean }[]) => targets.map((tg) => {
+    const name = orphanLabel(tg, L('orph.unnamed'));
+    return tg.target_missing ? L('orph.carry_target_missing', { name }) : name;
+  }).join(', ');
+
+  function syncOrphanControls(): void {
+    const sum = selectionSummary(orphanRows, orphanSelected);
+    const hasRows = sum.totalCount > 0;
+    orphanHead.style.display = hasRows ? '' : 'none';
+    orphanList.style.display = hasRows ? '' : 'none';
+    orphanDelete.style.display = hasRows ? '' : 'none';
+    if (!hasRows) {
+      orphanBanner.style.display = 'none';
+      orphanSelectAll.checked = false;
+      orphanSelectAll.indeterminate = false;
+      orphanDelete.disabled = true;
+      return;
+    }
+    orphanSelectAll.checked = sum.allSelected;
+    orphanSelectAll.indeterminate = sum.indeterminate;
+    orphanSelectAll.disabled = orphanBusy;
+    orphanCount.textContent = L('orph.selected_count', { n: sum.selectedCount, total: sum.totalCount });
+    if (sum.activeCarryTargets.length > 0) {
+      orphanBanner.textContent = L('orph.carry_banner', {
+        n: sum.activeCarryTargets.length,
+        targets: formatCarryTargetList(sum.activeCarryTargets),
+      });
+      orphanBanner.style.display = '';
+    } else {
+      orphanBanner.style.display = 'none';
+    }
+    orphanDelete.disabled = orphanBusy || sum.selectedCount === 0;
+    orphanDelete.textContent = orphanArmed
+      ? L('orph.delete_confirm', { n: sum.selectedCount })
+      : L('orph.delete', { n: sum.selectedCount });
+  }
+
+  function disarmOrphan(): void {
+    if (!orphanArmed) return;
+    orphanArmed = false;
+    say(orphanMsg, '');
+  }
+
+  function renderOrphanList(): void {
+    orphanList.replaceChildren(...orphanRows.map((row) => {
+      const box = el('input', { type: 'checkbox', 'data-orph-id': row.id });
+      box.checked = orphanSelected.has(row.id);
+      box.disabled = orphanBusy;
+      box.addEventListener('change', () => {
+        if (box.checked) orphanSelected.add(row.id);
+        else orphanSelected.delete(row.id);
+        disarmOrphan();
+        syncOrphanControls();
+      });
+      const metaBits = [row.messages > 0 ? L('orph.msgs', { n: row.messages }) : L('orph.stub')];
+      const when = formatOrphanDate(row.last_retrieval || row.created_at);
+      if (when) metaBits.push(L(row.last_retrieval ? 'orph.last_used' : 'orph.created', { when }));
+      const bodyChildren: HTMLElement[] = [
+        el('span', { class: 'orph-title', text: orphanLabel(row, L('orph.unnamed')) }),
+        el('span', { class: 'orph-meta', text: metaBits.join(' · ') }),
+      ];
+      if (row.carried_by.length > 0) {
+        bodyChildren.push(el('span', {
+          class: 'orph-carry-warn',
+          text: L('orph.carry_badge', { targets: formatCarryTargetList(row.carried_by) }),
+        }));
+      }
+      const hasCarry = row.carried_by.length > 0;
+      return el('label', { class: `orph-row${hasCarry ? ' has-carry' : ''}` },
+        box, el('span', { class: 'orph-row-body' }, ...bodyChildren));
+    }));
+    syncOrphanControls();
+  }
+
+  orphanSelectAll.addEventListener('change', () => {
+    if (orphanSelectAll.checked) orphanSelected = new Set(orphanRows.map((r) => r.id));
+    else orphanSelected.clear();
+    for (const box of Array.from(orphanList.querySelectorAll<HTMLInputElement>('input[data-orph-id]'))) {
+      box.checked = orphanSelectAll.checked;
+    }
+    disarmOrphan();
+    syncOrphanControls();
+  });
+
+  orphanScan.addEventListener('click', async () => {
+    if (orphanBusy) return;
+    orphanBusy = true;
+    orphanArmed = false;
+    orphanRows = [];
+    orphanSelected = new Set();
+    orphanSummary.style.display = 'none';
+    orphanScan.disabled = true;
+    renderOrphanList();
+    say(orphanMsg, L('orph.scanning'));
+    try {
+      const scan: HostChatScan = deps.scanHostChats
+        ? await deps.scanHostChats()
+        : { ok: false, reason: 'unsupported' };
+      if (!scan.ok) {
+        const key = scan.reason === 'denied' ? 'orph.err_denied'
+          : scan.reason === 'invalid' ? 'orph.err_invalid' : 'orph.err_unsupported';
+        say(orphanMsg, L(key), 'err');
+        return;
+      }
+      // Q3 (a): an empty host list blocks cleanup rather than risking a wipe on host schema/load issues.
+      if (scan.chatIds.length === 0) {
+        say(orphanMsg, L('orph.err_empty_host'), 'warn');
+        return;
+      }
+      const preview = await deps.api<OrphanPreview>('POST', '/v1/conversations/orphans/preview',
+        { host: 'pocketrisu', active_chat_refs: scan.chatIds }, 30_000);
+      if (!preview.orphans.length) {
+        say(orphanMsg, L('orph.none', { matched: preview.matched_active, total: preview.total_host_conversations }), 'ok');
+        return;
+      }
+      // Q1 (a): all candidates start unchecked by default; user picks via row checkboxes or Select all.
+      orphanRows = preview.orphans;
+      orphanSelected = new Set();
+      orphanTotalHost = preview.total_host_conversations;
+      orphanMatchedActive = preview.matched_active;
+      orphanSummary.textContent = L('orph.summary', {
+        total: orphanTotalHost,
+        n: orphanRows.length,
+        matched: orphanMatchedActive,
+      });
+      orphanSummary.style.display = '';
+      say(orphanMsg, '');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      say(orphanMsg, /-> HTTP (?:404|405)\b/.test(msg) ? L('orph.no_sidecar') : errorText(lang, error), 'err');
+    } finally {
+      orphanBusy = false;
+      orphanScan.disabled = false;
+      renderOrphanList();
+    }
+  });
+
+  orphanDelete.addEventListener('click', async () => {
+    if (orphanBusy) return;
+    const sum = selectionSummary(orphanRows, orphanSelected);
+    if (sum.selectedCount === 0) return;
+    if (!orphanArmed) {
+      orphanArmed = true;
+      syncOrphanControls();
+      say(orphanMsg, sum.activeCarryTargets.length > 0
+        ? L('orph.delete_warn_carry', { n: sum.selectedCount, m: sum.totalMessages, c: sum.activeCarryTargets.length })
+        : L('orph.delete_warn', { n: sum.selectedCount, m: sum.totalMessages }), 'err');
+      return;
+    }
+    orphanArmed = false;
+    orphanBusy = true;
+    orphanScan.disabled = true;
+    renderOrphanList();
+    say(orphanMsg, L('orph.deleting'));
+    const removed = new Set<string>();
+    let deletedConvs = 0;
+    let deletedMsgs = 0;
+    let deletedCarry = 0;
+    try {
+      for (const batch of chunkIds(Array.from(orphanSelected))) {
+        const res = await deps.api<BatchDeleteResult>('POST', '/v1/conversations/delete-batch', { ids: batch }, 120_000);
+        for (const item of res.deleted ?? []) removed.add(item.id);
+        for (const id of res.not_found ?? []) removed.add(id);
+        deletedConvs += res.totals?.conversations ?? (res.deleted?.length ?? 0);
+        deletedMsgs += res.totals?.messages ?? 0;
+        deletedCarry += res.totals?.carry_links ?? 0;
+      }
+      say(orphanMsg, deletedCarry > 0
+        ? L('orph.done_carry', { n: deletedConvs, m: deletedMsgs, c: deletedCarry })
+        : L('orph.done', { n: deletedConvs, m: deletedMsgs }), 'ok');
+    } catch (error) {
+      say(orphanMsg, errorText(lang, error), 'err');
+    } finally {
+      if (removed.size > 0) {
+        orphanRows = orphanRows
+          .filter((r) => !removed.has(r.id))
+          .map((r) => ({ ...r, carried_by: r.carried_by.filter((t) => !removed.has(t.id)) }));
+        orphanTotalHost = Math.max(orphanMatchedActive + orphanRows.length, orphanTotalHost - deletedConvs);
+        for (const id of removed) orphanSelected.delete(id);
+        knownChats = knownChats.filter((c) => !removed.has(c.id));
+        if (activeChatId && removed.has(activeChatId)) {
+          activeChatId = null;
+          activeChatName = '';
+          updateChatLabel();
+        }
+        if (hubConversation && removed.has(hubConversation)) hubConversation = null;
+        if (hostConversationId && removed.has(hostConversationId)) hostConversationId = null;
+        visited.length = 0;
+        if (!orphanRows.length) {
+          orphanSummary.style.display = 'none';
+        } else {
+          orphanSummary.textContent = L('orph.summary', {
+            total: orphanTotalHost,
+            n: orphanRows.length,
+            matched: orphanMatchedActive,
+          });
+        }
+      }
+      orphanBusy = false;
+      orphanScan.disabled = false;
+      renderOrphanList();
+    }
+  });
+
+  settingsView.append(el('div', { class: 'card', id: 'nmos-orphans' },
+    el('h2', { text: L('orph.title') }), el('p', { class: 'sub', text: L('orph.sub') }),
+    el('div', { class: 'btns' }, orphanScan),
+    orphanSummary, orphanHead, orphanList, orphanBanner,
+    el('div', { class: 'btns' }, orphanDelete), orphanMsg));
+
   // --- settings tab: one save bar ---------------------------------------------------------------
   const barText = el('span', { class: 'text muted' });
   const revert = el('button', { text: L('revert') });
@@ -3844,7 +4091,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const byTitle: Record<string, Group> = {
       [L('hud.title')]: 'display', [L('conn.title')]: 'connection', [L('llm.title')]: 'models', [L('emb.title')]: 'models',
       [L('rerank.title')]: 'models',
-      [L('tune.title')]: 'memory', [L('trimset.title')]: 'memory', [L('rules.title')]: 'rules', [L('exp.title')]: 'backup', [L('rst.title')]: 'backup',
+      [L('tune.title')]: 'memory', [L('trimset.title')]: 'memory', [L('rules.title')]: 'rules', [L('exp.title')]: 'backup',
+      [L('rst.title')]: 'backup', [L('orph.title')]: 'backup',
     };
     const existingCards = Array.from(settingsView.children) as HTMLElement[];
     for (const card of existingCards) {

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -471,6 +471,30 @@ def delete_conversation(conn: psycopg.Connection, conv_id: UUID) -> dict[str, in
             if name != "head":
                 counts[name] = counts.get(name, 0) + n
         return counts
+
+
+def delete_conversations_batch(conn: psycopg.Connection, conv_ids: Sequence[UUID]) -> dict[str, Any]:
+    """Delete multiple owner-selected conversations, each in its own ADR 0009 transaction (PHASE-68).
+
+    Delegates every deletion to `delete_conversation` so migration 0012's single-conversation
+    `nmos.delete_conversation` database guard and per-conversation row locking remain intact.
+    Duplicate IDs are deduplicated preserving order; already-missing IDs are returned in `not_found`.
+    """
+    unique_ids = list(dict.fromkeys(conv_ids))
+    deleted: list[dict[str, Any]] = []
+    not_found: list[str] = []
+    totals: dict[str, int] = {"conversations": 0, "messages": 0, "revisions": 0, "carry_links": 0}
+    for cid in unique_ids:
+        counts = delete_conversation(conn, cid)
+        if counts is None:
+            not_found.append(str(cid))
+            continue
+        deleted.append({"id": str(cid), "counts": counts})
+        totals["conversations"] += 1
+        for k, v in counts.items():
+            if k != "conversation":
+                totals[k] = totals.get(k, 0) + v
+    return {"deleted": deleted, "not_found": not_found, "totals": totals}
 
 
 def refresh_turns(conn: psycopg.Connection, turns: int) -> int:
