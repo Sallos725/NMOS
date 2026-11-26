@@ -20,15 +20,15 @@ export const ACTS = new Set(['notes', 'settings', 'backup', 'retry']);
 export function inspectorApiPath(href: string | null): string | null {
   const m = new RegExp(`^/inspector(/calls|/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, 'i').exec(href ?? '');
   if (m) return `/v1/inspector${m[1] ?? ''}`;
-  const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|${MAP}|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, 'i')
+  const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|explore|attention|working|${MAP}|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, 'i')
     .exec(href ?? '');
-  return v ? `/v1/views${v[1]}` : null; // the panel's new screens (PHASE-52) and the memory map (PHASE-55)
+  return v ? `/v1/views${v[1]}` : null; // the panel's screens (PHASE-52, PHASE-55, PHASE-69)
 }
 
 /** The conversation id of an inspector conversation, character or source-turn API path, or null. */
 export function inspectorConversation(path: string): string | null {
   const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, 'i').exec(path)
-    ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|working|${MAP}|person/${UUID})$`, 'i').exec(path);
+    ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|explore|attention|working|${MAP}|person/${UUID})$`, 'i').exec(path);
   return m ? (m[1] as string) : null;
 }
 
@@ -49,12 +49,13 @@ export interface EntityRow {
   persona?: boolean;
   links?: { id: string; name: string; same_as: string }[];
   aliases?: { name: string; other: string; turn: number | null }[];
+  note?: { id: string; text: string };
 }
 
 /** A repair the inspector marks for the panel (ADR 0044): what to do, to which item, and a character or field. */
 export interface RepairAction { kind: string; item: string; extra: string | null }
 
-const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|undo_batch|alias_join|branch_inherit|told_retract|fact_hidden|attention_dismiss|fact_add):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|entity_note|undo|undo_batch|alias_join|branch_inherit|told_retract|fact_hidden|attention_dismiss|fact_add):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
 
 /** A request a bulk action sends for one row (PHASE-57 B1): a repair, or a repair taken back. */
 export type BulkRequest = { kind: string; item: string; outcome?: string; attention?: 'role_held' | 'alias_held' } | { undo: string };
@@ -183,6 +184,10 @@ export function keepAttribute(name: string, value: string): boolean {
     case 'data-bulk': return bulkMark(value) !== null;
     case 'data-l': case 'data-w': return PERCENT.test(value);
     case 'data-span': return value === '' || value === 'recent';
+    // PHASE-69 S1: safe read-only filter metadata for the Memory Explorer (never rendered as markup)
+    case 'data-cat': return /^[a-z]{1,20}$/.test(value);
+    case 'data-who': return value.length <= 240 && !/[\u0000-\u001f\u007f]/.test(value);
+    case 'data-canon': return value === '1';
     default: return MARK_TEXT.has(name) && value.length <= MARK_TEXT_MAX;
   }
 }

@@ -24,9 +24,9 @@ from .predicates import (EXTENSIONS, HOLDER_PER_ITEM, REGISTRY, address_label,
                          stored_knowledge, takes_value, whereabouts)
 from . import canon, canonfacts
 from .repairs import (FACT_KINDS, IN_FORCE, READ_REGISTRY, REPAIR_COLUMNS, anchors_needed, apply_facts, apply_locks,
-                      apply_told, cardinality, conditional, epistemic, exclusions, fungible, is_v21, legacy_anchors,
-                      live, members_of, pins, quoted_turns, read_predicate, rebase, record_anchors, secret_events, slot,
-                      slotted, splits_of, thread_events, unedited_quotes, unifies)
+                      apply_told, cardinality, conditional, entity_notes, epistemic, exclusions, fungible, is_v21,
+                      legacy_anchors, live, members_of, pins, quoted_turns, read_predicate, rebase, record_anchors,
+                      secret_events, slot, slotted, splits_of, thread_events, unedited_quotes, unifies)
 from .secrets import secret_text
 from .secrets import fold as fold_secrets
 from .threads import MATCH_MIN, PREDICATES as THREAD_PREDICATES, fold as fold_threads, similarity
@@ -807,7 +807,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
                 "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "repairs": [],
-                "assertions": [], "resolution": None, **({"told": []} if told else {})}
+                "entity_notes": [], "assertions": [], "resolution": None, **({"told": []} if told else {})}
     served = served_assertions(conn, head, extractor_key, upto, known_at, open_turn=include_open_turn)
     # PHASE-66: extract-v21's own predicates on its own rows; its beliefs and forgettings as kinds of their own
     rows = [r for r in served if read_predicate(r) or epistemic(r)]
@@ -1039,17 +1039,21 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     items: dict[tuple, dict[str, Any]] = {}
     for f in facts:  # one timeline per item, newest first (facts are sorted by position)
         if whereabouts(f):
+            item_name = f["object"] if f["predicate"] in HOLDER_PER_ITEM else f["subject"]
+            item_ent = f.get("object_entity") if f["predicate"] in HOLDER_PER_ITEM else f.get("subject_entity")
             items.setdefault(version_key(f, r), {
-                "item": f["object"] if f["predicate"] in HOLDER_PER_ITEM else f["subject"],
-                "position": f["position"], "history": f["history"]})
+                "item": item_name, "position": f["position"], "history": f["history"],
+                "fact_id": f.get("id"),
+                "entity_id": item_ent.get("id") if isinstance(item_ent, dict) else None})
     entities = [{**e, "excluded": excluded[str(e["id"])]["scope"]} if str(e["id"]) in excluded else e
                 for e in r.entities()]
     pinned = pins(in_force, r)  # PHASE-60 S8: the characters the owner pinned, newest first; an exclusion wins
+    notes = entity_notes(in_force, r)  # PHASE-70 (ADR 0096): concise owner notes per entity, newest first
     view = {"facts": facts, "claims": claims, "other": other, "entities": entities, "excluded": excluded,
-            "pins": pinned,
+            "pins": pinned, "entity_notes": notes,
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
-            "repairs": [_report(rep, applied, r, excluded, pinned) for rep in repairs], "assertions": rows,
+            "repairs": [_report(rep, applied, r, excluded, pinned, notes) for rep in repairs], "assertions": rows,
             "resolution": r,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
     if believed:
@@ -1416,10 +1420,15 @@ def _hold(history: list[dict[str, Any]],
 
 def _report(rep: dict[str, Any], applied: dict[str, str | None], r: Resolution,
             excluded: dict[str, dict[str, Any]] | None = None,
-            pinned: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+            pinned: list[dict[str, Any]] | None = None,
+            notes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """A repair with what it applies to now (ADR 0044); a name split, the entity it left and the names that still
     join the two when it could not separate them; an exclusion, the entity it leaves out and how many rows (PHASE-47);
-    a pin, the character it pins (PHASE-60 S8), or None when its name is no character now or the owner left it out."""
+    a pin, the character it pins (PHASE-60 S8), or None when its name is no character now or the owner left it out;
+    an entity note, the entity it describes (PHASE-70, ADR 0096)."""
+    if rep["kind"] == "entity_note":
+        hit = next((n for n in notes or () if str(n["repair"]) == str(rep["id"])), None)
+        return {**rep, "applied": hit["entity_id"] if hit else None}
     if rep["kind"] == "entity_pin":
         t = rep.get("target") or {}
         e = r.entity(t.get("entity_type") or "character", t.get("name")) if r is not None else None

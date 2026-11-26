@@ -816,7 +816,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             view = (view_of(conn, conv["head_commit_id"], carried=True)
                     if conv["head_commit_id"] else {"entities": []})
         pinned = {str(p["entity_id"]): str(p["repair"]) for p in view.get("pins") or ()}  # PHASE-60 S8: the pin's id
-        return [{**e, "pinned": pinned[str(e["id"])]} if str(e["id"]) in pinned else e for e in view["entities"]]
+        noted = {str(n["entity_id"]): {"id": str(n["repair"]), "text": n["text"]}
+                 for n in view.get("entity_notes") or ()}  # PHASE-70 (ADR 0096)
+        return [{**e, **({"pinned": pinned[eid]} if eid in pinned else {}),
+                 **({"note": noted[eid]} if eid in noted else {})}
+                for e in view["entities"] for eid in (str(e["id"]),)]
 
     @app.get("/v1/conversations/{conv_id}/memory-mode", dependencies=[Depends(auth)])
     def get_memory_mode(conv_id: UUID, request: Request):
@@ -1315,7 +1319,27 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 if body.kind == "entity_exclude":
                     expect_same(conn, conv_id, body.expect, "exclude", entity_type=body.entity_type, name=body.item,
                                 scope=body.scope)
-                row = insert_repair(conn, conv_id, body.kind, target, value, body.note, head=head)
+                if body.kind == "entity_note":
+                    conn.execute("SELECT 1 FROM conversation WHERE id = %s FOR UPDATE", (conv_id,))
+                    r = view.get("resolution")
+                    r_ent = r.entity(target["entity_type"], target["name"]) if r else None
+                    if r_ent is not None:
+                        active_notes = conn.execute(
+                            "SELECT id, target FROM owner_repair WHERE conversation_id = %s"
+                            " AND kind = 'entity_note' AND removed_at IS NULL",
+                            (conv_id,),
+                        ).fetchall()
+                        old_ids = [
+                            rep["id"] for rep in active_notes
+                            if (matched := r.entity((rep.get("target") or {}).get("entity_type") or "character",
+                                                    (rep.get("target") or {}).get("name"))) is not None
+                            and str(matched["id"]) == str(r_ent["id"])
+                        ]
+                        if old_ids:
+                            conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s"
+                                         " AND id = ANY(%s) AND removed_at IS NULL", (conv_id, old_ids))
+                stored_note = None if body.kind == "entity_note" and not (body.new_value or "").strip() else body.note
+                row = insert_repair(conn, conv_id, body.kind, target, value, stored_note, head=head)
                 if body.lock:  # the corrected canon is kept against the story (PHASE-57 B2)
                     later = view_of(conn, head, carried=True)
                     # the owner's version, current or held off by the story's later statement
@@ -1385,7 +1409,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return repairs.plan(body.kind, body.item, view, head_turn(conn, head), body.outcome, body.character,
                                 body.turn, body.new_object, body.new_value, body.other, body.entity_type,
                                 version_key, body.scope, body.new_because,
-                                body.fact.model_dump() if body.fact else None, body.hidden, body.attention)
+                                body.fact.model_dump() if body.fact else None, body.hidden, body.attention,
+                                body.new_subject, body.note)
         except repairs.RepairError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -1417,10 +1442,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             plan: list[dict[str, Any]] = []
             planned: list[tuple[RepairRequest, dict, dict]] = []
             seen: set[tuple] = set()
+            seen_notes: set[str] = set()
             for n, item in enumerate(body.items):
                 entry: dict[str, Any] = {"index": n, "kind": item.kind, "item": item.item}
-                key = (item.kind, item.item, item.outcome, item.character, item.new_object, item.new_value, item.turn,
-                       item.new_because, item.hidden, item.attention, item.fact.model_dump_json() if item.fact else None)
+                key = (item.kind, item.item, item.outcome, item.character, item.new_subject, item.new_object, item.new_value,
+                       item.turn, item.new_because, item.hidden, item.attention,
+                       item.fact.model_dump_json() if item.fact else None,
+                       item.note if item.kind == "entity_note" else None)
                 if item.kind in PREVIEWED or item.lock:
                     entry["error"] = "this repair is made one at a time, from its preview"
                 elif key in seen:
@@ -1432,8 +1460,19 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                                      item.character, item.turn, item.new_object, item.new_value,
                                                      item.other, item.entity_type, version_key, item.scope,
                                                      item.new_because, item.fact.model_dump() if item.fact else None,
-                                                     item.hidden, item.attention)
-                        planned.append((item, target, value))
+                                                     item.hidden, item.attention, item.new_subject, item.note)
+                        if item.kind == "entity_note":
+                            r = view.get("resolution")
+                            r_ent = r.entity(target["entity_type"], target["name"]) if r else None
+                            eid = str(r_ent["id"]) if r_ent is not None else None
+                            if eid is not None and eid in seen_notes:
+                                entry["error"] = "only one note per entity in a batch"
+                            else:
+                                if eid is not None:
+                                    seen_notes.add(eid)
+                                planned.append((item, target, value))
+                        else:
+                            planned.append((item, target, value))
                     except repairs.RepairError as e:
                         entry["error"] = str(e)
                 plan.append(entry)
@@ -1465,8 +1504,29 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 return out
             batch = uuid7()
             with conn.transaction():
+                if any(item.kind == "entity_note" for item, _, _ in planned):
+                    conn.execute("SELECT 1 FROM conversation WHERE id = %s FOR UPDATE", (conv_id,))
                 for item, target, value in planned:
-                    insert_repair(conn, conv_id, item.kind, target, value, item.note, batch, head)
+                    if item.kind == "entity_note":
+                        r = view.get("resolution")
+                        r_ent = r.entity(target["entity_type"], target["name"]) if r else None
+                        if r_ent is not None:
+                            active_notes = conn.execute(
+                                "SELECT id, target FROM owner_repair WHERE conversation_id = %s"
+                                " AND kind = 'entity_note' AND removed_at IS NULL",
+                                (conv_id,),
+                            ).fetchall()
+                            old_ids = [
+                                rep["id"] for rep in active_notes
+                                if (matched := r.entity((rep.get("target") or {}).get("entity_type") or "character",
+                                                        (rep.get("target") or {}).get("name"))) is not None
+                                and str(matched["id"]) == str(r_ent["id"])
+                            ]
+                            if old_ids:
+                                conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s"
+                                             " AND id = ANY(%s) AND removed_at IS NULL", (conv_id, old_ids))
+                    stored_note = None if item.kind == "entity_note" and not (item.new_value or "").strip() else item.note
+                    insert_repair(conn, conv_id, item.kind, target, value, stored_note, batch, head)
                 if undone:
                     conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s"
                                  " AND id = ANY(%s) AND removed_at IS NULL", (conv_id, undone))
@@ -2296,8 +2356,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                             view["repairs"], "alias_held", r)
         return held, aliases, hits | more
 
-    def hub_data(conn, conv: dict[str, Any] | None, off: bool, all_off: bool) -> dict[str, Any]:
-        """What the panel's hub says (PHASE-52 D1), from what the Inspector's chat page reads."""
+    def hub_data(conn, conv: dict[str, Any] | None, off: bool, all_off: bool, compact: bool = False) -> dict[str, Any]:
+        """What the panel's hub says (PHASE-52 D1, PHASE-69 S4), from what the Inspector's chat page reads."""
         chats = conn.execute("SELECT count(*) AS n FROM conversation").fetchone()["n"]
         if conv is None or conv["head_commit_id"] is None:
             return {"conv": None, "working": {"state": "off" if off or all_off else "idle", "all_off": all_off},
@@ -2313,13 +2373,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                       "state_flags": [f for f in flags if f["id"] not in off_keys]}, fixed, last, "ko")
         cov = coverage_view(conn, cid, usage=True, lost=len(lost))
         parts = [cov.get(k) or {} for k in ("extraction", "embeddings", "canon", "summaries")]
-        trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
+        trace = conn.execute("SELECT id, latency_ms, token_estimate FROM retrieval_trace WHERE conversation_id = %s"
                              " ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
         lat = (trace or {}).get("latency_ms") or {}
         placed = lat.get("placed")
         reply = None if trace is None else {
             "placed": sum(int(v or 0) for v in placed.values()) if isinstance(placed, dict) else int(placed or 0),
             "ms": lat.get("sidecar_total")}
+        if compact and trace is not None and reply is not None:
+            reply["tokens"] = trace.get("token_estimate") or 0
+            a = audit.audit(conn, trace["id"]) or {}
+            reply["lines"] = [{"kind": x.get("kind"), "text": x.get("text"), "echoed": bool(x.get("echoed"))}
+                              for x in a.get("lines") or [] if x.get("placed") and x.get("label") != "hidden"][:10]
         cur = rt["settings"]
         state = "off" if off or all_off else "ok"  # without a model NMOS still recalls excerpts: not an error
         cast = [str(n) for n in lat.get("scene_cast") or []]
@@ -2340,7 +2405,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                            "changed": len(notes.changed_lines(view["facts"], secrets=True)),
                            "now": [" · ".join([x["name"], *x["said"]]) for x in people if x["said"]],
                            "threads": [{"kind": th.get("kind"), "text": th.get("text"), "by": th.get("by"),
-                                        "to": th.get("to"), "turn": th.get("turn")} for th in active_threads[:2]]},
+                                        "to": th.get("to"), "turn": th.get("turn")}
+                                       for th in active_threads[:3 if compact else 2]]},
                 "work": {"extraction": {"done": int(ex.get("compiled") or 0), "due": int(ex.get("eligible") or 0)},
                          "embeddings": {"done": int(em.get("embedded") or 0), "due": int(em.get("eligible") or 0)},
                          "summaries": int((cov.get("produced") or {}).get("summaries") or 0),
@@ -2350,7 +2416,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "chats": chats}
 
     def hub_html(request: Request, chat: str | None, conversation: UUID | None, lang: str | None, off: bool,
-                 all_off: bool, map_: bool = False) -> tuple[str, str | None, dict[str, Any]]:
+                 all_off: bool, map_: bool = False, compact: bool = False) -> tuple[str, str | None, dict[str, Any]]:
         with request.app.state.pool.connection() as conn:
             conv = None
             if conversation is not None:
@@ -2358,10 +2424,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             elif chat:
                 found = readmodel.list_conversations(conn, host_chat_ref=chat)
                 conv = readmodel.conversation(conn, found[0]["id"]) if found else None
-            data = hub_data(conn, conv, off, all_off)
+            data = hub_data(conn, conv, off, all_off, compact=compact)
         meta = {"conv": data.get("conv"), "working": data.get("working"),
                 "attention": data.get("attention", 0), "chats": data.get("chats", 0), "usage": data.get("usage")}
-        return views.hub(data, inspector.lang_of(lang), map_), (data["conv"] or {}).get("id"), meta
+        return views.hub(data, inspector.lang_of(lang), map_, compact=compact), (data["conv"] or {}).get("id"), meta
 
     def memory_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """What the panel's memory screen holds (PHASE-52 D2), from what the Inspector's chat page reads."""
@@ -2446,8 +2512,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     out.setdefault(str(n or "").casefold(), str(e["id"]))
         return out
 
-    def person_data(conn, conv: dict[str, Any], entity_id: UUID) -> dict[str, Any]:
-        """A person's sheet (PHASE-52 D3, D4), from the view the Inspector's character page reads."""
+    def person_data(conn, conv: dict[str, Any], entity_id: UUID, rich: bool = False) -> dict[str, Any]:
+        """A person's sheet (PHASE-52 D3, D4; PHASE-69 S3), from the view the Inspector's character page reads."""
         cid, head = conv["id"], conv["head_commit_id"]
         view = inspector.with_participants(view_of(conn, head, told=True, carried=True))  # PHASE-60 S6: shows carried
         e = next((x for x in view["entities"] if str(x["id"]) == str(entity_id)), None)
@@ -2494,12 +2560,80 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "knows": [s for s in view["secrets"] if s.get("open") and names & {norm(n) for n in s.get("holders") or []}],
                 "kept": [s for s in view["secrets"] if names & {norm(n) for n in s.get("open") or []}],
                 "marks": marks, "first": 0, "last": last, "entities": character_ids(view)}
+        if rich:  # PHASE-69 S3: self-sufficient Person Sheet (editable facts, held items, disguises, character switcher)
+            def _me(ref: dict[str, Any] | None) -> bool:
+                return str((ref or {}).get("id") or "") == eid
+
+            mine = [f for f in view["facts"]
+                    if _me(f.get("subject_entity")) or _me(f.get("object_entity"))
+                    or any(_me(p.get("entity")) for p in f.get("participant_entities") or [])]
+            held = [f for f in mine if f["predicate"] == "possesses" and f.get("polarity") == "positive"
+                    and _me(f.get("subject_entity"))]
+            held_ids = {id(f) for f in held}
+            data["facts"] = [f for f in mine if id(f) not in held_ids]
+            data["held"] = held
+            if ent_note := next((n for n in view.get("entity_notes") or () if str(n["entity_id"]) == eid), None):
+                data["entity"]["note"] = {"id": str(ent_note["repair"]), "text": ent_note["text"]}
+            if worn := [dg for dg in view.get("disguises") or () if _me(dg.get("subject_entity"))]:
+                data["disguises"] = worn
+            data["characters"] = [{"id": str(c["id"]), "name": c.get("name") or ""}
+                                  for c in view["entities"] if c.get("type") == "character"]
         for key in ("beliefs", "forgotten"):  # PHASE-66 part 5: this person's, extract-v21 only
             if own := [b for b in view.get(key) or () if str((b.get("subject_entity") or {}).get("id")) == eid]:
                 data[key] = own
         if (carried := carry_data(conn, cid, view, eid)) is not None:  # PHASE-60 S6: only a chat with a link in force
             data["carry"] = carried
         return with_told(data, told_chain(view["told"], eid))  # PHASE-60 S8: the chains this person tells or hears
+
+    def explore_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
+        """PHASE-69 S1: Everything the card-based Memory Explorer displays for a chat."""
+        cid, head = conv["id"], conv["head_commit_id"]
+        view = inspector.with_participants(view_of(conn, head, told=True, carried=True))
+        last = head_turn(conn, head)
+        cov = coverage_view(conn, cid, usage=False)
+        return {
+            "conv": {"id": str(cid), "name": conv.get("host_chat_name"),
+                     "character": conv.get("host_character_name"), "turns": last},
+            "facts": view["facts"],
+            "pairs": inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING], excluded_ids(view)),
+            "threads": view["threads"],
+            "secrets": view["secrets"],
+            "beliefs": view.get("beliefs") or [],
+            "forgotten": view.get("forgotten") or [],
+            "disguises": view.get("disguises") or [],
+            "told": told_chain(view.get("told") or []),
+            "items": view["items"],
+            "entities": view["entities"],
+            "entities_map": character_ids(view),
+            "pins": view.get("pins") or [],
+            "entity_notes": view.get("entity_notes") or [],
+            "excluded": view.get("excluded") or {},
+            "canon_rows": canon.manifest(conn, cid),
+            "canon_history": canon.history(conn, cid),
+            "canon_held": canon.held(conn, cid),
+            "canon_read": (cov.get("canon") or {}).get("keys"),
+        }
+
+    def attention_data(conn, conv: dict[str, Any], lang: str) -> dict[str, Any]:
+        """PHASE-69 S2: Dedicated Attention & Repairs triage data (chat's own memory, matching hub_data)."""
+        cid, head = conv["id"], conv["head_commit_id"]
+        view = inspector.with_participants(view_of(conn, head))
+        last = head_turn(conn, head)
+        lost, role_ends, flags, fixed = attention_inputs(conn, conv, head, view)
+        off_keys = statewatch.dismissed(fixed)
+        queue = inspector._attention({"threads": view["threads"], "unmatched": view["unmatched"],
+                                      "conflicts": view["conflicts"], "ambiguous": view["ambiguous"],
+                                      "dropped": lost, "endings": role_ends,
+                                      "state_flags": [f for f in flags if f["id"] not in off_keys]}, fixed, last, lang)
+        owned_facts = {f["id"]: f["repair"] for f in view["facts"] if f.get("owner")}
+        return {
+            "conv": {"id": str(cid), "name": conv.get("host_chat_name"),
+                     "character": conv.get("host_character_name"), "turns": last},
+            "queue": queue,
+            "conflicts": view["conflicts"],
+            "repairs": fixed,
+            "owned_facts": owned_facts,
+        }
 
     def working_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
         """The panel's working screen (PHASE-52 D5): the newest request's ledger, processing and usage."""
@@ -2551,15 +2685,19 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             request, conv_id, lambda conn, conv, lg: views.working(working_data(conn, conv), lg), lang), inspector.lang_of(lang))
 
     @app.get("/v1/views/c/{conv_id}/person/{entity_id}", dependencies=[Depends(auth)])
-    def views_person(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None):
-        return {"html": view_page(request, conv_id,
-                                  lambda conn, conv, lg: views.person(person_data(conn, conv, entity_id), lg), lang)}
+    def views_person(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None, rich: bool = False):
+        def _build(conn, conv, lg):
+            with inspector.turn_links(conv_id, None, lg):
+                return views.person(person_data(conn, conv, entity_id, rich=rich), lg, rich=rich)
+        return {"html": view_page(request, conv_id, _build, lang)}
 
     @app.get("/views/c/{conv_id}/person/{entity_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
-    def views_person_page(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None):
-        return views.full_page("NMOS", view_page(
-            request, conv_id, lambda conn, conv, lg: views.person(person_data(conn, conv, entity_id), lg), lang),
-            inspector.lang_of(lang))
+    def views_person_page(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None,
+                          token: str | None = None):
+        def _build(conn, conv, lg):
+            with inspector.turn_links(conv_id, token, lg):
+                return views.person(person_data(conn, conv, entity_id, rich=True), lg, rich=True)
+        return views.full_page("NMOS", view_page(request, conv_id, _build, lang), inspector.lang_of(lang))
 
     def view_page(request: Request, conv_id: UUID, build: Any, lang: str | None) -> str:
         with request.app.state.pool.connection() as conn:
@@ -2569,16 +2707,49 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return build(conn, conv, inspector.lang_of(lang))
 
     @app.get("/v1/views/c/{conv_id}/memory", dependencies=[Depends(auth)])
-    def views_memory(conv_id: UUID, request: Request, lang: str | None = None, map: bool = False):  # noqa: A002
-        # `map`: the plugin can open the memory map (PHASE-55); without it, the document is as before
+    def views_memory(conv_id: UUID, request: Request, lang: str | None = None, map: bool = False,  # noqa: A002
+                     rich: bool = False):
+        # `map`: the plugin can open the memory map (PHASE-55); `rich`: PHASE-69 footer links; without them, as before
         return {"html": view_page(request, conv_id,
-                                  lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg, map), lang)}
+                                  lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg, map, rich=rich), lang)}
 
     @app.get("/views/c/{conv_id}/memory", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def views_memory_page(conv_id: UUID, request: Request, lang: str | None = None):
         return views.full_page("NMOS", view_page(
-            request, conv_id, lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg, True), lang),
+            request, conv_id, lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg, True, rich=True), lang),
             inspector.lang_of(lang))
+
+    @app.get("/v1/views/c/{conv_id}/explore", dependencies=[Depends(auth)])
+    def views_explore(conv_id: UUID, request: Request, lang: str | None = None):
+        """PHASE-69 S1: card-based Memory Explorer fragment for the panel."""
+        def _build(conn, conv, lg):
+            with inspector.turn_links(conv_id, None, lg):
+                return views.explore(explore_data(conn, conv), lg)
+        return {"html": view_page(request, conv_id, _build, lang)}
+
+    @app.get("/views/c/{conv_id}/explore", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_explore_page(conv_id: UUID, request: Request, lang: str | None = None, token: str | None = None):
+        """PHASE-69 S1: card-based Memory Explorer standalone browser page."""
+        def _build(conn, conv, lg):
+            with inspector.turn_links(conv_id, token, lg):
+                return views.explore(explore_data(conn, conv), lg)
+        return views.full_page("NMOS", view_page(request, conv_id, _build, lang), inspector.lang_of(lang))
+
+    @app.get("/v1/views/c/{conv_id}/attention", dependencies=[Depends(auth)])
+    def views_attention(conv_id: UUID, request: Request, lang: str | None = None):
+        """PHASE-69 S2: dedicated Attention & Repairs fragment for the panel."""
+        def _build(conn, conv, lg):
+            with inspector.turn_links(conv_id, None, lg):
+                return views.attention(attention_data(conn, conv, lg), lg)
+        return {"html": view_page(request, conv_id, _build, lang)}
+
+    @app.get("/views/c/{conv_id}/attention", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_attention_page(conv_id: UUID, request: Request, lang: str | None = None, token: str | None = None):
+        """PHASE-69 S2: dedicated Attention & Repairs standalone browser page."""
+        def _build(conn, conv, lg):
+            with inspector.turn_links(conv_id, token, lg):
+                return views.attention(attention_data(conn, conv, lg), lg)
+        return views.full_page("NMOS", view_page(request, conv_id, _build, lang), inspector.lang_of(lang))
 
     @app.get("/v1/views/c/{conv_id}/map", dependencies=[Depends(auth)])
     def views_map(conv_id: UUID, request: Request, lang: str | None = None, focus: UUID | None = None):
@@ -2610,9 +2781,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     @app.get("/v1/views/hub", dependencies=[Depends(auth)])
     def views_hub(request: Request, chat: str | None = None, conversation: UUID | None = None, lang: str | None = None,
-                  off: bool = False, all_off: bool = False, map: bool = False):  # noqa: A002
-        # `map`: the plugin can open the memory map (PHASE-55); without it, the hub is as before
-        html, cid, meta = hub_html(request, chat, conversation, lang, off, all_off, map)
+                  off: bool = False, all_off: bool = False, map: bool = False, compact: bool = False):  # noqa: A002
+        # `map`: the plugin can open the memory map (PHASE-55); `compact`: Dashboard Home without duplicate nav tiles (PHASE-69)
+        html, cid, meta = hub_html(request, chat, conversation, lang, off, all_off, map, compact=compact)
         return {"html": html, "conversation": cid, "meta": meta}
 
     @app.get("/views/hub", response_class=HTMLResponse, dependencies=[Depends(auth)])

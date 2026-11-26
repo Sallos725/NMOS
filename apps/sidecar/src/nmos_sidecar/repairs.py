@@ -38,15 +38,16 @@ from uuid import UUID
 import psycopg
 
 from .entities import Resolution, norm
-from .predicates import (CONDITIONED_PREDICATES, EXTENSIONS, OUTCOMES, REGISTRY, V21_ONTOLOGY, V21_PREDICATES, Predicate,
-                         address_slot, is_address_all)
+from .predicates import (CONDITIONED_PREDICATES, ENTITY_TYPES, EXTENSIONS, OUTCOMES, REGISTRY, V21_ONTOLOGY,
+                         V21_PREDICATES, Predicate, address_slot, is_address_all)
 from .secrets import secret_text
 from .statewatch import target as flag_target
 from .threads import MATCH_MIN, similarity
 
 KINDS = ("thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
          "name_split", "fact_lock", "fact_restore", "state_dismiss", "entity_exclude", "entity_pin",
-         "fact_add", "told_retract", "fact_hidden", "attention_dismiss")
+         "fact_add", "told_retract", "fact_hidden", "attention_dismiss", "entity_note")
+ENTITY_NOTE_MAX_CHARS = 300  # PHASE-70 (ADR 0096): concise owner reference card per entity
 # threads and secrets since step 3, facts and names since step 4, locks since Phase 14, restores since Phase 22, a
 # status flag's dismissal since Phase 39 (Q4: no memory read applies it; the Inspector leaves the flag out), a pin since
 # Phase 60 (S8, ADR 0087: stored and listed; the packet's read of it is packet-v20's); since PHASE-67 part 4 (migration
@@ -856,7 +857,8 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
         # PHASE-67 part 4 (D7 item 3): the owner's version states what the correction gives, never the replaced row's
         # feeling detail or stated cause (they may contradict the new object or value): `because` only when given.
         new = {k: v for k, v in a.items() if k not in ANNOTATIONS and k != "feeling"}
-        new.update({"id": _owner_id(rep), "host_logical_id": None, "object": value.get("object", a.get("object")),
+        new.update({"id": _owner_id(rep), "host_logical_id": None, "subject": value.get("subject", a.get("subject")),
+                    "object": value.get("object", a.get("object")),
                     "value": value.get("value", a.get("value")), "because": value.get("because"),
                     "source": "narration", "asserted_by": None,
                     "evidence": rep.get("note") or "", "owner": True, "repair": str(rep["id"])})
@@ -984,7 +986,8 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
          new_value: str | None = None, other: str | None = None, entity_type: str = "character",
          version_key: Callable[..., tuple] | None = None, scope: str = "cast", new_because: str | None = None,
          fact: Mapping[str, Any] | None = None, hidden: bool | None = None,
-         attention: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+         attention: str | None = None, new_subject: str | None = None,
+         note: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     """The target and value a new repair stores, for the item the Inspector shows now (a thread's or a secret's id),
     checked against the current memory."""
     if kind not in ENABLED:
@@ -996,6 +999,8 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
         return _plan_exclude(item, entity_type, scope, view)
     if kind == "entity_pin":
         return _plan_pin(item, entity_type, view)
+    if kind == "entity_note":
+        return _plan_note(item, entity_type, new_value if (new_value is not None and new_value.strip()) else note, view)
     if kind == "state_dismiss":  # the caller lists the chat's undismissed status flags (`state_flags`, PHASE-39 Q4)
         flag = next((f for f in view.get("state_flags") or () if f["id"] == item), None)
         if flag is None:
@@ -1015,7 +1020,8 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
     if kind == "attention_dismiss":  # the caller lists what needs a look and is not dismissed (`view["attention"]`)
         return _plan_dismiss(item, attention, view)
     if kind.startswith("fact_"):
-        return _plan_fact(kind, item, view, last_turn, new_object, new_value, turn, version_key, new_because)
+        return _plan_fact(kind, item, view, last_turn, new_object, new_value, turn, version_key, new_because,
+                          new_subject)
     at = last_turn if turn is None else turn
     if kind.startswith("thread_"):
         t = next((t for t in view["threads"] if str(t["id"]) == item), None)
@@ -1281,9 +1287,59 @@ def pins(repairs: list[dict[str, Any]], r: Resolution | None) -> list[dict[str, 
     return [p for _, p in sorted(out.values(), key=lambda x: x[0], reverse=True)]
 
 
+def _plan_note(name: str, entity_type: str, text: str | None, view: dict[str, Any]) -> tuple[dict, dict]:
+    """Attach a concise canonical description/note to any entity (PHASE-70, ADR 0096): named as the owner saw it (or by
+    entity id from the panel), matched on every read through entity resolution across all 5 entity types. Refused for
+    entities left out of memory (`scope="memory"`)."""
+    r = view.get("resolution")
+    by_id = next((e for e in view.get("entities") or () if str(e["id"]) == name.strip()), None)
+    if by_id is not None:
+        name, entity_type = by_id["name"], by_id["type"]
+    if entity_type not in ENTITY_TYPES:
+        raise RepairError(f"entity_type must be one of {', '.join(ENTITY_TYPES)}")
+    if r is None or not name.strip() or r.status(entity_type, name) == "unresolved":
+        raise RepairError("the name is not mentioned in this chat")
+    e = r.entity(entity_type, name)
+    if e is None:
+        raise RepairError("the name is not one entity now")
+    left_out = view.get("excluded") or exclusions(view.get("repairs") or [], r)
+    if (left_out.get(str(e["id"])) or {}).get("scope") == "memory":
+        raise RepairError("that entity is left out of memory: take that back first")
+    cleaned = " ".join((text or "").split())
+    if not cleaned:
+        raise RepairError("write the note text")
+    if len(cleaned) > ENTITY_NOTE_MAX_CHARS:
+        raise RepairError(f"note must be at most {ENTITY_NOTE_MAX_CHARS} characters")
+    return {"entity_type": entity_type, "name": e["name"]}, {"text": cleaned}
+
+
+def entity_notes(repairs: list[dict[str, Any]], r: Resolution | None) -> list[dict[str, Any]]:
+    """The owner's active entity notes (PHASE-70, ADR 0096), newest first, one entry per resolved entity: each note's
+    name resolved now, so a name the story joins to it follows and a split name separates. Entities excluded with
+    `scope="memory"` are suppressed; `scope="cast"` keeps its note. `repairs` oldest first; newest wins per entity."""
+    if r is None:
+        return []
+    left_out = exclusions(repairs, r)
+    out: dict[str, tuple[int, dict[str, Any]]] = {}
+    for i, rep in enumerate(repairs):
+        if rep["kind"] != "entity_note":
+            continue
+        t = rep.get("target") or {}
+        text = " ".join(str((rep.get("value") or {}).get("text") or "").split())
+        if not text:
+            continue
+        e = r.entity(t.get("entity_type") or "character", t.get("name"))
+        if e is None or (left_out.get(str(e["id"])) or {}).get("scope") == "memory":
+            continue
+        out[str(e["id"])] = (i, {"entity_id": e["id"], "entity_type": e["type"], "name": e["name"],
+                                 "names": list(e["names"]), "text": text, "repair": rep["id"],
+                                 "created_at": rep.get("created_at")})
+    return [n for _, n in sorted(out.values(), key=lambda x: x[0], reverse=True)]
+
+
 def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None, new_object: str | None,
                new_value: str | None, turn: int | None, version_key: Callable[..., tuple] | None = None,
-               new_because: str | None = None) -> tuple[dict, dict]:
+               new_because: str | None = None, new_subject: str | None = None) -> tuple[dict, dict]:
     f = next((f for f in view["facts"] if str(f["id"]) == item), None)
     if f is None:  # PHASE-66: a belief or a forgetting the view lists apart is repaired as a fact is
         f = next((b for b in (*(view.get("beliefs") or ()), *(view.get("forgotten") or ())) if str(b["id"]) == item),
@@ -1313,6 +1369,8 @@ def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None
     if new_value and new_value.strip() and pred is not None and not pred.needs_value and not f.get("value"):
         raise RepairError(f"a {f['predicate']} fact has no value: correct its object")
     value: dict[str, Any] = {}
+    if new_subject is not None and new_subject.strip() and new_subject.strip() != (f.get("subject") or ""):
+        value["subject"] = new_subject.strip()
     if new_object is not None and new_object.strip() and new_object.strip() != (f.get("object") or ""):
         value["object"] = new_object.strip()
     if new_value is not None and new_value.strip() and new_value.strip() != (f.get("value") or ""):
@@ -1320,13 +1378,13 @@ def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None
     if new_because is not None and new_because.strip() and new_because.strip() != (f.get("because") or ""):
         value["because"] = new_because.strip()  # PHASE-67 part 4: the stated cause, given by the owner, else none
     if not value:
-        raise RepairError("give a new object, value or cause that differs from the fact's")
+        raise RepairError("give a new subject, object, value or cause that differs from the fact's")
     at = f.get("turn") if turn is None else turn
     _check_turn(at, f.get("turn"), last_turn, "fact")
-    if ("object" in value and at != f.get("turn") and version_key is not None
-            and version_key(f, r) != version_key({**f, "object": value["object"]}, r)):
-        raise RepairError("from a later turn a new object would leave the old fact current too: correct it at its own"
-                          " turn, or retract it")
+    if (("object" in value or "subject" in value) and at != f.get("turn") and version_key is not None
+            and version_key(f, r) != version_key({**f, **value}, r)):
+        raise RepairError("from a later turn a new subject or object would leave the old fact current too: correct it"
+                          " at its own turn, or retract it")
     return target, {**value, "turn": at}
 
 

@@ -26,7 +26,8 @@ import type { BulkMark, BulkRequest, EntityRow, ExcludePreview, Preview, RepairA
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
 import { coverageLine, trimStatusLine } from './trimtext';
-import { workerLines, type WorkerStatus } from './workertext';
+import { isWorkerDismissed, loadWorkerDismissal, saveWorkerDismissal, workerDismissalOf, workerLines,
+  type WorkerDismissal, type WorkerStatus } from './workertext';
 import {
   CARRY_MAX_NAMES, carryCountsLine, carryCutoffLabel, carryErrorText, carryRefusal, carrySourceLabel,
   isCarryConflict, isCarryNotFound, parseCutoffTurn,
@@ -39,7 +40,7 @@ import { usageText, type UsageTotal } from './usage';
 
 export type Tab = 'status' | 'inspector' | 'settings';
 type PrimaryTab = 'home' | 'memory' | 'notes' | 'settings';
-type MemorySub = 'story' | 'map' | 'attention' | 'diag';
+type MemorySub = 'story' | 'explore' | 'attention' | 'map' | 'diag';
 
 interface HubChatItem { id: string; name: string; character?: string; title?: string; turns?: number }
 interface HubMeta {
@@ -94,9 +95,9 @@ interface ServerConfig {
   install?: string | null;
 }
 
-/** An entities row with what pins add (ADR 0087): `pinned` is the pin's repair id, only on a pinned row; `excluded`
- *  marks a character the owner left out of memory, which is never pinned. */
-type PinRow = EntityRow & { excluded?: boolean; pinned?: string };
+/** An entities row with what pins/notes add (ADR 0087, ADR 0096): `pinned` is the pin's repair id, only on a pinned
+ *  row; `excluded` marks a character the owner left out of cast/memory (`"cast"` or `"memory"`). */
+type PinRow = EntityRow & { excluded?: boolean | string; pinned?: string };
 
 /** `minSim`: the vector similarity bar measured for the preset's model (`docs/perf/embedders.md`); `hint`: said when
  *  the preset is picked. */
@@ -336,6 +337,11 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp span.rp{display:inline-flex;flex-wrap:wrap;align-items:center;gap:5px;margin-left:6px;vertical-align:middle}
 .nmos .insp span.rp input,.nmos .insp span.rp select{width:auto;padding:3px 7px;font-size:13px;border-radius:6px}
 .nmos .insp span.rp input[type=text]{width:12em}.nmos .insp span.rp input.turn{width:7em}
+.nmos .insp .rp-note-form{display:flex;flex-direction:column;gap:6px;min-width:240px;width:100%;margin-top:4px}
+.nmos .insp .rp-note-form textarea{min-height:64px;font-family:inherit;font-size:13.5px;line-height:1.45;padding:7px 10px}
+.nmos .note-card textarea{min-height:76px;font-family:inherit;font-size:14px;line-height:1.5}
+.nmos .note-meta{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12.5px;color:var(--c-text-muted)}
+.nmos .note-meta .btns{margin-top:0}
 .nmos button.mini{padding:4px 9px;font-size:12.5px;border-radius:6px}
 .nmos .groups{display:flex;flex-direction:column;gap:8px;margin:8px 0}
 .nmos .groups button.group{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:14px 16px;border-radius:12px;font-size:16px}
@@ -418,7 +424,16 @@ html,body{margin:0;background:${PALETTE.bg}}
   .nmos .settings-shell .grp-label{width:100%;padding:4px 4px 2px}
   .nmos .settings-shell .groups button.group{padding:7px 10px;font-size:13px}
 }
+/* PHASE-69: Memory Explorer filter toolbar */
+.nmos .exp-toolbar{padding:12px 14px;border-radius:12px;background:var(--c-surface);border:1px solid var(--c-line);display:flex;flex-direction:column;gap:10px}
+.nmos .exp-toolbar .filter-chips{margin:0}
+.nmos .exp-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.nmos .exp-controls input[type=search]{flex:1 1 200px;min-width:140px;padding:7px 11px;font-size:13.5px}
+.nmos .exp-controls select.exp-who{flex:0 1 170px;min-width:120px;width:auto;padding:7px 10px;font-size:13.5px}
+.nmos .exp-add{margin-left:auto;white-space:nowrap}
+.nmos .exp-empty{margin:10px 0;padding:22px 14px;text-align:center;color:var(--c-text-muted);font-size:14px;border:1px dashed var(--c-line-strong);border-radius:11px;background:var(--c-sunken)}
 @media (max-width: 720px){
+  .nmos .exp-add{margin-left:0;flex:1 1 auto}
   .nmos.shell-on .wrap{padding:12px 12px 84px}
   .nmos .nmos-topbar-in{padding:8px 12px;gap:8px}
   .nmos .nmos-nav{display:none}
@@ -576,10 +591,17 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
   // --- status tab ------------------------------------------------------------------------------
   let usageRound = 0; // a refresh or another chat's card makes an older answer stale
   let workerRound = 0; // the same for the "Model work" card
+  async function fetchWorkerStatus(): Promise<unknown> {
+    try {
+      return await deps.api<unknown>('GET', '/v1/worker/status', undefined, 5000);
+    } catch {
+      return null;
+    }
+  }
   async function refreshStatus(): Promise<void> {
     statusView.replaceChildren(el('div', { class: 'card muted', text: L('status.checking') }));
     const round = ++workerRound;
-    const worker = workerCard(); // asked beside the health check; the other cards never wait for it
+    const workerReq = fetchWorkerStatus(); // asked beside health check; synchronous and async failures stay caught
     const s = await deps.status();
     const base = s.sidecarUrl.replace(/\/+$/, '');
     const conn = el('div', { class: 'card' }, el('h2', { text: L('status.sidecar') }));
@@ -711,25 +733,42 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const refresh = el('button', { text: L('refresh') });
     refresh.addEventListener('click', () => void refreshStatus());
     statusView.replaceChildren(...cards, el('div', { class: 'btns' }, refresh));
-    void worker.then((card) => {
+    void workerReq.then((raw) => {
+      const card = buildWorkerCard(raw, s.sidecarUrl);
       if (card && s.connected && round === workerRound && conn.isConnected) conn.after(card);
     });
   }
 
-  /** "Model work" (PHASE-61 S5): the queue, recent outcomes and the last model error; null, so no card, when the
-   *  sidecar has no such route (an older one) or does not answer. */
-  async function workerCard(): Promise<HTMLElement | null> {
-    let raw: unknown;
-    try {
-      raw = await deps.api<unknown>('GET', '/v1/worker/status', undefined, 5000);
-    } catch {
-      return null;
-    }
+  // In-memory fallback for dismissed worker warnings if storage is unavailable in a sandboxed iframe.
+  const workerDismissMem = new Map<string, WorkerDismissal>();
+  function getWorkerDismissal(scope: string): WorkerDismissal | null {
+    return workerDismissMem.get(scope) ?? loadWorkerDismissal(scope);
+  }
+  function setWorkerDismissal(scope: string, d: WorkerDismissal | null): void {
+    if (d) workerDismissMem.set(scope, d);
+    else workerDismissMem.delete(scope);
+    saveWorkerDismissal(scope, d);
+  }
+
+  /** "Model work" (PHASE-61 S5): the queue, recent outcomes and the last model error; null when absent or invalid. */
+  function buildWorkerCard(raw: unknown, scope: string): HTMLElement | null {
     const { level, lines } = workerLines(lang, raw);
     if (!lines.length) return null;
-    const errorLine = (raw as WorkerStatus).last_error && level === 'trouble' ? lines.length - 1 : -1;
-    return el('div', { class: 'card' }, el('h2', { text: L('worker.title') }),
+    const ws = raw as WorkerStatus;
+    const dismissed = level === 'trouble' && isWorkerDismissed(ws, getWorkerDismissal(scope));
+    const effLevel = dismissed ? (ws.queued_total + ws.running > 0 ? 'working' : 'idle') : level;
+    const errorLine = ws.last_error && effLevel === 'trouble' ? lines.length - 1 : -1;
+    const card = el('div', { class: 'card' }, el('h2', { text: L('worker.title') }),
       ...lines.map((text, i) => el('div', { class: i === errorLine ? 'warn' : 'muted', text })));
+    if (effLevel === 'trouble') {
+      const dismissBtn = el('button', { class: 'mini ghost', text: L('worker.dismiss') });
+      dismissBtn.addEventListener('click', () => {
+        setWorkerDismissal(scope, workerDismissalOf(ws));
+        card.remove();
+      });
+      card.append(el('p', { class: 'btns' }, dismissBtn));
+    }
+    return card;
   }
 
   /** "This chat": whether NMOS is on for the chat open now, and the switch. */
@@ -840,6 +879,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
   // Back and Refresh stay in reach while reading far down a page.
   // On an entity's page: the owner joins it with another entity of its type, or undoes a join (ADR 0025).
   const linkCard = el('div', { class: 'card', style: 'display:none' });
+  // On an entity's page: the owner attaches a mention-triggered reference note (PHASE-70, ADR 0096).
+  const noteCard = el('div', { class: 'card note-card', style: 'display:none' });
   // On a character's page: the owner pins it so its facts go into every reply's memory (ADR 0087). Built here, beside
   // the sidecar's page, which stays as it is sent.
   const pinCard = el('div', { class: 'card', style: 'display:none' });
@@ -866,7 +907,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
   const homeQuickBar = el('div', { class: 'home-quick', style: 'display:none' });
   const memSubBar = el('div', { class: 'mem-subbar', style: 'display:none' });
   inspectorView.append(inspbar, homeQuickBar, memSubBar, actions, actionMsg, notesCard, factAddCard,
-    bulkBar, modeCard, statusCard, pinCard, linkCard, inspectorBody, inspectorAddress);
+    bulkBar, modeCard, statusCard, noteCard, pinCard, linkCard, inspectorBody, inspectorAddress);
   function updateBulk(): void {
     bulkBar.style.display = picked.size || bulkGroups.size ? '' : 'none';
     bulkClose.style.display = picked.size ? '' : 'none';
@@ -928,15 +969,18 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
   function repairControls(action: RepairAction): Node[] {
     if (action.kind === 'thread_close') return closeControls(action);
     const field = (action.extra ?? '').split('.')[0];
-    const n = action.kind === 'fact_correct' ? L(field === 'object' ? 'rp.field_object' : 'rp.field_value')
-      : action.extra ?? '';
+    const fieldKey = field === 'subject' ? 'rp.field_subject' : field === 'object' ? 'rp.field_object' : 'rp.field_value';
+    const n = action.kind === 'fact_correct' ? L(fieldKey) : action.extra ?? '';
     // canon's statement in a conflict is corrected and kept (PHASE-57 B2)
-    const label = action.kind === 'fact_correct' && action.extra?.endsWith('.lock') ? 'rp.fact_correct_lock' : `rp.${action.kind}`;
+    const label = action.kind === 'fact_correct' && action.extra?.endsWith('.lock') ? 'rp.fact_correct_lock'
+      : action.kind === 'entity_note' ? (action.extra === 'edit' ? 'rp.entity_note_edit' : 'rp.entity_note_add')
+        : `rp.${action.kind}`;
     const button = el('button', { class: 'mini', text: L(label as StringKey, { n }) });
     const spot = el('div');
     button.addEventListener('click', () => {
       if (action.kind === 'fact_correct') correctForm(action, button);
       else if (action.kind === 'fact_hidden') hiddenForm(action, button);
+      else if (action.kind === 'entity_note') noteForm(action, button);
       else if (action.kind === 'branch_inherit') void branchInherit(action, button, spot);
       else if (action.kind === 'undo' && (action.extra === 'name_split' || action.extra === 'entity_exclude')) {
         void undoSplit(action, button, spot); // previewed: a split's and an exclusion's undo (PHASE-20 Q2, PHASE-47)
@@ -992,12 +1036,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const key = `oc.${outcome}` as StringKey;
     return STRING_KEYS.includes(key) ? L(key) : outcome;
   }
-  /** A correction's form in place of its button (PHASE-13 Q5): the new object or value, and the turn it takes effect
-   * (empty: the fact's own turn). */
+  /** A correction's form in place of its button (PHASE-13 Q5, PHASE-70): the new subject, object or value, and the
+   * turn it takes effect (empty: the fact's own turn). */
   function correctForm(action: RepairAction, button: HTMLButtonElement): void {
     const spot = button.parentElement;
     if (!spot) return;
-    const field = (action.extra ?? '').split('.')[0] === 'object' ? 'object' : 'value';
+    const rawField = (action.extra ?? '').split('.')[0];
+    const field = rawField === 'subject' ? 'subject' : rawField === 'object' ? 'object' : 'value';
+    const bodyKey = field === 'subject' ? 'new_subject' : field === 'object' ? 'new_object' : 'new_value';
     const text = el('input', { type: 'text', placeholder: L('rp.correct_prompt', { f: L(`rp.field_${field}`) }),
       'aria-label': L(`rp.field_${field}`) });
     const turn = el('input', { type: 'number', min: '0', step: '1', class: 'turn', placeholder: L('rp.turn_hint'),
@@ -1008,7 +1054,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     save.addEventListener('click', () => {
       const next = text.value.trim();
       if (!next) return void text.focus();
-      const body: Record<string, unknown> = { [field === 'object' ? 'new_object' : 'new_value']: next };
+      const body: Record<string, unknown> = { [bodyKey]: next };
       if (action.extra?.endsWith('.lock')) body.lock = true;  // canon's statement, kept as corrected (PHASE-57 B2)
       const at = turn.value.trim();
       if (at) {
@@ -1020,6 +1066,41 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     });
     spot.replaceChildren(el('span', { class: 'rpform' }, text, turn, save, cancel));
     text.focus();
+  }
+  const NOTE_MAX_CHARS = 300;
+  function normNote(raw: string): string {
+    return raw.trim().replace(/\s+/g, ' ');
+  }
+  /** Inline form for `entity_note` (PHASE-70, ADR 0096): prefilled safely from the card's `.v-note-text` if present. */
+  function noteForm(action: RepairAction, button: HTMLButtonElement): void {
+    const spot = button.parentElement;
+    if (!spot) return;
+    const existing = button.closest('.v-card')?.querySelector('.v-note-text')?.textContent?.trim() ?? '';
+    const area = el('textarea', { maxlength: String(NOTE_MAX_CHARS), rows: '2',
+      placeholder: L('en.placeholder'), 'aria-label': L('rp.entity_note') });
+    area.value = existing;
+    const counter = el('span', { class: 'muted', text: L('en.count', { n: normNote(existing).length, max: NOTE_MAX_CHARS }) });
+    area.addEventListener('input', () => {
+      counter.textContent = L('en.count', { n: normNote(area.value).length, max: NOTE_MAX_CHARS });
+    });
+    const save = el('button', { class: 'mini primary', text: L('save') });
+    const cancel = el('button', { class: 'mini', text: L('cancel') });
+    cancel.addEventListener('click', () => spot.replaceChildren(...repairControls(action)));
+    save.addEventListener('click', () => {
+      const cleaned = normNote(area.value);
+      if (!cleaned) {
+        say(actionMsg, L('en.empty'), 'err');
+        return void area.focus();
+      }
+      if (cleaned.length > NOTE_MAX_CHARS) {
+        say(actionMsg, L('en.too_long', { max: NOTE_MAX_CHARS }), 'err');
+        return void area.focus();
+      }
+      void repairNow(action, save, { new_value: cleaned });
+    });
+    spot.replaceChildren(el('div', { class: 'rp-note-form' }, area,
+      el('div', { class: 'note-meta' }, counter, el('span', { class: 'btns' }, save, cancel))));
+    area.focus();
   }
   /** Inline form for `fact_hidden`: add or remove a character from a story fact's `hidden_from`. */
   function hiddenForm(action: RepairAction, button: HTMLButtonElement): void {
@@ -1300,6 +1381,126 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
         }
       }
     }
+    // PHASE-69 S1: Memory Explorer interactive toolbar (category pills, search, character dropdown, canon toggle, +Add fact).
+    if (inspectorPath.includes('/explore')) {
+      const slot = page.querySelector<HTMLElement>('.v-exp-toolbar-slot');
+      const cards = Array.from(page.querySelectorAll<HTMLElement>('.v-exp-card'));
+      const sections = Array.from(page.querySelectorAll<HTMLElement>('.v-sec[data-cat]'));
+      if (slot) {
+        const CATS = ['facts', 'pairs', 'threads', 'epistemic', 'items', 'entities', 'canon'] as const;
+        const whoCounts = new Map<string, number>();
+        let canonCount = 0;
+        let nonCanonStoryCount = 0;
+        for (const c of cards) {
+          const isCanon = c.getAttribute('data-canon') === '1';
+          if (isCanon) canonCount += 1;
+          else if (['facts', 'pairs', 'items'].includes(c.getAttribute('data-cat') ?? '')) nonCanonStoryCount += 1;
+          const rawWho = c.getAttribute('data-who') ?? '';
+          for (const w of rawWho.split('|')) {
+            const name = w.trim();
+            if (name) whoCounts.set(name, (whoCounts.get(name) ?? 0) + 1);
+          }
+        }
+        let activeCat = 'all';
+        let includeCanon = canonCount > 0 && nonCanonStoryCount === 0;
+        const catBtns = new Map<string, HTMLButtonElement>();
+        const chipsRow = el('div', { class: 'filter-chips' });
+        const presentCats = CATS.filter((k) => cards.some((c) => c.getAttribute('data-cat') === k));
+        for (const k of ['all', ...presentCats] as const) {
+          const btn = el('button', { type: 'button', class: `filter-chip${k === 'all' ? ' on' : ''}`,
+            'data-exp-cat': k, text: L(`exp.cat_${k}` as StringKey) });
+          btn.addEventListener('click', () => {
+            activeCat = k;
+            for (const [ck, b] of catBtns) b.classList.toggle('on', ck === k);
+            applyExploreFilter();
+          });
+          catBtns.set(k, btn);
+          chipsRow.append(btn);
+        }
+        const searchInput = el('input', { type: 'search', placeholder: L('exp.search'), 'aria-label': L('exp.search') });
+        const controls = el('div', { class: 'exp-controls' }, searchInput);
+        const whoNames = Array.from(whoCounts.entries())
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([name]) => name);
+        let whoSelect: HTMLSelectElement | null = null;
+        if (whoNames.length) {
+          whoSelect = el('select', { class: 'exp-who', 'aria-label': L('exp.who_label') },
+            el('option', { value: '', text: L('exp.who_all') }),
+            ...whoNames.map((name) => el('option', { value: name, text: name })));
+          whoSelect.addEventListener('change', () => applyExploreFilter());
+          controls.append(whoSelect);
+        }
+        if (canonCount > 0) {
+          const canonBtn = el('button', { type: 'button',
+            class: `filter-chip exp-canon-toggle${includeCanon ? ' on' : ''}`,
+            text: L('exp.include_canon', { n: canonCount }) });
+          canonBtn.addEventListener('click', () => {
+            includeCanon = !includeCanon;
+            canonBtn.classList.toggle('on', includeCanon);
+            applyExploreFilter();
+          });
+          controls.append(canonBtn);
+        }
+        const convId = inspectorConversation(inspectorPath);
+        if (convId) {
+          const addBtn = el('button', { type: 'button', class: 'primary mini exp-add', text: L('exp.add_fact') });
+          addBtn.addEventListener('click', () => {
+            if (factAddCard.style.display !== 'none') {
+              factAddCard.style.display = 'none';
+              return;
+            }
+            factAddCard.style.display = '';
+            void buildFactAdd(convId);
+            factAddCard.scrollIntoView({ block: 'nearest' });
+          });
+          controls.append(addBtn);
+        }
+        const emptyNote = el('div', { class: 'exp-empty', style: 'display:none', text: L('exp.empty') });
+        const toolbar = el('div', { class: 'exp-toolbar' }, chipsRow, controls);
+        slot.replaceChildren(toolbar, emptyNote);
+
+        const applyExploreFilter = () => {
+          const q = searchInput.value.trim().toLowerCase();
+          const selectedWho = whoSelect?.value ?? '';
+          const perCat = new Map<string, number>();
+          let totalMatchingAll = 0;
+          let visibleTotal = 0;
+          for (const card of cards) {
+            const cat = card.getAttribute('data-cat') ?? '';
+            const isCanon = card.getAttribute('data-canon') === '1';
+            const whoOk = !selectedWho || (card.getAttribute('data-who') ?? '').split('|').includes(selectedWho);
+            const textOk = !q || (card.textContent ?? '').toLowerCase().includes(q);
+            const canonOkForAll = includeCanon || !isCanon;
+            if (whoOk && textOk && (cat === 'canon' || canonOkForAll)) {
+              perCat.set(cat, (perCat.get(cat) ?? 0) + 1);
+              totalMatchingAll += 1;
+            }
+            const catOk = activeCat === 'all' || cat === activeCat;
+            const canonOk = activeCat === 'canon' || includeCanon || !isCanon;
+            const show = catOk && canonOk && whoOk && textOk;
+            card.style.display = show ? '' : 'none';
+            if (show) visibleTotal += 1;
+          }
+          for (const [k, btn] of catBtns) {
+            const n = k === 'all' ? totalMatchingAll : (perCat.get(k) ?? 0);
+            btn.textContent = `${L(`exp.cat_${k}` as StringKey)} (${n})`;
+          }
+          for (const sec of sections) {
+            const cat = sec.getAttribute('data-cat') ?? '';
+            const secCards = cards.filter((c) => c.getAttribute('data-cat') === cat);
+            const shown = secCards.filter((c) => c.style.display !== 'none').length;
+            const catOk = activeCat === 'all' || cat === activeCat;
+            const hasActiveFilter = q.length > 0 || selectedWho.length > 0 || activeCat !== 'all';
+            sec.style.display = catOk && (shown > 0 || (!hasActiveFilter && secCards.length === 0)) ? '' : 'none';
+            const badge = sec.querySelector('.v-h2 .v-n');
+            if (badge) badge.textContent = String(shown);
+          }
+          emptyNote.style.display = cards.length > 0 && visibleTotal === 0 ? '' : 'none';
+        };
+        searchInput.addEventListener('input', applyExploreFilter);
+        applyExploreFilter();
+      }
+    }
     // Model calls log filter (#1): All / Failed only chips above the calls table.
     if (inspectorPath.startsWith('/v1/inspector/calls')) {
       const tbl = page.querySelector('table');
@@ -1343,7 +1544,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       const action = repairAction(spot.getAttribute('data-repair'));
       if (!action) continue;
       spot.replaceChildren(...repairControls(action));
-      if (action.kind === 'fact_retract' && spot.closest('#s-facts') && !spot.closest('details.fold')) {
+      if (action.kind === 'fact_retract' && spot.closest('#s-facts') && !spot.closest('details.fold')
+          && !spot.closest('[data-canon="1"]')
+          && !spot.parentElement?.querySelector('[data-repair^="fact_hidden:"]')) {
         const hid = el('span', { class: 'rp' });
         hid.replaceChildren(...repairControls({ kind: 'fact_hidden', item: action.item, extra: null }));
         spot.after(hid);
@@ -1502,7 +1705,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     }
     actions.style.display = rawInspector ? '' : 'none';
     const shownEntity = inspectorEntity(path);
-    if (!shownEntity) { linkCard.style.display = 'none'; pinCard.style.display = 'none'; }
+    if (!shownEntity) { linkCard.style.display = 'none'; pinCard.style.display = 'none'; noteCard.style.display = 'none'; }
+    if (!again && !rawInspector && !path.includes('/explore')) { factAddCard.style.display = 'none'; }
     if (!rawInspector || shownEntity) { modeCard.style.display = 'none'; statusCard.style.display = 'none'; }
     if (viewsOn) syncShellForPath(path);
     if (again) {
@@ -1511,27 +1715,39 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       shownPath = null;
       inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('insp.loading') }));
       pinCard.style.display = 'none';  // another page's switch never acts on the page that is loading
+      noteCard.style.display = 'none';
     }
     // Only a sidecar the browser reaches itself can be opened in a tab; a server-routed one (Docker
     // name, LAN address behind HTTPS) is reachable from the PocketRisu server only.
     const base = ((await deps.getArg('sidecar_url')) || 'http://127.0.0.1:8790').replace(/\/+$/, '');
     const direct = routeFor(base, await deps.getArg('route')) === 'direct';
     inspectorAddress.textContent = direct ? L('insp.browser', { url: `${base}/inspector${lang === 'en' ? '?lang=en' : ''}` }) : '';
+    const isExploreOrAttn = Boolean(conversation && /^\/v1\/views\/c\/[^/]+\/(explore|attention)(?:\?|$)/.test(path));
+    const fallbackToRaw = () => {
+      if (!conversation) return false;
+      pendingSection = path.includes('/attention') ? 's-attention' : null;
+      void showInspector(`/v1/inspector/c/${conversation}`, at);
+      return true;
+    };
     try {
       // A chat's and a character's page get a closed timeline section, filled when it is opened (PHASE-32 step 3), and
       // a chat's page one for its status window (PHASE-39); a sidecar without them ignores the ask.
-      const query = [conversation ? 'timeline=lazy&status=lazy' : '', isView && mapOn ? 'map=1' : '', lang === 'en' ? 'lang=en' : '']
-        .filter(Boolean).join('&');
-      const r = await deps.api<{ html: string; conversation?: string | null; meta?: HubMeta }>('GET',
+      const wantRich = isView && (path.includes('/memory') || path.includes('/person/'));
+      const query = [conversation ? 'timeline=lazy&status=lazy' : '', isView && mapOn ? 'map=1' : '',
+        wantRich ? 'rich=1' : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
+      const r = await deps.api<{ html?: string; conversation?: string | null; meta?: HubMeta }>('GET',
         `${path}${query ? `${path.includes('?') ? '&' : '?'}${query}` : ''}`, undefined, 15_000);
       if (load !== loads) return;
+      if (isExploreOrAttn && typeof r?.html !== 'string') {
+        if (fallbackToRaw()) return;
+      }
       if (path.startsWith('/v1/views/hub')) {
         hubConversation = r.conversation ?? null;
         if (hubConversation && !path.includes('conversation=')) hostConversationId = hubConversation;
         if (hubConversation) activeChatId = hubConversation;
         if (viewsOn) applyHubMeta(r.meta);
       }
-      const page = safeFragment(r.html);
+      const page = safeFragment(r.html ?? '');
       placeMarks(page); // a person's circles (PHASE-52 D4)
       enhance(page);
       retryButton.style.display = page.querySelector('.has-failed') ? '' : 'none';
@@ -1555,10 +1771,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       else if (conversation && !isView && !attentionMode) { void showMode(conversation, load); void showStatusWindows(conversation, load); }
     } catch (error) {
       if (load !== loads) return;
+      if (isExploreOrAttn && /(?:HTTP\s+404|\b404\b)/i.test(String((error as Error)?.message ?? error))) {
+        if (fallbackToRaw()) return;
+      }
       shownPath = null;
       retryButton.style.display = 'none';
       showCut(null);
       pinCard.style.display = 'none';
+      noteCard.style.display = 'none';
       inspectorBody.replaceChildren(el('div', { class: 'card err', text: errorText(lang, error) }));
     } finally {
       if (load === loads) inspectorBody.classList.remove('busy');
@@ -1754,8 +1974,80 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       entities = null; // the page itself already reports a failing sidecar
     }
     if (load !== loads) return;
+    showNote(conversation, entity, entities);
     showPin(conversation, entity, entities);
     showLinks(conversation, entity, entities ?? []);
+  }
+  /** Said once in the entity note card after the refresh that follows a save or delete. */
+  let noteSaid: { entity: string; key: StringKey } | null = null;
+  /** The entity reference note card (PHASE-70, ADR 0096), shown for all 5 entity types unless excluded from memory. */
+  function showNote(conversation: string, entity: string, entities: PinRow[] | null): void {
+    const row = entities?.find((e) => e.id === entity);
+    const said = noteSaid?.entity === entity ? noteSaid.key : null;
+    noteSaid = null;
+    if (!row || row.excluded === 'memory') {
+      noteCard.style.display = 'none';
+      noteCard.replaceChildren();
+      return;
+    }
+    const existing = row.note?.text ?? '';
+    const area = el('textarea', { maxlength: String(NOTE_MAX_CHARS), rows: '3',
+      placeholder: L('en.placeholder'), 'aria-label': L('en.title', { n: row.name }) });
+    area.value = existing;
+    const counter = el('span', { text: L('en.count', { n: normNote(existing).length, max: NOTE_MAX_CHARS }) });
+    area.addEventListener('input', () => {
+      counter.textContent = L('en.count', { n: normNote(area.value).length, max: NOTE_MAX_CHARS });
+    });
+    const save = el('button', { class: 'primary', text: L('save') });
+    const btns = el('div', { class: 'btns' }, save);
+    const msg = el('div', { class: 'msg', role: 'status' });
+    if (said) say(msg, L(said), 'ok');
+    save.addEventListener('click', async () => {
+      const cleaned = normNote(area.value);
+      if (!cleaned) {
+        say(msg, L('en.empty'), 'err');
+        return void area.focus();
+      }
+      if (cleaned.length > NOTE_MAX_CHARS) {
+        say(msg, L('en.too_long', { max: NOTE_MAX_CHARS }), 'err');
+        return void area.focus();
+      }
+      save.disabled = true;
+      say(msg, L('act.working'));
+      try {
+        await deps.api('POST', `/v1/conversations/${conversation}/repairs`,
+          { kind: 'entity_note', item: entity, new_value: cleaned }, 15_000);
+        noteSaid = { entity, key: 'en.saved' };
+        say(msg, L('en.saved'), 'ok');
+        await showInspector();
+      } catch (error) {
+        say(msg, errorText(lang, error), 'err');
+        save.disabled = false;
+      }
+    });
+    if (row.note?.id) {
+      const noteId = row.note.id;
+      const del = el('button', { class: 'danger', text: L('en.delete') });
+      del.addEventListener('click', async () => {
+        del.disabled = true;
+        save.disabled = true;
+        say(msg, L('act.working'));
+        try {
+          await deps.api('POST', `/v1/conversations/${conversation}/repairs/${noteId}/remove`, {}, 15_000);
+          noteSaid = { entity, key: 'en.removed' };
+          say(msg, L('en.removed'), 'ok');
+          await showInspector();
+        } catch (error) {
+          say(msg, errorText(lang, error), 'err');
+          del.disabled = false;
+          save.disabled = false;
+        }
+      });
+      btns.append(del);
+    }
+    noteCard.replaceChildren(el('h2', { text: L('en.title', { n: row.name }) }),
+      el('p', { class: 'sub', text: L('en.sub') }), area, el('div', { class: 'note-meta' }, counter, btns), msg);
+    noteCard.style.display = '';
   }
   /** Said once in the pin card after the refresh that follows a pin or an unpin of that entity. */
   let pinSaid: { entity: string; key: StringKey } | null = null;
@@ -1803,6 +2095,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       return;
     }
     const { self, others } = choices;
+    const entityDest = (eid: string) =>
+      inspectorPath.startsWith('/v1/views/') ? `/v1/views/c/${conversation}/person/${eid}` : `/v1/inspector/c/${conversation}/e/${eid}`;
     const msg = el('div', { class: 'msg' });
     const rows: HTMLElement[] = [];
     for (const link of self.links ?? []) {
@@ -1824,7 +2118,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
           try {
             const now = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
             const next = entityNamed(now, self.type, self.name);
-            if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+            if (next && next.id !== entity) go(entityDest(next.id));
             else await showInspector();
           } catch { /* the undo stands; the page reports a failing sidecar itself */ }
           if (failed && reextract) {
@@ -1860,7 +2154,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
           const now = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
           const next = entityNamed(now, self.type, self.name);
           say(actionMsg, L('split.done', { a: alias.name, b: alias.other }), 'ok');
-          if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+          if (next && next.id !== entity) go(entityDest(next.id));
           else await showInspector();
         }));
       splits.push(el('div', { class: 'btns' }, el('span', { text: `${alias.name} ~ ${alias.other}` }), split), spot);
@@ -1876,7 +2170,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
         void withPreview(spot, join, `${path}/preview`, body, 'pv.confirm_join', async (expect) => {
           const r = await deps.api<{ entity: EntityRow | null }>('POST', path, { ...body, expect }, 15_000);
           say(actionMsg, L('link.done', { a: body.name, b: body.same_as }), 'ok');
-          if (r.entity && r.entity.id !== entity) go(`/v1/inspector/c/${conversation}/e/${r.entity.id}`);
+          if (r.entity && r.entity.id !== entity) go(entityDest(r.entity.id));
           else await showInspector();
         });
       });
@@ -1898,7 +2192,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     }
     // A line of a new screen shows its repair when tapped (PHASE-52 D2), not on every line at once.
     const row = clicked?.closest('.v-line');
-    if (row && !clicked?.closest('a, button, select, input, label, .rp')) return void row.classList.toggle('open');
+    if (row && !clicked?.closest('a, button, select, input, textarea, label, .rp')) return void row.classList.toggle('open');
     const choice = clicked?.closest('.tl-span[data-span]');
     const box = choice?.closest<HTMLElement>('.tl-lazy');
     if (choice && box) return void loadTimeline(box, choice.getAttribute('data-span') ?? '');
@@ -2093,20 +2387,67 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       factAddCard.replaceChildren(el('b', { text: L('fa.title') }), el('p', { class: 'sub', text: L('fa.no_msgs') }));
       return;
     }
-    const preds: [string, string, string | null][] = [
-      ['has_status', 'character', null], ['located_in', 'character', 'place'], ['identity', 'character', null],
-      ['has_trait', 'character', null], ['relationship', 'character', 'character'], ['role_toward', 'character', 'character'],
-      ['feels_toward', 'character', 'character'], ['addresses', 'character', 'character'], ['possesses', 'character', 'item'],
-      ['member_of', 'character', 'group'], ['knows', 'character', null], ['goal', 'character', null],
-      ['promised', 'character', 'character'], ['event', 'character', null], ['world_fact', 'concept', null],
+    interface FactPredSpec {
+      pred: string;
+      subjectTypes: readonly string[];
+      objectTypes: readonly string[] | null;
+      needsValue: boolean;
+    }
+    const preds: FactPredSpec[] = [
+      { pred: 'has_status', subjectTypes: ['character'], objectTypes: null, needsValue: true },
+      { pred: 'located_in', subjectTypes: ['character', 'item', 'group'], objectTypes: ['place'], needsValue: false },
+      { pred: 'identity', subjectTypes: ['character'], objectTypes: null, needsValue: true },
+      { pred: 'has_trait', subjectTypes: ['character'], objectTypes: null, needsValue: true },
+      { pred: 'relationship', subjectTypes: ['character'], objectTypes: ['character'], needsValue: true },
+      { pred: 'role_toward', subjectTypes: ['character'], objectTypes: ['character'], needsValue: true },
+      { pred: 'feels_toward', subjectTypes: ['character'], objectTypes: ['character'], needsValue: true },
+      { pred: 'addresses', subjectTypes: ['character'], objectTypes: ['character'], needsValue: true },
+      { pred: 'possesses', subjectTypes: ['character', 'group'], objectTypes: ['item'], needsValue: false },
+      { pred: 'destroyed', subjectTypes: ['item'], objectTypes: null, needsValue: true },
+      { pred: 'member_of', subjectTypes: ['character'], objectTypes: ['group'], needsValue: false },
+      { pred: 'knows', subjectTypes: ['character'], objectTypes: null, needsValue: true },
+      { pred: 'goal', subjectTypes: ['character', 'group'], objectTypes: null, needsValue: true },
+      { pred: 'question', subjectTypes: ['character', 'group'], objectTypes: null, needsValue: true },
+      { pred: 'threat', subjectTypes: ['character', 'group', 'place'], objectTypes: null, needsValue: true },
+      { pred: 'owes', subjectTypes: ['character', 'group'], objectTypes: ['character', 'group'], needsValue: true },
+      { pred: 'promised', subjectTypes: ['character'], objectTypes: ['character'], needsValue: true },
+      { pred: 'event', subjectTypes: ['character', 'place', 'item', 'group', 'concept'], objectTypes: null, needsValue: true },
+      { pred: 'world_fact', subjectTypes: ['item', 'place', 'group', 'concept'], objectTypes: null, needsValue: true },
     ];
     const msgSel = el('select', { 'aria-label': L('fa.msg') }, ...msgs.map((m) =>
       el('option', { value: m.host_logical_id, text: `t${m.turn} #${m.position} (${m.name || m.role}) ${m.preview.slice(0, 48)}` })));
-    const predSel = el('select', { 'aria-label': L('fa.pred') }, ...preds.map(([p]) => el('option', { value: p, text: p })));
+    const predSel = el('select', { 'aria-label': L('fa.pred') }, ...preds.map((spec) =>
+      el('option', { value: spec.pred, text: L(`fp.${spec.pred}` as StringKey) })));
+    const subjTypeSel = el('select', { 'aria-label': L('fa.subj_type') });
+    const objTypeSel = el('select', { 'aria-label': L('fa.obj_type') });
     const subj = el('input', { type: 'text', placeholder: L('fa.subj'), 'aria-label': L('fa.subj') });
     const obj = el('input', { type: 'text', placeholder: L('fa.obj'), 'aria-label': L('fa.obj') });
     const val = el('input', { type: 'text', placeholder: L('fa.val'), 'aria-label': L('fa.val') });
     const hid = el('input', { type: 'text', placeholder: L('fa.hidden'), 'aria-label': L('fa.hidden') });
+    const currentSpec = (): FactPredSpec => preds.find((x) => x.pred === predSel.value) ?? preds[0]!;
+    const syncPredFields = () => {
+      const spec = currentSpec();
+      const prevSubj = subjTypeSel.value;
+      subjTypeSel.replaceChildren(...spec.subjectTypes.map((t) =>
+        el('option', { value: t, text: L(`et.${t}` as StringKey) })));
+      subjTypeSel.value = spec.subjectTypes.includes(prevSubj) ? prevSubj : spec.subjectTypes[0]!;
+      subjTypeSel.style.display = spec.subjectTypes.length > 1 ? '' : 'none';
+      const hasObj = spec.objectTypes !== null && spec.objectTypes.length > 0;
+      obj.style.display = hasObj ? '' : 'none';
+      if (hasObj && spec.objectTypes) {
+        const prevObj = objTypeSel.value;
+        objTypeSel.replaceChildren(...spec.objectTypes.map((t) =>
+          el('option', { value: t, text: L(`et.${t}` as StringKey) })));
+        objTypeSel.value = spec.objectTypes.includes(prevObj) ? prevObj : spec.objectTypes[0]!;
+        objTypeSel.style.display = spec.objectTypes.length > 1 ? '' : 'none';
+      } else {
+        objTypeSel.replaceChildren();
+        objTypeSel.style.display = 'none';
+      }
+      val.style.display = spec.needsValue ? '' : 'none';
+    };
+    predSel.addEventListener('change', syncPredFields);
+    syncPredFields();
     const save = el('button', { class: 'primary', text: L('save') });
     const cancel = el('button', { text: L('cancel') });
     const formMsg = el('div', { class: 'msg' });
@@ -2114,13 +2455,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     save.addEventListener('click', async () => {
       const s = subj.value.trim();
       if (!s) return void say(formMsg, L('fa.need_subj'), 'err');
-      const spec = preds.find(([p]) => p === predSel.value) ?? preds[0]!;
-      const o = obj.value.trim() || null;
-      const v = val.value.trim() || null;
+      const spec = currentSpec();
+      const o = spec.objectTypes ? obj.value.trim() || null : null;
+      const v = spec.needsValue ? val.value.trim() || null : null;
       const hidden = hid.value.split(',').map((x) => x.trim()).filter(Boolean);
       const fact: Record<string, unknown> = {
-        predicate: spec[0], subject: s, subject_type: spec[1],
-        ...(o ? { object: o, object_type: spec[2] ?? 'character' } : {}),
+        predicate: spec.pred, subject: s, subject_type: subjTypeSel.value || spec.subjectTypes[0]!,
+        ...(o && spec.objectTypes ? { object: o, object_type: objTypeSel.value || spec.objectTypes[0]! } : {}),
         ...(v ? { value: v } : {}),
         ...(hidden.length ? { hidden_from: hidden } : {}),
       };
@@ -2139,8 +2480,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       }
     });
     factAddCard.replaceChildren(el('b', { text: L('fa.title') }),
-      el('div', { class: 'row' }, msgSel), el('div', { class: 'row' }, predSel),
-      el('div', { class: 'row' }, subj, obj), el('div', { class: 'row' }, val, hid),
+      el('div', { class: 'row' }, msgSel), el('div', { class: 'row' }, predSel, subjTypeSel),
+      el('div', { class: 'row' }, subj, objTypeSel, obj), el('div', { class: 'row' }, val, hid),
       el('div', { class: 'btns' }, save, cancel), formMsg);
   }
   const notesCache = new Map<string, NotesResult>();
@@ -3646,7 +3987,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     if (!viewsOn) return;
     const round = ++quickRound;
     const items: HTMLElement[] = [];
-    const workerReq = deps.api<unknown>('GET', '/v1/worker/status', undefined, 5000).catch(() => null);
+    const workerReq = fetchWorkerStatus();
     let s: StatusInfo | null = null;
     try { s = await deps.status(); } catch { s = null; }
     if (round !== quickRound) return;
@@ -3731,9 +4072,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const rawWorker = await workerReq;
     if (round !== quickRound || !homeQuickBar.isConnected || homeQuickBar.style.display === 'none') return;
     const wShown = workerLines(lang, rawWorker);
-    if (wShown.lines.length && (wShown.level === 'working' || wShown.level === 'trouble')) {
-      const ws = rawWorker as WorkerStatus;
-      const errIdx = ws.last_error && wShown.level === 'trouble' ? wShown.lines.length - 1 : -1;
+    const workerScope = s?.sidecarUrl ?? '';
+    const ws = rawWorker as WorkerStatus;
+    const dismissed = wShown.lines.length > 0 && wShown.level === 'trouble'
+      && isWorkerDismissed(ws, getWorkerDismissal(workerScope));
+    const effLevel = dismissed ? (ws.queued_total + ws.running > 0 ? 'working' : 'idle') : wShown.level;
+    if (wShown.lines.length && (effLevel === 'working' || effLevel === 'trouble')) {
+      const errIdx = ws.last_error && effLevel === 'trouble' ? wShown.lines.length - 1 : -1;
       const autoBtn = el('button', { class: `mini${workerAutoOn ? ' primary' : ''}`,
         text: L(workerAutoOn ? 'worker.auto_on' : 'worker.auto_off') });
       autoBtn.addEventListener('click', () => {
@@ -3752,7 +4097,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       callsBtn.addEventListener('click', () => openDiag('calls'));
       const actBtns: HTMLElement[] = [callsBtn];
       const cid = activeChatId ?? hubConversation;
-      if (wShown.level === 'trouble') {
+      if (effLevel === 'trouble') {
         if (cid && (ws.dead_recent > 0 || ws.retrying > 0)) {
           const retry = el('button', { class: 'primary mini', text: L('act.retry') });
           retry.addEventListener('click', () => void retryFrom(cid));
@@ -3760,18 +4105,24 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
         }
         const modelsBtn = el('button', { class: 'mini', text: L('worker.open_models') });
         modelsBtn.addEventListener('click', () => { selectPrimary('settings'); openGroup('models'); });
-        actBtns.push(modelsBtn);
+        const dismissBtn = el('button', { class: 'mini ghost', 'data-worker-dismiss': '1', text: L('worker.dismiss') });
+        dismissBtn.addEventListener('click', () => {
+          setWorkerDismissal(workerScope, workerDismissalOf(ws));
+          updateStatusPill(s, lastMeta);
+          void refreshHomeQuick();
+        });
+        actBtns.push(modelsBtn, dismissBtn);
       }
-      const wCard = el('div', { class: `worker-home${wShown.level === 'trouble' ? ' trouble' : ''}` },
+      const wCard = el('div', { class: `worker-home${effLevel === 'trouble' ? ' trouble' : ''}` },
         el('div', { class: 'worker-home-head' },
           el('span', { class: 'worker-home-title' },
-            el('span', { class: `dot ${wShown.level === 'trouble' ? 'warn' : 'ok'}` }),
+            el('span', { class: `dot ${effLevel === 'trouble' ? 'warn' : 'ok'}` }),
             el('span', { text: L('worker.title') })),
           el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, autoBtn, ...actBtns)),
         el('div', { class: 'worker-home-lines' },
           ...wShown.lines.map((line, i) => el('div', { class: i === errIdx ? 'warn' : 'muted', text: line }))));
       homeQuickBar.append(wCard);
-      if (wShown.level === 'trouble') updateStatusPill(s, { ...(lastMeta ?? {}), working: { state: 'failed', failed: ws.dead_recent + ws.retrying } });
+      if (effLevel === 'trouble') updateStatusPill(s, { ...(lastMeta ?? {}), working: { state: 'failed', failed: ws.dead_recent + ws.retrying } });
     } else {
       stopWorkerAuto();
     }
@@ -3781,8 +4132,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     activeMemSub = sub;
     const defs: { key: MemorySub; label: StringKey; ic: IconName; hide?: boolean }[] = [
       { key: 'story', label: 'mem.story', ic: 'book' },
-      { key: 'map', label: 'mem.map', ic: 'map', hide: !mapOn },
+      { key: 'explore', label: 'mem.explore', ic: 'search' },
       { key: 'attention', label: 'mem.attention', ic: 'alert' },
+      { key: 'map', label: 'mem.map', ic: 'map', hide: !mapOn },
       { key: 'diag', label: 'mem.diag', ic: 'terminal' },
     ];
     const tabsRow = el('div', { class: 'mem-subtabs' });
@@ -3834,13 +4186,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       return;
     }
     const target = sub === 'story' ? `/v1/views/c/${cid}/memory`
+      : sub === 'explore' ? `/v1/views/c/${cid}/explore`
+      : sub === 'attention' ? `/v1/views/c/${cid}/attention`
       : sub === 'map' ? `/v1/views/c/${cid}/map`
-      : sub === 'attention' ? `/v1/inspector/c/${cid}`
       : `/v1/views/c/${cid}/working`;
-    const section = sub === 'attention' ? 's-attention' : null;
-    if (pushHistory) go(target, section);
+    if (pushHistory) go(target, null);
     else {
-      pendingSection = section;
+      pendingSection = null;
       void showInspector(target);
     }
   }
@@ -3888,6 +4240,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const isPerson = /\/(person|e)\//.test(path);
     inspbar.style.display = visited.length || isPerson ? '' : 'none';
     if (path.includes('/memory')) renderMemSubBar('story', 'working');
+    else if (path.includes('/explore')) renderMemSubBar('explore', 'working');
+    else if (path.includes('/attention')) renderMemSubBar('attention', 'working');
     else if (path.includes('/map')) renderMemSubBar('map', 'working');
     else if (path.includes('/working')) renderMemSubBar('diag', 'working');
     else if (path.startsWith('/v1/inspector/calls')) renderMemSubBar('diag', 'calls');
@@ -4644,6 +4998,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
         : (chat ? `chat=${encodeURIComponent(chat)}` : ''),
       off ? 'off=true' : '',
       allOff ? 'all_off=true' : '',
+      viewsOn ? 'compact=1' : '',
     ].filter(Boolean).join('&');
     return `/v1/views/hub${q ? `?${q}` : ''}`;
   }

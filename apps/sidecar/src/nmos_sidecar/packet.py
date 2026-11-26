@@ -427,6 +427,8 @@ CARRY_POLICIES = frozenset({"packet-v20", "packet-v21"})  # a request reads the 
 # packet-v21 (PHASE-65): packet-v20 plus what only it does; every addition is gated on this set, so packet-v20
 # and every earlier policy compile exactly as they did (ADR 0027). Not the default until a replay measures it.
 V21_POLICIES = frozenset({"packet-v21"})
+# PHASE-70 (ADR 0096): owner entity notes (`entity_note`), mention-triggered under packet-v20/v21 (frozen pre-v20 untouched, as PIN_POLICIES)
+ENTITY_NOTE_POLICIES = frozenset({"packet-v20", "packet-v21"})
 # The Note marks only packet-v20 adds, each with the policies that may add it: an older policy's Note never says them
 _V20_MARKS = {BELIEF_MARK: V21_POLICIES, FORGOT_MARK: V21_POLICIES, PUBLIC_EXCEPT_MARK: V21_POLICIES,
               GUISE_MARK: V21_POLICIES,
@@ -589,7 +591,8 @@ def _label(ledger: list[dict[str, Any]], state: list[StateItem], story: list[Lin
             return "required" if '<Summary kind="story"' in line.xml else "supportive"
         if section in ("cast", "gone") or line.kind == "secret" or line.private:
             return "required"
-        ref = str(line.ref.get("assertion"))
+        aid = line.ref.get("assertion")
+        ref = str(aid if aid is not None else line.ref.get("repair"))
         return "required" if ref in named else ("risky" if ref in risky else "supportive")
 
     gone = gone or []
@@ -1028,8 +1031,9 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         blocked: set[int] = set()  # packet-v21: lines of a slot bundle that does not fit whole
 
         def skipped(n: int, line: Line) -> bool:
+            aid = line.ref.get("assertion")
             return (folded.get(start + n - base) is not None or (capped and id(line) not in admitted)
-                    or bool(in_cast and line.ref.get("assertion") in in_cast))
+                    or bool(in_cast and aid is not None and aid in in_cast))
 
         def bundle_cost(members: list[tuple[int, Line]]) -> int:
             """packet-v21: what a slot bundle's lines would cost placed one after another from here."""
@@ -1068,7 +1072,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
             if capped and id(line) not in admitted:  # beyond GONE_SHARE (packet-v20)
                 entry["why"] = "gone_cap"
                 continue
-            if in_cast and line.ref.get("assertion") in in_cast:  # packet-v21: <Cast> already placed it
+            if in_cast and line.ref.get("assertion") is not None and line.ref.get("assertion") in in_cast:  # packet-v21: <Cast> already placed it
                 entry["why"] = "in_cast"
                 continue
             hidden = privacy and line.private

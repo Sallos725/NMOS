@@ -480,6 +480,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "rk.told_retract": ("전달 철회", "retract a told line"),
     "rk.fact_hidden": ("비밀 대상 변경", "change hidden-from"),
     "rk.attention_dismiss": ("확인 표시 넘김", "dismiss attention item"),
+    "rk.entity_note": ("설명 메모", "entity note"),
+    "en.title": ("설명 메모", "Note"),
     "rs.applied": ("적용됨", "applied"), "rs.unmatched": ("지금 맞는 항목 없음", "matches nothing now"),
     "rs.removed": ("되돌림", "taken back"),
     "h.repair": ("수리", "Repair"), "h.target": ("대상", "Target"), "h.value": ("내용", "Value"), "h.made": ("만든 때", "Made"),
@@ -1568,12 +1570,13 @@ def _enc(text: str) -> str:
 
 
 def _corrections(f: dict[str, Any]) -> list[str]:
-    """The fields a correction of this fact can set, as the API checks them (ADR 0044 item 8): its object when its
-    predicate has one, its value when it needs or has one (a relationship: both)."""
+    """The fields a correction of this fact can set, as the API checks them (ADR 0044 item 8, PHASE-70): its holder
+    (`subject`) for `possesses`, its object when its predicate has one, its value when it needs or has one."""
     pred = READ_REGISTRY.get(f["predicate"])  # REGISTRY and extract-v21's own predicates, as `repairs` reads them
+    has_subject = f.get("predicate") == "possesses"
     has_object = pred.object_types is not None if pred is not None else bool(f.get("object"))
     has_value = (pred.needs_value if pred is not None else False) or bool(f.get("value"))
-    return (["object"] if has_object else []) + (["value"] if has_value else [])
+    return (["subject"] if has_subject else []) + (["object"] if has_object else []) + (["value"] if has_value else [])
 
 
 def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: int | None, lang: str) -> list[list[str]]:
@@ -1661,7 +1664,7 @@ def _repair_target(rep: dict[str, Any]) -> str:
     t = rep["target"] or {}
     if rep["kind"] == "name_split":
         return _v(f"{t.get('name')} ≠ {t.get('other')}")
-    if rep["kind"] in ("entity_exclude", "entity_pin"):
+    if rep["kind"] in ("entity_exclude", "entity_pin", "entity_note"):
         return _v(t.get("name"))
     if rep["kind"].startswith("thread_"):
         text = _who_to(t) + f": {t.get('text')}"
@@ -1677,9 +1680,11 @@ def _repair_value(rep: dict[str, Any], lang: str) -> str:
         parts.append(chip(lang, "ex", (rep.get("target") or {}).get("scope") or "cast"))
         if rep.get("hidden"):
             parts.append(f"<span class=\"muted\">{_v(_t(lang, 'ex.hidden').format(n=rep['hidden']))}</span>")
+    if rep["kind"] == "entity_note" and v.get("text"):
+        parts.append(_v(v["text"]))
     if v.get("outcome"):
         parts.append(chip(lang, "t", v["outcome"]))
-    for k in ("object", "value"):
+    for k in ("subject", "object", "value"):
         if v.get(k):
             parts.append(f"→ {_v(v[k])}")
     if v.get("character"):
@@ -2175,10 +2180,12 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
                      [[_v(fact_line_text(f)), _knowledge(f, lang), _turn(f)] for f in rows]) \
             + f"<p class=\"muted\">{t('knows_note')}</p>"
 
+    ent_note = next((n for n in view.get("entity_notes") or () if str(n["entity_id"]) == str(entity_id)), None)
+    note_html = f"<p><b>{_v(t('en.title'))}</b>: {_v(ent_note['text'])}</p>" if ent_note else ""
     parts: list[Section] = [("profile", t("profile"), None, table(
         [t("h.type"), t("h.names"), t("h.mentions"), t("h.alias_turns"), t("h.owner_links")],
         [[chip(lang, "e", entity["type"]), _v(" · ".join(entity["names"])), _v(entity["mentions"]),
-          _v(", ".join(str(a["turn"]) for a in entity["aliases"])), _owner_links(entity)]]) + _not_a_character(entity, view, lang),
+          _v(", ".join(str(a["turn"]) for a in entity["aliases"])), _owner_links(entity)]]) + note_html + _not_a_character(entity, view, lang),
         True)]
     if not embed and entity["type"] == "character":  # PHASE-32
         parts.append(("timeline", t("timeline"), None, timeline.character(

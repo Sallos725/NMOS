@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:91cfb26a3199".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:b709c0279a4a".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -888,12 +888,53 @@ ${part}`;
     "fa.title": ["\uBE60\uC9C4 \uC0AC\uC2E4 \uC9C1\uC811 \uCD94\uAC00", "Add a missed fact"],
     "fa.msg": ["\uAE30\uC900 \uBA54\uC2DC\uC9C0", "Source message"],
     "fa.pred": ["\uC885\uB958", "Predicate"],
+    "fa.subj_type": ["\uC8FC\uCCB4 \uC885\uB958", "Subject type"],
+    "fa.obj_type": ["\uB300\uC0C1 \uC885\uB958", "Object type"],
     "fa.subj": ["\uC8FC\uCCB4 (\uB204\uAC00/\uBB34\uC5C7\uC774)", "Subject"],
     "fa.obj": ["\uB300\uC0C1 (\uC0C1\uB300/\uC7A5\uC18C/\uBB3C\uAC74)", "Object (optional)"],
     "fa.val": ["\uAC12 (\uB0B4\uC6A9/\uC0C1\uD0DC)", "Value (optional)"],
     "fa.hidden": ["\uC228\uAE38 \uC778\uBB3C (\uC27C\uD45C\uB85C \uAD6C\uBD84, \uC120\uD0DD)", "Hidden from (comma-separated, optional)"],
     "fa.no_msgs": ["\uCD94\uAC00\uD560 \uBA54\uC2DC\uC9C0\uAC00 \uC544\uC9C1 \uC5C6\uC5B4\uC694.", "No messages available yet."],
     "fa.need_subj": ["\uC8FC\uCCB4\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.", "Enter a subject."],
+    "et.character": ["\uC778\uBB3C", "Character"],
+    "et.place": ["\uC7A5\uC18C", "Place"],
+    "et.item": ["\uC544\uC774\uD15C", "Item"],
+    "et.group": ["\uC9D1\uB2E8", "Group"],
+    "et.concept": ["\uAC1C\uB150", "Concept"],
+    "fp.has_status": ["\uC0C1\uD0DC (has_status)", "Status (has_status)"],
+    "fp.located_in": ["\uC704\uCE58 (located_in)", "Location (located_in)"],
+    "fp.identity": ["\uC815\uCCB4\xB7\uC9C1\uC5C5 (identity)", "Identity (identity)"],
+    "fp.has_trait": ["\uD2B9\uC9D5\xB7\uC678\uBAA8 (has_trait)", "Trait (has_trait)"],
+    "fp.relationship": ["\uAD00\uACC4 (relationship)", "Relationship (relationship)"],
+    "fp.role_toward": ["\uC5ED\uD560 \uAD00\uACC4 (role_toward)", "Role toward (role_toward)"],
+    "fp.feels_toward": ["\uAC10\uC815 (feels_toward)", "Feeling (feels_toward)"],
+    "fp.addresses": ["\uD638\uCE6D\xB7\uB9D0\uD22C (addresses)", "Form of address (addresses)"],
+    "fp.possesses": ["\uC18C\uC9C0\uD488 (possesses)", "Possesses item (possesses)"],
+    "fp.destroyed": ["\uC544\uC774\uD15C \uD30C\uC190\xB7\uC18C\uC2E4 (destroyed)", "Item destroyed (destroyed)"],
+    "fp.member_of": ["\uC18C\uC18D (member_of)", "Member of (member_of)"],
+    "fp.knows": ["\uC54C\uACE0 \uC788\uC74C\xB7\uBE44\uBC00 (knows)", "Knows / secret (knows)"],
+    "fp.goal": ["\uBAA9\uD45C (goal)", "Goal (goal)"],
+    "fp.question": ["\uC758\uBB38\xB7\uBBF8\uC2A4\uD130\uB9AC (question)", "Question (question)"],
+    "fp.threat": ["\uC704\uD611 (threat)", "Threat (threat)"],
+    "fp.owes": ["\uBE5A\xB7\uC2E0\uC138 (owes)", "Owes (owes)"],
+    "fp.promised": ["\uC57D\uC18D (promised)", "Promise (promised)"],
+    "fp.event": ["\uC0AC\uAC74 (event)", "Event (event)"],
+    "fp.world_fact": ["\uC138\uACC4\xB7\uAC1D\uCCB4 \uC0AC\uC2E4 (world_fact)", "World / object fact (world_fact)"],
+    "rp.entity_note": ["\uC124\uBA85 \uBA54\uBAA8", "Note"],
+    "rp.entity_note_add": ["\uBA54\uBAA8 \uCD94\uAC00", "Add note"],
+    "rp.entity_note_edit": ["\uBA54\uBAA8 \uC218\uC815", "Edit note"],
+    "en.title": ["{n} \uC124\uBA85 \uBA54\uBAA8", "Note for {n}"],
+    "en.sub": [
+      "\uC678\uAD00\xB7\uC7AC\uC9C8\xB7\uD2B9\uC9D5 \uAC19\uC740 \uAE30\uC900 \uC124\uBA85\uC744 \uC9E7\uAC8C \uC801\uC5B4 \uB450\uBA74(\uCD5C\uB300 300\uC790), \uB300\uD654\uC5D0 \uC774 \uB300\uC0C1\uC774\uB098 \uBCC4\uCE6D\uC774 \uC5B8\uAE09\uB420 \uB54C\uB9CC \uAE30\uC5B5\uC5D0 \uC790\uB3D9\uC73C\uB85C \uB4E4\uC5B4\uAC11\uB2C8\uB2E4. \uC5B8\uAE09\uB418\uC9C0 \uC54A\uC740 \uD134\uC5D0\uB294 \uD1A0\uD070\uC744 \uC4F0\uC9C0 \uC54A\uC73C\uBA70, \uAE30\uC5B5 \uC7AC\uAD6C\uCD95 \uB4A4\uC5D0\uB3C4 \uB0A8\uC2B5\uB2C8\uB2E4.",
+      "Write a short reference description (up to 300 chars): appearance, material, or traits. It is injected into memory only when this entity or an alias is mentioned (zero cost otherwise), and survives rebuilds."
+    ],
+    "en.placeholder": ["\uC678\uAD00, \uC7AC\uC9C8, \uD2B9\uC9D5, \uC124\uC815 \uBA54\uBAA8 (\uCD5C\uB300 300\uC790)", "Appearance, material, traits or reference note (max 300 chars)"],
+    "en.count": ["{n} / {max}\uC790", "{n} / {max} chars"],
+    "en.saved": ["\uC124\uBA85 \uBA54\uBAA8\uB97C \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.", "Saved the note."],
+    "en.removed": ["\uC124\uBA85 \uBA54\uBAA8\uB97C \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4.", "Deleted the note."],
+    "en.delete": ["\uBA54\uBAA8 \uC0AD\uC81C", "Delete note"],
+    "en.empty": ["\uBA54\uBAA8 \uB0B4\uC6A9\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694.", "Write the note text."],
+    "en.too_long": ["\uC124\uBA85\uC740 \uCD5C\uB300 {max}\uC790\uAE4C\uC9C0 \uC801\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", "Notes can be at most {max} characters."],
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
     "rp.undo_batch": ["\uC804\uBD80 \uB418\uB3CC\uB9AC\uAE30", "Undo all"],
     "rp.fact_correct_lock": ["\uC6D0\uC804 \uC815\uC815({n})", "Correct the setting {n}"],
@@ -944,6 +985,7 @@ ${part}`;
     "rp.turn": ["\uC801\uC6A9 \uD134", "From turn"],
     "rp.turn_hint": ["\uD134 (\uBE44\uC6B0\uBA74 \uADF8 \uC0AC\uC2E4\uC758 \uD134)", "turn (empty: the fact's)"],
     "rp.bad_turn": ["\uD134\uC740 0 \uC774\uC0C1\uC758 \uC815\uC218\uC785\uB2C8\uB2E4.", "A turn is a whole number, 0 or more."],
+    "rp.field_subject": ["\uC8FC\uCCB4/\uC18C\uC720\uC790", "subject"],
     "rp.field_object": ["\uB300\uC0C1", "object"],
     "rp.field_value": ["\uAC12", "value"],
     "split.title": ["\uC798\uBABB \uD569\uCCD0\uC9C4 \uC774\uB984 \uB098\uB204\uAE30", "Split names joined by mistake"],
@@ -1324,26 +1366,46 @@ ${part}`;
     "home.chat_on_badge": ["\uC774 \uCC44\uD305 \uAE30\uC5B5 ON", "Memory ON"],
     "home.chat_off_badge": ["\uC774 \uCC44\uD305 \uAE30\uC5B5 OFF", "Memory OFF"],
     "home.all_off_badge": ["\uC804\uCCB4 \uAE30\uC5B5 \uAEBC\uC9D0", "All memory OFF"],
-    "mem.story": ["\uC2A4\uD1A0\uB9AC \uBB38\uC11C", "Story document"],
+    "mem.story": ["\uC694\uC57D", "Summary"],
     "mem.story_sub": [
-      "\uD604\uC7AC \uC7A5\uBA74, \uC9C4\uD589 \uC911\uC778 \uB5A1\uBC25, \uC124\uC815 \uBCC0\uACBD\uACFC \uC778\uBB3C \uC694\uC57D\uC744 \uBB38\uC11C\uCC98\uB7FC \uC77D\uACE0 \uBC14\uB85C \uC218\uC815\uD569\uB2C8\uB2E4.",
-      "Read the current scene, open threads, setting changes and cast like a document, and fix lines inline."
+      "\uD604\uC7AC \uC7A5\uBA74, \uC5F4\uB9B0 \uC77C, \uC9C0\uAE08\uAE4C\uC9C0\uC758 \uC904\uAC70\uB9AC\uC640 \uBC14\uB010 \uC124\uC815\uC744 \uD55C\uB208\uC5D0 \uD6D1\uC5B4\uBD05\uB2C8\uB2E4.",
+      "Quick narrative overview: current scene, open threads, story so far, and setting changes."
     ],
-    "mem.map": ["\uC778\uBB3C \xB7 \uAD00\uACC4\uB3C4", "Cast & Map"],
+    "mem.explore": ["\uD0D0\uC0C9 \xB7 \uC218\uC815", "Explore & edit"],
+    "mem.explore_sub": [
+      "\uBAA8\uB4E0 \uC0AC\uC2E4, \uAD00\uACC4\xB7\uD638\uCE6D, \uC57D\uC18D\xB7\uBAA9\uD45C, \uBE44\uBC00, \uC544\uC774\uD15C, \uC778\uBB3C, \uCE74\uB4DC\xB7\uB85C\uC5B4\uBD81 \uC124\uC815\uC744 \uAC80\uC0C9\uD558\uACE0 \uBC14\uB85C \uC218\uC815\uD569\uB2C8\uB2E4.",
+      "Search and edit all facts, relationships, promises, secrets, items, people, and card/lorebook entries."
+    ],
+    "mem.map": ["\uAD00\uACC4\uB3C4", "Map"],
     "mem.map_sub": [
-      "\uB4F1\uC7A5\uC778\uBB3C \uAC04\uC758 \uAD00\uACC4\uC640 \uC0AC\uAC74\uC758 \uCD9C\uCC98(\uC124\uC815 vs \uC774\uC57C\uAE30)\uB97C \uD55C\uB208\uC5D0 \uD0D0\uC0C9\uD569\uB2C8\uB2E4.",
+      "\uC778\uBB3C\xB7\uB300\uC0C1 \uAC04\uC758 \uAD00\uACC4\uC640 \uC0AC\uAC74\uC758 \uCD9C\uCC98(\uC124\uC815 vs \uC774\uC57C\uAE30)\uB97C \uD55C\uB208\uC5D0 \uD0D0\uC0C9\uD569\uB2C8\uB2E4.",
       "Explore character ties, places, and what came from the setting versus the story."
     ],
     "mem.attention": ["\uD655\uC778 \uD544\uC694", "Needs attention"],
     "mem.attention_sub": [
-      "\uC124\uC815\uC774 \uCDA9\uB3CC\uD558\uAC70\uB098 \uC624\uB798\uB41C \uB5A1\uBC25, \uBCF4\uB958\uB41C \uBCC4\uCE6D\uC744 \uAC80\uD1A0\uD558\uACE0 \uC77C\uAD04 \uC815\uB9AC\uD569\uB2C8\uB2E4.",
-      "Review conflicts, stale threads, and held aliases, and settle them in bulk."
+      "\uD655\uC778\uC774 \uD544\uC694\uD55C \uD56D\uBAA9, \uC124\uC815 \uCDA9\uB3CC, \uC9C1\uC811 \uC218\uC815\uD55C \uAE30\uB85D\uC744 \uD55C\uACF3\uC5D0\uC11C \uAC80\uD1A0\uD558\uACE0 \uC77C\uAD04 \uC815\uB9AC\uD569\uB2C8\uB2E4.",
+      "Review flagged items, conflicts, and your direct edits in one focused place."
     ],
-    "mem.diag": ["\uC6D0\uBCF8 \xB7 \uC9C4\uB2E8", "Working & Raw"],
+    "mem.diag": ["\uC9C4\uB2E8", "Diagnostics"],
     "mem.diag_sub": [
-      "\uBC31\uADF8\uB77C\uC6B4\uB4DC \uCD94\uCD9C\xB7\uC784\uBCA0\uB529 \uC9C4\uD589 \uC0C1\uD0DC, \uC2E4\uD328\uD55C \uC791\uC5C5 \uC7AC\uC2DC\uB3C4, \uC6D0\uBCF8 \uC778\uC2A4\uD399\uD130\uB97C \uD655\uC778\uD569\uB2C8\uB2E4.",
-      "Check extraction and embedding progress, retry failed jobs, or inspect raw memory records."
+      "\uBC31\uADF8\uB77C\uC6B4\uB4DC \uCC98\uB9AC \uC0C1\uD0DC, \uBC29\uAE08 \uB2F5\uC7A5\uC5D0 \uB4E4\uC5B4\uAC04 \uAE30\uC5B5, \uBAA8\uB378 \uD638\uCD9C \uB85C\uADF8, \uC6D0\uBCF8 \uC778\uC2A4\uD399\uD130\uB97C \uD655\uC778\uD569\uB2C8\uB2E4.",
+      "Check processing status, memory sent in the last reply, model calls, and the raw inspector."
     ],
+    // PHASE-69 S1: Memory Explorer toolbar & category labels
+    "exp.search": ["\uC0AC\uC2E4, \uC778\uBB3C, \uC57D\uC18D, \uBE44\uBC00, \uB85C\uC5B4\uBD81 \uAC80\uC0C9\u2026", "Search facts, people, promises, secrets, lorebook\u2026"],
+    "exp.who_all": ["\uC804\uCCB4 \uC778\uBB3C", "All people"],
+    "exp.who_label": ["\uC778\uBB3C \uD544\uD130", "Filter by person"],
+    "exp.include_canon": ["\uCE74\uB4DC\xB7\uB85C\uC5B4\uBD81 \uC124\uC815 \uD3EC\uD568 ({n})", "Include setting facts ({n})"],
+    "exp.add_fact": ["+ \uC0AC\uC2E4 \uCD94\uAC00", "+ Add fact"],
+    "exp.empty": ["\uC870\uAC74\uC5D0 \uB9DE\uB294 \uAE30\uC5B5 \uD56D\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No memory items match the current filters."],
+    "exp.cat_all": ["\uC804\uCCB4", "All"],
+    "exp.cat_facts": ["\uC0AC\uC2E4", "Facts"],
+    "exp.cat_pairs": ["\uAD00\uACC4 \xB7 \uD638\uCE6D", "Relationships"],
+    "exp.cat_threads": ["\uC57D\uC18D \xB7 \uBAA9\uD45C", "Promises & goals"],
+    "exp.cat_epistemic": ["\uBE44\uBC00 \xB7 \uBBFF\uC74C", "Secrets & beliefs"],
+    "exp.cat_items": ["\uC544\uC774\uD15C", "Items"],
+    "exp.cat_entities": ["\uC778\uBB3C \xB7 \uB300\uC0C1", "People & entities"],
+    "exp.cat_canon": ["\uCE74\uB4DC \xB7 \uB85C\uC5B4\uBD81", "Card & lorebook"],
     "mem.diag_working": ["\uCC98\uB9AC \uC0C1\uD0DC", "Working status"],
     "mem.diag_raw": ["\uC6D0\uBCF8 \uC778\uC2A4\uD399\uD130", "Raw inspector"],
     "mem.no_chat": ["\uBA3C\uC800 \uC0C1\uB2E8\uC5D0\uC11C \uCC44\uD305\uC744 \uC120\uD0DD\uD558\uAC70\uB098 \uD648\uC5D0\uC11C \uB300\uD654\uB97C \uC5F4\uC5B4 \uC8FC\uC138\uC694.", "Select a chat from the top switcher or open one from Home."],
@@ -1567,6 +1629,7 @@ ${part}`;
     "worker.auto_on": ["\uC790\uB3D9 \uAC31\uC2E0 ON", "Auto-refresh ON"],
     "worker.auto_off": ["\uC790\uB3D9 \uAC31\uC2E0 OFF", "Auto-refresh OFF"],
     "worker.open_models": ["\uBAA8\uB378 \uC124\uC815", "Model settings"],
+    "worker.dismiss": ["\uACBD\uACE0 \uBB34\uC2DC", "Dismiss warning"],
     "mem.diag_calls": ["\uBAA8\uB378 \uD638\uCD9C", "Model calls"],
     "calls.filter_all": ["\uC804\uCCB4 ({n})", "All ({n})"],
     "calls.filter_fail": ["\uC2E4\uD328\uB9CC ({n})", "Failed only ({n})"],
@@ -4139,6 +4202,10 @@ ${GUARD_LINE}` : "";
     ],
     check: [
       ["polyline", { points: "20 6 9 17 4 12" }]
+    ],
+    search: [
+      ["circle", { cx: "11", cy: "11", r: "7" }],
+      ["line", { x1: "20", y1: "20", x2: "16.65", y2: "16.65" }]
     ]
   };
   function icon(name, size = 16, cls = "ic") {
@@ -4188,18 +4255,18 @@ ${GUARD_LINE}` : "";
   function inspectorApiPath(href) {
     const m = new RegExp(`^/inspector(/calls|/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
     if (m) return `/v1/inspector${m[1] ?? ""}`;
-    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|${MAP}|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, "i").exec(href ?? "");
+    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|explore|attention|working|${MAP}|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, "i").exec(href ?? "");
     return v ? `/v1/views${v[1]}` : null;
   }
   function inspectorConversation(path) {
-    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|working|${MAP}|person/${UUID})$`, "i").exec(path);
+    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|explore|attention|working|${MAP}|person/${UUID})$`, "i").exec(path);
     return m ? m[1] : null;
   }
   function inspectorEntity(path) {
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/person/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|undo_batch|alias_join|branch_inherit|told_retract|fact_hidden|attention_dismiss|fact_add):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|entity_note|undo|undo_batch|alias_join|branch_inherit|told_retract|fact_hidden|attention_dismiss|fact_add):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
   var BULK_KINDS = /* @__PURE__ */ new Set(["thread_close", "fact_retract", "fact_lock", "fact_restore", "state_dismiss", "attention_dismiss"]);
   var ID2 = /^-?[0-9a-f-]{1,64}$/;
   function bulkRequest(raw) {
@@ -4308,6 +4375,13 @@ ${GUARD_LINE}` : "";
         return PERCENT.test(value);
       case "data-span":
         return value === "" || value === "recent";
+      // PHASE-69 S1: safe read-only filter metadata for the Memory Explorer (never rendered as markup)
+      case "data-cat":
+        return /^[a-z]{1,20}$/.test(value);
+      case "data-who":
+        return value.length <= 240 && !/[\u0000-\u001f\u007f]/.test(value);
+      case "data-canon":
+        return value === "1";
       default:
         return MARK_TEXT.has(name) && value.length <= MARK_TEXT_MAX;
     }
@@ -4869,6 +4943,71 @@ ${GUARD_LINE}` : "";
   }
 
   // src/workertext.ts
+  var DISMISS_KEY = "nmos_worker_dismiss_v1";
+  function workerDismissalOf(s) {
+    const calls2 = validCalls(s.calls);
+    return {
+      lastErrorAt: s.last_error?.at ?? null,
+      dead: s.dead_recent,
+      retrying: s.retrying,
+      callsFailed: calls2 ? calls2.failed : 0
+    };
+  }
+  function isWorkerDismissed(s, dismissed) {
+    if (!dismissed) return false;
+    if (s.dead_recent > dismissed.dead) return false;
+    if (s.retrying > dismissed.retrying) return false;
+    const calls2 = validCalls(s.calls);
+    if ((calls2 ? calls2.failed : 0) > dismissed.callsFailed) return false;
+    if (s.last_error) {
+      if (!dismissed.lastErrorAt) return false;
+      const curAt = Date.parse(s.last_error.at);
+      const oldAt = Date.parse(dismissed.lastErrorAt);
+      if (Number.isNaN(curAt) || Number.isNaN(oldAt) || curAt > oldAt) return false;
+    }
+    return true;
+  }
+  function validDismissal(raw) {
+    if (!isObject(raw)) return false;
+    if (raw.lastErrorAt !== null && (typeof raw.lastErrorAt !== "string" || Number.isNaN(Date.parse(raw.lastErrorAt)))) {
+      return false;
+    }
+    return isCount(raw.dead) && isCount(raw.retrying) && isCount(raw.callsFailed);
+  }
+  function loadWorkerDismissal(scope, storage) {
+    try {
+      const raw = (storage ?? globalThis.localStorage)?.getItem(DISMISS_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!isObject(parsed)) return null;
+      const entry = parsed[scope || "_"];
+      return validDismissal(entry) ? entry : null;
+    } catch {
+      return null;
+    }
+  }
+  function saveWorkerDismissal(scope, value, storage) {
+    try {
+      const store = storage ?? globalThis.localStorage;
+      if (!store) return;
+      let map = {};
+      try {
+        const prev = JSON.parse(store.getItem(DISMISS_KEY) ?? "{}");
+        if (isObject(prev)) {
+          for (const [k, v] of Object.entries(prev)) {
+            if (validDismissal(v)) map[k] = v;
+          }
+        }
+      } catch {
+        map = {};
+      }
+      const key = scope || "_";
+      if (value) map[key] = value;
+      else delete map[key];
+      store.setItem(DISMISS_KEY, JSON.stringify(map));
+    } catch {
+    }
+  }
   var KINDS2 = /* @__PURE__ */ new Set(["extract", "reveal", "summarize", "canon", "embed"]);
   var COUNTS = ["queued_total", "running", "retrying", "dead_recent", "done_recent", "recent_minutes", "dead_hours"];
   var isCount = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0;
@@ -5269,6 +5408,11 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp span.rp{display:inline-flex;flex-wrap:wrap;align-items:center;gap:5px;margin-left:6px;vertical-align:middle}
 .nmos .insp span.rp input,.nmos .insp span.rp select{width:auto;padding:3px 7px;font-size:13px;border-radius:6px}
 .nmos .insp span.rp input[type=text]{width:12em}.nmos .insp span.rp input.turn{width:7em}
+.nmos .insp .rp-note-form{display:flex;flex-direction:column;gap:6px;min-width:240px;width:100%;margin-top:4px}
+.nmos .insp .rp-note-form textarea{min-height:64px;font-family:inherit;font-size:13.5px;line-height:1.45;padding:7px 10px}
+.nmos .note-card textarea{min-height:76px;font-family:inherit;font-size:14px;line-height:1.5}
+.nmos .note-meta{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12.5px;color:var(--c-text-muted)}
+.nmos .note-meta .btns{margin-top:0}
 .nmos button.mini{padding:4px 9px;font-size:12.5px;border-radius:6px}
 .nmos .groups{display:flex;flex-direction:column;gap:8px;margin:8px 0}
 .nmos .groups button.group{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:14px 16px;border-radius:12px;font-size:16px}
@@ -5351,7 +5495,16 @@ html,body{margin:0;background:${PALETTE.bg}}
   .nmos .settings-shell .grp-label{width:100%;padding:4px 4px 2px}
   .nmos .settings-shell .groups button.group{padding:7px 10px;font-size:13px}
 }
+/* PHASE-69: Memory Explorer filter toolbar */
+.nmos .exp-toolbar{padding:12px 14px;border-radius:12px;background:var(--c-surface);border:1px solid var(--c-line);display:flex;flex-direction:column;gap:10px}
+.nmos .exp-toolbar .filter-chips{margin:0}
+.nmos .exp-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.nmos .exp-controls input[type=search]{flex:1 1 200px;min-width:140px;padding:7px 11px;font-size:13.5px}
+.nmos .exp-controls select.exp-who{flex:0 1 170px;min-width:120px;width:auto;padding:7px 10px;font-size:13.5px}
+.nmos .exp-add{margin-left:auto;white-space:nowrap}
+.nmos .exp-empty{margin:10px 0;padding:22px 14px;text-align:center;color:var(--c-text-muted);font-size:14px;border:1px dashed var(--c-line-strong);border-radius:11px;background:var(--c-sunken)}
 @media (max-width: 720px){
+  .nmos .exp-add{margin-left:0;flex:1 1 auto}
   .nmos.shell-on .wrap{padding:12px 12px 84px}
   .nmos .nmos-topbar-in{padding:8px 12px;gap:8px}
   .nmos .nmos-nav{display:none}
@@ -5512,10 +5665,17 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     let usageRound = 0;
     let workerRound = 0;
+    async function fetchWorkerStatus() {
+      try {
+        return await deps.api("GET", "/v1/worker/status", void 0, 5e3);
+      } catch {
+        return null;
+      }
+    }
     async function refreshStatus() {
       statusView.replaceChildren(el("div", { class: "card muted", text: L("status.checking") }));
       const round = ++workerRound;
-      const worker = workerCard();
+      const workerReq = fetchWorkerStatus();
       const s = await deps.status();
       const base = s.sidecarUrl.replace(/\/+$/, "");
       const conn = el("div", { class: "card" }, el("h2", { text: L("status.sidecar") }));
@@ -5691,26 +5851,42 @@ html,body{margin:0;background:${PALETTE.bg}}
       const refresh = el("button", { text: L("refresh") });
       refresh.addEventListener("click", () => void refreshStatus());
       statusView.replaceChildren(...cards, el("div", { class: "btns" }, refresh));
-      void worker.then((card) => {
+      void workerReq.then((raw) => {
+        const card = buildWorkerCard(raw, s.sidecarUrl);
         if (card && s.connected && round === workerRound && conn.isConnected) conn.after(card);
       });
     }
-    async function workerCard() {
-      let raw;
-      try {
-        raw = await deps.api("GET", "/v1/worker/status", void 0, 5e3);
-      } catch {
-        return null;
-      }
+    const workerDismissMem = /* @__PURE__ */ new Map();
+    function getWorkerDismissal(scope) {
+      return workerDismissMem.get(scope) ?? loadWorkerDismissal(scope);
+    }
+    function setWorkerDismissal(scope, d) {
+      if (d) workerDismissMem.set(scope, d);
+      else workerDismissMem.delete(scope);
+      saveWorkerDismissal(scope, d);
+    }
+    function buildWorkerCard(raw, scope) {
       const { level, lines } = workerLines(lang, raw);
       if (!lines.length) return null;
-      const errorLine = raw.last_error && level === "trouble" ? lines.length - 1 : -1;
-      return el(
+      const ws = raw;
+      const dismissed = level === "trouble" && isWorkerDismissed(ws, getWorkerDismissal(scope));
+      const effLevel = dismissed ? ws.queued_total + ws.running > 0 ? "working" : "idle" : level;
+      const errorLine = ws.last_error && effLevel === "trouble" ? lines.length - 1 : -1;
+      const card = el(
         "div",
         { class: "card" },
         el("h2", { text: L("worker.title") }),
         ...lines.map((text2, i) => el("div", { class: i === errorLine ? "warn" : "muted", text: text2 }))
       );
+      if (effLevel === "trouble") {
+        const dismissBtn = el("button", { class: "mini ghost", text: L("worker.dismiss") });
+        dismissBtn.addEventListener("click", () => {
+          setWorkerDismissal(scope, workerDismissalOf(ws));
+          card.remove();
+        });
+        card.append(el("p", { class: "btns" }, dismissBtn));
+      }
+      return card;
     }
     async function chatCard(enabled2, connected) {
       const card = el("div", { class: "card" }, el("h2", { text: L("chat.title") }));
@@ -5837,6 +6013,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("details", { class: "sub help" }, el("summary", { text: L("act.help") }), el("p", { text: L("act.sub") }))
     );
     const linkCard = el("div", { class: "card", style: "display:none" });
+    const noteCard = el("div", { class: "card note-card", style: "display:none" });
     const pinCard = el("div", { class: "card", style: "display:none" });
     const modeCard = el("div", { class: "card", style: "display:none" });
     const statusCard = el("div", { id: "nmos-status-windows", class: "card", style: "display:none" });
@@ -5870,6 +6047,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       bulkBar,
       modeCard,
       statusCard,
+      noteCard,
       pinCard,
       linkCard,
       inspectorBody,
@@ -5936,13 +6114,15 @@ html,body{margin:0;background:${PALETTE.bg}}
     function repairControls(action) {
       if (action.kind === "thread_close") return closeControls(action);
       const field2 = (action.extra ?? "").split(".")[0];
-      const n = action.kind === "fact_correct" ? L(field2 === "object" ? "rp.field_object" : "rp.field_value") : action.extra ?? "";
-      const label = action.kind === "fact_correct" && action.extra?.endsWith(".lock") ? "rp.fact_correct_lock" : `rp.${action.kind}`;
+      const fieldKey = field2 === "subject" ? "rp.field_subject" : field2 === "object" ? "rp.field_object" : "rp.field_value";
+      const n = action.kind === "fact_correct" ? L(fieldKey) : action.extra ?? "";
+      const label = action.kind === "fact_correct" && action.extra?.endsWith(".lock") ? "rp.fact_correct_lock" : action.kind === "entity_note" ? action.extra === "edit" ? "rp.entity_note_edit" : "rp.entity_note_add" : `rp.${action.kind}`;
       const button = el("button", { class: "mini", text: L(label, { n }) });
       const spot = el("div");
       button.addEventListener("click", () => {
         if (action.kind === "fact_correct") correctForm(action, button);
         else if (action.kind === "fact_hidden") hiddenForm(action, button);
+        else if (action.kind === "entity_note") noteForm(action, button);
         else if (action.kind === "branch_inherit") void branchInherit(action, button, spot);
         else if (action.kind === "undo" && (action.extra === "name_split" || action.extra === "entity_exclude")) {
           void undoSplit(action, button, spot);
@@ -6004,7 +6184,9 @@ html,body{margin:0;background:${PALETTE.bg}}
     function correctForm(action, button) {
       const spot = button.parentElement;
       if (!spot) return;
-      const field2 = (action.extra ?? "").split(".")[0] === "object" ? "object" : "value";
+      const rawField = (action.extra ?? "").split(".")[0];
+      const field2 = rawField === "subject" ? "subject" : rawField === "object" ? "object" : "value";
+      const bodyKey3 = field2 === "subject" ? "new_subject" : field2 === "object" ? "new_object" : "new_value";
       const text2 = el("input", {
         type: "text",
         placeholder: L("rp.correct_prompt", { f: L(`rp.field_${field2}`) }),
@@ -6024,7 +6206,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       save2.addEventListener("click", () => {
         const next = text2.value.trim();
         if (!next) return void text2.focus();
-        const body = { [field2 === "object" ? "new_object" : "new_value"]: next };
+        const body = { [bodyKey3]: next };
         if (action.extra?.endsWith(".lock")) body.lock = true;
         const at = turn.value.trim();
         if (at) {
@@ -6036,6 +6218,48 @@ html,body{margin:0;background:${PALETTE.bg}}
       });
       spot.replaceChildren(el("span", { class: "rpform" }, text2, turn, save2, cancel));
       text2.focus();
+    }
+    const NOTE_MAX_CHARS = 300;
+    function normNote(raw) {
+      return raw.trim().replace(/\s+/g, " ");
+    }
+    function noteForm(action, button) {
+      const spot = button.parentElement;
+      if (!spot) return;
+      const existing = button.closest(".v-card")?.querySelector(".v-note-text")?.textContent?.trim() ?? "";
+      const area = el("textarea", {
+        maxlength: String(NOTE_MAX_CHARS),
+        rows: "2",
+        placeholder: L("en.placeholder"),
+        "aria-label": L("rp.entity_note")
+      });
+      area.value = existing;
+      const counter = el("span", { class: "muted", text: L("en.count", { n: normNote(existing).length, max: NOTE_MAX_CHARS }) });
+      area.addEventListener("input", () => {
+        counter.textContent = L("en.count", { n: normNote(area.value).length, max: NOTE_MAX_CHARS });
+      });
+      const save2 = el("button", { class: "mini primary", text: L("save") });
+      const cancel = el("button", { class: "mini", text: L("cancel") });
+      cancel.addEventListener("click", () => spot.replaceChildren(...repairControls(action)));
+      save2.addEventListener("click", () => {
+        const cleaned = normNote(area.value);
+        if (!cleaned) {
+          say(actionMsg, L("en.empty"), "err");
+          return void area.focus();
+        }
+        if (cleaned.length > NOTE_MAX_CHARS) {
+          say(actionMsg, L("en.too_long", { max: NOTE_MAX_CHARS }), "err");
+          return void area.focus();
+        }
+        void repairNow(action, save2, { new_value: cleaned });
+      });
+      spot.replaceChildren(el(
+        "div",
+        { class: "rp-note-form" },
+        area,
+        el("div", { class: "note-meta" }, counter, el("span", { class: "btns" }, save2, cancel))
+      ));
+      area.focus();
     }
     function hiddenForm(action, button) {
       const spot = button.parentElement;
@@ -6339,6 +6563,131 @@ html,body{margin:0;background:${PALETTE.bg}}
           }
         }
       }
+      if (inspectorPath.includes("/explore")) {
+        const slot = page.querySelector(".v-exp-toolbar-slot");
+        const cards = Array.from(page.querySelectorAll(".v-exp-card"));
+        const sections = Array.from(page.querySelectorAll(".v-sec[data-cat]"));
+        if (slot) {
+          const CATS = ["facts", "pairs", "threads", "epistemic", "items", "entities", "canon"];
+          const whoCounts = /* @__PURE__ */ new Map();
+          let canonCount = 0;
+          let nonCanonStoryCount = 0;
+          for (const c of cards) {
+            const isCanon = c.getAttribute("data-canon") === "1";
+            if (isCanon) canonCount += 1;
+            else if (["facts", "pairs", "items"].includes(c.getAttribute("data-cat") ?? "")) nonCanonStoryCount += 1;
+            const rawWho = c.getAttribute("data-who") ?? "";
+            for (const w of rawWho.split("|")) {
+              const name2 = w.trim();
+              if (name2) whoCounts.set(name2, (whoCounts.get(name2) ?? 0) + 1);
+            }
+          }
+          let activeCat = "all";
+          let includeCanon = canonCount > 0 && nonCanonStoryCount === 0;
+          const catBtns = /* @__PURE__ */ new Map();
+          const chipsRow = el("div", { class: "filter-chips" });
+          const presentCats = CATS.filter((k) => cards.some((c) => c.getAttribute("data-cat") === k));
+          for (const k of ["all", ...presentCats]) {
+            const btn = el("button", {
+              type: "button",
+              class: `filter-chip${k === "all" ? " on" : ""}`,
+              "data-exp-cat": k,
+              text: L(`exp.cat_${k}`)
+            });
+            btn.addEventListener("click", () => {
+              activeCat = k;
+              for (const [ck, b] of catBtns) b.classList.toggle("on", ck === k);
+              applyExploreFilter();
+            });
+            catBtns.set(k, btn);
+            chipsRow.append(btn);
+          }
+          const searchInput = el("input", { type: "search", placeholder: L("exp.search"), "aria-label": L("exp.search") });
+          const controls = el("div", { class: "exp-controls" }, searchInput);
+          const whoNames = Array.from(whoCounts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name2]) => name2);
+          let whoSelect = null;
+          if (whoNames.length) {
+            whoSelect = el(
+              "select",
+              { class: "exp-who", "aria-label": L("exp.who_label") },
+              el("option", { value: "", text: L("exp.who_all") }),
+              ...whoNames.map((name2) => el("option", { value: name2, text: name2 }))
+            );
+            whoSelect.addEventListener("change", () => applyExploreFilter());
+            controls.append(whoSelect);
+          }
+          if (canonCount > 0) {
+            const canonBtn = el("button", {
+              type: "button",
+              class: `filter-chip exp-canon-toggle${includeCanon ? " on" : ""}`,
+              text: L("exp.include_canon", { n: canonCount })
+            });
+            canonBtn.addEventListener("click", () => {
+              includeCanon = !includeCanon;
+              canonBtn.classList.toggle("on", includeCanon);
+              applyExploreFilter();
+            });
+            controls.append(canonBtn);
+          }
+          const convId = inspectorConversation(inspectorPath);
+          if (convId) {
+            const addBtn = el("button", { type: "button", class: "primary mini exp-add", text: L("exp.add_fact") });
+            addBtn.addEventListener("click", () => {
+              if (factAddCard.style.display !== "none") {
+                factAddCard.style.display = "none";
+                return;
+              }
+              factAddCard.style.display = "";
+              void buildFactAdd(convId);
+              factAddCard.scrollIntoView({ block: "nearest" });
+            });
+            controls.append(addBtn);
+          }
+          const emptyNote = el("div", { class: "exp-empty", style: "display:none", text: L("exp.empty") });
+          const toolbar = el("div", { class: "exp-toolbar" }, chipsRow, controls);
+          slot.replaceChildren(toolbar, emptyNote);
+          const applyExploreFilter = () => {
+            const q = searchInput.value.trim().toLowerCase();
+            const selectedWho = whoSelect?.value ?? "";
+            const perCat = /* @__PURE__ */ new Map();
+            let totalMatchingAll = 0;
+            let visibleTotal = 0;
+            for (const card of cards) {
+              const cat = card.getAttribute("data-cat") ?? "";
+              const isCanon = card.getAttribute("data-canon") === "1";
+              const whoOk = !selectedWho || (card.getAttribute("data-who") ?? "").split("|").includes(selectedWho);
+              const textOk = !q || (card.textContent ?? "").toLowerCase().includes(q);
+              const canonOkForAll = includeCanon || !isCanon;
+              if (whoOk && textOk && (cat === "canon" || canonOkForAll)) {
+                perCat.set(cat, (perCat.get(cat) ?? 0) + 1);
+                totalMatchingAll += 1;
+              }
+              const catOk = activeCat === "all" || cat === activeCat;
+              const canonOk = activeCat === "canon" || includeCanon || !isCanon;
+              const show = catOk && canonOk && whoOk && textOk;
+              card.style.display = show ? "" : "none";
+              if (show) visibleTotal += 1;
+            }
+            for (const [k, btn] of catBtns) {
+              const n = k === "all" ? totalMatchingAll : perCat.get(k) ?? 0;
+              btn.textContent = `${L(`exp.cat_${k}`)} (${n})`;
+            }
+            for (const sec of sections) {
+              const cat = sec.getAttribute("data-cat") ?? "";
+              const secCards = cards.filter((c) => c.getAttribute("data-cat") === cat);
+              const shown3 = secCards.filter((c) => c.style.display !== "none").length;
+              const catOk = activeCat === "all" || cat === activeCat;
+              const hasActiveFilter = q.length > 0 || selectedWho.length > 0 || activeCat !== "all";
+              sec.style.display = catOk && (shown3 > 0 || !hasActiveFilter && secCards.length === 0) ? "" : "none";
+              const badge = sec.querySelector(".v-h2 .v-n");
+              if (badge) badge.textContent = String(shown3);
+            }
+            emptyNote.style.display = cards.length > 0 && visibleTotal === 0 ? "" : "none";
+          };
+          searchInput.addEventListener("input", applyExploreFilter);
+          applyExploreFilter();
+        }
+      }
       if (inspectorPath.startsWith("/v1/inspector/calls")) {
         const tbl = page.querySelector("table");
         const rows = tbl ? Array.from(tbl.querySelectorAll("tbody tr")) : [];
@@ -6380,7 +6729,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         const action = repairAction(spot.getAttribute("data-repair"));
         if (!action) continue;
         spot.replaceChildren(...repairControls(action));
-        if (action.kind === "fact_retract" && spot.closest("#s-facts") && !spot.closest("details.fold")) {
+        if (action.kind === "fact_retract" && spot.closest("#s-facts") && !spot.closest("details.fold") && !spot.closest('[data-canon="1"]') && !spot.parentElement?.querySelector('[data-repair^="fact_hidden:"]')) {
           const hid = el("span", { class: "rp" });
           hid.replaceChildren(...repairControls({ kind: "fact_hidden", item: action.item, extra: null }));
           spot.after(hid);
@@ -6543,6 +6892,10 @@ html,body{margin:0;background:${PALETTE.bg}}
       if (!shownEntity) {
         linkCard.style.display = "none";
         pinCard.style.display = "none";
+        noteCard.style.display = "none";
+      }
+      if (!again && !rawInspector && !path.includes("/explore")) {
+        factAddCard.style.display = "none";
       }
       if (!rawInspector || shownEntity) {
         modeCard.style.display = "none";
@@ -6555,12 +6908,26 @@ html,body{margin:0;background:${PALETTE.bg}}
         shownPath = null;
         inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("insp.loading") }));
         pinCard.style.display = "none";
+        noteCard.style.display = "none";
       }
       const base = (await deps.getArg("sidecar_url") || "http://127.0.0.1:8790").replace(/\/+$/, "");
       const direct = routeFor(base, await deps.getArg("route")) === "direct";
       inspectorAddress.textContent = direct ? L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` }) : "";
+      const isExploreOrAttn = Boolean(conversation && /^\/v1\/views\/c\/[^/]+\/(explore|attention)(?:\?|$)/.test(path));
+      const fallbackToRaw = () => {
+        if (!conversation) return false;
+        pendingSection = path.includes("/attention") ? "s-attention" : null;
+        void showInspector(`/v1/inspector/c/${conversation}`, at);
+        return true;
+      };
       try {
-        const query = [conversation ? "timeline=lazy&status=lazy" : "", isView && mapOn ? "map=1" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
+        const wantRich = isView && (path.includes("/memory") || path.includes("/person/"));
+        const query = [
+          conversation ? "timeline=lazy&status=lazy" : "",
+          isView && mapOn ? "map=1" : "",
+          wantRich ? "rich=1" : "",
+          lang === "en" ? "lang=en" : ""
+        ].filter(Boolean).join("&");
         const r = await deps.api(
           "GET",
           `${path}${query ? `${path.includes("?") ? "&" : "?"}${query}` : ""}`,
@@ -6568,13 +6935,16 @@ html,body{margin:0;background:${PALETTE.bg}}
           15e3
         );
         if (load !== loads) return;
+        if (isExploreOrAttn && typeof r?.html !== "string") {
+          if (fallbackToRaw()) return;
+        }
         if (path.startsWith("/v1/views/hub")) {
           hubConversation = r.conversation ?? null;
           if (hubConversation && !path.includes("conversation=")) hostConversationId = hubConversation;
           if (hubConversation) activeChatId = hubConversation;
           if (viewsOn) applyHubMeta(r.meta);
         }
-        const page = safeFragment(r.html);
+        const page = safeFragment(r.html ?? "");
         placeMarks(page);
         enhance(page);
         retryButton.style.display = page.querySelector(".has-failed") ? "" : "none";
@@ -6601,10 +6971,14 @@ html,body{margin:0;background:${PALETTE.bg}}
         }
       } catch (error) {
         if (load !== loads) return;
+        if (isExploreOrAttn && /(?:HTTP\s+404|\b404\b)/i.test(String(error?.message ?? error))) {
+          if (fallbackToRaw()) return;
+        }
         shownPath = null;
         retryButton.style.display = "none";
         showCut(null);
         pinCard.style.display = "none";
+        noteCard.style.display = "none";
         inspectorBody.replaceChildren(el("div", { class: "card err", text: errorText(lang, error) }));
       } finally {
         if (load === loads) inspectorBody.classList.remove("busy");
@@ -6847,8 +7221,91 @@ html,body{margin:0;background:${PALETTE.bg}}
         entities = null;
       }
       if (load !== loads) return;
+      showNote(conversation, entity, entities);
       showPin(conversation, entity, entities);
       showLinks(conversation, entity, entities ?? []);
+    }
+    let noteSaid = null;
+    function showNote(conversation, entity, entities) {
+      const row = entities?.find((e) => e.id === entity);
+      const said = noteSaid?.entity === entity ? noteSaid.key : null;
+      noteSaid = null;
+      if (!row || row.excluded === "memory") {
+        noteCard.style.display = "none";
+        noteCard.replaceChildren();
+        return;
+      }
+      const existing = row.note?.text ?? "";
+      const area = el("textarea", {
+        maxlength: String(NOTE_MAX_CHARS),
+        rows: "3",
+        placeholder: L("en.placeholder"),
+        "aria-label": L("en.title", { n: row.name })
+      });
+      area.value = existing;
+      const counter = el("span", { text: L("en.count", { n: normNote(existing).length, max: NOTE_MAX_CHARS }) });
+      area.addEventListener("input", () => {
+        counter.textContent = L("en.count", { n: normNote(area.value).length, max: NOTE_MAX_CHARS });
+      });
+      const save2 = el("button", { class: "primary", text: L("save") });
+      const btns = el("div", { class: "btns" }, save2);
+      const msg = el("div", { class: "msg", role: "status" });
+      if (said) say(msg, L(said), "ok");
+      save2.addEventListener("click", async () => {
+        const cleaned = normNote(area.value);
+        if (!cleaned) {
+          say(msg, L("en.empty"), "err");
+          return void area.focus();
+        }
+        if (cleaned.length > NOTE_MAX_CHARS) {
+          say(msg, L("en.too_long", { max: NOTE_MAX_CHARS }), "err");
+          return void area.focus();
+        }
+        save2.disabled = true;
+        say(msg, L("act.working"));
+        try {
+          await deps.api(
+            "POST",
+            `/v1/conversations/${conversation}/repairs`,
+            { kind: "entity_note", item: entity, new_value: cleaned },
+            15e3
+          );
+          noteSaid = { entity, key: "en.saved" };
+          say(msg, L("en.saved"), "ok");
+          await showInspector();
+        } catch (error) {
+          say(msg, errorText(lang, error), "err");
+          save2.disabled = false;
+        }
+      });
+      if (row.note?.id) {
+        const noteId = row.note.id;
+        const del = el("button", { class: "danger", text: L("en.delete") });
+        del.addEventListener("click", async () => {
+          del.disabled = true;
+          save2.disabled = true;
+          say(msg, L("act.working"));
+          try {
+            await deps.api("POST", `/v1/conversations/${conversation}/repairs/${noteId}/remove`, {}, 15e3);
+            noteSaid = { entity, key: "en.removed" };
+            say(msg, L("en.removed"), "ok");
+            await showInspector();
+          } catch (error) {
+            say(msg, errorText(lang, error), "err");
+            del.disabled = false;
+            save2.disabled = false;
+          }
+        });
+        btns.append(del);
+      }
+      noteCard.replaceChildren(
+        el("h2", { text: L("en.title", { n: row.name }) }),
+        el("p", { class: "sub", text: L("en.sub") }),
+        area,
+        el("div", { class: "note-meta" }, counter, btns),
+        msg
+      );
+      noteCard.style.display = "";
     }
     let pinSaid = null;
     function showPin(conversation, entity, entities) {
@@ -6897,6 +7354,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         return;
       }
       const { self, others } = choices;
+      const entityDest = (eid) => inspectorPath.startsWith("/v1/views/") ? `/v1/views/c/${conversation}/person/${eid}` : `/v1/inspector/c/${conversation}/e/${eid}`;
       const msg = el("div", { class: "msg" });
       const rows = [];
       for (const link of self.links ?? []) {
@@ -6923,7 +7381,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             try {
               const now = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
               const next = entityNamed(now, self.type, self.name);
-              if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+              if (next && next.id !== entity) go(entityDest(next.id));
               else await showInspector();
             } catch {
             }
@@ -6966,7 +7424,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             const now = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
             const next = entityNamed(now, self.type, self.name);
             say(actionMsg, L("split.done", { a: alias.name, b: alias.other }), "ok");
-            if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+            if (next && next.id !== entity) go(entityDest(next.id));
             else await showInspector();
           }
         ));
@@ -6986,7 +7444,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           void withPreview(spot, join, `${path}/preview`, body, "pv.confirm_join", async (expect) => {
             const r = await deps.api("POST", path, { ...body, expect }, 15e3);
             say(actionMsg, L("link.done", { a: body.name, b: body.same_as }), "ok");
-            if (r.entity && r.entity.id !== entity) go(`/v1/inspector/c/${conversation}/e/${r.entity.id}`);
+            if (r.entity && r.entity.id !== entity) go(entityDest(r.entity.id));
             else await showInspector();
           });
         });
@@ -7011,7 +7469,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         return void doAct(act);
       }
       const row = clicked?.closest(".v-line");
-      if (row && !clicked?.closest("a, button, select, input, label, .rp")) return void row.classList.toggle("open");
+      if (row && !clicked?.closest("a, button, select, input, textarea, label, .rp")) return void row.classList.toggle("open");
       const choice = clicked?.closest(".tl-span[data-span]");
       const box = choice?.closest(".tl-lazy");
       if (choice && box) return void loadTimeline(box, choice.getAttribute("data-span") ?? "");
@@ -7231,28 +7689,56 @@ html,body{margin:0;background:${PALETTE.bg}}
         return;
       }
       const preds = [
-        ["has_status", "character", null],
-        ["located_in", "character", "place"],
-        ["identity", "character", null],
-        ["has_trait", "character", null],
-        ["relationship", "character", "character"],
-        ["role_toward", "character", "character"],
-        ["feels_toward", "character", "character"],
-        ["addresses", "character", "character"],
-        ["possesses", "character", "item"],
-        ["member_of", "character", "group"],
-        ["knows", "character", null],
-        ["goal", "character", null],
-        ["promised", "character", "character"],
-        ["event", "character", null],
-        ["world_fact", "concept", null]
+        { pred: "has_status", subjectTypes: ["character"], objectTypes: null, needsValue: true },
+        { pred: "located_in", subjectTypes: ["character", "item", "group"], objectTypes: ["place"], needsValue: false },
+        { pred: "identity", subjectTypes: ["character"], objectTypes: null, needsValue: true },
+        { pred: "has_trait", subjectTypes: ["character"], objectTypes: null, needsValue: true },
+        { pred: "relationship", subjectTypes: ["character"], objectTypes: ["character"], needsValue: true },
+        { pred: "role_toward", subjectTypes: ["character"], objectTypes: ["character"], needsValue: true },
+        { pred: "feels_toward", subjectTypes: ["character"], objectTypes: ["character"], needsValue: true },
+        { pred: "addresses", subjectTypes: ["character"], objectTypes: ["character"], needsValue: true },
+        { pred: "possesses", subjectTypes: ["character", "group"], objectTypes: ["item"], needsValue: false },
+        { pred: "destroyed", subjectTypes: ["item"], objectTypes: null, needsValue: true },
+        { pred: "member_of", subjectTypes: ["character"], objectTypes: ["group"], needsValue: false },
+        { pred: "knows", subjectTypes: ["character"], objectTypes: null, needsValue: true },
+        { pred: "goal", subjectTypes: ["character", "group"], objectTypes: null, needsValue: true },
+        { pred: "question", subjectTypes: ["character", "group"], objectTypes: null, needsValue: true },
+        { pred: "threat", subjectTypes: ["character", "group", "place"], objectTypes: null, needsValue: true },
+        { pred: "owes", subjectTypes: ["character", "group"], objectTypes: ["character", "group"], needsValue: true },
+        { pred: "promised", subjectTypes: ["character"], objectTypes: ["character"], needsValue: true },
+        { pred: "event", subjectTypes: ["character", "place", "item", "group", "concept"], objectTypes: null, needsValue: true },
+        { pred: "world_fact", subjectTypes: ["item", "place", "group", "concept"], objectTypes: null, needsValue: true }
       ];
       const msgSel = el("select", { "aria-label": L("fa.msg") }, ...msgs.map((m) => el("option", { value: m.host_logical_id, text: `t${m.turn} #${m.position} (${m.name || m.role}) ${m.preview.slice(0, 48)}` })));
-      const predSel = el("select", { "aria-label": L("fa.pred") }, ...preds.map(([p]) => el("option", { value: p, text: p })));
+      const predSel = el("select", { "aria-label": L("fa.pred") }, ...preds.map((spec) => el("option", { value: spec.pred, text: L(`fp.${spec.pred}`) })));
+      const subjTypeSel = el("select", { "aria-label": L("fa.subj_type") });
+      const objTypeSel = el("select", { "aria-label": L("fa.obj_type") });
       const subj = el("input", { type: "text", placeholder: L("fa.subj"), "aria-label": L("fa.subj") });
       const obj = el("input", { type: "text", placeholder: L("fa.obj"), "aria-label": L("fa.obj") });
       const val = el("input", { type: "text", placeholder: L("fa.val"), "aria-label": L("fa.val") });
       const hid = el("input", { type: "text", placeholder: L("fa.hidden"), "aria-label": L("fa.hidden") });
+      const currentSpec = () => preds.find((x) => x.pred === predSel.value) ?? preds[0];
+      const syncPredFields = () => {
+        const spec = currentSpec();
+        const prevSubj = subjTypeSel.value;
+        subjTypeSel.replaceChildren(...spec.subjectTypes.map((t2) => el("option", { value: t2, text: L(`et.${t2}`) })));
+        subjTypeSel.value = spec.subjectTypes.includes(prevSubj) ? prevSubj : spec.subjectTypes[0];
+        subjTypeSel.style.display = spec.subjectTypes.length > 1 ? "" : "none";
+        const hasObj = spec.objectTypes !== null && spec.objectTypes.length > 0;
+        obj.style.display = hasObj ? "" : "none";
+        if (hasObj && spec.objectTypes) {
+          const prevObj = objTypeSel.value;
+          objTypeSel.replaceChildren(...spec.objectTypes.map((t2) => el("option", { value: t2, text: L(`et.${t2}`) })));
+          objTypeSel.value = spec.objectTypes.includes(prevObj) ? prevObj : spec.objectTypes[0];
+          objTypeSel.style.display = spec.objectTypes.length > 1 ? "" : "none";
+        } else {
+          objTypeSel.replaceChildren();
+          objTypeSel.style.display = "none";
+        }
+        val.style.display = spec.needsValue ? "" : "none";
+      };
+      predSel.addEventListener("change", syncPredFields);
+      syncPredFields();
       const save2 = el("button", { class: "primary", text: L("save") });
       const cancel = el("button", { text: L("cancel") });
       const formMsg = el("div", { class: "msg" });
@@ -7262,15 +7748,15 @@ html,body{margin:0;background:${PALETTE.bg}}
       save2.addEventListener("click", async () => {
         const s = subj.value.trim();
         if (!s) return void say(formMsg, L("fa.need_subj"), "err");
-        const spec = preds.find(([p]) => p === predSel.value) ?? preds[0];
-        const o = obj.value.trim() || null;
-        const v = val.value.trim() || null;
+        const spec = currentSpec();
+        const o = spec.objectTypes ? obj.value.trim() || null : null;
+        const v = spec.needsValue ? val.value.trim() || null : null;
         const hidden = hid.value.split(",").map((x) => x.trim()).filter(Boolean);
         const fact = {
-          predicate: spec[0],
+          predicate: spec.pred,
           subject: s,
-          subject_type: spec[1],
-          ...o ? { object: o, object_type: spec[2] ?? "character" } : {},
+          subject_type: subjTypeSel.value || spec.subjectTypes[0],
+          ...o && spec.objectTypes ? { object: o, object_type: objTypeSel.value || spec.objectTypes[0] } : {},
           ...v ? { value: v } : {},
           ...hidden.length ? { hidden_from: hidden } : {}
         };
@@ -7295,8 +7781,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       factAddCard.replaceChildren(
         el("b", { text: L("fa.title") }),
         el("div", { class: "row" }, msgSel),
-        el("div", { class: "row" }, predSel),
-        el("div", { class: "row" }, subj, obj),
+        el("div", { class: "row" }, predSel, subjTypeSel),
+        el("div", { class: "row" }, subj, objTypeSel, obj),
         el("div", { class: "row" }, val, hid),
         el("div", { class: "btns" }, save2, cancel),
         formMsg
@@ -9054,7 +9540,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       if (!viewsOn) return;
       const round = ++quickRound;
       const items = [];
-      const workerReq = deps.api("GET", "/v1/worker/status", void 0, 5e3).catch(() => null);
+      const workerReq = fetchWorkerStatus();
       let s = null;
       try {
         s = await deps.status();
@@ -9179,9 +9665,12 @@ html,body{margin:0;background:${PALETTE.bg}}
       const rawWorker = await workerReq;
       if (round !== quickRound || !homeQuickBar.isConnected || homeQuickBar.style.display === "none") return;
       const wShown = workerLines(lang, rawWorker);
-      if (wShown.lines.length && (wShown.level === "working" || wShown.level === "trouble")) {
-        const ws = rawWorker;
-        const errIdx = ws.last_error && wShown.level === "trouble" ? wShown.lines.length - 1 : -1;
+      const workerScope = s?.sidecarUrl ?? "";
+      const ws = rawWorker;
+      const dismissed = wShown.lines.length > 0 && wShown.level === "trouble" && isWorkerDismissed(ws, getWorkerDismissal(workerScope));
+      const effLevel = dismissed ? ws.queued_total + ws.running > 0 ? "working" : "idle" : wShown.level;
+      if (wShown.lines.length && (effLevel === "working" || effLevel === "trouble")) {
+        const errIdx = ws.last_error && effLevel === "trouble" ? wShown.lines.length - 1 : -1;
         const autoBtn = el("button", {
           class: `mini${workerAutoOn ? " primary" : ""}`,
           text: L(workerAutoOn ? "worker.auto_on" : "worker.auto_off")
@@ -9202,7 +9691,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         callsBtn.addEventListener("click", () => openDiag("calls"));
         const actBtns = [callsBtn];
         const cid = activeChatId ?? hubConversation;
-        if (wShown.level === "trouble") {
+        if (effLevel === "trouble") {
           if (cid && (ws.dead_recent > 0 || ws.retrying > 0)) {
             const retry = el("button", { class: "primary mini", text: L("act.retry") });
             retry.addEventListener("click", () => void retryFrom(cid));
@@ -9213,18 +9702,24 @@ html,body{margin:0;background:${PALETTE.bg}}
             selectPrimary("settings");
             openGroup("models");
           });
-          actBtns.push(modelsBtn);
+          const dismissBtn = el("button", { class: "mini ghost", "data-worker-dismiss": "1", text: L("worker.dismiss") });
+          dismissBtn.addEventListener("click", () => {
+            setWorkerDismissal(workerScope, workerDismissalOf(ws));
+            updateStatusPill(s, lastMeta);
+            void refreshHomeQuick();
+          });
+          actBtns.push(modelsBtn, dismissBtn);
         }
         const wCard = el(
           "div",
-          { class: `worker-home${wShown.level === "trouble" ? " trouble" : ""}` },
+          { class: `worker-home${effLevel === "trouble" ? " trouble" : ""}` },
           el(
             "div",
             { class: "worker-home-head" },
             el(
               "span",
               { class: "worker-home-title" },
-              el("span", { class: `dot ${wShown.level === "trouble" ? "warn" : "ok"}` }),
+              el("span", { class: `dot ${effLevel === "trouble" ? "warn" : "ok"}` }),
               el("span", { text: L("worker.title") })
             ),
             el("div", { style: "display:flex;gap:6px;flex-wrap:wrap" }, autoBtn, ...actBtns)
@@ -9236,7 +9731,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           )
         );
         homeQuickBar.append(wCard);
-        if (wShown.level === "trouble") updateStatusPill(s, { ...lastMeta ?? {}, working: { state: "failed", failed: ws.dead_recent + ws.retrying } });
+        if (effLevel === "trouble") updateStatusPill(s, { ...lastMeta ?? {}, working: { state: "failed", failed: ws.dead_recent + ws.retrying } });
       } else {
         stopWorkerAuto();
       }
@@ -9245,8 +9740,9 @@ html,body{margin:0;background:${PALETTE.bg}}
       activeMemSub = sub;
       const defs = [
         { key: "story", label: "mem.story", ic: "book" },
-        { key: "map", label: "mem.map", ic: "map", hide: !mapOn },
+        { key: "explore", label: "mem.explore", ic: "search" },
         { key: "attention", label: "mem.attention", ic: "alert" },
+        { key: "map", label: "mem.map", ic: "map", hide: !mapOn },
         { key: "diag", label: "mem.diag", ic: "terminal" }
       ];
       const tabsRow = el("div", { class: "mem-subtabs" });
@@ -9306,11 +9802,10 @@ html,body{margin:0;background:${PALETTE.bg}}
         inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("mem.no_chat") }));
         return;
       }
-      const target = sub === "story" ? `/v1/views/c/${cid}/memory` : sub === "map" ? `/v1/views/c/${cid}/map` : sub === "attention" ? `/v1/inspector/c/${cid}` : `/v1/views/c/${cid}/working`;
-      const section = sub === "attention" ? "s-attention" : null;
-      if (pushHistory) go(target, section);
+      const target = sub === "story" ? `/v1/views/c/${cid}/memory` : sub === "explore" ? `/v1/views/c/${cid}/explore` : sub === "attention" ? `/v1/views/c/${cid}/attention` : sub === "map" ? `/v1/views/c/${cid}/map` : `/v1/views/c/${cid}/working`;
+      if (pushHistory) go(target, null);
       else {
-        pendingSection = section;
+        pendingSection = null;
         void showInspector(target);
       }
     }
@@ -9356,6 +9851,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       const isPerson = /\/(person|e)\//.test(path);
       inspbar.style.display = visited.length || isPerson ? "" : "none";
       if (path.includes("/memory")) renderMemSubBar("story", "working");
+      else if (path.includes("/explore")) renderMemSubBar("explore", "working");
+      else if (path.includes("/attention")) renderMemSubBar("attention", "working");
       else if (path.includes("/map")) renderMemSubBar("map", "working");
       else if (path.includes("/working")) renderMemSubBar("diag", "working");
       else if (path.startsWith("/v1/inspector/calls")) renderMemSubBar("diag", "calls");
@@ -10159,7 +10656,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       const q = [
         explicitConversation ? `conversation=${encodeURIComponent(explicitConversation)}` : chat ? `chat=${encodeURIComponent(chat)}` : "",
         off ? "off=true" : "",
-        allOff ? "all_off=true" : ""
+        allOff ? "all_off=true" : "",
+        viewsOn ? "compact=1" : ""
       ].filter(Boolean).join("&");
       return `/v1/views/hub${q ? `?${q}` : ""}`;
     }

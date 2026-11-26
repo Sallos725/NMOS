@@ -17,9 +17,11 @@ import re
 from typing import Any
 
 from . import tokens
-from .facts import symmetric
-from .inspector import (_act, _close, _epistemic_acts, _v, cond_extra, cond_label, feeling_detail, feeling_dot,
-                        happened_mark, happened_text)
+from .facts import earlier, symmetric
+from .inspector import (_act, _close, _corrections, _epistemic_acts, _exclude_marks, _fix, _forgot_what,
+                        _guise_grouped, _knowledge, _repair_target, _repair_value, _secret_status, _step,
+                        _t as _it, _turn, _undo, _v, _with, cond_extra, cond_label, fact_line_text,
+                        feeling_detail, feeling_dot, happened_mark, happened_text, note_blocks, timestamp, turn_link)
 from .summaries import content
 from .threads import KINDS as THREAD_KINDS
 
@@ -129,7 +131,53 @@ STYLE = """
 .nmos svg.g-panel .g-e.on{stroke-width:2.5}
 .nmos svg.g-panel.sel .g-e:not(.on){opacity:.12} .nmos svg.g-panel.sel .g-node:not(.on){opacity:.3}
 .nmos .v-graph-btns{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 0}
+.nmos .v-dash-grid{display:grid;grid-template-columns:1fr;gap:12px}
+.nmos .v-dash-card{background:var(--c-surface);border:1px solid var(--c-line);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.nmos .v-dash-card.v-wide{border-left:4px solid var(--c-ok)}
+.nmos .v-dash-card.v-wide.warn{border-left-color:var(--c-warn)}
+.nmos .v-dash-card.v-wide.err{border-left-color:var(--c-err)}
+.nmos .v-dash-card.v-wide.off,.nmos .v-dash-card.v-wide.idle{border-left-color:var(--c-text-ghost)}
+.nmos .v-dash-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.nmos .v-dash-title{font-size:15.5px;font-weight:650;color:var(--c-text-strong);letter-spacing:-0.01em}
+.nmos .v-dash-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.nmos .v-pill-link{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:550;color:var(--c-link);background:rgba(74,106,245,0.10);border:1px solid rgba(74,106,245,0.28);padding:4px 11px;border-radius:99px;transition:background .15s ease,border-color .15s ease}
+.nmos .v-pill-link:hover{background:rgba(74,106,245,0.18);border-color:rgba(74,106,245,0.45)}
+.nmos .v-snap-line{font-size:13.5px;color:var(--c-text-soft);padding:6px 0;border-top:1px solid var(--c-line);word-break:break-word}
+.nmos .v-snap-line:first-of-type{border-top:0;padding-top:2px}
+.nmos .v-exp-toolbar-slot{margin:0 0 14px}
+.nmos .v-exp-list{display:flex;flex-direction:column;gap:9px}
+.nmos .v-card{background:var(--c-sunken);border:1px solid var(--c-line);border-radius:11px;padding:12px 14px;min-width:0;transition:border-color .15s ease}
+.nmos .v-card:hover{border-color:var(--c-line-hover)}
+.nmos .v-card.v-card-warn{border-color:rgba(232,172,67,0.36);background:linear-gradient(135deg,rgba(232,172,67,0.06),var(--c-sunken) 55%)}
+.nmos .v-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.nmos .v-card-check{display:inline-flex;align-items:center;gap:6px;flex:none;margin-top:2px}
+.nmos .v-card-badges{display:flex;flex-wrap:wrap;align-items:center;gap:5px;flex:1;min-width:0}
+.nmos .v-card-turn{font-size:12px;color:var(--c-text-muted);white-space:nowrap;font-variant-numeric:tabular-nums;margin-left:auto}
+.nmos .v-card-turn a{color:var(--c-link);font-weight:500}
+.nmos .v-card-turn a:hover{text-decoration:underline}
+.nmos .v-card-main{font-size:14.5px;line-height:1.55;color:var(--c-text-strong);margin-top:5px;word-break:break-word;min-width:0}
+.nmos .v-card-sub{font-size:13px;color:var(--c-text-muted);margin-top:4px;line-height:1.5;word-break:break-word}
+.nmos .v-card-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px;padding-top:8px;border-top:1px solid var(--c-line)}
+.nmos .v-tag.k-setting{background:rgba(146,148,160,0.12);border-color:rgba(146,148,160,0.3);color:var(--c-text-muted)}
+.nmos .v-tag.k-owner{background:rgba(79,209,139,0.13);border-color:rgba(79,209,139,0.34);color:var(--c-ok)}
+.nmos .v-tag.k-locked{background:rgba(232,172,67,0.14);border-color:rgba(232,172,67,0.36);color:var(--c-warn)}
+.nmos .v-tag.k-warn{background:rgba(232,172,67,0.14);border-color:rgba(232,172,67,0.36);color:var(--c-warn)}
+.nmos .v-tag.k-err{background:rgba(240,93,94,0.14);border-color:rgba(240,93,94,0.36);color:var(--c-err)}
+.nmos .v-tag.k-info{background:rgba(56,189,248,0.12);border-color:rgba(56,189,248,0.32);color:var(--c-cyan)}
+.nmos .v-edit{margin-top:8px;padding-top:6px;border-top:1px dashed var(--c-line)}
+.nmos .v-edit>summary{cursor:pointer;list-style:none;font-size:12.5px;font-weight:550;color:var(--c-text-muted);display:inline-flex;align-items:center;gap:4px;user-select:none}
+.nmos .v-edit>summary::-webkit-details-marker{display:none}
+.nmos .v-edit>summary:hover{color:var(--c-link)}
+.nmos .v-edit-body{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.nmos .v-edit-row{width:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 0;border-top:1px solid var(--c-line)}
+.nmos .v-edit-row:first-child{border-top:0;padding-top:0}
+.nmos .v-edit-lbl{font-size:12.5px;color:var(--c-text-soft);margin-right:4px;word-break:break-word}
+.nmos .v-note-box{margin-top:7px;padding:7px 10px;border-radius:8px;background:rgba(79,209,139,0.08);border:1px solid rgba(79,209,139,0.24);font-size:13.5px;line-height:1.5;color:var(--c-text-strong);display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;word-break:break-word}
+.nmos .v-diff-block{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+.nmos .v-diff-row{font-size:13.5px;line-height:1.5;padding:6px 10px;border-radius:8px;background:var(--c-surface);border:1px solid var(--c-line);word-break:break-word}
+.nmos .v-empty{padding:26px 18px;text-align:center;color:var(--c-text-muted);font-size:14.5px;border:1px dashed var(--c-line-strong);border-radius:12px;background:var(--c-sunken)}
 @media (min-width:700px){.nmos .v-block:not(.v-wide):not(.v-big):not(.v-attn){flex-basis:240px}}
+@media (min-width:760px){.nmos .v-dash-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.nmos .v-dash-full{grid-column:1/-1}}
 @media (min-width:860px){.nmos .v-doc-grid{display:grid;grid-template-columns:196px minmax(0,1fr);gap:18px;align-items:start}.nmos .v-doc-grid .v-chips{position:sticky;top:76px;flex-direction:column;flex-wrap:nowrap;margin:0;padding:10px;background:var(--c-surface);border:1px solid var(--c-line);border-radius:14px}.nmos .v-doc-grid .v-chips a{width:100%;padding:7px 10px;background:transparent;border-color:transparent}.nmos .v-doc-grid .v-chips a:hover{background:var(--c-raised);border-color:var(--c-line)}}
 @media (max-width:699px){.nmos .v-graph.whole{display:none}}
 """
@@ -285,6 +333,67 @@ T: dict[str, tuple[str, str]] = {
                "An event record has no place for who did what to whom, where it happened, or which earlier event "
                "caused it."),
     "d_gen": ("추출 세대별", "By extractor generation"),
+    # PHASE-69: Memory Explorer, Focused Attention, Dashboard Home & Upgraded Person Sheet
+    "explore": ("탐색 · 수정", "Explore & edit"),
+    "raw_inspector": ("원본 인스펙터", "Raw inspector"),
+    "raw_person": ("원본 인스펙터에서 보기", "View in raw inspector"),
+    "stale_rich": ("한동안 언급 없는 열린 일 {n}개는 여기 넣지 않았어요. 확인 필요 탭에서 검토하거나 닫을 수 있어요.",
+                   "{n} open threads not mentioned for a while are left out here; review or close them under Needs attention."),
+    "explore_all_facts": ("탐색 · 수정 (전체 사실 {n})", "Explore & edit ({n} facts)"),
+    "hub_diag_link": ("처리 상태 · 패킷 진단", "Processing & packet diagnostics"),
+    "hub_calls_link": ("모델 호출 로그", "Model calls"),
+    "hub_last_reply": ("방금 답장에 들어간 기억", "Memory sent in last reply"),
+    "hub_reply_meta": ("{n}줄 · 약 {tok}토큰 · {s}초", "{n} lines · ~{tok} tokens · {s}s"),
+    "hub_full_packet": ("전체 패킷 보기", "Full packet"),
+    "hub_scene_title": ("지금 장면 & 열린 일", "Current scene & open threads"),
+    "hub_open_summary": ("요약 보기", "Open summary"),
+    "hub_open_explore": ("탐색 · 수정 열기", "Open explore & edit"),
+    "hub_attn_banner": ("확인이 필요한 항목 {n}건", "{n} items need attention"),
+    "hub_attn_sub": ("눌러서 충돌·오래된 약속·보류 항목 정리하기", "Tap to review conflicts, stale threads & held items"),
+    "hub_no_chat_hint": ("상단 채팅 전환기에서 다른 채팅을 고르거나, PocketRisu에서 대화를 보내면 자동으로 기록이 시작됩니다.",
+                         "Pick a chat from the top switcher, or send a message in PocketRisu to start recording."),
+    "s-facts": ("사실", "Facts"),
+    "s-pairs": ("관계 · 호칭", "Relationships & address"),
+    "s-epistemic": ("비밀 · 믿음 · 망각", "Secrets, beliefs & memory"),
+    "s-items": ("아이템", "Items"),
+    "s-entities": ("인물 · 대상", "People & entities"),
+    "s-canon": ("카드 · 로어북 설정", "Card & lorebook setting"),
+    "s-attention": ("확인이 필요한 항목", "Needs attention"),
+    "s-conflicts": ("충돌", "Conflicts"),
+    "s-repairs": ("직접 수정한 기록", "Direct edits"),
+    "s-held": ("가진 아이템", "Held items"),
+    "s-disguises": ("변장", "Disguises"),
+    "ps_facts": ("이 인물의 사실", "Facts about them"),
+    "ps_who": ("인물 전환", "Switch person"),
+    "ps_pinned": ("항상 고정됨", "Pinned"),
+    "ps_excluded": ("인물 목록 제외", "Excluded"),
+    "ps_is_not_char": ("캐릭터 아님으로 표시됨 · 되돌리기는 확인 필요 → 직접 수정한 기록에서 할 수 있어요.",
+                       "Marked not a character · undo under Needs attention → Direct edits."),
+    "ex_edit": ("수정", "Edit"),
+    "ex_setting": ("설정", "Setting"),
+    "ex_owner": ("직접 수정", "Edited"),
+    "ex_locked": ("고정됨", "Locked"),
+    "ex_neg": ("부정", "Negated"),
+    "ex_disputed": ("충돌", "Disputed"),
+    "ex_secret": ("비밀", "Secret"),
+    "ex_belief": ("믿음", "Belief"),
+    "ex_forgot": ("망각", "Forgot"),
+    "ex_disguise": ("변장", "Disguise"),
+    "ex_told": ("전달", "Told"),
+    "ex_mentions": ("언급 {n}회", "{n} mentions"),
+    "ex_open_sheet": ("인물 시트", "Person sheet"),
+    "ex_item_hist": ("변화 기록 {n}건", "{n} history steps"),
+    "ex_chars": ("{n}자", "{n} chars"),
+    "ex_canon_empty": ("기록된 카드·로어북 항목이 아직 없어요.", "No card or lorebook entries recorded yet."),
+    "ex_empty": ("이 항목은 아직 기록이 없어요.", "Nothing recorded in this category yet."),
+    "at_clear": ("확인할 항목이 없습니다. 기억이 깔끔하게 정리되어 있어요.", "Nothing needs attention right now."),
+    "at_no_conflicts": ("충돌하는 기억이 없습니다.", "No conflicting memories."),
+    "at_no_repairs": ("직접 수정한 기록이 아직 없습니다.", "No direct edits yet."),
+    "at_existing": ("기존 / 설정", "Existing / setting"),
+    "at_new_story": ("새 이야기", "New story"),
+    "at_open_explore": ("탐색 · 수정으로", "Explore & edit"),
+    "ex_note": ("메모", "Note"),
+    "ex_item_now": ("현재 상태", "Current state"),
 }
 
 ACTS = ("notes", "settings", "backup", "retry")  # what the plugin does itself; its sanitizer keeps only these values
@@ -378,9 +487,12 @@ def _kind_tag(kind: str | None, lang: str) -> str:
     return f'<span class="v-tag{safe_cls}">{_v(label)}</span>' if label else ""
 
 
-def hub(data: dict[str, Any], lang: str, map_: bool = False) -> str:
-    """The panel's first screen (PHASE-52 D1, PHASE-59 D2): the working line, then a block per category. Without a chat
-    NMOS knows, only what does not need one. `map_`: the reader can open the memory map (PHASE-55), a block after memory's."""
+def hub(data: dict[str, Any], lang: str, map_: bool = False, compact: bool = False) -> str:
+    """The panel's first screen (PHASE-52 D1, PHASE-59 D2, PHASE-69 S4): the working line, then a block per category.
+    With `compact=True` (the Phase 59/69 persistent shell), omits duplicate nav tiles that already sit in the top bar
+    and focuses on live status, processing progress, attention banner, latest-reply memory snapshot and current scene."""
+    if compact:
+        return _hub_compact(data, lang)
     conv = data.get("conv")
     w = data.get("working") or {"state": "idle"}
     title, sub = _working(w, lang)
@@ -433,6 +545,112 @@ def hub(data: dict[str, Any], lang: str, map_: bool = False) -> str:
                                      f"t{conv['turns']}" if conv and conv.get("turns") is not None else None) if x)
     return (f'<div class="v v-hub"><div class="v-head"><h1 class="v-h1">NMOS</h1>'
             f'<span class="v-cap">{_v(cap)}</span></div><div class="v-blocks">{"".join(blocks)}</div></div>')
+
+
+def _hub_compact(data: dict[str, Any], lang: str) -> str:
+    """PHASE-69 S4: Dashboard Home for the persistent shell — no duplicate nav tiles, focused on live chat context."""
+    conv = data.get("conv")
+    w = data.get("working") or {"state": "idle"}
+    title, sub = _working(w, lang)
+    state = w.get("state") or "idle"
+    state = "warn" if w.get("failed") and state == "ok" else state
+    if conv is None:
+        chats_n = int(data.get("chats") or 0)
+        links = (f'<div class="v-dash-links"><a class="v-pill-link" href="/views/chats">'
+                 f'{_v(t(lang, "chats_sub", n=chats_n))}</a></div>') if chats_n else ""
+        body = (f'<div class="v-dash-card v-wide {state} v-dash-full">'
+                f'<div class="v-dash-head"><span class="v-dash-title">{_v(title)}</span></div>'
+                f'<span class="v-bs">{_v(sub)}</span>'
+                f'<p class="v-note">{_v(t(lang, "hub_no_chat_hint"))}</p>{links}</div>')
+        return f'<div class="v v-hub v-hub-compact"><div class="v-dash-grid">{body}</div></div>'
+
+    cid = conv["id"]
+    cards: list[str] = []
+
+    # 1. Working status + extraction/embedding progress + calls count
+    work = data.get("work") or {}
+    work_bars = []
+    for k in ("extraction", "embeddings"):
+        item = work.get(k) or {}
+        if item.get("due"):
+            work_bars.append(
+                f'<div class="v-prog-row"><div class="v-prog-head"><span>{_v(t(lang, "w_" + k))}</span>'
+                f'<span>{item.get("done", 0)}/{item.get("due", 0)}</span></div>'
+                f'{_progress(int(item.get("done", 0)), int(item.get("due", 0)), bool(w.get("failed")))}</div>'
+            )
+    prog_html = f'<div class="v-prog-wrap">{"".join(work_bars)}</div>' if work_bars else ""
+    calls_n = int((data.get("usage") or {}).get("calls") or 0)
+    calls_cap = f'<span class="v-cap">{_v(t(lang, "usage_sub", n=calls_n))}</span>' if calls_n else ""
+    cards.append(
+        f'<div class="v-dash-card v-wide {state} v-dash-full">'
+        f'<div class="v-dash-head"><span class="v-dash-title">{_v(title)}</span>{calls_cap}</div>'
+        f'<span class="v-bs">{_v(sub)}</span>{prog_html}'
+        f'<div class="v-dash-links">'
+        f'<a class="v-pill-link" href="/views/c/{cid}/working">{_v(t(lang, "hub_diag_link"))}</a>'
+        f'<a class="v-pill-link" href="/inspector/calls">{_v(t(lang, "hub_calls_link"))}</a>'
+        f'</div></div>'
+    )
+
+    # 2. Attention banner (only when > 0) -> opens dedicated /attention screen directly
+    if attn := int(data.get("attention") or 0):
+        cards.append(
+            f'<a class="v-block v-attn v-dash-full" href="/views/c/{cid}/attention">'
+            f'<div><span class="v-bt">{_v(t(lang, "hub_attn_banner", n=attn))}</span>'
+            f'<div class="v-meta">{_v(t(lang, "hub_attn_sub"))}</div></div>'
+            f'<span class="v-bs">{attn}</span></a>'
+        )
+
+    # 3. Latest reply memory snapshot
+    reply = w.get("reply")
+    if reply and reply.get("placed"):
+        tok = f"{int(reply.get('tokens') or 0):,}"
+        sec = f"{(reply.get('ms') or 0) / 1000:.1f}"
+        meta = t(lang, "hub_reply_meta", n=reply["placed"], tok=tok, s=sec)
+        snap_rows = []
+        for x in (reply.get("lines") or [])[:10]:
+            echo = f' <span class="v-tag k-echo">{_v(t(lang, "echoed"))}</span>' if x.get("echoed") else ""
+            snap_rows.append(f'<div class="v-snap-line">{_v(plain(str(x.get("text") or ""), lang))}{echo}</div>')
+        snap_body = more(snap_rows, lang, 4) if snap_rows else ""
+        reply_inner = f'<span class="v-bs">{_v(meta)}</span>{snap_body}'
+    else:
+        reply_inner = f'<span class="v-bs">{_v(t(lang, "no_reply" if reply is None else "not_placed"))}</span>'
+    cards.append(
+        f'<div class="v-dash-card">'
+        f'<div class="v-dash-head"><span class="v-dash-title">{_v(t(lang, "hub_last_reply"))}</span></div>'
+        f'{reply_inner}'
+        f'<div class="v-dash-links">'
+        f'<a class="v-pill-link" href="/views/c/{cid}/working">{_v(t(lang, "hub_full_packet"))}</a>'
+        f'</div></div>'
+    )
+
+    # 4. Current scene & open threads preview
+    m = data.get("memory") or {}
+    mem_sub = t(lang, "memory_sub", c=m.get("cast", 0), o=m.get("open", 0), g=m.get("changed", 0))
+    now_items = "".join(f'<span class="v-now">{_v(x)}</span>' for x in (m.get("now") or [])[:4])
+    scene_extra = f'<div class="v-now-list">{now_items}</div>' if now_items else ""
+    th_prev = m.get("threads") or []
+    if th_prev:
+        rows = "".join(
+            f'<span class="v-th-prev">{_kind_tag(th.get("kind"), lang)}'
+            f'<span>{_v(str(th.get("text") or "")[:90])}</span></span>'
+            for th in th_prev[:3]
+        )
+        scene_extra += f'<div class="v-th-list">{rows}</div>'
+    cards.append(
+        f'<div class="v-dash-card">'
+        f'<div class="v-dash-head"><span class="v-dash-title">{_v(t(lang, "hub_scene_title"))}</span></div>'
+        f'<span class="v-bs">{_v(mem_sub)}</span>{scene_extra}'
+        f'<div class="v-dash-links">'
+        f'<a class="v-pill-link" href="/views/c/{cid}/memory">{_v(t(lang, "hub_open_summary"))}</a>'
+        f'<a class="v-pill-link" href="/views/c/{cid}/explore">{_v(t(lang, "hub_open_explore"))}</a>'
+        f'</div></div>'
+    )
+
+    cap = " · ".join(str(x) for x in (conv.get("character"),
+                                     f"t{conv['turns']}" if conv.get("turns") is not None else None) if x)
+    head_name = conv.get("name") or "NMOS"
+    return (f'<div class="v v-hub v-hub-compact"><div class="v-head"><h1 class="v-h1">{_v(head_name)}</h1>'
+            f'<span class="v-cap">{_v(cap)}</span></div><div class="v-dash-grid">{"".join(cards)}</div></div>')
 
 
 NOW = ("located_in", "has_status", "vital_status")  # vital_status: extract-v21's alive / dead / missing (PHASE-66)
@@ -687,9 +905,11 @@ def _person_carry(c: dict[str, Any] | None, e: dict[str, Any], lang: str, empty:
     return section("s-carry", lang, f'<p class="v-note">{_v(t(lang, "carry_forgot"))}</p>')
 
 
-def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
+def memory(d: dict[str, Any], lang: str, map_: bool = False, rich: bool = False) -> str:
     """A chat's memory as one document (PHASE-52 D2, PHASE-59 D3): now, open threads, people, so far, secrets, changed
-    from the setting; sticky desktop TOC + mobile jump pills; at the foot, the way into everything else."""
+    from the setting; sticky desktop TOC + mobile jump pills; at the foot, the way into everything else.
+    With `rich=False` (default), renders byte-identical to the Phase 60 baseline; `rich=True` (PHASE-69) points
+    footer links to the dedicated Explorer and Attention screens."""
     conv, ents = d["conv"], d.get("entities") or {}
     cid = conv["id"]
     nm = lambda name: name_link(cid, ents, name)  # noqa: E731
@@ -699,7 +919,7 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
     opened = [line(f"{_kind_tag(th.get('kind'), lang)}{nm(th['by'])}{' → ' + nm(th['to']) if th.get('to') else ''}: {_v(th['text'])}",
                    _thread_meta(th, lang),
                    _close_own(th)) for th in threads]
-    stale = f'<p class="v-note">{_v(t(lang, "stale", n=d["stale"]))}</p>' if d.get("stale") else ""
+    stale = f'<p class="v-note">{_v(t(lang, "stale_rich" if rich else "stale", n=d["stale"]))}</p>' if d.get("stale") else ""
     people = []
     for p in d.get("pairs") or []:
         names = sorted(p["names"].values())
@@ -761,10 +981,16 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False) -> str:
             + section("s-secrets", lang, more(secrets, lang) or nothing, len(secrets)) + epistemic
             + section("s-changed", lang, more(changed, lang) or nothing, len(changed)))
     detail = f"/inspector/c/{cid}"
-    foot = (f'<div class="v-foot"><a href="{detail}#s-facts">{_v(t(lang, "facts", n=d.get("facts", 0)))}</a>'
-            + (f' · <a href="{detail}#s-attention">{_v(t(lang, "attention"))} {d["attention"]}</a>' if d.get("attention") else "")
-            + (f' · <a href="/views/c/{cid}/map">{_v(t(lang, "map"))}</a>' if map_ else "")
-            + f' · <a href="{detail}">{_v(t(lang, "details"))}</a></div>')
+    if rich:
+        foot = (f'<div class="v-foot"><a href="/views/c/{cid}/explore">{_v(t(lang, "explore_all_facts", n=d.get("facts", 0)))}</a>'
+                + (f' · <a href="/views/c/{cid}/attention">{_v(t(lang, "attention"))} {d["attention"]}</a>' if d.get("attention") else "")
+                + (f' · <a href="/views/c/{cid}/map">{_v(t(lang, "map"))}</a>' if map_ else "")
+                + f' · <a href="{detail}">{_v(t(lang, "raw_inspector"))}</a></div>')
+    else:
+        foot = (f'<div class="v-foot"><a href="{detail}#s-facts">{_v(t(lang, "facts", n=d.get("facts", 0)))}</a>'
+                + (f' · <a href="{detail}#s-attention">{_v(t(lang, "attention"))} {d["attention"]}</a>' if d.get("attention") else "")
+                + (f' · <a href="/views/c/{cid}/map">{_v(t(lang, "map"))}</a>' if map_ else "")
+                + f' · <a href="{detail}">{_v(t(lang, "details"))}</a></div>')
     cap = " · ".join(str(x) for x in (conv.get("character"), f"t{conv['turns']}" if conv.get("turns") is not None else None) if x)
     return (f'<div class="v v-doc"><div class="v-head"><h1 class="v-h1">{_v(conv.get("name") or t(lang, "memory"))}</h1>'
             f'<span class="v-cap">{_v(cap)}</span></div><div class="v-doc-grid">{chips}'
@@ -827,19 +1053,24 @@ def overview(spans: list[dict[str, Any]], first: int, last: int, lang: str) -> s
             f'<div class="v-ends"><span>t{first}</span><span>{_v(t(lang, "now_turn", t=last))}</span></div>')
 
 
-def person(d: dict[str, Any], lang: str) -> str:
-    """A person's sheet (PHASE-52 D3): now, relationships, promises and goals, what they know and do not, the timeline."""
+def person(d: dict[str, Any], lang: str, rich: bool = False) -> str:
+    """A person's sheet (PHASE-52 D3, PHASE-69 S3): now, relationships, promises and goals, what they know and do not,
+    the timeline. With `rich=False` (default), renders byte-identical to the Phase 60 baseline; `rich=True` adds
+    editable facts about them, held items, disguises, status badges, and a character switcher."""
     conv, e, ents = d["conv"], d["entity"], d.get("entities") or {}
     cid = conv["id"]
     nm = lambda name: name_link(cid, ents, name)  # noqa: E731
     nothing = f'<p class="v-text">{_v(t(lang, "none_yet"))}</p>'
     aka = [n for n in e.get("names") or [] if n != e.get("name")]
     now = f'<p class="v-text">{" · ".join(_v(x) for x in d.get("now") or [])}</p>' if d.get("now") else nothing
+    if rich and e.get("note"):
+        now += _entity_note_box(e["note"], lang)
     rels = []
     for p in d.get("pairs") or []:
         other = [n for i, n in p["names"].items() if str(i) != str(e["id"])]
         rel = [str(_slotted(f, lang)) for f in p["relationship"] if f.get("value")]
-        rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), " · ".join(_pair_bits(p, lang))))
+        pair_edit = _edit_drawer(_pair_edit_rows(p, lang), lang) if rich else ""
+        rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), " · ".join(_pair_bits(p, lang)), pair_edit))
     threads = [line(f"{_v(th['text'])}" + (f" → {nm(th['to'])}" if th.get("to") and th.get("by") == e.get("name") else ""),
                     _thread_meta(th, lang),
                     _close_own(th)) for th in d.get("threads") or []]
@@ -847,9 +1078,27 @@ def person(d: dict[str, Any], lang: str) -> str:
     knows += [line(_v(content(s)), _v(t(lang, "unaware", who=", ".join(s.get("holders") or [])) + f" · t{s.get('turn')}"))
               for s in d.get("kept") or []]
     time = (_timeline(d, lang) + f'<p class="v-note">{_v(t(lang, "tl_hint"))}</p>') if d.get("marks") else nothing
+    extra_facts = ""
+    extra_held = ""
+    extra_disguises = ""
+    if rich:
+        if p_facts := d.get("facts") or []:
+            grouped, under = _guise_grouped(p_facts[:120])
+            cards = [_fact_card(f, cid, ents, lang, under=id(f) in under, with_cat=False) for f in grouped]
+            extra_facts = (f'<div class="v-sec" id="s-facts"><h2 class="v-h2">{_v(t(lang, "ps_facts"))}'
+                           f'<span class="v-n">{len(p_facts)}</span></h2>'
+                           f'<div class="v-exp-list">{more(cards, lang, 8)}</div></div>')
+        if p_held := d.get("held") or []:
+            h_cards = [_fact_card(f, cid, ents, lang, with_cat=False) for f in p_held[:60]]
+            extra_held = section("s-held", lang, f'<div class="v-exp-list">{more(h_cards, lang, 6)}</div>', len(p_held))
+        if p_disguises := d.get("disguises") or []:
+            d_cards = [_disguise_card(dg, cid, ents, lang, with_cat=False) for dg in p_disguises[:30]]
+            extra_disguises = section("s-disguises", lang, f'<div class="v-exp-list">{"".join(d_cards)}</div>', len(p_disguises))
     body = (section("s-now", lang, now) + section("s-rels", lang, more(rels, lang) or nothing, len(rels))
+            + extra_facts + extra_held
             + section("s-threads", lang, more(threads, lang) or nothing, len(threads))
             + section("s-knows", lang, more(knows, lang) or nothing, len(knows))
+            + extra_disguises
             + "".join(section(k, lang, more(rows, lang), len(rows)) for k, rows in (  # PHASE-66 part 5
                 ("s-beliefs", belief_lines(d.get("beliefs"), lang)), ("s-forgotten", forgot_lines(d.get("forgotten"), lang)))
                 if rows)
@@ -857,12 +1106,34 @@ def person(d: dict[str, Any], lang: str) -> str:
             + section("s-time", lang, time))
     cap = t(lang, "aka", names=", ".join(aka)) if aka else ""
     if not e.get("persona"):  # PHASE-47 S6: the button, behind a tap like every repair here
-        body += (f'<p class="v-note">{_v(t(lang, "is_not_char"))}</p>' if e.get("excluded")
+        not_char_key = "ps_is_not_char" if rich else "is_not_char"
+        body += (f'<p class="v-note">{_v(t(lang, not_char_key))}</p>' if e.get("excluded")
                  else line(_v(t(lang, "not_char")), "", _act("entity_exclude", e["id"], e.get("name"))))
-    return (f'<div class="v v-doc"><div class="v-head"><h1 class="v-h1">{_v(e.get("name"))}</h1>'
-            f'<span class="v-cap">{_v(cap)}</span></div>{body}'
-            f'<div class="v-foot"><a href="/views/c/{cid}/memory">{_v(t(lang, "back_memory"))}</a> · '
-            f'<a href="/inspector/c/{cid}/e/{e["id"]}">{_v(t(lang, "details"))}</a></div></div>')
+    who_picker = ""
+    badges = ""
+    if rich:
+        b_list = []
+        if e.get("persona"):
+            b_list.append(f'<span class="v-tag k-info">{_v(t(lang, "you"))}</span>')
+        if e.get("pinned"):
+            b_list.append(f'<span class="v-tag k-locked">{_v(t(lang, "ps_pinned"))}</span>')
+        if e.get("excluded"):
+            b_list.append(f'<span class="v-tag k-warn">{_v(t(lang, "ps_excluded"))}</span>')
+        badges = " " + "".join(b_list) if b_list else ""
+        chars = d.get("characters") or []
+        if len(chars) > 1:
+            choices = [f'<b>{_v(c["name"])}</b>' if str(c["id"]) == str(e["id"])
+                       else f'<a href="/views/c/{cid}/person/{c["id"]}">{_v(c["name"])}</a>'
+                       for c in chars[:50]]
+            who_picker = f'<p class="who"><span>{_v(t(lang, "ps_who"))}</span> ' + " · ".join(choices) + "</p>"
+        foot = (f'<div class="v-foot"><a href="/views/c/{cid}/memory">{_v(t(lang, "back_memory"))}</a> · '
+                f'<a href="/views/c/{cid}/explore">{_v(t(lang, "explore"))}</a> · '
+                f'<a href="/inspector/c/{cid}/e/{e["id"]}">{_v(t(lang, "raw_person"))}</a></div>')
+    else:
+        foot = (f'<div class="v-foot"><a href="/views/c/{cid}/memory">{_v(t(lang, "back_memory"))}</a> · '
+                f'<a href="/inspector/c/{cid}/e/{e["id"]}">{_v(t(lang, "details"))}</a></div>')
+    return (f'<div class="v v-doc"><div class="v-head"><h1 class="v-h1">{_v(e.get("name"))}{badges}</h1>'
+            f'<span class="v-cap">{_v(cap)}</span></div>{who_picker}{body}{foot}</div>')
 
 
 
@@ -1254,3 +1525,653 @@ def _told_section(cid: str, rows: list[dict[str, Any]] | None, ents: dict[str, s
         meta = _v(t(lang, "told_about", who=", ".join(about))) if about else ""
         items.append(line(f"{who}: {_v(chain[0]['what'])}{when}", meta))
     return section("s-told", lang, more(items, lang), len(items))
+
+
+# --- PHASE-69: Memory Explorer & Focused Attention & Repairs (card-based, zero tables) ----------------------------------
+
+_CTRL = re.compile(r"[\x00-\x1f\x7f|]+")
+_RQ_MARK = re.compile(r'<span class="rq" data-bulk="[^"]*"></span>')
+
+
+def _who_attr(names: Any) -> str:
+    """Safe read-only `data-who` attribute for client-side character filtering (PHASE-69 S1)."""
+    seen: list[str] = []
+    used: set[str] = set()
+    total = 0
+    for raw in names:
+        clean = _CTRL.sub(" ", str(raw or "")).strip()
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in used:
+            continue
+        add = len(clean) + (1 if seen else 0)
+        if total + add > 240:
+            if not seen:
+                seen.append(clean[:240])
+            break
+        used.add(key)
+        seen.append(clean)
+        total += add
+    return f' data-who="{_v("|".join(seen))}"' if seen else ""
+
+
+def _edit_drawer(acts_html: str, lang: str) -> str:
+    """Tidy collapsible edit drawer wrapping existing repair markers (`span.rp`)."""
+    if not acts_html:
+        return ""
+    return (f'<details class="v-edit"><summary>{_v(t(lang, "ex_edit"))}</summary>'
+            f'<div class="v-edit-body">{acts_html}</div></details>')
+
+
+def _fact_acts(f: dict[str, Any], *, include_hidden: bool = False) -> str:
+    """Repair markers for one current fact row (PHASE-69 / PHASE-70): retract, correct, hidden-from, lock, undo."""
+    if f.get("carried") or f.get("id") is None:
+        return ""
+    acts = ""
+    if f.get("owner"):
+        if f.get("repair"):
+            acts += _act("undo", f["repair"])
+        if not f.get("locked"):
+            acts += _act("fact_lock", f["id"])
+        if f.get("locked"):
+            acts += _act("undo", f["locked"])
+        return acts
+    acts += _act("fact_retract", f["id"]) + "".join(_act("fact_correct", f["id"], x) for x in _corrections(f))
+    if include_hidden and not f.get("canon"):
+        acts += _act("fact_hidden", f["id"])
+    if f.get("canon") and not f.get("locked"):
+        acts += _act("fact_lock", f["id"])
+    if f.get("locked"):
+        acts += _act("undo", f["locked"])
+    return acts
+
+
+def _pair_edit_rows(p: dict[str, Any], lang: str) -> str:
+    """Per-fact editable rows for a relationship/role/feeling/address pair card (PHASE-70)."""
+    rows: list[str] = []
+    for key in ("relationship", "role", "feels", "speech"):
+        for f in p.get(key) or ():
+            f_acts = _fact_acts(f, include_hidden=True)
+            if not f_acts:
+                continue
+            lbl = f"{word(str(f.get('predicate') or ''), lang)} · {_named(f, 'subject')}→{_named(f, 'object')}: {_slotted(f, lang)}"
+            rows.append(f'<div class="v-edit-row"><span class="v-edit-lbl">{_v(lbl)}</span>{f_acts}</div>')
+    return "".join(rows)
+
+
+def _entity_note_box(note: dict[str, Any] | None, lang: str) -> str:
+    """Visible callout showing an entity's owner description note (PHASE-70, ADR 0096)."""
+    text = str((note or {}).get("text") or "").strip()
+    if not text:
+        return ""
+    return (f'<div class="v-note-box"><span class="v-tag k-owner">{_v(t(lang, "ex_note"))}</span>'
+            f'<span class="v-note-text">{_v(text)}</span></div>')
+
+
+def _entity_note_acts(eid: str | None, note: dict[str, Any] | None) -> str:
+    """Inline repair buttons for adding/editing/removing an entity's owner note (PHASE-70)."""
+    if not eid:
+        return ""
+    rid = (note or {}).get("repair") or (note or {}).get("id")
+    return _act("entity_note", eid, "edit" if note else "add") + (_act("undo", rid) if rid else "")
+
+
+def _turn_badge(row: dict[str, Any], lang: str) -> str:
+    """A source-turn link (`tN`) or setting/carried label on the right of a card header."""
+    if row.get("carried"):
+        src = row.get("carried_from")
+        turn = _turn_of(src.get("turn")) if isinstance(src, dict) else None
+        label = t(lang, "carry_turn", t=turn) if turn is not None else t(lang, "carried")
+        href = carry_href(row)
+        return f'<a href="{_v(href)}">{_v(label)}</a>' if href else _v(label)
+    if row.get("canon"):
+        return f'<span title="{_v(row["canon"])}">{_v(t(lang, "ex_setting"))}</span>'
+    turn = row.get("turn")
+    if isinstance(turn, int) and not isinstance(turn, bool):
+        return turn_link(turn, f"t{turn}")
+    pos = row.get("position")
+    return _v(f"#{pos}") if pos is not None else ""
+
+
+def _fact_card(f: dict[str, Any], cid: str, ents: dict[str, str], lang: str, *, under: bool = False,
+               with_cat: bool = True) -> str:
+    """One fact as a responsive card with source badges, turn link, and collapsible repair drawer."""
+    pred = str(f.get("predicate") or "")
+    badges = [f'<span class="v-tag">{_v(word(pred, lang))}</span>']
+    if f.get("canon"):
+        badges.append(f'<span class="v-tag k-setting">{_v(t(lang, "ex_setting"))}</span>')
+    if f.get("owner"):
+        badges.append(f'<span class="v-tag k-owner">{_v(t(lang, "ex_owner"))}</span>')
+    if f.get("locked"):
+        badges.append(f'<span class="v-tag k-locked">{_v(t(lang, "ex_locked"))}</span>')
+    if f.get("carried"):
+        badges.append(carried_mark(f, lang))
+    if f.get("polarity") == "negative":
+        badges.append(f'<span class="v-tag k-err">{_v(t(lang, "ex_neg"))}</span>')
+    if f.get("disputed_by"):
+        badges.append(f'<span class="v-tag k-warn">{_v(t(lang, "ex_disputed"))}</span>')
+    if label := cond_label(f, lang):
+        badges.append(f'<span class="v-tag k-info">{_v(label)}</span>')
+    if f.get("predicate") == "event" and f.get("salience") in ("major", "minor"):
+        badges.append(f'<span class="v-tag">{_v(_it(lang, "s." + f["salience"]))}</span>')
+
+    subj = _named(f, "subject")
+    obj = _named(f, "object") if f.get("object") else ""
+    val = f.get("value")
+    subj_html = name_link(cid, ents, subj)
+    obj_html = name_link(cid, ents, obj) if obj else ""
+    prefix = "↳ " if under else ""
+    if obj_html and val not in (None, ""):
+        main = f'{prefix}{subj_html} → {obj_html}: {_v(val)}'
+    elif obj_html:
+        main = f'{prefix}{subj_html} → {obj_html}'
+    elif val not in (None, ""):
+        main = f'{prefix}{subj_html}: {_v(val)}'
+    else:
+        main = f'{prefix}{subj_html}'
+    if cond_notes := cond_extra(f, lang):
+        main += " " + " ".join(f'<span class="v-meta">({_v(x)})</span>' for x in cond_notes)
+    if f.get("item_kind") == "fungible":
+        badges.append(f'<span class="v-tag">{_v(_it(lang, "fungible"))}</span>')
+
+    sub_bits: list[str] = []
+    if with_html := _with(f, lang):
+        sub_bits.append(f'{_v(t(lang, "with", who="").strip())} {with_html}')
+    if f.get("because"):
+        cause = f"{t(lang, 'because', why=f['because'])}"
+        if ce := f.get("cause_event"):
+            when = ce["turn"] if ce.get("turn") is not None else ce.get("position")
+            cause += f" · t{when}: {ce.get('text') or ''}"
+        sub_bits.append(_v(cause))
+    if h := happened_text(_own(f), lang):
+        sub_bits.append(_v(h))
+    if f.get("known_by") or f.get("hidden_from") or f.get("forgotten_by") or f.get("knowledge") in ("limited", "secret"):
+        sub_bits.append(_knowledge(f, lang))
+
+    acts = _fact_acts(f, include_hidden=True)
+
+    who_names = [subj, obj] + [
+        (p.get("entity") or {}).get("name") or p.get("name") for p in f.get("participant_entities") or []
+    ]
+    canon_attr = ' data-canon="1"' if f.get("canon") and not f.get("owner") else ""
+    cat_attr = ' data-cat="facts"' if with_cat else ""
+    cls = "v-card v-exp-card v-fact-card" if with_cat else "v-card v-fact-card"
+    return (f'<div class="{cls}"{cat_attr}{_who_attr(who_names)}{canon_attr}>'
+            f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}</div>'
+            f'<span class="v-card-turn">{_turn_badge(f, lang)}</span></div>'
+            f'<div class="v-card-main">{main}</div>'
+            + (f'<div class="v-card-sub">{" · ".join(sub_bits)}</div>' if sub_bits else "")
+            + _edit_drawer(acts, lang) + "</div>")
+
+
+def _disguise_card(dg: dict[str, Any], cid: str, ents: dict[str, str], lang: str, *, with_cat: bool = True) -> str:
+    """One disguise entry as a card (extract-v21, PHASE-66 / PHASE-69)."""
+    wearer = _named(dg, "subject")
+    status = _it(lang, "dg.current" if dg.get("current") else "dg.over")
+    badges = [f'<span class="v-tag k-info">{_v(t(lang, "ex_disguise"))}</span>',
+              f'<span class="v-tag">{_v(status)}</span>']
+    main = f'{name_link(cid, ents, wearer)} → {_v(dg.get("guise") or "")}'
+    subs = []
+    if kept := dg.get("kept_from") or []:
+        subs.append(_v(t(lang, "kept", who=", ".join(str(x) for x in kept))))
+    if rev := [str(x.get("to")) for x in dg.get("revealed") or [] if x.get("to")]:
+        subs.append(_v(t(lang, "by", who=", ".join(rev))))
+    cat_attr = ' data-cat="epistemic"' if with_cat else ""
+    cls = "v-card v-exp-card" if with_cat else "v-card"
+    return (f'<div class="{cls}"{cat_attr}{_who_attr([wearer, *(dg.get("kept_from") or [])])}>'
+            f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}</div>'
+            f'<span class="v-card-turn">{_turn_badge(dg, lang)}</span></div>'
+            f'<div class="v-card-main">{main}</div>'
+            + (f'<div class="v-card-sub">{" · ".join(subs)}</div>' if subs else "") + "</div>")
+
+
+def _canon_card(r: dict[str, Any], history: dict[str, dict[str, Any]], held: dict[str, dict[str, Any]],
+                read: dict[str, dict[str, Any]] | None, lang: str) -> str:
+    """One canon (card / lorebook / persona / note) entry as a stacked card — no 9-column table."""
+    key = str(r.get("key") or "")
+    src_kind = key.split(":")[0]
+    src_label = _it(lang, f"cn.{src_kind}") if f"cn.{src_kind}" in _inspector_keys() else src_kind
+    badges = [f'<span class="v-tag k-setting">{_v(src_label)}</span>']
+    if read is not None:
+        rx = read.get(key)
+        if rx is None:
+            r_txt = _it(lang, "cn.unread" if key.startswith("lore:") else "cn.none")
+            badges.append(f'<span class="v-tag">{_v(r_txt)}</span>')
+        elif rx.get("job") in ("queued", "running"):
+            badges.append(f'<span class="v-tag k-info">{_v(_it(lang, "cn.reading"))}</span>')
+        elif rx.get("job") == "dead":
+            badges.append(f'<span class="v-tag k-err">{_v(_it(lang, "cn.failed"))}</span>')
+        elif rx.get("calls"):
+            badges.append(f'<span class="v-tag k-owner">{_v(_it(lang, "cn.read").format(n=rx["calls"]))}</span>')
+
+    m = r.get("metadata") or {}
+    meta_bits = [m.get("scope"), m.get("mode"), "always" if m.get("always_active") else None,
+                 _it(lang, "cn.keys").format(n=len(m["keys"])) if m.get("keys") else None]
+    content_str = r.get("content")
+    if content_str is not None:
+        meta_bits.append(t(lang, "ex_chars", n=f"{len(content_str):,}"))
+    if h := held.get(key):
+        meta_bits.append(_it(lang, "cn.held").format(n=h["requests"]))
+    else:
+        meta_bits.append(_it(lang, "cn.never"))
+    vers = (history.get(key) or {}).get("versions", 1)
+    if vers and vers > 1:
+        meta_bits.append(f"v{vers}")
+
+    preview = (_v(content_str[:180] + ("…" if len(content_str) > 180 else "")) if content_str is not None
+               else f'<span class="v-warn">{_v(_it(lang, "cn.missing"))}</span>')
+    return (f'<div class="v-card v-exp-card" data-cat="canon">'
+            f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}'
+            f'<b>{_v(key)}</b></div></div>'
+            f'<div class="v-card-main">{preview}</div>'
+            f'<div class="v-card-sub">{_v(" · ".join(str(b) for b in meta_bits if b))}</div></div>')
+
+
+def _inspector_keys() -> dict[str, Any]:
+    from . import inspector as _insp
+    return _insp.T
+
+
+def explore(d: dict[str, Any], lang: str) -> str:
+    """PHASE-69 S1: Card-based Memory Explorer promoting all reading & editing power of `자세히` with zero tables."""
+    conv, ents = d["conv"], d.get("entities_map") or {}
+    cid = conv["id"]
+    nm = lambda name: name_link(cid, ents, name)  # noqa: E731
+    persona_ids = frozenset(str(e["id"]) for e in d.get("entities") or [] if e.get("persona"))
+
+    # 1. Facts
+    raw_facts = (d.get("facts") or [])[:300]
+    fact_by_id = {f["id"]: f for f in d.get("facts") or [] if f.get("id") is not None}
+    notes_by_eid = {str(n["entity_id"]): n for n in d.get("entity_notes") or [] if n.get("entity_id")}
+    excluded_map = d.get("excluded") or {}
+    item_eid_by_name = {
+        str(e.get("name") or "").casefold(): str(e["id"])
+        for e in d.get("entities") or [] if e.get("type") == "item" and e.get("id")
+    }
+    grouped_facts, under = _guise_grouped(raw_facts)
+    fact_cards = [_fact_card(f, cid, ents, lang, under=id(f) in under) for f in grouped_facts]
+
+    # 2. Pairs (relationships, roles, feelings, addresses)
+    pair_cards = []
+    for p in (d.get("pairs") or [])[:100]:
+        names_list = sorted(p["names"].values())
+        rel = [_slotted(f, lang) for f in p["relationship"] if f.get("value")]
+        head = " ↔ ".join(nm(n) for n in names_list) + (f" · {_v(', '.join(str(r) for r in rel))}" if rel else "")
+        bits = _pair_bits(p, lang)
+        if len(p["relationship"]) > 1 or any(not symmetric(f.get("value")) for f in p["relationship"]):
+            bits = [_v(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, 'relationship')} {_slotted(f, lang)}")
+                    + (f" {h}" if (h := happened_mark(_own(f), lang)) else "")
+                    + (f" {m}" if (m := carried_mark(f, lang)) else "")
+                    for f in p["relationship"]] + bits
+        # Include previous value history if present
+        hist_notes = []
+        for k in ("relationship", "role", "feels", "speech"):
+            for f in p[k]:
+                if prev := earlier(f):
+                    hist_notes.append(f"{_named(f, 'subject')}→{_named(f, 'object')}: {_it(lang, 'before')} {prev.get('value') or ''}")
+        said_all = [f for k in ("relationship", "role", "feels", "speech") for f in p[k]]
+        canon_only = bool(said_all) and all(f.get("canon") and not f.get("owner") for f in said_all)
+        canon_attr = ' data-canon="1"' if canon_only else ""
+        badges = [f'<span class="v-tag k-setting">{_v(t(lang, "ex_setting"))}</span>'] if canon_only else []
+        edit_rows = _pair_edit_rows(p, lang)
+        excl_marks = _exclude_marks(p, persona_ids)
+        acts = edit_rows + (f'<div class="v-edit-row">{excl_marks}</div>' if excl_marks else "")
+        pair_cards.append(
+            f'<div class="v-card v-exp-card" data-cat="pairs"{_who_attr(names_list)}{canon_attr}>'
+            + (f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}</div></div>' if badges else "")
+            + f'<div class="v-card-main">{head}</div>'
+            + (f'<div class="v-card-sub">{"<br>".join(bits)}</div>' if bits else "")
+            + (f'<div class="v-card-sub">{_v(" · ".join(hist_notes[:4]))}</div>' if hist_notes else "")
+            + _edit_drawer(acts, lang) + "</div>"
+        )
+
+    # 3. Threads (promises, goals, questions, threats, debts — open first, then closed)
+    raw_threads = (d.get("threads") or [])[:100]
+    sorted_threads = sorted(raw_threads, key=lambda th: (0 if th.get("status") == "open" else 1))
+    thread_cards = []
+    for th in sorted_threads:
+        st = str(th.get("status") or "open")
+        st_label = _it(lang, f"t.{st}") if f"t.{st}" in _inspector_keys() else st
+        badges = [_kind_tag(th.get("kind"), lang),
+                  f'<span class="v-tag{" k-owner" if st == "open" else ""}">{_v(st_label)}</span>']
+        if th.get("horizon") in ("scene", "arc", "lasting"):
+            badges.append(f'<span class="v-tag">{_v(t(lang, "hz." + th["horizon"]))}</span>')
+        if th.get("carried"):
+            badges.append(carried_mark(th, lang))
+        who_head = nm(th.get("by")) + (f" → {nm(th['to'])}" if th.get("to") else "")
+        main = f'{who_head}: {_v(th.get("text") or "")}'
+        subs = []
+        if restated := [str(r["turn"] if r.get("turn") is not None else r["position"]) for r in th.get("restated") or []]:
+            subs.append(_v(f"{_it(lang, 'h.restated')}: {', '.join(restated)}"))
+        if c := th.get("closed_by"):
+            c_txt = fact_line_text(c) if c.get("predicate") else (c.get("evidence") or _it(lang, "or.closed"))
+            subs.append(_v(f"{_it(lang, 'h.closed')}: {c_txt}"))
+        if h := happened_text(_own(th), lang):
+            subs.append(_v(h))
+        acts = ""
+        if not th.get("carried"):
+            if st == "open":
+                acts = _close(th)
+            elif not (th.get("closed_by") or {}).get("owner"):
+                acts = _act("thread_reopen", th["id"])
+        thread_cards.append(
+            f'<div class="v-card v-exp-card" data-cat="threads"{_who_attr([th.get("by"), th.get("to")])}>'
+            f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}</div>'
+            f'<span class="v-card-turn">{_turn_badge(th, lang)}</span></div>'
+            f'<div class="v-card-main">{main}</div>'
+            + (f'<div class="v-card-sub">{" · ".join(subs)}</div>' if subs else "")
+            + _edit_drawer(acts, lang) + "</div>"
+        )
+
+    # 4. Epistemic (secrets, beliefs, forgotten, disguises, told chains)
+    ep_cards = []
+    for s in (d.get("secrets") or [])[:100]:
+        is_open = bool(s.get("open"))
+        badges = [f'<span class="v-tag{" k-warn" if is_open else ""}">{_v(t(lang, "ex_secret"))}</span>']
+        holders = s.get("holders") or []
+        kept_from = s.get("kept_from") or s.get("open") or []
+        subs = []
+        if holders:
+            subs.append(_v(t(lang, "by", who=", ".join(holders))))
+        if s.get("kept_from"):
+            subs.append(_secret_status(s, lang))
+        elif s.get("open"):
+            subs.append(_v(t(lang, "kept", who=", ".join(s["open"]))))
+        if h := happened_text(s, lang):
+            subs.append(_v(h))
+        sf = fact_by_id.get(s.get("id"))
+        s_acts = _fact_acts(sf, include_hidden=True) if sf is not None else ""
+        ep_cards.append(
+            f'<div class="v-card v-exp-card" data-cat="epistemic"{_who_attr([*holders, *kept_from])}>'
+            f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}</div>'
+            f'<span class="v-card-turn">{_turn_badge(s, lang)}</span></div>'
+            f'<div class="v-card-main">{_v(content(s))}</div>'
+            + (f'<div class="v-card-sub">{"<br>".join(subs)}</div>' if subs else "")
+            + _edit_drawer(s_acts, lang) + "</div>"
+        )
+    for b in (d.get("beliefs") or [])[:100]:
+        subj = _named(b, "subject")
+        e = b.get("ended_by")
+        state = t(lang, "b_ended", what=" ".join(str(x) for x in (e.get("predicate"), e.get("object"), e.get("value")) if x)) \
+            if e else t(lang, "b_held")
+        badges = [f'<span class="v-tag k-info">{_v(t(lang, "ex_belief"))}</span>',
+                  f'<span class="v-tag">{_v(state)}</span>']
+        ep_cards.append(
+            f'<div class="v-card v-exp-card" data-cat="epistemic"{_who_attr([subj])}>'
+            f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}</div>'
+            f'<span class="v-card-turn">{_turn_badge(b, lang)}</span></div>'
+            f'<div class="v-card-main">{nm(subj)}: {_v(b.get("value") or "")}</div>'
+            + _edit_drawer(_epistemic_acts(b), lang) + "</div>"
+        )
+    for g in (d.get("forgotten") or [])[:100]:
+        who = str(g.get("who") or g.get("subject") or "")
+        badges = [f'<span class="v-tag">{_v(t(lang, "ex_forgot"))}</span>']
+        wd = g.get("withdrew") or []
+        sub_txt = _v(t(lang, "f_withdrew", n=len(wd))) if wd else ""
+        ep_cards.append(
+            f'<div class="v-card v-exp-card" data-cat="epistemic"{_who_attr([who])}>'
+            f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}</div>'
+            f'<span class="v-card-turn">{_turn_badge(g, lang)}</span></div>'
+            f'<div class="v-card-main">{nm(who)}: {_v(_forgot_what(g, lang))}</div>'
+            + (f'<div class="v-card-sub">{sub_txt}</div>' if sub_txt else "")
+            + _edit_drawer(_epistemic_acts(g), lang) + "</div>"
+        )
+    for dg in (d.get("disguises") or [])[:50]:
+        ep_cards.append(_disguise_card(dg, cid, ents, lang))
+    if told_rows := d.get("told") or []:
+        from .memorymap import told_chains
+        for chain in told_chains(told_rows, include_id=True)[:60]:
+            people = [chain[0]["teller"], *(link["hearer"] for link in chain)]
+            who_html = " → ".join(nm(p) for p in people)
+            turns = [turn_link(link["turn"], f"t{link['turn']}") for link in chain
+                     if isinstance(link.get("turn"), int) and not isinstance(link.get("turn"), bool)]
+            about = list(dict.fromkeys(w for link in chain for w in link.get("about") or ()))
+            acts = "".join(_act("told_retract", link["id"]) for link in chain if link.get("id") is not None)
+            ep_cards.append(
+                f'<div class="v-card v-exp-card" data-cat="epistemic"{_who_attr([*people, *about])}>'
+                f'<div class="v-card-top"><div class="v-card-badges">'
+                f'<span class="v-tag">{_v(t(lang, "ex_told"))}</span></div>'
+                f'<span class="v-card-turn">{" → ".join(turns)}</span></div>'
+                f'<div class="v-card-main">{who_html}: {_v(chain[0]["what"])}</div>'
+                + (f'<div class="v-card-sub">{_v(t(lang, "told_about", who=", ".join(about)))}</div>' if about else "")
+                + _edit_drawer(acts, lang) + "</div>"
+            )
+
+    # 5. Items
+    item_cards = []
+    for item in (d.get("items") or [])[:100]:
+        hist = item.get("history") or []
+        canon_only = bool(hist) and all(h.get("canon") for h in hist)
+        canon_attr = ' data-canon="1"' if canon_only else ""
+        latest = next((h for h in reversed(hist) if h.get("outcome") == "current"), hist[-1] if hist else None)
+        badges = [f'<span class="v-tag">{_v(_it(lang, "e.item"))}</span>']
+        if canon_only:
+            badges.append(f'<span class="v-tag k-setting">{_v(t(lang, "ex_setting"))}</span>')
+        cur_html = _step(latest, lang) if latest else ""
+        hist_fold = ""
+        if len(hist) > 1:
+            steps = "".join(f'<div class="v-card-sub">{_step(h, lang)}</div>' for h in hist)
+            hist_fold = (f'<details class="v-more"><summary>{_v(t(lang, "ex_item_hist", n=len(hist)))}</summary>'
+                         f'{steps}</details>')
+        who_names = [h.get("subject") for h in hist if h.get("subject")]
+        item_name = str(item.get("item") or "")
+        item_eid = str(item["entity_id"]) if item.get("entity_id") else item_eid_by_name.get(item_name.casefold())
+        ent_note = notes_by_eid.get(item_eid) if item_eid else None
+        cur_fact = fact_by_id.get(item.get("fact_id"))
+        edit_rows: list[str] = []
+        if cur_fact is not None and (f_acts := _fact_acts(cur_fact, include_hidden=True)):
+            edit_rows.append(f'<div class="v-edit-row"><span class="v-edit-lbl">{_v(t(lang, "ex_item_now"))}</span>{f_acts}</div>')
+        if item_eid and (excluded_map.get(item_eid) or {}).get("scope") != "memory":
+            edit_rows.append(
+                f'<div class="v-edit-row"><span class="v-edit-lbl">{_v(t(lang, "ex_note"))}</span>'
+                f'{_entity_note_acts(item_eid, ent_note)}</div>'
+            )
+        item_title = (f'<a class="v-name" href="/inspector/c/{cid}/e/{_v(item_eid)}">{_v(item_name)}</a>'
+                      if item_eid else f'<b>{_v(item_name)}</b>')
+        item_cards.append(
+            f'<div class="v-card v-exp-card" data-cat="items"{_who_attr(who_names)}{canon_attr}>'
+            f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}{item_title}</div></div>'
+            + (f'<div class="v-card-main">{cur_html}</div>' if cur_html else "")
+            + _entity_note_box(ent_note, lang)
+            + hist_fold
+            + _edit_drawer("".join(edit_rows), lang) + "</div>"
+        )
+
+    # 6. Entities
+    pinned_ids = {str(p.get("entity_id")) for p in d.get("pins") or []}
+    sorted_ents = sorted(
+        (d.get("entities") or [])[:150],
+        key=lambda e: (0 if e.get("type") == "character" else 1, -int(e.get("mentions") or 0), str(e.get("name") or "")),
+    )
+    ent_cards = []
+    for e in sorted_ents:
+        eid = str(e["id"])
+        etype = str(e.get("type") or "character")
+        etype_lbl = _it(lang, f"e.{etype}") if f"e.{etype}" in _inspector_keys() else etype
+        badges = [f'<span class="v-tag">{_v(etype_lbl)}</span>']
+        if e.get("persona"):
+            badges.append(f'<span class="v-tag k-info">{_v(t(lang, "you"))}</span>')
+        if eid in pinned_ids:
+            badges.append(f'<span class="v-tag k-locked">{_v(t(lang, "ps_pinned"))}</span>')
+        if eid in excluded_map:
+            badges.append(f'<span class="v-tag k-warn">{_v(t(lang, "ps_excluded"))}</span>')
+        href = f"/views/c/{cid}/person/{eid}" if etype == "character" else f"/inspector/c/{cid}/e/{eid}"
+        aka = [n for n in e.get("names") or [] if n != e.get("name")]
+        who_names = [e.get("name"), *aka] if etype == "character" else []
+        sheet_link = (f'<a class="v-pill-link" href="{href}">{_v(t(lang, "ex_open_sheet"))}</a>'
+                      if etype == "character" else "")
+        ent_note = notes_by_eid.get(eid)
+        note_acts = _entity_note_acts(eid, ent_note) if (excluded_map.get(eid) or {}).get("scope") != "memory" else ""
+        ent_cards.append(
+            f'<div class="v-card v-exp-card" data-cat="entities"{_who_attr(who_names)}>'
+            f'<div class="v-card-top"><div class="v-card-badges">{"".join(badges)}'
+            f'<a class="v-name" href="{href}">{_v(e.get("name"))}</a></div>'
+            f'<span class="v-card-turn">{_v(t(lang, "ex_mentions", n=e.get("mentions") or 0))}</span></div>'
+            + (f'<div class="v-card-sub">{_v(t(lang, "aka", names=", ".join(aka)))}</div>' if aka else "")
+            + _entity_note_box(ent_note, lang)
+            + (f'<div class="v-dash-links">{sheet_link}</div>' if sheet_link else "")
+            + _edit_drawer(note_acts, lang) + "</div>"
+        )
+
+    # 7. Canon (card / lorebook / persona / author's note)
+    canon_rows = (d.get("canon_rows") or [])[:200]
+    canon_hist = d.get("canon_history") or {}
+    canon_held = d.get("canon_held") or {}
+    canon_read = d.get("canon_read")
+    canon_cards = [_canon_card(r, canon_hist, canon_held, canon_read, lang) for r in canon_rows]
+    canon_note = note_blocks(canon_rows, conv.get("turns"), lang)
+
+    cat_sections = [
+        ("facts", "s-facts", fact_cards, ""),
+        ("pairs", "s-pairs", pair_cards, ""),
+        ("threads", "s-threads", thread_cards, ""),
+        ("epistemic", "s-epistemic", ep_cards, ""),
+        ("items", "s-items", item_cards, ""),
+        ("entities", "s-entities", ent_cards, ""),
+        ("canon", "s-canon", canon_cards, canon_note),
+    ]
+    jump_chips = '<div class="v-chips">' + "".join(
+        f'<a href="#{sec_id}"><span>{_v(t(lang, sec_id))}</span>'
+        + (f'<span class="v-chip-n">{len(cards)}</span>' if cards else "") + "</a>"
+        for _, sec_id, cards, _ in cat_sections if cards
+    ) + "</div>"
+
+    sec_html = []
+    for cat, sec_id, cards, extra_note in cat_sections:
+        inner = (f'<div class="v-exp-list">{"".join(cards)}</div>' if cards
+                 else f'<p class="v-text">{_v(t(lang, "ex_canon_empty" if cat == "canon" else "ex_empty"))}</p>')
+        sec_html.append(
+            f'<div class="v-sec" id="{sec_id}" data-cat="{cat}">'
+            f'<h2 class="v-h2">{_v(t(lang, sec_id))}<span class="v-n">{len(cards)}</span></h2>'
+            f'{extra_note}{inner}</div>'
+        )
+
+    cap = " · ".join(str(x) for x in (conv.get("character"),
+                                     f"t{conv['turns']}" if conv.get("turns") is not None else None,
+                                     t(lang, "facts", n=len(raw_facts))) if x)
+    foot = (f'<div class="v-foot"><a href="/views/c/{cid}/memory">{_v(t(lang, "back_memory"))}</a> · '
+            f'<a href="/views/c/{cid}/attention">{_v(t(lang, "attention"))}</a> · '
+            f'<a href="/inspector/c/{cid}">{_v(t(lang, "raw_inspector"))}</a></div>')
+    return (f'<div class="v v-doc v-explore"><div class="v-head">'
+            f'<h1 class="v-h1">{_v(conv.get("name") or t(lang, "explore"))}</h1>'
+            f'<span class="v-cap">{_v(cap)}</span></div>'
+            f'<div class="v-exp-toolbar-slot">{jump_chips}</div>'
+            f'{"".join(sec_html)}{foot}</div>')
+
+
+def attention(d: dict[str, Any], lang: str) -> str:
+    """PHASE-69 S2: Dedicated 3-section Attention & Repairs triage screen (zero tables, full Phase 57 bulk support)."""
+    conv = d["conv"]
+    cid = conv["id"]
+
+    # 1. Needs attention queue (cards wrapping inspector._attention rows, preserving span.rq bulk & span.rp repair)
+    queue = d.get("queue") or []
+    attn_cards = []
+    for issue_html, text_html, turn_html, acts_html in queue:
+        rqs = "".join(_RQ_MARK.findall(acts_html))
+        rps = _RQ_MARK.sub("", acts_html).strip()
+        check_html = f'<span class="v-card-check">{rqs}</span>' if rqs else ""
+        turn_str = str(turn_html or "")
+        turn_disp = turn_link(int(turn_str), f"t{turn_str}") if turn_str.isdigit() else turn_str
+        attn_cards.append(
+            f'<div class="v-card v-card-warn">'
+            f'<div class="v-card-top">{check_html}'
+            f'<div class="v-card-badges"><span class="v-tag k-warn">{issue_html}</span></div>'
+            + (f'<span class="v-card-turn">{turn_disp}</span>' if turn_disp else "")
+            + f'</div><div class="v-card-main">{text_html}</div>'
+            + (f'<div class="v-card-acts">{rps}</div>' if rps else "") + "</div>"
+        )
+    attn_body = (f'<div class="v-exp-list">{"".join(attn_cards)}</div>' if attn_cards
+                 else f'<div class="v-empty">{_v(t(lang, "at_clear"))}</div>')
+
+    # 2. Conflicts
+    owned = d.get("owned_facts") or {}
+    conflicts = (d.get("conflicts") or [])[:100]
+    conflict_cards = []
+    for c in conflicts:
+        ckind = str(c.get("kind") or "disputed")
+        ckind_lbl = _it(lang, f"cf.{ckind}") if f"cf.{ckind}" in _inspector_keys() else ckind
+        against = c.get("against") or {}
+        fields = _corrections(against) if against.get("predicate") else []
+        acts = ""
+        if ckind == "canon" and against.get("id") is not None:
+            acts = (_act("fact_lock", against["id"]) + _act("fact_retract", against["id"])
+                    + _fix(against["id"], fields, lock=True) + _fix(c["fact"], fields))
+        elif ckind != "locked":
+            mine = c.get("fact") in owned
+            acts = (_act("undo", owned[c["fact"]]) if mine
+                    else _act("fact_retract", c["fact"]) + _fix(c["fact"], fields))
+            if against.get("id") is not None:
+                acts += _fix(against["id"], fields)
+        conflict_cards.append(
+            f'<div class="v-card v-card-warn">'
+            f'<div class="v-card-top"><div class="v-card-badges">'
+            f'<span class="v-tag k-warn">{_v(ckind_lbl)}</span></div></div>'
+            f'<div class="v-diff-block">'
+            f'<div class="v-diff-row"><span class="v-tag k-setting">{_v(t(lang, "at_existing"))}</span>'
+            f'{_v(fact_line_text(against)) if against.get("predicate") else ""} '
+            f'<span class="v-card-turn">{_turn(against, lang) if against else ""}</span></div>'
+            f'<div class="v-diff-row"><span class="v-tag k-info">{_v(t(lang, "at_new_story"))}</span>'
+            f'{_v(c.get("text") or "")} <span class="v-card-turn">{_turn(c, lang)}</span></div>'
+            f'</div>'
+            + (f'<div class="v-card-acts">{acts}</div>' if acts else "") + "</div>"
+        )
+    conflicts_body = (f'<div class="v-exp-list">{"".join(conflict_cards)}</div>' if conflict_cards
+                      else f'<p class="v-text">{_v(t(lang, "at_no_conflicts"))}</p>')
+
+    # 3. Direct edits / Repairs
+    repairs_list = (d.get("repairs") or [])[:100]
+    batches: dict[str, list[dict[str, Any]]] = {}
+    for rep in repairs_list:
+        if rep.get("batch_id") and not rep.get("removed_at"):
+            batches.setdefault(str(rep["batch_id"]), []).append(rep)
+    batch_html = "".join(
+        f'<div class="v-card"><div class="v-card-main">{_v(_it(lang, "rs.batch").format(n=len(reps)))} '
+        f'{timestamp(reps[-1]["created_at"])}</div>'
+        f'<div class="v-card-acts">{_act("undo_batch", batch)}</div></div>'
+        for batch, reps in batches.items()
+    )
+    repair_cards = []
+    for rep in repairs_list:
+        rkind = str(rep.get("kind") or "")
+        rkind_lbl = _it(lang, f"rk.{rkind}") if f"rk.{rkind}" in _inspector_keys() else rkind
+        if rep.get("removed_at"):
+            st_badge = f'<span class="v-tag">{_v(_it(lang, "rs.removed"))}</span>'
+            acts = ""
+        elif rep.get("via"):
+            st_badge = f'<span class="v-tag k-warn">{_v(_it(lang, "rs.via").format(names=", ".join(rep["via"])))}</span>'
+            acts = _undo(rep)
+        elif rep.get("applied"):
+            st_badge = f'<span class="v-tag k-owner">{_v(_it(lang, "rs.applied"))}</span>'
+            acts = _undo(rep)
+        else:
+            st_badge = f'<span class="v-tag k-warn">{_v(_it(lang, "rs.unmatched"))}</span>'
+            acts = _undo(rep)
+        val_html = _repair_value(rep, lang)
+        repair_cards.append(
+            f'<div class="v-card">'
+            f'<div class="v-card-top"><div class="v-card-badges">'
+            f'<span class="v-tag">{_v(rkind_lbl)}</span>{st_badge}</div>'
+            f'<span class="v-card-turn">{timestamp(rep.get("created_at"))}</span></div>'
+            f'<div class="v-card-main">{_repair_target(rep)}'
+            + (f' <span class="v-meta">{val_html}</span>' if val_html else "") + '</div>'
+            + (f'<div class="v-card-acts">{acts}</div>' if acts else "") + "</div>"
+        )
+    repairs_body = (
+        (f'<div class="v-exp-list">{batch_html}{"".join(repair_cards)}</div>' if (batch_html or repair_cards)
+         else f'<p class="v-text">{_v(t(lang, "at_no_repairs"))}</p>')
+        + f'<p class="v-note">{_v(_it(lang, "or.note"))}</p>'
+    )
+
+    body = (section("s-attention", lang, attn_body, len(queue))
+            + section("s-conflicts", lang, conflicts_body, len(conflicts))
+            + section("s-repairs", lang, repairs_body, len(repairs_list)))
+    cap = " · ".join(str(x) for x in (conv.get("name"),
+                                     f"t{conv['turns']}" if conv.get("turns") is not None else None) if x)
+    foot = (f'<div class="v-foot"><a href="/views/c/{cid}/explore">{_v(t(lang, "at_open_explore"))}</a> · '
+            f'<a href="/views/c/{cid}/memory">{_v(t(lang, "back_memory"))}</a> · '
+            f'<a href="/inspector/c/{cid}">{_v(t(lang, "raw_inspector"))}</a></div>')
+    return (f'<div class="v v-doc v-attention"><div class="v-head">'
+            f'<h1 class="v-h1">{_v(t(lang, "attention"))}</h1>'
+            f'<span class="v-cap">{_v(cap)}</span></div>{body}{foot}</div>')

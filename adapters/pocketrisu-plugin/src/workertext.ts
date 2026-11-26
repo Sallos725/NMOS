@@ -30,6 +30,87 @@ export interface WorkerShown {
   lines: string[];
 }
 
+/** Watermark of a worker warning the owner explicitly dismissed: stays silenced while no newer error or higher failure
+ *  count appears, and automatically re-alerts on any new failure (clock-skew-free: compares server timestamps only). */
+export interface WorkerDismissal {
+  lastErrorAt: string | null;
+  dead: number;
+  retrying: number;
+  callsFailed: number;
+}
+
+const DISMISS_KEY = 'nmos_worker_dismiss_v1';
+
+/** Capture the current trouble watermark from a valid WorkerStatus. */
+export function workerDismissalOf(s: WorkerStatus): WorkerDismissal {
+  const calls = validCalls(s.calls);
+  return {
+    lastErrorAt: s.last_error?.at ?? null,
+    dead: s.dead_recent,
+    retrying: s.retrying,
+    callsFailed: calls ? calls.failed : 0,
+  };
+}
+
+/** True while `s` carries no newer error timestamp and no higher failure counts than `dismissed`. */
+export function isWorkerDismissed(s: WorkerStatus, dismissed: WorkerDismissal | null): boolean {
+  if (!dismissed) return false;
+  if (s.dead_recent > dismissed.dead) return false;
+  if (s.retrying > dismissed.retrying) return false;
+  const calls = validCalls(s.calls);
+  if ((calls ? calls.failed : 0) > dismissed.callsFailed) return false;
+  if (s.last_error) {
+    if (!dismissed.lastErrorAt) return false;
+    const curAt = Date.parse(s.last_error.at);
+    const oldAt = Date.parse(dismissed.lastErrorAt);
+    if (Number.isNaN(curAt) || Number.isNaN(oldAt) || curAt > oldAt) return false;
+  }
+  return true;
+}
+
+function validDismissal(raw: unknown): raw is WorkerDismissal {
+  if (!isObject(raw)) return false;
+  if (raw.lastErrorAt !== null && (typeof raw.lastErrorAt !== 'string' || Number.isNaN(Date.parse(raw.lastErrorAt)))) {
+    return false;
+  }
+  return isCount(raw.dead) && isCount(raw.retrying) && isCount(raw.callsFailed);
+}
+
+/** Load the dismissed warning watermark for a sidecar URL scope (empty/corrupt storage fails safe to null). */
+export function loadWorkerDismissal(scope: string, storage?: Storage | null): WorkerDismissal | null {
+  try {
+    const raw = (storage ?? globalThis.localStorage)?.getItem(DISMISS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!isObject(parsed)) return null;
+    const entry = parsed[scope || '_'];
+    return validDismissal(entry) ? entry : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Save or clear the dismissed warning watermark for a sidecar URL scope. */
+export function saveWorkerDismissal(scope: string, value: WorkerDismissal | null, storage?: Storage | null): void {
+  try {
+    const store = storage ?? globalThis.localStorage;
+    if (!store) return;
+    let map: Record<string, WorkerDismissal> = {};
+    try {
+      const prev = JSON.parse(store.getItem(DISMISS_KEY) ?? '{}');
+      if (isObject(prev)) {
+        for (const [k, v] of Object.entries(prev)) {
+          if (validDismissal(v)) map[k] = v;
+        }
+      }
+    } catch { map = {}; }
+    const key = scope || '_';
+    if (value) map[key] = value;
+    else delete map[key];
+    store.setItem(DISMISS_KEY, JSON.stringify(map));
+  } catch { /* ignore quota / sandboxed storage errors */ }
+}
+
 const KINDS = new Set(['extract', 'reveal', 'summarize', 'canon', 'embed']);
 const COUNTS = ['queued_total', 'running', 'retrying', 'dead_recent', 'done_recent', 'recent_minutes', 'dead_hours'];
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
