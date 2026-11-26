@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { workerLines, type WorkerStatus } from '../src/workertext';
+import { isWorkerDismissed, loadWorkerDismissal, saveWorkerDismissal, workerDismissalOf, workerLines,
+  type WorkerStatus } from '../src/workertext';
 
 const NOW = new Date(2026, 10, 24, 12, 0);  // local time, so the shown times hold in any time zone
 
@@ -108,5 +109,46 @@ describe('workerLines: the last hour of model calls (PHASE-61 S5+S6)', () => {
         expect(workerLines('en', { ...s, calls: odd }, NOW)).toEqual(today);
       }
     }
+  });
+});
+
+describe('worker warning dismissal', () => {
+  const err1 = { kind: 'canon', status: 'dead', at: '2026-11-25T14:53:18+00:00', text: 'HTTP 429' };
+  const err2 = { kind: 'canon', status: 'dead', at: '2026-11-26T01:10:00+00:00', text: 'HTTP 429' };
+
+  it('stays dismissed for the same 24h error and re-alerts on any newer error or higher count', () => {
+    const s1 = status({ dead_recent: 1, last_error: err1 });
+    const mark = workerDismissalOf(s1);
+    expect(isWorkerDismissed(s1, null)).toBe(false);
+    expect(isWorkerDismissed(s1, mark)).toBe(true);
+    // Still dismissed if dead count drops or stays equal with same timestamp
+    expect(isWorkerDismissed(status({ dead_recent: 0, last_error: err1 }), mark)).toBe(true);
+    // Re-alerts when a newer error timestamp arrives
+    expect(isWorkerDismissed(status({ dead_recent: 1, last_error: err2 }), mark)).toBe(false);
+    // Re-alerts when dead_recent, retrying, or calls.failed grows
+    expect(isWorkerDismissed(status({ dead_recent: 2, last_error: err1 }), mark)).toBe(false);
+    expect(isWorkerDismissed(status({ dead_recent: 1, retrying: 1, last_error: err1 }), mark)).toBe(false);
+    expect(isWorkerDismissed(status({
+      dead_recent: 1, last_error: err1,
+      calls: { minutes: 60, total: 2, ok: 1, failed: 1, by_fault: { '429': 1 }, median_ms: 500 },
+    }), mark)).toBe(false);
+    // Re-alerts when dismissed had no lastErrorAt and a new error arrives
+    expect(isWorkerDismissed(s1, workerDismissalOf(status({ dead_recent: 1, last_error: null })))).toBe(false);
+  });
+
+  it('persists dismissals per sidecar URL scope and ignores corrupt storage', () => {
+    const bag = new Map<string, string>();
+    const store = {
+      getItem: (k: string) => bag.get(k) ?? null,
+      setItem: (k: string, v: string) => { bag.set(k, v); },
+    } as unknown as Storage;
+    const mark = workerDismissalOf(status({ dead_recent: 1, last_error: err1 }));
+    saveWorkerDismissal('http://192.168.1.10:6003', mark, store);
+    expect(loadWorkerDismissal('http://192.168.1.10:6003', store)).toEqual(mark);
+    expect(loadWorkerDismissal('http://127.0.0.1:6113', store)).toBeNull();
+    saveWorkerDismissal('http://192.168.1.10:6003', null, store);
+    expect(loadWorkerDismissal('http://192.168.1.10:6003', store)).toBeNull();
+    bag.set('nmos_worker_dismiss_v1', '{not-json');
+    expect(loadWorkerDismissal('http://192.168.1.10:6003', store)).toBeNull();
   });
 });

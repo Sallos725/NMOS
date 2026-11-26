@@ -62,7 +62,7 @@ const PERSON_RICH_HTML = `<div class="v v-doc"><div class="v-head"><h1 class="v-
   + `<details class="v-edit"><summary>Edit</summary><div class="v-edit-body">`
   + `<span class="rp" data-repair="fact_retract:101"></span></div></details></div></div></div>`;
 
-function makeDeps(opts: { legacy404?: boolean } = {}) {
+function makeDeps(opts: { legacy404?: boolean; workerStatus?: () => unknown } = {}) {
   const calls: [string, string, unknown?][] = [];
   const d: PanelDeps = {
     api: async <T>(method, path, body) => {
@@ -126,7 +126,10 @@ function makeDeps(opts: { legacy404?: boolean } = {}) {
       if (path.endsWith('/memory-mode')) return { strict: false, narrator: null, characters: ['Hana'] } as T;
       if (path.endsWith('/replies-only')) return { on: false } as T;
       if (path.includes('/status/candidates')) throw new Error('404');
-      if (path === '/v1/worker/status') throw new Error('404');
+      if (path === '/v1/worker/status') {
+        if (opts.workerStatus) return opts.workerStatus() as T;
+        throw new Error('404');
+      }
       return {} as T;
     },
     status: async () => ({
@@ -329,5 +332,45 @@ describe('PHASE-69 Memory 5-tab workspace, Explorer, Attention, Person Sheet & H
     // Redirected to /v1/views/c/{cid}/person/{ENT_C}, NOT raw /v1/inspector/c/{cid}/e/{ENT_C}
     expect(calls.some(([, p]) => p.startsWith(`/v1/views/c/${CID}/person/${ENT_C}`))).toBe(true);
     expect(calls.some(([, p]) => p.startsWith(`/v1/inspector/c/${CID}/e/${ENT_C}`))).toBe(false);
+  });
+
+  it('dismisses a stale Model work trouble warning on Home and re-surfaces on a newer error', async () => {
+    localStorage.clear();
+    let currentWorker: Record<string, unknown> = {
+      queued: { extract: 0, reveal: 0, summarize: 0, canon: 0, embed: 0 },
+      queued_total: 0, running: 0, retrying: 0, dead_recent: 1, done_recent: 1, recent_minutes: 30, dead_hours: 24,
+      last_error: { kind: 'canon', status: 'dead', at: '2026-11-25T14:53:18+00:00', text: 'HTTP 429' },
+      calls: { minutes: 60, total: 1, ok: 1, failed: 0, by_fault: {}, median_ms: 500 },
+    };
+    const { d } = makeDeps({ workerStatus: () => currentWorker });
+    await openPanel(d, 'status');
+    await settle();
+    expect(panel().querySelector('.worker-home.trouble')).not.toBeNull();
+    expect(panel().querySelector('.status-pill.err')).not.toBeNull();
+
+    // Dismissing hides the trouble card and clears the red error state from the top Status Pill
+    panel().querySelector<HTMLButtonElement>('[data-worker-dismiss]')!.click();
+    await settle();
+    expect(panel().querySelector('.worker-home')).toBeNull();
+    expect(panel().querySelector('.status-pill.err')).toBeNull();
+
+    // Navigating away and back to Home keeps the same error dismissed
+    panel().querySelector<HTMLButtonElement>('.nmos-nav button[data-nav="memory"]')!.click();
+    await settle();
+    panel().querySelector<HTMLButtonElement>('.nmos-nav button[data-nav="home"]')!.click();
+    await settle();
+    expect(panel().querySelector('.worker-home')).toBeNull();
+
+    // When a newer error occurs, the trouble warning re-appears automatically
+    currentWorker = {
+      ...currentWorker,
+      last_error: { kind: 'extract', status: 'dead', at: '2026-11-26T02:00:00+00:00', text: 'HTTP 500' },
+    };
+    panel().querySelector<HTMLButtonElement>('.nmos-nav button[data-nav="memory"]')!.click();
+    await settle();
+    panel().querySelector<HTMLButtonElement>('.nmos-nav button[data-nav="home"]')!.click();
+    await settle();
+    expect(panel().querySelector('.worker-home.trouble')).not.toBeNull();
+    expect(panel().querySelector('.worker-home.trouble')!.textContent).toContain('HTTP 500');
   });
 });

@@ -26,7 +26,8 @@ import type { BulkMark, BulkRequest, EntityRow, ExcludePreview, Preview, RepairA
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
 import { coverageLine, trimStatusLine } from './trimtext';
-import { workerLines, type WorkerStatus } from './workertext';
+import { isWorkerDismissed, loadWorkerDismissal, saveWorkerDismissal, workerDismissalOf, workerLines,
+  type WorkerDismissal, type WorkerStatus } from './workertext';
 import {
   CARRY_MAX_NAMES, carryCountsLine, carryCutoffLabel, carryErrorText, carryRefusal, carrySourceLabel,
   isCarryConflict, isCarryNotFound, parseCutoffTurn,
@@ -585,10 +586,17 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
   // --- status tab ------------------------------------------------------------------------------
   let usageRound = 0; // a refresh or another chat's card makes an older answer stale
   let workerRound = 0; // the same for the "Model work" card
+  async function fetchWorkerStatus(): Promise<unknown> {
+    try {
+      return await deps.api<unknown>('GET', '/v1/worker/status', undefined, 5000);
+    } catch {
+      return null;
+    }
+  }
   async function refreshStatus(): Promise<void> {
     statusView.replaceChildren(el('div', { class: 'card muted', text: L('status.checking') }));
     const round = ++workerRound;
-    const worker = workerCard(); // asked beside the health check; the other cards never wait for it
+    const workerReq = fetchWorkerStatus(); // asked beside health check; synchronous and async failures stay caught
     const s = await deps.status();
     const base = s.sidecarUrl.replace(/\/+$/, '');
     const conn = el('div', { class: 'card' }, el('h2', { text: L('status.sidecar') }));
@@ -720,25 +728,42 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const refresh = el('button', { text: L('refresh') });
     refresh.addEventListener('click', () => void refreshStatus());
     statusView.replaceChildren(...cards, el('div', { class: 'btns' }, refresh));
-    void worker.then((card) => {
+    void workerReq.then((raw) => {
+      const card = buildWorkerCard(raw, s.sidecarUrl);
       if (card && s.connected && round === workerRound && conn.isConnected) conn.after(card);
     });
   }
 
-  /** "Model work" (PHASE-61 S5): the queue, recent outcomes and the last model error; null, so no card, when the
-   *  sidecar has no such route (an older one) or does not answer. */
-  async function workerCard(): Promise<HTMLElement | null> {
-    let raw: unknown;
-    try {
-      raw = await deps.api<unknown>('GET', '/v1/worker/status', undefined, 5000);
-    } catch {
-      return null;
-    }
+  // In-memory fallback for dismissed worker warnings if storage is unavailable in a sandboxed iframe.
+  const workerDismissMem = new Map<string, WorkerDismissal>();
+  function getWorkerDismissal(scope: string): WorkerDismissal | null {
+    return workerDismissMem.get(scope) ?? loadWorkerDismissal(scope);
+  }
+  function setWorkerDismissal(scope: string, d: WorkerDismissal | null): void {
+    if (d) workerDismissMem.set(scope, d);
+    else workerDismissMem.delete(scope);
+    saveWorkerDismissal(scope, d);
+  }
+
+  /** "Model work" (PHASE-61 S5): the queue, recent outcomes and the last model error; null when absent or invalid. */
+  function buildWorkerCard(raw: unknown, scope: string): HTMLElement | null {
     const { level, lines } = workerLines(lang, raw);
     if (!lines.length) return null;
-    const errorLine = (raw as WorkerStatus).last_error && level === 'trouble' ? lines.length - 1 : -1;
-    return el('div', { class: 'card' }, el('h2', { text: L('worker.title') }),
+    const ws = raw as WorkerStatus;
+    const dismissed = level === 'trouble' && isWorkerDismissed(ws, getWorkerDismissal(scope));
+    const effLevel = dismissed ? (ws.queued_total + ws.running > 0 ? 'working' : 'idle') : level;
+    const errorLine = ws.last_error && effLevel === 'trouble' ? lines.length - 1 : -1;
+    const card = el('div', { class: 'card' }, el('h2', { text: L('worker.title') }),
       ...lines.map((text, i) => el('div', { class: i === errorLine ? 'warn' : 'muted', text })));
+    if (effLevel === 'trouble') {
+      const dismissBtn = el('button', { class: 'mini ghost', text: L('worker.dismiss') });
+      dismissBtn.addEventListener('click', () => {
+        setWorkerDismissal(scope, workerDismissalOf(ws));
+        card.remove();
+      });
+      card.append(el('p', { class: 'btns' }, dismissBtn));
+    }
+    return card;
   }
 
   /** "This chat": whether NMOS is on for the chat open now, and the switch. */
@@ -3793,7 +3818,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     if (!viewsOn) return;
     const round = ++quickRound;
     const items: HTMLElement[] = [];
-    const workerReq = deps.api<unknown>('GET', '/v1/worker/status', undefined, 5000).catch(() => null);
+    const workerReq = fetchWorkerStatus();
     let s: StatusInfo | null = null;
     try { s = await deps.status(); } catch { s = null; }
     if (round !== quickRound) return;
@@ -3878,9 +3903,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const rawWorker = await workerReq;
     if (round !== quickRound || !homeQuickBar.isConnected || homeQuickBar.style.display === 'none') return;
     const wShown = workerLines(lang, rawWorker);
-    if (wShown.lines.length && (wShown.level === 'working' || wShown.level === 'trouble')) {
-      const ws = rawWorker as WorkerStatus;
-      const errIdx = ws.last_error && wShown.level === 'trouble' ? wShown.lines.length - 1 : -1;
+    const workerScope = s?.sidecarUrl ?? '';
+    const ws = rawWorker as WorkerStatus;
+    const dismissed = wShown.lines.length > 0 && wShown.level === 'trouble'
+      && isWorkerDismissed(ws, getWorkerDismissal(workerScope));
+    const effLevel = dismissed ? (ws.queued_total + ws.running > 0 ? 'working' : 'idle') : wShown.level;
+    if (wShown.lines.length && (effLevel === 'working' || effLevel === 'trouble')) {
+      const errIdx = ws.last_error && effLevel === 'trouble' ? wShown.lines.length - 1 : -1;
       const autoBtn = el('button', { class: `mini${workerAutoOn ? ' primary' : ''}`,
         text: L(workerAutoOn ? 'worker.auto_on' : 'worker.auto_off') });
       autoBtn.addEventListener('click', () => {
@@ -3899,7 +3928,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       callsBtn.addEventListener('click', () => openDiag('calls'));
       const actBtns: HTMLElement[] = [callsBtn];
       const cid = activeChatId ?? hubConversation;
-      if (wShown.level === 'trouble') {
+      if (effLevel === 'trouble') {
         if (cid && (ws.dead_recent > 0 || ws.retrying > 0)) {
           const retry = el('button', { class: 'primary mini', text: L('act.retry') });
           retry.addEventListener('click', () => void retryFrom(cid));
@@ -3907,18 +3936,24 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
         }
         const modelsBtn = el('button', { class: 'mini', text: L('worker.open_models') });
         modelsBtn.addEventListener('click', () => { selectPrimary('settings'); openGroup('models'); });
-        actBtns.push(modelsBtn);
+        const dismissBtn = el('button', { class: 'mini ghost', 'data-worker-dismiss': '1', text: L('worker.dismiss') });
+        dismissBtn.addEventListener('click', () => {
+          setWorkerDismissal(workerScope, workerDismissalOf(ws));
+          updateStatusPill(s, lastMeta);
+          void refreshHomeQuick();
+        });
+        actBtns.push(modelsBtn, dismissBtn);
       }
-      const wCard = el('div', { class: `worker-home${wShown.level === 'trouble' ? ' trouble' : ''}` },
+      const wCard = el('div', { class: `worker-home${effLevel === 'trouble' ? ' trouble' : ''}` },
         el('div', { class: 'worker-home-head' },
           el('span', { class: 'worker-home-title' },
-            el('span', { class: `dot ${wShown.level === 'trouble' ? 'warn' : 'ok'}` }),
+            el('span', { class: `dot ${effLevel === 'trouble' ? 'warn' : 'ok'}` }),
             el('span', { text: L('worker.title') })),
           el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, autoBtn, ...actBtns)),
         el('div', { class: 'worker-home-lines' },
           ...wShown.lines.map((line, i) => el('div', { class: i === errIdx ? 'warn' : 'muted', text: line }))));
       homeQuickBar.append(wCard);
-      if (wShown.level === 'trouble') updateStatusPill(s, { ...(lastMeta ?? {}), working: { state: 'failed', failed: ws.dead_recent + ws.retrying } });
+      if (effLevel === 'trouble') updateStatusPill(s, { ...(lastMeta ?? {}), working: { state: 'failed', failed: ws.dead_recent + ws.retrying } });
     } else {
       stopWorkerAuto();
     }

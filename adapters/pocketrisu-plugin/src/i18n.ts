@@ -850,6 +850,7 @@ const STRINGS = {
   'worker.auto_on': ['자동 갱신 ON', 'Auto-refresh ON'],
   'worker.auto_off': ['자동 갱신 OFF', 'Auto-refresh OFF'],
   'worker.open_models': ['모델 설정', 'Model settings'],
+  'worker.dismiss': ['경고 무시', 'Dismiss warning'],
   'mem.diag_calls': ['모델 호출', 'Model calls'],
   'calls.filter_all': ['전체 ({n})', 'All ({n})'],
   'calls.filter_fail': ['실패만 ({n})', 'Failed only ({n})'],
