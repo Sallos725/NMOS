@@ -249,6 +249,10 @@ T: dict[str, tuple[str, str]] = {
     "was": ("설정 {old} → 지금 {new}", "setting {old} → now {new}"),
     "story": ("지금까지의 이야기", "The story so far"),
     "scenes": ("장면 요약 {n}개", "{n} scene summaries"),
+    "next_summary": ("다음 장면 요약 (t{a}–{b}): t{at} 응답 후 자동 작성 · {n}턴 남음",
+                     "Next scene summary (t{a}–{b}): written after t{at} · {n} turns left"),
+    "next_summary_one": ("다음 장면 요약 (t{a}–{b}): t{at} 응답 후 자동 작성 · 1턴 남음",
+                         "Next scene summary (t{a}–{b}): written after t{at} · 1 turn left"),
     "facts": ("모든 사실 {n}", "All facts {n}"),
     "details": ("자세히", "Details"),
     "s-rels": ("관계", "Relationships"),
@@ -944,6 +948,11 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False, rich: bool = False)
     if scenes:
         sofar += (f'<details class="v-more"><summary>{_v(t(lang, "scenes", n=len(scenes)))}</summary>'
                   + "".join(line(_v(s["text"]), f"t{s['first_turn']}–{s['last_turn']}") for s in scenes) + "</details>")
+    next_note = ""
+    if rich and (nxt := d.get("next_summary")):
+        rem = int(nxt["remaining"])
+        nk = "next_summary_one" if rem == 1 else "next_summary"
+        next_note = f'<p class="v-note">{_v(t(lang, nk, a=nxt["first_turn"], b=nxt["last_turn"], at=nxt["ready_turn"], n=rem))}</p>'
     secrets = [line(_v(content(s)), _v(" · ".join(x for x in (
         t(lang, "by", who=", ".join(s.get("holders") or [])) if s.get("holders") else "",
         t(lang, "kept", who=", ".join(s.get("open") or [])), f"t{s.get('turn')}",
@@ -980,7 +989,7 @@ def memory(d: dict[str, Any], lang: str, map_: bool = False, rich: bool = False)
     body = (section("s-now", lang, more(now, lang, 6) or nothing) + carried
             + section("s-open", lang, (more(opened, lang) or nothing) + stale, len(threads))
             + section("s-people", lang, more(people, lang) or nothing, len(people))
-            + section("s-sofar", lang, sofar or nothing)
+            + section("s-sofar", lang, (sofar or nothing) + next_note)
             + section("s-secrets", lang, more(secrets, lang) or nothing, len(secrets)) + epistemic
             + section("s-changed", lang, more(changed, lang) or nothing, len(changed)))
     detail = f"/inspector/c/{cid}"

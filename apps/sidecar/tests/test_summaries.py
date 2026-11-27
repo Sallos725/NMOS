@@ -631,3 +631,86 @@ def test_a_summary_moved_to_an_earlier_window_is_judged_by_that_window(migrated,
         v = view(migrated, c, chat)
     assert v["scenes"][0]["summary"]["first_turn"] == 8  # written for turns 8–15, current now for window 0–7
     assert "Turn 9 begins" in text[text.index("<Story>"):text.index("</Story>")]
+
+
+def test_next_scene_reports_next_window_and_remaining_turns():
+    assert summaries.next_scene(0) == {"index": 0, "first_turn": 0, "last_turn": 7, "ready_turn": 11, "remaining": 12, "replied_turns": 0}
+    assert summaries.next_scene(11) == {"index": 0, "first_turn": 0, "last_turn": 7, "ready_turn": 11, "remaining": 1, "replied_turns": 11}
+    assert summaries.next_scene(12) == {"index": 1, "first_turn": 8, "last_turn": 15, "ready_turn": 19, "remaining": 8, "replied_turns": 12}
+    assert summaries.next_scene(17) == {"index": 1, "first_turn": 8, "last_turn": 15, "ready_turn": 19, "remaining": 3, "replied_turns": 17}
+    assert summaries.next_scene(19) == {"index": 1, "first_turn": 8, "last_turn": 15, "ready_turn": 19, "remaining": 1, "replied_turns": 19}
+    assert summaries.next_scene(20) == {"index": 2, "first_turn": 16, "last_turn": 23, "ready_turn": 27, "remaining": 8, "replied_turns": 20}
+
+
+def test_extract_history_recovers_dead_scene_and_dead_or_missing_story_summaries(migrated, db):
+    chat = story_chat(14)  # 14 replied turns: window 0–7 is due
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        cid = conv_id(c, chat)
+        # 1) Dead scene summarize job is revived by extract-history.
+        db.execute("UPDATE job SET status = 'dead', attempts = 3, last_error = 'boom'"
+                   " WHERE kind = 'summarize' AND payload->>'level' = 'scene'")
+        db.commit()
+        out = c.post(f"/v1/conversations/{cid}/extract-history").json()
+        assert out["queued"]["summarize"] == 1
+        assert [j["payload"]["level"] for j in jobs(db)] == ["scene"]
+        # Run only the scene job so the story job gets queued, then mark the story job dead.
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            gen = active_generation(conn, "summarize")
+            assert run_once(conn, {"summarize": (gen.key, lambda cn, job: summaries.process(cn, job, stub, gen))})
+        assert [j["payload"]["level"] for j in jobs(db)] == ["story"]
+        db.execute("UPDATE job SET status = 'dead', attempts = 3, last_error = 'story boom'"
+                   " WHERE kind = 'summarize' AND payload->>'level' = 'story'")
+        db.commit()
+        # 2) Dead story summarize job is revived when all scenes are already present.
+        out = c.post(f"/v1/conversations/{cid}/extract-history").json()
+        assert out["queued"]["summarize"] == 1
+        assert [j["payload"]["level"] for j in jobs(db)] == ["story"]
+        assert drain(migrated) == 1
+        v = view(migrated, c, chat)
+        assert v["story_current"] and v["story"]["text"] == "Story of 0–7"
+        # 3) Idempotent once scene and story are both current.
+        assert c.post(f"/v1/conversations/{cid}/extract-history").json()["queued"]["summarize"] == 0
+        # 4) Missing story row with no story job at all is also queued by extract-history.
+        db.execute("DELETE FROM job WHERE kind = 'summarize' AND payload->>'level' = 'story'")
+        db.execute("DELETE FROM summary WHERE level = 'story'")
+        db.commit()
+        out = c.post(f"/v1/conversations/{cid}/extract-history").json()
+        assert out["queued"]["summarize"] == 1
+        assert drain(migrated) == 1
+        assert view(migrated, c, chat)["story_current"]
+
+
+def test_next_scene_hint_appears_in_rich_memory_view_and_inspector(migrated):
+    chat = story_chat(17)  # turns 0..16 replied -> scene 0–7 due; next scene 8–15 ready after t19 (3 turns left)
+    chat.user("Turn 17 begins without a reply yet.")
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain(migrated)
+        cid = conv_id(c, chat)
+        # Default (rich=False) stays free of the hint for Phase 60 golden compatibility.
+        plain = c.get(f"/v1/views/c/{cid}/memory", params={"lang": "ko"}).json()["html"]
+        assert "다음 장면 요약" not in plain
+        # Rich panel memory view (rich=1) shows the next scene schedule in ko and en.
+        ko_mem = c.get(f"/v1/views/c/{cid}/memory", params={"lang": "ko", "rich": 1}).json()["html"]
+        en_mem = c.get(f"/v1/views/c/{cid}/memory", params={"lang": "en", "rich": 1}).json()["html"]
+        assert "다음 장면 요약 (t8–15): t19 응답 후 자동 작성 · 3턴 남음" in ko_mem
+        assert "Next scene summary (t8–15): written after t19 · 3 turns left" in en_mem
+        # Inspector shows it alongside existing scenes.
+        ko_insp = c.get(f"/inspector/c/{cid}", params={"lang": "ko"}).text
+        en_insp = c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
+        assert "다음 장면 요약 (t8–15): t19 응답 후 자동 작성 (3턴 남음)." in ko_insp
+        assert "Next scene summary (t8–15): written after t19 (3 turns left)." in en_insp
+        # Singular turn remaining (19 replied turns -> 1 turn left).
+        chat.reply("Reply 17.")
+        chat.user("Turn 18.")
+        chat.reply("Reply 18.")
+        sync(c, chat)
+        en_mem_1 = c.get(f"/v1/views/c/{cid}/memory", params={"lang": "en", "rich": 1}).json()["html"]
+        en_insp_1 = c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
+        assert "Next scene summary (t8–15): written after t19 · 1 turn left" in en_mem_1
+        assert "Next scene summary (t8–15): written after t19 (1 turn left)." in en_insp_1
+        # Turned off: no automatic-summary promise is shown.
+        assert c.put("/v1/config", json={"summaries": False}).status_code == 200
+        assert "Next scene summary" not in c.get(f"/v1/views/c/{cid}/memory", params={"lang": "en", "rich": 1}).json()["html"]
+        assert "Next scene summary" not in c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
