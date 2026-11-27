@@ -207,7 +207,7 @@ def test_a_failed_rerank_leaves_the_fused_order(migrated, rerank_server, failure
     kw: dict[str, Any] = {}
     if failure == "timeout":
         rerank_server.delay_s = 3.0
-        kw["timeout_ms"] = 150
+        kw["timeout_ms"] = 500
     elif failure == "status_500":
         rerank_server.status = 500
     elif failure == "malformed":
