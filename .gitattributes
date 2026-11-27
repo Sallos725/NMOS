@@ -1,1 +1,2 @@
 *.bat text eol=crlf
+apps/sidecar/tests/golden/** text eol=lf

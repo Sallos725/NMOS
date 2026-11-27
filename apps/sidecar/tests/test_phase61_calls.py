@@ -298,7 +298,10 @@ def test_a_write_that_fails_is_one_warning_and_false(migrated, caplog):
         assert calls.write("postgresql://nmos:nmos@127.0.0.1:1/nope", a_row()) is False
         assert calls.write(migrated, a_row(conversation_id=uuid7())) is False  # a chat deleted meanwhile
     messages = [r.getMessage() for r in caplog.records if r.name == "nmos.calls"]
-    assert messages == ["model call not logged: OperationalError", "model call not logged: ForeignKeyViolation"]
+    # Windows raises ConnectionTimeout (a subclass of OperationalError) instead of an instant RST on 127.0.0.1:1.
+    assert len(messages) == 2
+    assert messages[0] in ("model call not logged: OperationalError", "model call not logged: ConnectionTimeout")
+    assert messages[1] == "model call not logged: ForeignKeyViolation"
 
 
 def test_a_write_waits_for_a_lock_no_longer_than_its_bound(migrated):

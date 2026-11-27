@@ -295,12 +295,19 @@ def test_a_stuck_name_lookup_is_bounded_by_the_timeout_and_never_queues(monkeypa
     lookups = 0
     lock = threading.Lock()
 
+    def real_v4(host, port, family=0, type=0, proto=0, flags=0):
+        # On Windows `localhost` resolves to ::1 before 127.0.0.1, causing a >200 ms IPv6 connect refusal against
+        # our IPv4-only test server. Keep real hostname resolution while filtering localhost to IPv4.
+        if host == "localhost":
+            family = socket.AF_INET
+        return real(host, port, family, type, proto, flags)
+
     def stuck(*args, **kwargs):
         nonlocal lookups
         with lock:
             lookups += 1
         gate.wait(2.0)  # a resolver that hangs (released at teardown so no worker outlives the test)
-        return real(*args, **kwargs)
+        return real_v4(*args, **kwargs)
 
     def drain() -> None:
         gate.set()
@@ -311,6 +318,7 @@ def test_a_stuck_name_lookup_is_bounded_by_the_timeout_and_never_queues(monkeypa
     # an IP literal skips resolution: the host name makes the client resolve it
     r = Reranker(url=f"http://localhost:{server.server_port}/v1", model="rerank-v1", timeout_ms=200)
     try:
+        monkeypatch.setattr(socket, "getaddrinfo", real_v4)
         assert score(r, "질문", ["세라"]) == [0.9]  # resolves and answers before the resolver is stuck
         monkeypatch.setattr(socket, "getaddrinfo", stuck)
         t0 = time.monotonic()
@@ -328,7 +336,7 @@ def test_a_stuck_name_lookup_is_bounded_by_the_timeout_and_never_queues(monkeypa
         assert time.monotonic() - t0 < 0.15
         assert lookups == rerank._MAX_WORKERS
         drain()
-        monkeypatch.undo()
+        monkeypatch.setattr(socket, "getaddrinfo", real_v4)
         assert rerank._in_flight() == 0
         assert score(r, "질문", ["세라"]) == [0.9]  # the stuck workers ended by themselves; the pool serves again
     finally:
