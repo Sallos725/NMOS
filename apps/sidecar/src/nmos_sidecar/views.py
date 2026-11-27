@@ -418,12 +418,65 @@ PLACE = ("document.querySelectorAll('[data-l]').forEach(function(m){var l=Number
          "document.querySelectorAll('.v-filter').forEach(function(f){var i=document.createElement('input');i.type='search';"
          "f.appendChild(i);i.addEventListener('input',function(){var q=i.value.toLowerCase();"
          "document.querySelectorAll('.v-chat').forEach(function(r){r.style.display="
-         "r.textContent.toLowerCase().indexOf(q)<0?'none':'';});});});")
+         "r.textContent.toLowerCase().indexOf(q)<0?'none':'';});});});"
+         "(function(){"
+         "var topBtn=document.querySelector('.nm-top');"
+         "if(topBtn){"
+         "var syncTop=function(){topBtn.classList.toggle('show',window.scrollY>280);};"
+         "window.addEventListener('scroll',syncTop,{passive:true});"
+         "topBtn.addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'});});"
+         "syncTop();}"
+         "var slot=document.querySelector('.v-explore .v-exp-toolbar-slot');"
+         "var main=document.querySelector('.vb-main');"
+         "if(!slot)return;"
+         "var secs=Array.prototype.slice.call(document.querySelectorAll('.v-explore .v-sec[data-cat]'));"
+         "var cards=Array.prototype.slice.call(document.querySelectorAll('.v-explore .v-exp-card'));"
+         "if(!secs.length)return;"
+         "var bar=document.createElement('div');bar.className='vb-exp-bar';"
+         "var chips=document.createElement('div');chips.className='vb-exp-chips';"
+         "var allLbl=(main&&main.getAttribute('data-all-cat'))||'All';"
+         "var searchPh=(main&&main.getAttribute('data-search'))||'Search...';"
+         "var active='all';var btns=[];"
+         "function addBtn(cat,label){"
+         "var b=document.createElement('button');b.type='button';b.className='vb-chip'+(cat==='all'?' on':'');"
+         "b.setAttribute('data-cat',cat);b.textContent=label;"
+         "b.addEventListener('click',function(){active=cat;btns.forEach(function(x){x.b.classList.toggle('on',x.cat===cat);});"
+         "apply();if(window.scrollY>220)window.scrollTo({top:0,behavior:'smooth'});});"
+         "btns.push({cat:cat,label:label,b:b});chips.appendChild(b);}"
+         "addBtn('all',allLbl);"
+         "secs.forEach(function(s){"
+         "var cat=s.getAttribute('data-cat')||'';"
+         "var h2=s.querySelector('.v-h2');"
+         "var lbl=h2&&h2.firstChild&&h2.firstChild.nodeType===3?h2.firstChild.textContent.trim():cat;"
+         "if(cards.some(function(c){return c.getAttribute('data-cat')===cat;}))addBtn(cat,lbl);});"
+         "var inp=document.createElement('input');inp.type='search';inp.className='vb-exp-search';"
+         "inp.placeholder=searchPh;inp.setAttribute('aria-label',searchPh);"
+         "function apply(){"
+         "var q=inp.value.trim().toLowerCase();var per={};var total=0;"
+         "cards.forEach(function(c){"
+         "var cat=c.getAttribute('data-cat')||'';"
+         "var ok=!q||(c.textContent||'').toLowerCase().indexOf(q)>=0;"
+         "if(ok){per[cat]=(per[cat]||0)+1;total+=1;}"
+         "c.style.display=(ok&&(active==='all'||cat===active))?'':'none';});"
+         "btns.forEach(function(x){var n=x.cat==='all'?total:(per[x.cat]||0);x.b.textContent=x.label+' ('+n+')';});"
+         "secs.forEach(function(s){"
+         "var cat=s.getAttribute('data-cat')||'';"
+         "var shown=cards.filter(function(c){return c.getAttribute('data-cat')===cat&&c.style.display!=='none';}).length;"
+         "var catOk=active==='all'||cat===active;"
+         "s.style.display=(catOk&&(shown>0||(!q&&active==='all'&&!cards.some(function(c){return c.getAttribute('data-cat')===cat;}))))?'':'none';"
+         "var badge=s.querySelector('.v-h2 .v-n');if(badge)badge.textContent=String(shown);});}"
+         "inp.addEventListener('input',apply);"
+         "bar.appendChild(chips);bar.appendChild(inp);"
+         "while(slot.firstChild)slot.removeChild(slot.firstChild);slot.appendChild(bar);"
+         "apply();})();")
 
 
 def full_page(title: str, body: str, lang: str = "ko", active: str = "hub") -> str:
     """A screen as a page of its own, for the browser: the panel's root class, favicon, and unified top chrome."""
     from .inspector import FAVICON
+    all_cat = "전체" if lang == "ko" else "All"
+    search_ph = ("사실, 인물, 약속, 비밀, 로어북 검색…" if lang == "ko"
+                 else "Search facts, people, promises, secrets, lorebook…")
     root = (
         "*{box-sizing:border-box}body{margin:0;background:var(--c-bg);color:var(--c-text);"
         "font:15px/1.6 system-ui,-apple-system,\"Apple SD Gothic Neo\",\"Malgun Gothic\",\"Noto Sans KR\",sans-serif;"
@@ -433,9 +486,18 @@ def full_page(title: str, body: str, lang: str = "ko", active: str = "hub") -> s
         + ".nmos{" + tokens.css_vars() + ";min-height:100vh}"
         ".nmos .vb-main{max-width:1120px;margin:0 auto;padding:20px 22px 48px}"
         ".nmos .v{max-width:none}"
-        ".nmos .v-filter input{width:100%;background:var(--c-sunken);color:var(--c-text);"
-        "border:1px solid var(--c-line-strong);border-radius:8px;padding:9px 12px;font:inherit;font-size:14.5px}"
-        ".nmos .v-filter input:focus{border-color:rgba(74,106,245,0.7);outline:none;box-shadow:0 0 0 3px rgba(74,106,245,0.22)}"
+        ".nmos .v-filter input,.nmos .vb-exp-search{width:100%;background:var(--c-sunken);color:var(--c-text);"
+        "border:1px solid var(--c-line-strong);border-radius:8px;padding:8px 12px;font:inherit;font-size:14px}"
+        ".nmos .v-filter input:focus,.nmos .vb-exp-search:focus{border-color:rgba(74,106,245,0.7);outline:none;box-shadow:0 0 0 3px rgba(74,106,245,0.22)}"
+        ".nmos .vb-exp-bar{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:12px;"
+        "background:var(--c-surface);border:1px solid var(--c-line)}"
+        ".nmos .vb-exp-chips{display:flex;flex-wrap:wrap;gap:6px}"
+        ".nmos .vb-chip{padding:4px 10px;border-radius:999px;font:inherit;font-size:12.5px;background:var(--c-sunken);"
+        "border:1px solid var(--c-line);color:var(--c-text-soft);cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease}"
+        ".nmos .vb-chip:hover{background:var(--c-raised);color:var(--c-text-strong)}"
+        ".nmos .vb-chip.on{background:rgba(74,106,245,0.18);border-color:rgba(74,106,245,0.48);color:var(--c-text-strong);font-weight:600}"
+        "@media (min-width:721px){.nmos .v-explore .v-exp-toolbar-slot{position:sticky;top:56px;z-index:16}"
+        ".nmos .vb-exp-bar{background:rgba(30,33,42,0.95);backdrop-filter:blur(12px);box-shadow:0 6px 18px rgba(0,0,0,0.28)}}"
         "@media (max-width:720px){.nmos .vb-main{padding:14px 14px 40px}}"
     )
     return (
@@ -444,7 +506,8 @@ def full_page(title: str, body: str, lang: str = "ko", active: str = "hub") -> s
         f'<title>{_v(title)}</title><link rel="icon" type="image/svg+xml" href="{_v(FAVICON)}">'
         f'<style>{root}{STYLE}</style></head>'
         f'<body><div class="nmos">{tokens.browser_bar(active, lang)}'
-        f'<main class="vb-main">{body}</main></div><script>{PLACE}</script></body></html>'
+        f'<main class="vb-main" data-all-cat="{_v(all_cat)}" data-search="{_v(search_ph)}">{body}</main>'
+        f'{tokens.browser_top_button(lang)}</div><script>{PLACE}</script></body></html>'
     )
 
 

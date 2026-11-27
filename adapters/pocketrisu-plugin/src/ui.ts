@@ -366,6 +366,17 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp details>summary h2::before{content:"▸ ";color:var(--c-text-ghost)}.nmos .insp details[open]>summary h2::before{content:"▾ "}
 .nmos .insp .n{color:var(--c-text-muted);font-weight:400;font-size:13px}
 .nmos .insp .toc{font-size:14px;line-height:1.9;margin:8px 0}.nmos .insp a.warn{color:var(--c-warn)}
+.nmos .insp .toc.insp-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:9px 11px;border-radius:12px;background:var(--c-surface);border:1px solid var(--c-line);margin:10px 0 12px;font-size:13px;line-height:1.2}
+.nmos .insp .toc.insp-tabs a{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:9px;background:var(--c-sunken);border:1px solid var(--c-line);color:var(--c-text-soft);text-decoration:none;transition:background .15s ease,border-color .15s ease,color .15s ease}
+.nmos .insp .toc.insp-tabs a:hover{background:var(--c-raised);border-color:var(--c-line-hover);color:var(--c-text-strong);text-decoration:none}
+.nmos .insp .toc.insp-tabs a.warn{color:var(--c-warn);border-color:${alpha('warn', 0.38)};background:${alpha('warn', 0.1)}}
+.nmos .insp .toc.insp-tabs a.on{background:${alpha('accent', 0.18)};border-color:${alpha('accent', 0.52)};color:var(--c-text-strong);font-weight:600}
+.nmos .insp .toc.insp-tabs a.on .n{color:var(--c-text-strong)}
+.nmos .insp .toc.insp-tabs .toc-all{margin-left:auto;padding:5px 10px;font-size:12.5px;border-radius:9px}
+.nmos .insp .toc.insp-tabs .toc-all.on{background:${alpha('accent', 0.16)};border-color:${alpha('accent', 0.48)};color:var(--c-text-strong)}
+.nmos .nmos-top-btn{position:fixed;right:20px;bottom:22px;z-index:42;padding:8px 13px;border-radius:999px;background:${alpha('raised', 0.94)};backdrop-filter:blur(12px);border:1px solid var(--c-line-hover);color:var(--c-text-strong);font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.45);opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .15s ease,transform .15s ease,border-color .15s ease,background .15s ease}
+.nmos .nmos-top-btn.show{opacity:1;pointer-events:auto;transform:translateY(0)}
+.nmos .nmos-top-btn:hover:not(:disabled){background:var(--c-raised-hover);border-color:${alpha('accent', 0.65)};color:#fff}
 .nmos .insp .who{display:flex;align-items:center;gap:8px;margin:10px 0}.nmos .insp .who select{width:auto;min-width:180px;padding:5px 8px}
 .nmos .insp details.meta{font-size:13px;margin-top:2px;color:var(--c-text-muted)}.nmos .insp details.meta p{margin:4px 0}
 .nmos .bulk-card{padding:10px 14px;border-radius:10px;background:var(--c-surface);border:1px solid var(--c-line);margin:0 0 12px}
@@ -442,8 +453,13 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .exp-controls select.exp-who{flex:0 1 170px;min-width:120px;width:auto;padding:7px 10px;font-size:13.5px}
 .nmos .exp-add{margin-left:auto;white-space:nowrap}
 .nmos .exp-empty{margin:10px 0;padding:22px 14px;text-align:center;color:var(--c-text-muted);font-size:14px;border:1px dashed var(--c-line-strong);border-radius:11px;background:var(--c-sunken)}
+@media (min-width: 721px){
+  .nmos.shell-on .exp-toolbar{position:sticky;top:54px;z-index:16;background:${alpha('surface', 0.95)};backdrop-filter:blur(12px);box-shadow:0 6px 18px rgba(0,0,0,0.28)}
+  .nmos.shell-on .insp .toc.insp-tabs{position:sticky;top:54px;z-index:15;background:${alpha('surface', 0.95)};backdrop-filter:blur(12px);box-shadow:0 6px 18px rgba(0,0,0,0.28)}
+}
 @media (max-width: 720px){
   .nmos .exp-add{margin-left:0;flex:1 1 auto}
+  .nmos.shell-on .exp-toolbar,.nmos.shell-on .insp .toc.insp-tabs{position:static;box-shadow:none}
   .nmos.shell-on .wrap{padding:12px 12px 84px}
   .nmos .nmos-topbar-in{padding:8px 12px;gap:8px}
   .nmos .nmos-nav{display:none}
@@ -454,6 +470,7 @@ html,body{margin:0;background:${PALETTE.bg}}
   .nmos .nmos-bottomnav button.on{color:var(--c-accent-hover);background:${alpha('accent', 0.12)}}
   .nmos .nmos-bottomnav .nav-badge{position:absolute;top:2px;right:calc(50% - 22px);min-width:16px;height:16px;font-size:10px}
   .nmos.shell-on .bar{bottom:58px;padding:10px 12px}
+  .nmos .nmos-top-btn{right:14px;bottom:calc(70px + env(safe-area-inset-bottom));padding:7px 11px}
 }
 `;
 
@@ -870,7 +887,28 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
   let shownPath: string | null = null; // the page on screen, once it has loaded
   let loads = 0; // the latest load wins: an answer to an older one is dropped
   // Pages read before this one and where the reader was on them, for the Back button.
-  interface Place { path: string; scroll: number; open: string[] }
+  interface Place { path: string; scroll: number; open: string[]; tab?: string | null }
+  interface InspectorTabCtrl {
+    getState(): string;
+    setState(state: string): void;
+    focus(sectionId: string): boolean;
+    selectSection(sectionId: string): boolean;
+  }
+  let inspectorTabCtrl: InspectorTabCtrl | null = null;
+  const topBtn = el('button', {
+    type: 'button',
+    class: 'nmos-top-btn',
+    'aria-label': L('nav.top'),
+    title: L('nav.top'),
+  }, icon('arrowUp', 15), el('span', { text: 'Top' }));
+  const updateTopBtn = () => { topBtn.classList.toggle('show', root.scrollTop > 280); };
+  const scrollPanelTop = (top = 0) => {
+    if (typeof root.scrollTo === 'function') root.scrollTo({ top, behavior: 'smooth' });
+    else root.scrollTop = top;
+    if (top === 0) updateTopBtn();
+  };
+  root.addEventListener('scroll', updateTopBtn, { passive: true });
+  topBtn.addEventListener('click', () => scrollPanelTop(0));
   const visited: Place[] = [];
   const inspectorBody = el('div', { class: 'insp' });
   const inspectorBack = el('button', { text: L('insp.back') });
@@ -1327,15 +1365,24 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
   let actionConversation: string | null = null;
   function place(): Place {
     const open = Array.from(inspectorBody.querySelectorAll<HTMLDetailsElement>('details[id]')).filter((d) => d.open);
-    return { path: inspectorPath, scroll: root.scrollTop, open: open.map((d) => d.id) };
+    return { path: inspectorPath, scroll: root.scrollTop, open: open.map((d) => d.id),
+      tab: inspectorTabCtrl ? inspectorTabCtrl.getState() : null };
   }
   function restore(at: Place): void {
-    for (const d of Array.from(inspectorBody.querySelectorAll<HTMLDetailsElement>('details[id]'))) d.open = at.open.includes(d.id);
+    if (inspectorTabCtrl && at.tab) {
+      inspectorTabCtrl.setState(at.tab);
+      if (at.tab === '__all__') {
+        for (const d of Array.from(inspectorBody.querySelectorAll<HTMLDetailsElement>('details[id]'))) d.open = at.open.includes(d.id);
+      }
+    } else {
+      for (const d of Array.from(inspectorBody.querySelectorAll<HTMLDetailsElement>('details[id]'))) d.open = at.open.includes(d.id);
+    }
     root.scrollTop = at.scroll;
   }
   /** Adapt a page to the panel: times in the viewer's zone, the character links as a drop-down. */
   function enhance(page: DocumentFragment): void {
     closers = new Map();
+    inspectorTabCtrl = null;
     // The chat list's search box (PHASE-52 D7): the sidecar marks where; the sanitizer keeps no input of its own.
     for (const slot of Array.from(page.querySelectorAll('.v-filter'))) {
       const box = el('input', { type: 'search', placeholder: L('chats.search'), 'aria-label': L('chats.search') });
@@ -1449,6 +1496,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
             activeCat = k;
             for (const [ck, b] of catBtns) b.classList.toggle('on', ck === k);
             applyExploreFilter();
+            if (root.scrollTop > 220) scrollPanelTop(0);
           });
           catBtns.set(k, btn);
           chipsRow.append(btn);
@@ -1567,6 +1615,86 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       section.addEventListener('toggle', () => {
         if (section.open && !box.dataset.state) void loadTimeline(box, '');
       });
+    }
+    // PHASE-72 S2: Raw Inspector section tabs (turns p.toc + details[id^="s-"] into single-section tabs + Show-all toggle).
+    const toc = page.querySelector<HTMLElement>('p.toc');
+    const detailSecs = Array.from(page.querySelectorAll<HTMLDetailsElement>('details[id^="s-"]'));
+    if (toc && detailSecs.length >= 2) {
+      const secById = new Map(detailSecs.map((d) => [d.id, d]));
+      const tocLinks = Array.from(toc.querySelectorAll<HTMLAnchorElement>('a')).filter((a) => {
+        const sid = sectionTarget(a.getAttribute('href'));
+        return Boolean(sid && secById.has(sid));
+      });
+      if (tocLinks.length >= 2) {
+        const defaultOpen = new Set(detailSecs.filter((d) => d.open).map((d) => d.id));
+        let showAll = false;
+        let activeId = (detailSecs.find((d) => d.open) ?? detailSecs[0])!.id;
+        const toggleBtn = el('button', { type: 'button', class: 'mini toc-all' });
+        toc.classList.add('insp-tabs');
+        toc.setAttribute('role', 'tablist');
+        for (const a of tocLinks) a.setAttribute('role', 'tab');
+        toc.replaceChildren(...tocLinks, toggleBtn);
+        const triggerLazy = (d: HTMLDetailsElement) => {
+          const lazyBox = d.querySelector<HTMLElement>(':scope > .tl-lazy');
+          if (lazyBox && !lazyBox.dataset.state) void loadTimeline(lazyBox, '');
+        };
+        const renderTabs = () => {
+          for (const d of detailSecs) {
+            if (showAll) {
+              d.style.display = '';
+              d.open = defaultOpen.has(d.id) || d.id === activeId;
+            } else {
+              const on = d.id === activeId;
+              d.style.display = on ? '' : 'none';
+              if (on) {
+                d.open = true;
+                triggerLazy(d);
+              }
+            }
+          }
+          for (const a of tocLinks) {
+            const on = !showAll && sectionTarget(a.getAttribute('href')) === activeId;
+            a.classList.toggle('on', on);
+            a.setAttribute('aria-selected', on ? 'true' : 'false');
+          }
+          toggleBtn.textContent = L(showAll ? 'insp.tab_one' : 'insp.tab_all');
+          toggleBtn.classList.toggle('on', showAll);
+          toggleBtn.setAttribute('aria-pressed', showAll ? 'true' : 'false');
+        };
+        toggleBtn.addEventListener('click', () => {
+          showAll = !showAll;
+          renderTabs();
+        });
+        inspectorTabCtrl = {
+          getState: () => (showAll ? '__all__' : activeId),
+          setState: (state) => {
+            if (state === '__all__') {
+              showAll = true;
+            } else if (secById.has(state)) {
+              showAll = false;
+              activeId = state;
+            }
+            renderTabs();
+          },
+          focus: (sectionId) => {
+            if (!secById.has(sectionId)) return false;
+            activeId = sectionId;
+            renderTabs();
+            return true;
+          },
+          selectSection: (sectionId) => {
+            if (showAll || !secById.has(sectionId)) return false;
+            activeId = sectionId;
+            renderTabs();
+            const secEl = secById.get(sectionId)!;
+            const secTop = secEl.getBoundingClientRect().top;
+            const tocBot = toc.getBoundingClientRect().bottom;
+            if (secTop < tocBot) scrollPanelTop(Math.max(0, root.scrollTop + secTop - tocBot - 10));
+            return true;
+          },
+        };
+        renderTabs();
+      }
     }
     // The memory map's drawing (PHASE-55 step 6): drawn here from data, in place of the note that sends a reader to a
     // browser for it; asked for after the page shows, so the lines never wait on it.
@@ -1808,6 +1936,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
       const focusSec = pendingSection;
       pendingSection = null;
       if (focusSec) {
+        inspectorTabCtrl?.focus(focusSec);
         const target = inspectorBody.querySelector<HTMLElement>(`#${focusSec}`);
         if (target) {
           if (target instanceof HTMLDetailsElement) target.open = true;
@@ -1816,6 +1945,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
         else root.scrollTop = 0;
       } else if (keep) restore(keep);
       else root.scrollTop = 0;
+      updateTopBtn();
       if (viewsOn) syncShellForPath(path);
       if (shownEntity) void showEntityCards(shownEntity.conversation, shownEntity.entity, load);
       else if (conversation && !isView && !attentionMode) { void showMode(conversation, load); void showStatusWindows(conversation, load); }
@@ -2255,6 +2385,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     const section = sectionTarget(href);
     const path = inspectorApiPath(href);
     if (!path || path === inspectorPath) {
+      if (section && inspectorTabCtrl?.selectSection(section)) return;
       const target = section ? inspectorBody.querySelector<HTMLElement>(`#${section}`) : null;
       if (target) {
         if (target instanceof HTMLDetailsElement) target.open = true;
@@ -3788,6 +3919,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     bulkGroups.clear();
     picked.clear();
     bulkPicked.clear();
+    inspectorTabCtrl = null;
     knownChats = [];
     lastMeta = null;
   }
@@ -4438,6 +4570,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     }
     bar.style.display = next === 'settings' ? '' : 'none';
     root.classList.toggle('wide', viewsOn || next === 'inspector');
+    updateTopBtn();
     if (next === 'status') void refreshStatus();
     if (next === 'inspector') void showInspector();
   }
@@ -5097,7 +5230,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab, initialTarget?: Pan
     select(next);
   }
 
-  root.append(toastEl);
+  root.append(toastEl, topBtn);
   document.body.append(root);
   // A sidecar with the new screens (PHASE-52/59) opens on its unified shell + hub; an older one keeps legacy tabs.
   try {

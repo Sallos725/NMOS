@@ -19,7 +19,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:f11f19baa5b2".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:4c4e6fe3c78a".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -1408,6 +1408,10 @@ ${part}`;
     "exp.cat_canon": ["\uCE74\uB4DC \xB7 \uB85C\uC5B4\uBD81", "Card & lorebook"],
     "mem.diag_working": ["\uCC98\uB9AC \uC0C1\uD0DC", "Working status"],
     "mem.diag_raw": ["\uC6D0\uBCF8 \uC778\uC2A4\uD399\uD130", "Raw inspector"],
+    // PHASE-72: floating back-to-top button + Raw Inspector section tabs
+    "nav.top": ["\uB9E8 \uC704\uB85C", "Back to top"],
+    "insp.tab_all": ["\uC804\uCCB4 \uD3BC\uCE58\uAE30", "Show all"],
+    "insp.tab_one": ["\uD0ED\uC73C\uB85C \uBCF4\uAE30", "Tab view"],
     "mem.no_chat": ["\uBA3C\uC800 \uC0C1\uB2E8\uC5D0\uC11C \uCC44\uD305\uC744 \uC120\uD0DD\uD558\uAC70\uB098 \uD648\uC5D0\uC11C \uB300\uD654\uB97C \uC5F4\uC5B4 \uC8FC\uC138\uC694.", "Select a chat from the top switcher or open one from Home."],
     "notes.studio_sub": [
       "\uD604\uC7AC \uCC44\uD305\uC758 \uAE30\uC5B5\uC744 \uBC14\uD0D5\uC73C\uB85C \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC744 \uC694\uC57D\uC744 \uB9CC\uB4ED\uB2C8\uB2E4. \uCCB4\uD06C\uD55C \uD56D\uBAA9\uB9CC \uC0DD\uC131\uB429\uB2C8\uB2E4.",
@@ -4223,6 +4227,10 @@ ${GUARD_LINE}` : "";
       ["path", { d: "M10.7 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.2" }],
       ["path", { d: "M6.6 6.6A18.2 18.2 0 0 0 2 12s3.5 7 10 7a10.6 10.6 0 0 0 5.4-1.6" }],
       ["line", { x1: "2", y1: "2", x2: "22", y2: "22" }]
+    ],
+    arrowUp: [
+      ["path", { d: "M12 19V5" }],
+      ["polyline", { points: "5 12 12 5 19 12" }]
     ]
   };
   function icon(name, size = 16, cls = "ic") {
@@ -5454,6 +5462,17 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp details>summary h2::before{content:"\u25B8 ";color:var(--c-text-ghost)}.nmos .insp details[open]>summary h2::before{content:"\u25BE "}
 .nmos .insp .n{color:var(--c-text-muted);font-weight:400;font-size:13px}
 .nmos .insp .toc{font-size:14px;line-height:1.9;margin:8px 0}.nmos .insp a.warn{color:var(--c-warn)}
+.nmos .insp .toc.insp-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:9px 11px;border-radius:12px;background:var(--c-surface);border:1px solid var(--c-line);margin:10px 0 12px;font-size:13px;line-height:1.2}
+.nmos .insp .toc.insp-tabs a{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:9px;background:var(--c-sunken);border:1px solid var(--c-line);color:var(--c-text-soft);text-decoration:none;transition:background .15s ease,border-color .15s ease,color .15s ease}
+.nmos .insp .toc.insp-tabs a:hover{background:var(--c-raised);border-color:var(--c-line-hover);color:var(--c-text-strong);text-decoration:none}
+.nmos .insp .toc.insp-tabs a.warn{color:var(--c-warn);border-color:${alpha("warn", 0.38)};background:${alpha("warn", 0.1)}}
+.nmos .insp .toc.insp-tabs a.on{background:${alpha("accent", 0.18)};border-color:${alpha("accent", 0.52)};color:var(--c-text-strong);font-weight:600}
+.nmos .insp .toc.insp-tabs a.on .n{color:var(--c-text-strong)}
+.nmos .insp .toc.insp-tabs .toc-all{margin-left:auto;padding:5px 10px;font-size:12.5px;border-radius:9px}
+.nmos .insp .toc.insp-tabs .toc-all.on{background:${alpha("accent", 0.16)};border-color:${alpha("accent", 0.48)};color:var(--c-text-strong)}
+.nmos .nmos-top-btn{position:fixed;right:20px;bottom:22px;z-index:42;padding:8px 13px;border-radius:999px;background:${alpha("raised", 0.94)};backdrop-filter:blur(12px);border:1px solid var(--c-line-hover);color:var(--c-text-strong);font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.45);opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .15s ease,transform .15s ease,border-color .15s ease,background .15s ease}
+.nmos .nmos-top-btn.show{opacity:1;pointer-events:auto;transform:translateY(0)}
+.nmos .nmos-top-btn:hover:not(:disabled){background:var(--c-raised-hover);border-color:${alpha("accent", 0.65)};color:#fff}
 .nmos .insp .who{display:flex;align-items:center;gap:8px;margin:10px 0}.nmos .insp .who select{width:auto;min-width:180px;padding:5px 8px}
 .nmos .insp details.meta{font-size:13px;margin-top:2px;color:var(--c-text-muted)}.nmos .insp details.meta p{margin:4px 0}
 .nmos .bulk-card{padding:10px 14px;border-radius:10px;background:var(--c-surface);border:1px solid var(--c-line);margin:0 0 12px}
@@ -5530,8 +5549,13 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .exp-controls select.exp-who{flex:0 1 170px;min-width:120px;width:auto;padding:7px 10px;font-size:13.5px}
 .nmos .exp-add{margin-left:auto;white-space:nowrap}
 .nmos .exp-empty{margin:10px 0;padding:22px 14px;text-align:center;color:var(--c-text-muted);font-size:14px;border:1px dashed var(--c-line-strong);border-radius:11px;background:var(--c-sunken)}
+@media (min-width: 721px){
+  .nmos.shell-on .exp-toolbar{position:sticky;top:54px;z-index:16;background:${alpha("surface", 0.95)};backdrop-filter:blur(12px);box-shadow:0 6px 18px rgba(0,0,0,0.28)}
+  .nmos.shell-on .insp .toc.insp-tabs{position:sticky;top:54px;z-index:15;background:${alpha("surface", 0.95)};backdrop-filter:blur(12px);box-shadow:0 6px 18px rgba(0,0,0,0.28)}
+}
 @media (max-width: 720px){
   .nmos .exp-add{margin-left:0;flex:1 1 auto}
+  .nmos.shell-on .exp-toolbar,.nmos.shell-on .insp .toc.insp-tabs{position:static;box-shadow:none}
   .nmos.shell-on .wrap{padding:12px 12px 84px}
   .nmos .nmos-topbar-in{padding:8px 12px;gap:8px}
   .nmos .nmos-nav{display:none}
@@ -5542,6 +5566,7 @@ html,body{margin:0;background:${PALETTE.bg}}
   .nmos .nmos-bottomnav button.on{color:var(--c-accent-hover);background:${alpha("accent", 0.12)}}
   .nmos .nmos-bottomnav .nav-badge{position:absolute;top:2px;right:calc(50% - 22px);min-width:16px;height:16px;font-size:10px}
   .nmos.shell-on .bar{bottom:58px;padding:10px 12px}
+  .nmos .nmos-top-btn{right:14px;bottom:calc(70px + env(safe-area-inset-bottom));padding:7px 11px}
 }
 `;
   function el(tag, attrs = {}, ...children) {
@@ -6010,6 +6035,23 @@ html,body{margin:0;background:${PALETTE.bg}}
     let inspectorPath = "/v1/inspector";
     let shownPath = null;
     let loads = 0;
+    let inspectorTabCtrl = null;
+    const topBtn = el("button", {
+      type: "button",
+      class: "nmos-top-btn",
+      "aria-label": L("nav.top"),
+      title: L("nav.top")
+    }, icon("arrowUp", 15), el("span", { text: "Top" }));
+    const updateTopBtn = () => {
+      topBtn.classList.toggle("show", root.scrollTop > 280);
+    };
+    const scrollPanelTop = (top = 0) => {
+      if (typeof root.scrollTo === "function") root.scrollTo({ top, behavior: "smooth" });
+      else root.scrollTop = top;
+      if (top === 0) updateTopBtn();
+    };
+    root.addEventListener("scroll", updateTopBtn, { passive: true });
+    topBtn.addEventListener("click", () => scrollPanelTop(0));
     const visited = [];
     const inspectorBody = el("div", { class: "insp" });
     const inspectorBack = el("button", { text: L("insp.back") });
@@ -6516,14 +6558,27 @@ html,body{margin:0;background:${PALETTE.bg}}
     let actionConversation = null;
     function place() {
       const open = Array.from(inspectorBody.querySelectorAll("details[id]")).filter((d) => d.open);
-      return { path: inspectorPath, scroll: root.scrollTop, open: open.map((d) => d.id) };
+      return {
+        path: inspectorPath,
+        scroll: root.scrollTop,
+        open: open.map((d) => d.id),
+        tab: inspectorTabCtrl ? inspectorTabCtrl.getState() : null
+      };
     }
     function restore(at) {
-      for (const d of Array.from(inspectorBody.querySelectorAll("details[id]"))) d.open = at.open.includes(d.id);
+      if (inspectorTabCtrl && at.tab) {
+        inspectorTabCtrl.setState(at.tab);
+        if (at.tab === "__all__") {
+          for (const d of Array.from(inspectorBody.querySelectorAll("details[id]"))) d.open = at.open.includes(d.id);
+        }
+      } else {
+        for (const d of Array.from(inspectorBody.querySelectorAll("details[id]"))) d.open = at.open.includes(d.id);
+      }
       root.scrollTop = at.scroll;
     }
     function enhance(page) {
       closers = /* @__PURE__ */ new Map();
+      inspectorTabCtrl = null;
       for (const slot of Array.from(page.querySelectorAll(".v-filter"))) {
         const box = el("input", { type: "search", placeholder: L("chats.search"), "aria-label": L("chats.search") });
         box.addEventListener("input", () => {
@@ -6642,6 +6697,7 @@ html,body{margin:0;background:${PALETTE.bg}}
               activeCat = k;
               for (const [ck, b] of catBtns) b.classList.toggle("on", ck === k);
               applyExploreFilter();
+              if (root.scrollTop > 220) scrollPanelTop(0);
             });
             catBtns.set(k, btn);
             chipsRow.append(btn);
@@ -6762,6 +6818,85 @@ html,body{margin:0;background:${PALETTE.bg}}
         section.addEventListener("toggle", () => {
           if (section.open && !box.dataset.state) void loadTimeline(box, "");
         });
+      }
+      const toc = page.querySelector("p.toc");
+      const detailSecs = Array.from(page.querySelectorAll('details[id^="s-"]'));
+      if (toc && detailSecs.length >= 2) {
+        const secById = new Map(detailSecs.map((d) => [d.id, d]));
+        const tocLinks = Array.from(toc.querySelectorAll("a")).filter((a) => {
+          const sid = sectionTarget(a.getAttribute("href"));
+          return Boolean(sid && secById.has(sid));
+        });
+        if (tocLinks.length >= 2) {
+          const defaultOpen = new Set(detailSecs.filter((d) => d.open).map((d) => d.id));
+          let showAll = false;
+          let activeId = (detailSecs.find((d) => d.open) ?? detailSecs[0]).id;
+          const toggleBtn = el("button", { type: "button", class: "mini toc-all" });
+          toc.classList.add("insp-tabs");
+          toc.setAttribute("role", "tablist");
+          for (const a of tocLinks) a.setAttribute("role", "tab");
+          toc.replaceChildren(...tocLinks, toggleBtn);
+          const triggerLazy = (d) => {
+            const lazyBox = d.querySelector(":scope > .tl-lazy");
+            if (lazyBox && !lazyBox.dataset.state) void loadTimeline(lazyBox, "");
+          };
+          const renderTabs = () => {
+            for (const d of detailSecs) {
+              if (showAll) {
+                d.style.display = "";
+                d.open = defaultOpen.has(d.id) || d.id === activeId;
+              } else {
+                const on = d.id === activeId;
+                d.style.display = on ? "" : "none";
+                if (on) {
+                  d.open = true;
+                  triggerLazy(d);
+                }
+              }
+            }
+            for (const a of tocLinks) {
+              const on = !showAll && sectionTarget(a.getAttribute("href")) === activeId;
+              a.classList.toggle("on", on);
+              a.setAttribute("aria-selected", on ? "true" : "false");
+            }
+            toggleBtn.textContent = L(showAll ? "insp.tab_one" : "insp.tab_all");
+            toggleBtn.classList.toggle("on", showAll);
+            toggleBtn.setAttribute("aria-pressed", showAll ? "true" : "false");
+          };
+          toggleBtn.addEventListener("click", () => {
+            showAll = !showAll;
+            renderTabs();
+          });
+          inspectorTabCtrl = {
+            getState: () => showAll ? "__all__" : activeId,
+            setState: (state) => {
+              if (state === "__all__") {
+                showAll = true;
+              } else if (secById.has(state)) {
+                showAll = false;
+                activeId = state;
+              }
+              renderTabs();
+            },
+            focus: (sectionId) => {
+              if (!secById.has(sectionId)) return false;
+              activeId = sectionId;
+              renderTabs();
+              return true;
+            },
+            selectSection: (sectionId) => {
+              if (showAll || !secById.has(sectionId)) return false;
+              activeId = sectionId;
+              renderTabs();
+              const secEl = secById.get(sectionId);
+              const secTop = secEl.getBoundingClientRect().top;
+              const tocBot = toc.getBoundingClientRect().bottom;
+              if (secTop < tocBot) scrollPanelTop(Math.max(0, root.scrollTop + secTop - tocBot - 10));
+              return true;
+            }
+          };
+          renderTabs();
+        }
       }
       const note = graphOn ? page.querySelector(".v-graph-note") : null;
       if (note) {
@@ -7009,6 +7144,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         const focusSec = pendingSection;
         pendingSection = null;
         if (focusSec) {
+          inspectorTabCtrl?.focus(focusSec);
           const target = inspectorBody.querySelector(`#${focusSec}`);
           if (target) {
             if (target instanceof HTMLDetailsElement) target.open = true;
@@ -7017,6 +7153,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           else root.scrollTop = 0;
         } else if (keep) restore(keep);
         else root.scrollTop = 0;
+        updateTopBtn();
         if (viewsOn) syncShellForPath(path);
         if (shownEntity) void showEntityCards(shownEntity.conversation, shownEntity.entity, load);
         else if (conversation && !isView && !attentionMode) {
@@ -7536,6 +7673,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       const section = sectionTarget(href);
       const path = inspectorApiPath(href);
       if (!path || path === inspectorPath) {
+        if (section && inspectorTabCtrl?.selectSection(section)) return;
         const target = section ? inspectorBody.querySelector(`#${section}`) : null;
         if (target) {
           if (target instanceof HTMLDetailsElement) target.open = true;
@@ -9329,6 +9467,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       bulkGroups.clear();
       picked.clear();
       bulkPicked.clear();
+      inspectorTabCtrl = null;
       knownChats = [];
       lastMeta = null;
     }
@@ -10096,6 +10235,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       bar.style.display = next === "settings" ? "" : "none";
       root.classList.toggle("wide", viewsOn || next === "inspector");
+      updateTopBtn();
       if (next === "status") void refreshStatus();
       if (next === "inspector") void showInspector();
     }
@@ -10757,7 +10897,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       if (applyTarget(target)) return;
       select(next);
     }
-    root.append(toastEl);
+    root.append(toastEl, topBtn);
     document.body.append(root);
     try {
       const features = (await deps.status()).features;

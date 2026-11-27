@@ -27,7 +27,8 @@ export type IconName =
   | 'edit'
   | 'lock'
   | 'undo'
-  | 'eyeOff';
+  | 'eyeOff'
+  | 'arrowUp';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -155,6 +156,10 @@ const SHAPES: Record<IconName, readonly Shape[]> = {
     ['path', { d: 'M10.7 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.2' }],
     ['path', { d: 'M6.6 6.6A18.2 18.2 0 0 0 2 12s3.5 7 10 7a10.6 10.6 0 0 0 5.4-1.6' }],
     ['line', { x1: '2', y1: '2', x2: '22', y2: '22' }],
+  ],
+  arrowUp: [
+    ['path', { d: 'M12 19V5' }],
+    ['polyline', { points: '5 12 12 5 19 12' }],
   ],
 };
 
