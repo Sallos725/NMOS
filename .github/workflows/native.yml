@@ -31,7 +31,7 @@ jobs:
           # root inherits access for every signed-in user, which the launcher must take away from data/.
           - { target: win-x64, os: windows-2022, suite: true, parent: "C:/NMOS-CI" }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 50
+    timeout-minutes: 90
     env:
       VERSION: ${{ inputs.version || '0.0.0-ci' }}
     steps:

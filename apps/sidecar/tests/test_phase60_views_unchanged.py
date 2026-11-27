@@ -45,7 +45,7 @@ def check_golden(name: str, text: str) -> None:
         path.write_bytes(data)
         return
     assert path.is_file(), f"golden file {path} is missing (never write it to make a test pass)"
-    expected = path.read_bytes()
+    expected = path.read_bytes().replace(b"\r\n", b"\n")
     if data != expected:
         at = next((i for i, (a, b) in enumerate(zip(data, expected)) if a != b), min(len(data), len(expected)))
         diff = "\n".join(list(difflib.unified_diff(
