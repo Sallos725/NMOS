@@ -3,13 +3,69 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
-## Unreleased
+## 0.7.0
 
-Phase 60, in progress: nothing below changes a default (`packet-v19`, `extract-v16`, `clean-v3`); each item is behind a
-switch.
+Phases 57–71 and follow-up fixes (#333–#351): a major UI/UX overhaul (persistent 4-tab shell, card-based Memory Explorer,
+focused Attention & Repairs tab, Dashboard Home, semantic repair buttons), direct editing across categories and
+mention-triggered `entity_note` reference cards across all 5 entity types, bulk cleanup of conversations missing from
+PocketRisu, conversation carry/regression links, branch memory inheritance, extraction right after reply (`on_output`),
+opt-in old-dialogue trimming, `[NMOS.memory]` placement, optional reranker, entity pins, custom extraction request JSON
+and model-call log, configurable extraction/summary character cap, canon input deduplication, carry-on model changes,
+and selectable `extract-v18`–`v21`, `packet-v20`/`v21`, and `clean-v4`. Like every release before 1.0, it is a GitHub
+pre-release. Defaults stay unchanged (`packet-v19`, `extract-v16`, `clean-v3`, `6,000` target chars); migrations advance
+additively from `0032` through `0045`.
 
+### Upgrading from 0.6.0
+
+Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS and back up its data folder).
+
+1. **Docker:** `docker compose pull && docker compose up -d`. **Bundle:** unpack the new version and start it; the data
+   folder is where 0.6.0 put it. 13 additive migrations (`0033`–`0045`) apply automatically; with default settings
+   unchanged, no re-extraction or re-embedding runs on upgrade.
+2. **Replace the plugin and the sidecar together**, then reload PocketRisu. The plugin's `//@version` is `0.7.0`, so
+   Settings → Plugin offers the update.
+3. **Opt-in features stay off until enabled:** `packet-v20`/`packet-v21`, `extract-v18`–`v21`, `clean-v4`, old-dialogue
+   trimming, reranker, and raised `NMOS_EXTRACT_TARGET_CHARS` are selectable rather than default.
+4. **Before rolling back to 0.6.x** after raising `NMOS_EXTRACT_TARGET_CHARS`, setting `llm_extra_body`/`llm_no_temperature`,
+   or switching to `extract-v20`/`v21`, reset those settings to their defaults first.
+
+### Changes
+
+- **Panel & Browser UI/UX overhaul** (Phases 59, 69, 71; #340, #345, #348, #350). Persistent 4-tab shell (`Home`,
+  `Memory`, `Author's Note`, `Settings`), chat switcher, Dashboard Home with live progress bars and latest-reply memory
+  snapshot, card-based **Memory Explorer** (`/explore`) with category/character/search filters and collapsible inline
+  edit drawers, dedicated **Attention & Repairs** (`/attention`) tab with bulk actions and conflict comparison cards,
+  upgraded **Person Sheet** (`?rich=1`), 2-column Settings with live worker status, undo toast, onboarding card,
+  dismissable stale worker warning, and clear visual distinction between interactive repair buttons (with SVG icons and
+  semantic tones) and passive metadata chips.
+- **Direct editing across categories & Entity Description Notes** (Phase 70, migration `0045`, ADR 0096; #349). Inline
+  editing across `pairs`, `epistemic`, `items` (including `new_subject` holder correction on `possesses`), `entities`,
+  and Person Sheet; upgraded `+ Add fact` form with dynamic `subject_type`/`object_type`. Owners can attach up to
+  300-character `entity_note` cards to any of the 5 entity types (`character`, `place`, `item`, `group`, `concept`),
+  which survive rebuilds, track merges/splits, inherit on branches, and inject on mention under `packet-v20`/`packet-v21`
+  (0 tokens on turns without a matching mention).
+- **Bulk cleanup of conversations missing from the host** (Phase 68; #347). Settings → Backup scans PocketRisu's active
+  chat list on demand (`getDatabase(['characters'])`), previews missing conversations with active carry-link warnings
+  and Select-all checkboxes, and deletes selected conversations in two-step batches via ADR 0009.
+- **Branch memory inheritance, extraction right after reply & WebKit hardening** (Phases 65–67, migrations
+  `0041`–`0044`; #344). Branched chats inherit common-prefix memory with zero model/embedding calls (`branch-inherit`);
+  `extraction.on_output` starts background extraction right after a reply finishes; message-anchored owner repairs
+  (`fact_add`, `told_retract`, `fact_hidden`, `attention_dismiss`) and per-turn persona attribution; iPhone Safari /
+  WebKit memory and latency hardening; author's notes in the chat's language with cross-script secret checking; and
+  `extract-v21` typed ontology (beliefs, forgetting, disguises), `clean-v4` normalizer, and `packet-v21` (all opt-in).
+- **Conditional forms of address** (Phase 64, migration `0040`; #343). `address_condition` (`public`, `private`,
+  `situational`, `all`) on `addresses`, selectable `extract-v20` and `canon-v2`, per-slot folding and display across
+  packets, notes, Explorer, Inspector, and timelines.
+- **Canon deduplication, carry-on model changes & bulk attention queue** (Phase 57, migrations `0033`–`0034`; #333,
+  #334). Identical canon inputs are read once and reused across chats; switching extraction models carries on existing
+  facts by default with a preview of optional recent/canon redo; Attention items can be checked and resolved in bulk.
+- **How a feeling feels** (Phase 58, migration `0035`; #339). Selectable `extract-v18` records strength, valence, and an
+  underlying feeling on `feels_toward`.
+- **Summary recovery on `extract-history` & next-scene turn hints** (#351). `POST /v1/conversations/{id}/extract-history`
+  now revives failed `summarize` jobs and schedules missing/stale `story` summaries; the panel Memory tab (`rich=1`) and
+  Raw Inspector show which scene window is next and how many replied turns remain (`WINDOW=8`, `LAG=4`).
 - **Old dialogue left out in steps** (Phase 60 S1, plugin args `trim_old_turns` and `keep_recent_turns`, off by
-  default; 20 turns kept, 4–200). Once memory has extracted the older turns and a scene summary holds them, the plugin
+  default; 16 turns kept, 4–200). Once memory has extracted the older turns and a scene summary holds them, the plugin
   leaves their messages out of the copy of the prompt it returns, never out of the chat. The sidecar picks the first
   message to keep and moves it only in whole steps of `keep_recent_turns`, so the start of the prompt stays the same
   for up to that many turns. Only plain user or assistant messages that each carry one chat message, before the latest
@@ -133,8 +189,24 @@ switch.
   `covered_through_turn`: the last turn up to which every turn has an extraction and a scene summary) and, when the
   request asked for trimming, `trim`. Older plugins ignore both.
 
-Known issue, since Phase 58 (not Phase 60's): restoring a dropped `feels_toward` fact loses its feeling detail
-(strength, sign, a feeling beneath it), because the dropped-facts listing never reads it.
+### Known limitations and verification
+
+- **Restoring a dropped `feels_toward` fact** (since Phase 58): loses its feeling detail (strength, sign, a feeling
+  beneath it), because the dropped-facts listing does not read those fields.
+- **Opt-in features require explicit selection:** `entity_note` mention injection, entity pins, and conversation carry
+  links inject into packets only under `packet-v20` or `packet-v21` (default stays `packet-v19`).
+- **Switching to `extract-v20` or `extract-v21`:** queues `canon-v2` reads of active canon entries (deduplicated per
+  unique input via Phase 57), while leaving already-extracted turns untouched.
+- **Orphan conversation cleanup:** compares stored conversations against PocketRisu's active character chat list at scan
+  time (`getDatabase(['characters'])`); chats in Trash, deactivated characters, or another PocketRisu instance sharing
+  the same sidecar appear as missing — review and back up before deleting.
+- **Old-dialogue trimming:** only leaves out turns already extracted and covered by a scene summary; needs summaries on.
+- **Reranker timing:** bounded by its own timeout outside the plugin deadline; keep `NMOS_EMBED_TIMEOUT_MS` +
+  `NMOS_RERANK_TIMEOUT_MS` under the plugin's request deadline (default 3 s).
+- **The macOS bundle is built and checked on macOS 15** (pinned PostgreSQL declares macOS 15); self-compiled pieces
+  still target macOS 13.
+- **Automated evidence:** sidecar and plugin suites pass in CI (`NMOS_TEST_REQUIRE_DB=1`, plugin vitest/typecheck/build,
+  `tools/check_release.py`). Final host-response quality and the 1.0 gate's two quiet weeks remain open.
 
 ## 0.6.0
 

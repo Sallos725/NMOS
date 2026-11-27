@@ -1,5 +1,17 @@
 # NMOS Status
 
+## Release v0.7.0 — prepared 2026-11-27
+
+Phases 57–71 plus post-Phase-71 fixes (#333–#351): UI/UX overhaul (persistent 4-tab shell, card-based Memory Explorer,
+focused Attention & Repairs tab, self-sufficient Person Sheet, Dashboard Home, semantic repair button clarity), direct
+editing across categories and mention-triggered `entity_note` across all 5 entity types (migration `0045`), bulk orphan
+chat cleanup, conversation carry/regression links, branch memory inheritance, extraction right after reply (`on_output`),
+opt-in old-dialogue trimming, `[NMOS.memory]` placement, optional reranker, entity pins, custom extraction request JSON
+and model-call log, configurable extraction/summary character cap (`NMOS_EXTRACT_TARGET_CHARS`), canon deduplication and
+carry-on model switches, selectable `extract-v18`–`v21`, `packet-v20`/`v21`, and `clean-v4`, plus `extract-history`
+summary recovery and next-scene turn hints. Defaults unchanged: `packet-v19`, `extract-v16`, `clean-v3`; 13 additive
+migrations (`0033`–`0045`, `migrations/0001`–`0045`). All pre-1.0 releases are GitHub pre-releases.
+
 ## Phase 71 — Action Button vs. Metadata Tag Clarity & Raw Inspector Grouping (deployed to 6003 & 6113, 2026-11-26)
 
 **Approved 2026-11-26 (owner requested drafting and implementing all three visual-clarity items from `0.6.0` user feedback), not high risk (pure presentation & client-side DOM styling layer: zero DB migration, zero API/sanitizer/packet/recall/generation changes, zero HTML markup changes in `inspector.py` or default `views.memory`/`views.person` goldens). Deployed on 2026-11-26 13:58 KST (6003 production) and 13:59 KST (6113 test) as `exp-p71-64db910` (`8b0220b23b4e`).**
