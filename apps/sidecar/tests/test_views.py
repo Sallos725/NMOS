@@ -450,4 +450,31 @@ def test_browser_pages_share_unified_chrome_and_palette():
     assert 'href="/views/hub" class="on"' in v_page
 
 
+def test_phase72_browser_top_button_inspector_tabs_and_explorer_toolbar():
+    """PHASE-72: standalone browser pages include floating Top button, Inspector section tabs, and sticky Explorer toolbar; embedded fragments stay script-free."""
+    from nmos_sidecar import inspector
+
+    for lang, top_lbl, all_lbl, one_lbl, all_cat in (
+        ("ko", "맨 위로", "전체 펼치기", "탭으로 보기", "전체"),
+        ("en", "Back to top", "Show all", "Tab view", "All"),
+    ):
+        i_page = inspector.page("NMOS", "<p>body</p>", lang)
+        assert f'class="nm-top" aria-label="{top_lbl}" title="{top_lbl}"' in i_page
+        assert f'data-all="{all_lbl}" data-one="{one_lbl}"' in i_page
+        assert '<script data-nmos-nav="1">' in i_page
+        assert ".toc.insp-tabs{" in i_page and "@media (min-width:721px){.toc.insp-tabs{position:sticky;" in i_page
+
+        v_page = views.full_page("NMOS", '<div class="v v-doc v-explore"><div class="v-exp-toolbar-slot"></div></div>', lang, active="hub")
+        assert f'class="nm-top" aria-label="{top_lbl}" title="{top_lbl}"' in v_page
+        assert f'data-all-cat="{all_cat}"' in v_page
+        assert ".nmos .v-explore .v-exp-toolbar-slot{position:sticky;" in v_page
+        assert "vb-exp-bar" in v_page and "innerHTML" not in v_page
+
+    # Embedded Inspector output never includes browser chrome or scripts
+    conv = {"id": "0190f3a4-1b2c-7d3e-8f40-123456789abc", "host_chat_ref": "c1", "head_commit_id": None}
+    emb = inspector.detail(conv, [], [], [], [], [], None, embed=True)
+    assert "nm-top" not in emb and "<script" not in emb and "data-nmos-nav" not in emb
+
+
+
 

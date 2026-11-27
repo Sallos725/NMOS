@@ -60,6 +60,14 @@ th{font-weight:600;color:var(--muted);font-size:12.5px;background:rgba(0,0,0,0.1
 .toc a{display:inline-flex;align-items:center;gap:4px;font-size:13px;padding:6px 11px;margin:0 6px 6px 0;border-radius:9px;background:var(--surface);border:1px solid var(--line);color:var(--fg-soft);transition:background .15s ease,border-color .15s ease,color .15s ease}
 .toc a:hover{background:var(--raised);border-color:var(--line-hover);color:var(--fg-strong);text-decoration:none}
 .toc a.warn{color:var(--mix);border-color:rgba(232,172,67,0.38);background:rgba(232,172,67,0.10)}
+.toc.insp-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:9px 11px;border-radius:12px;background:var(--surface);border:1px solid var(--line);margin:14px 0 12px;font-size:13px;line-height:1.2}
+.toc.insp-tabs a{margin:0;background:var(--sunken);border-color:var(--line)}
+.toc.insp-tabs a.on{background:rgba(74,106,245,0.18);border-color:rgba(74,106,245,0.52);color:var(--fg-strong);font-weight:600}
+.toc.insp-tabs a.on .n{background:rgba(74,106,245,0.24);border-color:rgba(74,106,245,0.42);color:var(--fg-strong)}
+.toc.insp-tabs .toc-all{margin-left:auto;display:inline-flex;align-items:center;padding:6px 11px;border-radius:9px;font:inherit;font-size:12.5px;font-weight:550;background:var(--raised);border:1px solid var(--line-strong);color:var(--fg-soft);cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease}
+.toc.insp-tabs .toc-all:hover{background:var(--raised-hover);border-color:var(--line-hover);color:var(--fg-strong)}
+.toc.insp-tabs .toc-all.on{background:rgba(74,106,245,0.16);border-color:rgba(74,106,245,0.48);color:var(--fg-strong)}
+@media (min-width:721px){.toc.insp-tabs{position:sticky;top:56px;z-index:15;background:rgba(30,33,42,0.95);backdrop-filter:blur(12px);box-shadow:0 6px 18px rgba(0,0,0,0.28)}}
 .who{margin:10px 0 6px;font-size:0;line-height:1}
 .who a,.who b{display:inline-flex;align-items:center;padding:4px 11px;margin:0 6px 6px 0;border-radius:99px;background:var(--surface);border:1px solid var(--line);color:var(--fg-soft);font-size:13px;font-weight:500}
 .who b{background:rgba(74,106,245,0.16);border-color:rgba(74,106,245,0.42);color:var(--fg-strong);font-weight:600}
@@ -655,11 +663,77 @@ FAVICON = ("data:image/svg+xml," + quote(
     safe=" :/=\"'<>;(),.-{}*@"))  # '#' encoded: in a data URI it would start a fragment
 
 
+# Progressive navigation for standalone browser pages (PHASE-72): floating Back-to-Top button + section tabs.
+# Never emitted for `embed=True` (the plugin panel runs its own DOM enhancement). Zero innerHTML, zero user data.
+PAGE_SCRIPT = (
+    "<script data-nmos-nav=\"1\">(function(){"
+    "var topBtn=document.querySelector('.nm-top');"
+    "if(topBtn){"
+    "var syncTop=function(){topBtn.classList.toggle('show',window.scrollY>280);};"
+    "window.addEventListener('scroll',syncTop,{passive:true});"
+    "topBtn.addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'});});"
+    "syncTop();}"
+    "var toc=document.querySelector('main>p.toc');"
+    "var secs=Array.prototype.slice.call(document.querySelectorAll('main>details[id^=\"s-\"]'));"
+    "if(!toc||secs.length<2)return;"
+    "var byId={},defOpen={};"
+    "secs.forEach(function(d){byId[d.id]=d;defOpen[d.id]=d.open;});"
+    "var links=Array.prototype.slice.call(toc.querySelectorAll('a[href^=\"#s-\"]'));"
+    "if(links.length<2)return;"
+    "var allLbl=(topBtn&&topBtn.getAttribute('data-all'))||'Show all';"
+    "var oneLbl=(topBtn&&topBtn.getAttribute('data-one'))||'Tab view';"
+    "var toggle=document.createElement('button');"
+    "toggle.type='button';toggle.className='toc-all';"
+    "toc.classList.add('insp-tabs');toc.setAttribute('role','tablist');"
+    "while(toc.firstChild)toc.removeChild(toc.firstChild);"
+    "links.forEach(function(a){a.setAttribute('role','tab');toc.appendChild(a);});"
+    "toc.appendChild(toggle);"
+    "var showAll=false;"
+    "var activeId=(secs.find(function(d){return d.open;})||secs[0]).id;"
+    "function secOfHash(h){"
+    "if(!h||h.charAt(0)!=='#')return null;"
+    "var id=h.slice(1);if(byId[id])return id;"
+    "var el=document.getElementById(id);"
+    "while(el){if(el.tagName==='DETAILS'&&byId[el.id])return el.id;el=el.parentElement;}"
+    "return null;}"
+    "function render(){"
+    "secs.forEach(function(d){"
+    "if(showAll){d.style.display='';d.open=Boolean(defOpen[d.id]||d.id===activeId);}"
+    "else{var on=d.id===activeId;d.style.display=on?'':'none';if(on)d.open=true;}});"
+    "links.forEach(function(a){"
+    "var on=!showAll&&a.getAttribute('href')==='#'+activeId;"
+    "a.classList.toggle('on',on);a.setAttribute('aria-selected',on?'true':'false');});"
+    "toggle.textContent=showAll?oneLbl:allLbl;"
+    "toggle.classList.toggle('on',showAll);"
+    "toggle.setAttribute('aria-pressed',showAll?'true':'false');}"
+    "var initSec=secOfHash(location.hash);if(initSec)activeId=initSec;"
+    "render();"
+    "links.forEach(function(a){a.addEventListener('click',function(e){"
+    "var id=(a.getAttribute('href')||'').slice(1);if(!byId[id])return;"
+    "if(!showAll){e.preventDefault();activeId=id;render();"
+    "try{history.replaceState(null,'','#'+id);}catch(_){}"
+    "var secTop=byId[id].getBoundingClientRect().top,tocBot=toc.getBoundingClientRect().bottom;"
+    "if(secTop<tocBot)window.scrollTo({top:Math.max(0,secTop+window.scrollY-tocBot-10),behavior:'smooth'});"
+    "}else{byId[id].open=true;}});});"
+    "toggle.addEventListener('click',function(){showAll=!showAll;render();});"
+    "document.addEventListener('click',function(e){"
+    "var a=e.target&&e.target.closest?e.target.closest('a[href^=\"#\"]'):null;"
+    "if(!a||a.closest('p.toc'))return;"
+    "var id=secOfHash(a.getAttribute('href'));"
+    "if(id&&!showAll&&id!==activeId){activeId=id;render();}});"
+    "window.addEventListener('hashchange',function(){"
+    "var id=secOfHash(location.hash);"
+    "if(id){activeId=id;if(!showAll)render();else byId[id].open=true;}});"
+    "})();</script>"
+)
+
+
 def page(title: str, body: str, lang: str = "ko", token: str | None = None) -> str:
     return (f"<!doctype html><html lang=\"{lang}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" "
             f"content=\"width=device-width,initial-scale=1\"><title>{escape(title)}</title>"
             f"<link rel=\"icon\" type=\"image/svg+xml\" href=\"{escape(FAVICON)}\"><style>{STYLE}</style>"
-            f"</head><body>{tokens.browser_bar('inspector', lang, token)}<main>{body}</main></body></html>")
+            f"</head><body>{tokens.browser_bar('inspector', lang, token)}<main>{body}</main>"
+            f"{tokens.browser_top_button(lang, tab_labels=True)}{PAGE_SCRIPT}</body></html>")
 
 
 def _v(value: Any) -> str:

@@ -718,6 +718,10 @@ const STRINGS = {
   'exp.cat_canon': ['카드 · 로어북', 'Card & lorebook'],
   'mem.diag_working': ['처리 상태', 'Working status'],
   'mem.diag_raw': ['원본 인스펙터', 'Raw inspector'],
+  // PHASE-72: floating back-to-top button + Raw Inspector section tabs
+  'nav.top': ['맨 위로', 'Back to top'],
+  'insp.tab_all': ['전체 펼치기', 'Show all'],
+  'insp.tab_one': ['탭으로 보기', 'Tab view'],
   'mem.no_chat': ['먼저 상단에서 채팅을 선택하거나 홈에서 대화를 열어 주세요.', 'Select a chat from the top switcher or open one from Home.'],
   'notes.studio_sub': ['현재 채팅의 기억을 바탕으로 작가의 노트에 붙여넣을 요약을 만듭니다. 체크한 항목만 생성됩니다.',
     "Generate a ready-to-paste summary for the Author's Note from this chat's memory. Only checked parts run."],
