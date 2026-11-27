@@ -40,6 +40,19 @@ def connect_admin() -> psycopg.Connection:
         pytest.skip(message)
 
 
+@pytest.fixture(autouse=True)
+def _test_keyword_slice_budget(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Separate recall semantics from shared CI runner CPU scheduling jitter (same pattern as test_age76_scenarios.py).
+
+    Production 25 ms slice cancellation and remainder-budget contracts keep the real KEYWORD_SLICE_MS in
+    test_keyword_particles.py.
+    """
+    if request.path.name != "test_keyword_particles.py":
+        from nmos_sidecar import retrieval
+
+        monkeypatch.setattr(retrieval, "KEYWORD_SLICE_MS", 1000)
+
+
 @pytest.fixture
 def database_url() -> Iterator[str]:
     name = f"nmos_test_{uuid.uuid4().hex[:12]}"

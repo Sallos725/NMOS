@@ -18,7 +18,6 @@ jobs:
           POSTGRES_DB: nmos
         ports: ["5436:5432"]
         options: >-
-          --tmpfs /var/lib/postgresql/data:rw,size=1g
           --health-cmd "pg_isready -U nmos" --health-interval 5s --health-timeout 3s --health-retries 20
     defaults:
       run:
