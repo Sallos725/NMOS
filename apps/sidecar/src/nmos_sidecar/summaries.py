@@ -145,6 +145,17 @@ def due(turns: int) -> int:
     return max(0, turns - LAG) // WINDOW
 
 
+def next_scene(turns: int) -> dict[str, int]:
+    """The next scene window that is not due yet, and how many more replied turns it needs (WINDOW + LAG)."""
+    turns = max(0, int(turns))
+    idx = due(turns)
+    first = idx * WINDOW
+    last = first + WINDOW - 1
+    ready_turns = (idx + 1) * WINDOW + LAG
+    return {"index": idx, "first_turn": first, "last_turn": last, "ready_turn": ready_turns - 1,
+            "remaining": ready_turns - turns, "replied_turns": turns}
+
+
 def windows(conn: psycopg.Connection, head: UUID, first: int = 0, upto: int | None = None) -> list[Window]:
     """The due windows of the head (as of position `upto`), from window `first` on."""
     n = due(replied_turns(conn, head, upto))
@@ -275,6 +286,7 @@ def inspect(conn: psycopg.Connection, conv: UUID, head: UUID, key: str,
     # The story job that matters: one for the story that would replace the shown one, or the only one there is.
     view["story_job"] = story_job if story_job and (story is None or not view["story_current"]
                                                     or view["story_why"]["unlisted"]) else None
+    view["next_scene"] = next_scene(replied_turns(conn, head))
     return view
 
 

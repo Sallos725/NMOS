@@ -1676,7 +1676,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             if ex is None and pj is None:
                 raise HTTPException(status_code=409, detail="fact extraction and embeddings are both off")
-            for kind, gen in (("extract", ex), ("embed", pj), ("canon", rt["canon"])):
+            for kind, gen in (("extract", ex), ("embed", pj), ("canon", rt["canon"]), ("summarize", rt["summarizer"])):
                 if gen:
                     extraction.retry_failed(conn, kind, gen.key, conv_id)
             queued = {
@@ -1690,7 +1690,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             }
             head = readmodel.conversation(conn, conv_id)["head_commit_id"]
             if rt["summarizer"] and head is not None:  # the windows an earlier model summarized (PHASE-57 A3)
-                queued["summarize"] = summaries.schedule_redo(conn, conv_id, head, rt["summarizer"].key, None)
+                sm_key = rt["summarizer"].key
+                sm_n = summaries.schedule_redo(conn, conv_id, head, sm_key, None)
+                if sm_n == 0:
+                    sm_n = summaries.schedule_stale(conn, conv_id, sm_key, priority=summaries.BACKFILL_PRIORITY)
+                if sm_n == 0:
+                    sm_n = summaries.schedule_story(conn, conv_id, head, sm_key, priority=summaries.BACKFILL_PRIORITY)
+                queued["summarize"] = sm_n
             log.info("extract history conversation=%s queued=%s", conv_id, queued)
             return {"queued": queued, "coverage": coverage_view(conn, conv_id)}
 
@@ -2468,6 +2474,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 d[key] = view[key]
         if (carried := carry_data(conn, cid, view)) is not None:  # PHASE-60 S6: only a chat with a link in force
             d["carry"] = carried
+        if rt["summarizer"] is not None:
+            d["next_summary"] = summaries.next_scene(summaries.replied_turns(conn, head))
         return d
 
     def map_data(conn, conv: dict[str, Any]) -> dict[str, Any]:

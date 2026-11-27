@@ -187,6 +187,10 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "sm.behind": ("최신 장면은 아직 반영 안 됨", "the newest scenes are not in it yet"),
     "sm.story_covers": ("장면 {n}/{m}개", "scenes 1–{n} of {m}"), "sm.none": ("아직 요약할 장면이 없습니다 ({w}턴마다 한 장면, 뒤로 {l}턴이 더 지나면 요약).",
                                                       "No scene to summarize yet (one scene per {w} turns, summarized {l} turns later)."),
+    "sm.next": ("다음 장면 요약 (t{a}–{b}): t{at} 응답 후 자동 작성 ({n}턴 남음).",
+                "Next scene summary (t{a}–{b}): written after t{at} ({n} turns left)."),
+    "sm.next_one": ("다음 장면 요약 (t{a}–{b}): t{at} 응답 후 자동 작성 (1턴 남음).",
+                    "Next scene summary (t{a}–{b}): written after t{at} (1 turn left)."),
     "other": ("실제가 아닌 단언 (가정·꿈·미상)", "Not actual (hypothetical, dreamed, unknown)"),
     "h.modality": ("양태", "Modality"),
     "entities": ("엔티티", "Entities"), "h.type": ("종류", "Type"), "h.names": ("이름", "Names"),
@@ -1400,6 +1404,10 @@ def _summaries_section(view: dict[str, Any], lang: str, gen: dict[str, Any] | No
         state += "".join(f"<br><span class=\"muted\">{_v(n[:160])}</span>" for n in notes)
         out += (f"<p><b>{t('story')}</b> <span class=\"muted\">"
                 f"{_v(t('sm.story_wait').format(n=view['done'], m=view['due']))}</span>{state}</p>")
+    if on and (nxt := view.get("next_scene")):
+        rem = int(nxt["remaining"])
+        nk = "sm.next_one" if rem == 1 else "sm.next"
+        out += f'<p class="muted">{_v(t(nk).format(a=nxt["first_turn"], b=nxt["last_turn"], at=nxt["ready_turn"], n=rem))}</p>'
     return out + table([t(k) for k in ("h.turns", "h.status", "h.summary")],
                        [[_v(f"{x['window'].first_turn}–{x['window'].last_turn}"), _summary_state(x, lang),
                          _v((x["summary"] or {}).get("text") or "")] for x in reversed(view["scenes"])][:200])
